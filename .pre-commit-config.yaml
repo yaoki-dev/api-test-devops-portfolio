@@ -1,11 +1,13 @@
 # 軽量版: コミット時の最小限チェック (実行時間 < 3秒)
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.1.8
+    rev: v0.12.9              # Python 3.12対応・最新版
     hooks:
       - id: ruff
-        args: [--fix]           # 自動修正で即座に問題解決
-      - id: ruff-format         # フォーマット自動適用
+        args: [--fix]         # 自動修正で即座に問題解決
+        exclude: ^tests/Q&A/    # 学習ファイル除外
+      - id: ruff-format       # フォーマット自動適用
+        exclude: ^tests/Q&A/    # 学習ファイル除外
 
 # 重いチェックはCI/CDで実行 (コミット時は除外)
 # - mypy: 型チェック → GitHub Actions
