@@ -13,7 +13,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field, SecretStr, validator
+from pydantic import BaseModel, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # =============================================================================
@@ -62,16 +62,13 @@ class APIConfig(BaseModel):
         default=30.0, ge=1.0, le=300.0, description="リクエストタイムアウト（秒）"
     )
     retry_count: int = Field(default=3, ge=0, le=10, description="リトライ回数")
-    retry_delay: float = Field(
-        default=1.0, ge=0.1, le=60.0, description="リトライ間隔（秒）"
-    )
+    retry_delay: float = Field(default=1.0, ge=0.1, le=60.0, description="リトライ間隔（秒）")
     max_connections: int = Field(default=10, ge=1, le=100, description="最大同時接続数")
-    user_agent: str = Field(
-        default="API-Test-Portfolio/0.1.0", description="User-Agentヘッダー"
-    )
+    user_agent: str = Field(default="API-Test-Portfolio/0.1.0", description="User-Agentヘッダー")
 
-    @validator("base_url")
-    def validate_base_url(cls, v):  # noqa: N805
+    @field_validator("base_url")
+    @classmethod
+    def validate_base_url(cls, v: str) -> str:
         """ベースURLのバリデーション"""
         if not v.startswith(("http://", "https://")):
             raise ValueError("Base URL must start with http:// or https://")
@@ -101,8 +98,9 @@ class LogConfig(BaseModel):
     )
     console_output: bool = Field(default=True, description="コンソール出力の有効化")
 
-    @validator("file")
-    def validate_log_file(cls, v):  # noqa: N805
+    @field_validator("file")
+    @classmethod
+    def validate_log_file(cls, v: str | None) -> str | None:
         """ログファイルパスのバリデーション"""
         if v is not None:
             log_path = Path(v)
@@ -125,18 +123,12 @@ class TestConfig(BaseModel):
     max_concurrent_requests: int = Field(
         default=5, ge=1, le=50, description="並行テストでの最大リクエスト数"
     )
-    external_api_enabled: bool = Field(
-        default=True, description="外部APIテストの有効化"
-    )
+    external_api_enabled: bool = Field(default=True, description="外部APIテストの有効化")
     performance_test_enabled: bool = Field(
         default=False, description="パフォーマンステストの有効化"
     )
-    security_test_enabled: bool = Field(
-        default=False, description="セキュリティテストの有効化"
-    )
-    test_data_cleanup: bool = Field(
-        default=True, description="テスト後のデータクリーンアップ"
-    )
+    security_test_enabled: bool = Field(default=False, description="セキュリティテストの有効化")
+    test_data_cleanup: bool = Field(default=True, description="テスト後のデータクリーンアップ")
 
 
 # =============================================================================
@@ -154,9 +146,7 @@ class SecurityConfig(BaseModel):
     allowed_hosts: list[str] = Field(
         default=["localhost", "127.0.0.1"], description="許可するホスト一覧"
     )
-    rate_limit_requests: int = Field(
-        default=100, ge=1, description="レート制限：リクエスト数"
-    )
+    rate_limit_requests: int = Field(default=100, ge=1, description="レート制限：リクエスト数")
     rate_limit_window: int = Field(
         default=3600,  # 1時間
         ge=60,
@@ -173,6 +163,7 @@ class SecurityConfig(BaseModel):
 class Settings(BaseSettings):
     """アプリケーション設定の統合管理"""
 
+    # テスト用フォーマット問題：shorter line
     model_config = SettingsConfigDict(
         # 環境変数の設定
         env_file=".env",
@@ -183,13 +174,9 @@ class Settings(BaseSettings):
     )
 
     # 基本設定
-    environment: Environment = Field(
-        default=Environment.DEVELOPMENT, description="実行環境"
-    )
+    environment: Environment = Field(default=Environment.DEVELOPMENT, description="実行環境")
     debug: bool = Field(default=True, description="デバッグモードの有効化")
-    project_name: str = Field(
-        default="API Test Portfolio", description="プロジェクト名"
-    )
+    project_name: str = Field(default="API Test Portfolio", description="プロジェクト名")
     version: str = Field(default="0.1.0", description="アプリケーションバージョン")
 
     # 各種設定
@@ -198,8 +185,9 @@ class Settings(BaseSettings):
     test: TestConfig = Field(default_factory=TestConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
 
-    @validator("environment", pre=True)
-    def validate_environment(cls, v):  # noqa: N805
+    @field_validator("environment", mode="before")
+    @classmethod
+    def validate_environment(cls, v: str | Environment) -> str | Environment:
         """環境設定のバリデーション"""
         if isinstance(v, str):
             v = v.lower()
