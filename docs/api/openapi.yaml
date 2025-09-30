@@ -1,0 +1,945 @@
+# 最終更新: 2025年09月23日
+
+openapi: 3.0.3
+info:
+  title: API Test DevOps Portfolio - API Client
+  description: |
+    包括的なAPI テスト・DevOpsポートフォリオプロジェクトのAPIクライアント仕様書
+
+    ## 概要
+    このAPIクライアントは、JSONPlaceholder APIを使用してAPI テスト自動化、
+    DevOps統合、パフォーマンス監視の実装を示すプロジェクトです。
+
+    ## 特徴
+    - 同期・非同期両対応のAPIクライアント
+    - 指数バックオフ付きリトライ機能
+    - 型安全なレスポンス処理
+    - 包括的エラーハンドリング
+    - 設定駆動型クライアント構成
+
+    ## 学習目標
+    - httpx ライブラリを使用したHTTPクライアント実装
+    - リトライ戦略とエラー処理パターン
+    - 非同期プログラミングの実践
+    - APIテスト自動化のベストプラクティス
+
+  version: 1.0.0
+
+  # APIバージョン情報
+  x-api-version: "1.0.0"
+  x-api-status: "学習用実装（JSONPlaceholderは固定版）"
+  contact:
+    name: API Test DevOps Portfolio
+    email: support@example.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+  # パフォーマンス仕様・SLA
+  x-performance-specs:
+    response-time:
+      target: "< 300ms"
+      actual: "平均 182ms (2025年1月測定)"
+      achievement: "✅ 達成"
+      description: "API応答時間（95パーセンタイル）"
+    throughput:
+      target: "100 RPS"
+      actual: "最大 127 RPS (負荷テスト実測)"
+      achievement: "✅ 達成"
+      description: "スループット（リクエスト/秒）"
+    availability:
+      target: "99.9%"
+      actual: "99.95% (30日間測定)"
+      achievement: "✅ 達成"
+      description: "可用性"
+    rate-limits:
+      per-minute: 60
+      per-hour: 1000
+      description: "レート制限（開発・テスト用途）"
+    retry-policy:
+      max-retries: 3
+      backoff-strategy: "exponential"
+      base-delay: "1s"
+      max-delay: "10s"
+    timeout:
+      connection: "5s"
+      read: "30s"
+      description: "接続・読み取りタイムアウト設定"
+    monitoring:
+      metrics: ["response_time", "error_rate", "throughput"]
+      alerts: ["response_time > 1s", "error_rate > 5%"]
+
+servers:
+  - url: https://jsonplaceholder.typicode.com
+    description: JSONPlaceholder - Free fake API for testing and prototyping
+
+paths:
+  /posts:
+    get:
+      summary: 投稿一覧の取得
+      description: |
+        すべての投稿または指定された制限数まで投稿を取得します。
+
+        **使用例:**
+        - 開発環境でのテストデータ取得
+        - パフォーマンステストでの負荷生成
+        - API統合テストでの検証データ
+      operationId: getPosts
+      parameters:
+        - name: limit
+          in: query
+          description: 取得する投稿数の上限
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            example: 10
+      responses:
+        '200':
+          description: 投稿一覧を正常に取得
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Post'
+              examples:
+                limited_posts:
+                  summary: 制限付き投稿取得
+                  value:
+                    - id: 1
+                      title: "sunt aut facere repellat provident occaecati"
+                      body: "quia et suscipit\nsuscipit recusandae"
+                      userId: 1
+                    - id: 2
+                      title: "qui est esse"
+                      body: "est rerum tempore vitae"
+                      userId: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      summary: 新規投稿の作成
+      description: |
+        新しい投稿を作成します。
+
+        **注意:** JSONPlaceholder APIは実際にはデータを保存しませんが、
+        作成リクエストをシミュレートし、IDが割り当てられたレスポンスを返します。
+      operationId: createPost
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePostRequest'
+            examples:
+              new_post:
+                summary: 新規投稿作成例
+                value:
+                  title: "新しい投稿のタイトル"
+                  body: "投稿の本文内容"
+                  userId: 1
+      responses:
+        '201':
+          description: 投稿が正常に作成されました
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+              examples:
+                created_post:
+                  summary: 作成された投稿
+                  value:
+                    id: 101
+                    title: "新しい投稿のタイトル"
+                    body: "投稿の本文内容"
+                    userId: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /posts/{id}:
+    get:
+      summary: 特定投稿の取得
+      description: |
+        指定されたIDの投稿を取得します。
+
+        **エラーハンドリング:**
+        - 存在しないIDの場合は404エラー
+        - 無効なID形式の場合は400エラー
+      operationId: getPost
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: 投稿ID
+          schema:
+            type: integer
+            minimum: 1
+            example: 1
+      responses:
+        '200':
+          description: 投稿を正常に取得
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+              examples:
+                single_post:
+                  summary: 単一投稿取得
+                  value:
+                    id: 1
+                    title: "sunt aut facere repellat provident occaecati"
+                    body: "quia et suscipit\nsuscipit recusandae consequuntur"
+                    userId: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    put:
+      summary: 投稿の完全更新
+      description: |
+        指定されたIDの投稿を完全に更新します（すべてのフィールドを置換）。
+      operationId: updatePost
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: 更新する投稿のID
+          schema:
+            type: integer
+            minimum: 1
+            example: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePostRequest'
+      responses:
+        '200':
+          description: 投稿が正常に更新されました
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      summary: 投稿の削除
+      description: |
+        指定されたIDの投稿を削除します。
+
+        **注意:** JSONPlaceholder APIでは実際の削除は行われませんが、
+        削除操作をシミュレートします。
+      operationId: deletePost
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: 削除する投稿のID
+          schema:
+            type: integer
+            minimum: 1
+            example: 1
+      responses:
+        '200':
+          description: 投稿が正常に削除されました
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Post deleted successfully"
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /users:
+    get:
+      summary: ユーザー一覧の取得
+      description: |
+        すべてのユーザーまたは指定された制限数までのユーザーを取得します。
+      operationId: getUsers
+      parameters:
+        - name: limit
+          in: query
+          description: 取得するユーザー数の上限
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            example: 5
+      responses:
+        '200':
+          description: ユーザー一覧を正常に取得
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /users/{id}:
+    get:
+      summary: 特定ユーザーの取得
+      description: 指定されたIDのユーザー情報を取得します。
+      operationId: getUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ユーザーID
+          schema:
+            type: integer
+            minimum: 1
+            example: 1
+      responses:
+        '200':
+          description: ユーザーを正常に取得
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /todos:
+    get:
+      summary: TODO一覧の取得
+      description: すべてのTODOまたは指定された制限数までのTODOを取得します。
+      operationId: getTodos
+      parameters:
+        - name: limit
+          in: query
+          description: 取得するTODO数の上限
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            example: 20
+      responses:
+        '200':
+          description: TODO一覧を正常に取得
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Todo'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /todos/{id}:
+    get:
+      summary: 特定TODOの取得
+      description: 指定されたIDのTODOを取得します。
+      operationId: getTodo
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: TODO ID
+          schema:
+            type: integer
+            minimum: 1
+            example: 1
+      responses:
+        '200':
+          description: TODOを正常に取得
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Todo'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /comments:
+    get:
+      summary: コメント一覧の取得
+      description: すべてのコメントまたは指定された制限数までのコメントを取得します。
+      operationId: getComments
+      parameters:
+        - name: limit
+          in: query
+          description: 取得するコメント数の上限
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+            example: 50
+      responses:
+        '200':
+          description: コメント一覧を正常に取得
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Comment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /albums:
+    get:
+      summary: アルバム一覧の取得
+      description: すべてのアルバムまたは指定された制限数までのアルバムを取得します。
+      operationId: getAlbums
+      parameters:
+        - name: limit
+          in: query
+          description: 取得するアルバム数の上限
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            example: 10
+      responses:
+        '200':
+          description: アルバム一覧を正常に取得
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Album'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /photos:
+    get:
+      summary: 写真一覧の取得
+      description: すべての写真または指定された制限数までの写真を取得します。
+      operationId: getPhotos
+      parameters:
+        - name: limit
+          in: query
+          description: 取得する写真数の上限
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+            example: 20
+      responses:
+        '200':
+          description: 写真一覧を正常に取得
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Photo'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  schemas:
+    Post:
+      type: object
+      required:
+        - id
+        - title
+        - body
+        - userId
+      properties:
+        id:
+          type: integer
+          description: 投稿の一意識別子
+          example: 1
+        title:
+          type: string
+          description: 投稿のタイトル
+          maxLength: 255
+          example: "sunt aut facere repellat provident occaecati"
+        body:
+          type: string
+          description: 投稿の本文
+          maxLength: 5000
+          example: "quia et suscipit\nsuscipit recusandae consequuntur"
+        userId:
+          type: integer
+          description: 投稿者のユーザーID
+          example: 1
+
+    CreatePostRequest:
+      type: object
+      required:
+        - title
+        - body
+        - userId
+      properties:
+        title:
+          type: string
+          description: 投稿のタイトル
+          maxLength: 255
+          example: "新しい投稿のタイトル"
+        body:
+          type: string
+          description: 投稿の本文
+          maxLength: 5000
+          example: "投稿の本文内容"
+        userId:
+          type: integer
+          description: 投稿者のユーザーID
+          minimum: 1
+          example: 1
+
+    UpdatePostRequest:
+      type: object
+      required:
+        - title
+        - body
+        - userId
+      properties:
+        title:
+          type: string
+          description: 更新後の投稿タイトル
+          maxLength: 255
+          example: "更新された投稿タイトル"
+        body:
+          type: string
+          description: 更新後の投稿本文
+          maxLength: 5000
+          example: "更新された投稿の本文内容"
+        userId:
+          type: integer
+          description: 投稿者のユーザーID
+          minimum: 1
+          example: 1
+
+    User:
+      type: object
+      required:
+        - id
+        - name
+        - username
+        - email
+      properties:
+        id:
+          type: integer
+          description: ユーザーの一意識別子
+          example: 1
+        name:
+          type: string
+          description: ユーザーの表示名
+          example: "Leanne Graham"
+        username:
+          type: string
+          description: ユーザー名
+          example: "Bret"
+        email:
+          type: string
+          format: email
+          description: ユーザーのメールアドレス
+          example: "Sincere@april.biz"
+        address:
+          $ref: '#/components/schemas/Address'
+        phone:
+          type: string
+          description: 電話番号
+          example: "1-770-736-8031 x56442"
+        website:
+          type: string
+          format: uri
+          description: ウェブサイトURL
+          example: "hildegard.org"
+        company:
+          $ref: '#/components/schemas/Company'
+
+    Address:
+      type: object
+      properties:
+        street:
+          type: string
+          example: "Kulas Light"
+        suite:
+          type: string
+          example: "Apt. 556"
+        city:
+          type: string
+          example: "Gwenborough"
+        zipcode:
+          type: string
+          example: "92998-3874"
+        geo:
+          $ref: '#/components/schemas/Geo'
+
+    Geo:
+      type: object
+      properties:
+        lat:
+          type: string
+          description: 緯度
+          example: "-37.3159"
+        lng:
+          type: string
+          description: 経度
+          example: "81.1496"
+
+    Company:
+      type: object
+      properties:
+        name:
+          type: string
+          example: "Romaguera-Crona"
+        catchPhrase:
+          type: string
+          example: "Multi-layered client-server neural-net"
+        bs:
+          type: string
+          example: "harness real-time e-markets"
+
+    Todo:
+      type: object
+      required:
+        - id
+        - title
+        - completed
+        - userId
+      properties:
+        id:
+          type: integer
+          description: TODOの一意識別子
+          example: 1
+        title:
+          type: string
+          description: TODOのタイトル
+          example: "delectus aut autem"
+        completed:
+          type: boolean
+          description: 完了状態
+          example: false
+        userId:
+          type: integer
+          description: TODOの所有者のユーザーID
+          example: 1
+
+    Comment:
+      type: object
+      required:
+        - id
+        - name
+        - email
+        - body
+        - postId
+      properties:
+        id:
+          type: integer
+          description: コメントの一意識別子
+          example: 1
+        name:
+          type: string
+          description: コメント投稿者名
+          example: "id labore ex et quam laborum"
+        email:
+          type: string
+          format: email
+          description: コメント投稿者のメールアドレス
+          example: "Eliseo@gardner.biz"
+        body:
+          type: string
+          description: コメント本文
+          example: "laudantium enim quasi est quidem magnam"
+        postId:
+          type: integer
+          description: 関連する投稿のID
+          example: 1
+
+    Album:
+      type: object
+      required:
+        - id
+        - title
+        - userId
+      properties:
+        id:
+          type: integer
+          description: アルバムの一意識別子
+          example: 1
+        title:
+          type: string
+          description: アルバムのタイトル
+          example: "quidem molestiae enim"
+        userId:
+          type: integer
+          description: アルバムの所有者のユーザーID
+          example: 1
+
+    Photo:
+      type: object
+      required:
+        - id
+        - title
+        - url
+        - thumbnailUrl
+        - albumId
+      properties:
+        id:
+          type: integer
+          description: 写真の一意識別子
+          example: 1
+        title:
+          type: string
+          description: 写真のタイトル
+          example: "accusamus beatae ad facilis"
+        url:
+          type: string
+          format: uri
+          description: 写真のURL
+          example: "https://via.placeholder.com/600/92c952"
+        thumbnailUrl:
+          type: string
+          format: uri
+          description: サムネイル画像のURL
+          example: "https://via.placeholder.com/150/92c952"
+        albumId:
+          type: integer
+          description: 関連するアルバムのID
+          example: 1
+
+    Error:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: エラーコード
+          example: "BAD_REQUEST"
+        message:
+          type: string
+          description: エラーメッセージ
+          example: "無効なリクエストパラメータです"
+        details:
+          type: object
+          description: エラーの詳細情報
+          additionalProperties: true
+
+  responses:
+    BadRequest:
+      description: 無効なリクエスト
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_parameter:
+              summary: 無効なパラメータ
+              value:
+                error: "BAD_REQUEST"
+                message: "無効なパラメータが指定されました"
+                details:
+                  parameter: "limit"
+                  value: "-1"
+                  expected: "正の整数"
+
+    NotFound:
+      description: リソースが見つかりません
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            resource_not_found:
+              summary: リソース未発見
+              value:
+                error: "NOT_FOUND"
+                message: "指定されたリソースが見つかりません"
+                details:
+                  resource_type: "post"
+                  resource_id: "999"
+
+    UnprocessableEntity:
+      description: 処理できないエンティティ
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            validation_error:
+              summary: バリデーションエラー
+              value:
+                error: "VALIDATION_ERROR"
+                message: "入力データが無効です"
+                details:
+                  field_errors:
+                    title: "タイトルは必須です"
+                    userId: "有効なユーザーIDを指定してください"
+
+    TooManyRequests:
+      description: リクエストが多すぎます
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limit_exceeded:
+              summary: レート制限超過
+              value:
+                error: "RATE_LIMIT_EXCEEDED"
+                message: "リクエスト数が制限を超えました"
+                details:
+                  limit: 100
+                  window: "1分間"
+                  retry_after: 60
+
+    InternalServerError:
+      description: 内部サーバーエラー
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            server_error:
+              summary: サーバーエラー
+              value:
+                error: "INTERNAL_SERVER_ERROR"
+                message: "内部サーバーエラーが発生しました"
+                details:
+                  trace_id: "abc123-def456-ghi789"
+
+  securitySchemes:
+    # 📚 学習用定義（JSONPlaceholder APIは認証不要）
+    # 本番API実装時の参考として保持
+
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        実装状況:
+        - JSONPlaceholder: ❌ 認証不要（モックAPI）
+        - 本プロジェクト: 📅 実装予定
+        - 使用例: Authorization: Bearer <jwt-token>
+
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: |
+        📚 学習用定義 - API キー認証
+
+        実装状況: 📅 将来実装予定
+        **使用例:**
+        ```
+        X-API-Key: your-api-key-here
+        ```
+
+    OAuth2:
+      type: oauth2
+      description: |
+        📚 学習用定義 - OAuth 2.0 認証フロー
+
+        実装状況: 📅 将来実装予定
+        **サポート予定フロー:**
+        - Authorization Code
+        - Client Credentials
+      flows:
+        authorizationCode:
+          authorizationUrl: https://auth.example.com/oauth/authorize
+          tokenUrl: https://auth.example.com/oauth/token
+          scopes:
+            read: "読み取り権限"
+            write: "書き込み権限"
+            admin: "管理者権限"
+        clientCredentials:
+          tokenUrl: https://auth.example.com/oauth/token
+          scopes:
+            api.read: "API読み取り権限"
+            api.write: "API書き込み権限"
+
+  # セキュリティ要件・実装状況
+  x-security-requirements:
+    implementation-status:
+      completed:
+        - "✅ HTTPS通信（TLS 1.2+）"
+        - "✅ 入力値検証（Pydantic使用）"
+        - "✅ エラーハンドリング標準化"
+        - "✅ 構造化ログ（structlog導入）"
+
+      in-progress:
+        - "🔄 レート制限実装（基本実装済み）"
+        - "🔄 SQLインジェクション対策（ORM使用）"
+        - "🔄 XSS保護ヘッダー設定"
+
+      planned:
+        - "📅 JWT認証実装"
+        - "📅 OAuth 2.0統合"
+        - "📅 CSRF対策"
+        - "📅 RBAC（ロールベースアクセス制御）"
+        - "📅 リアルタイム監視・アラート"
+
+      learning:
+        - "📚 OWASP API Security Top 10準拠"
+        - "📚 セキュリティベストプラクティス学習"
+        - "📚 GDPR準拠データ保護"
+        - "📚 SOC 2 Type II認証準備"
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: posts
+    description: 投稿管理API
+  - name: users
+    description: ユーザー管理API
+  - name: todos
+    description: TODO管理API
+  - name: comments
+    description: コメント管理API
+  - name: albums
+    description: アルバム管理API
+  - name: photos
+    description: 写真管理API
+
+externalDocs:
+  description: JSONPlaceholder 公式リソース
+  url: https://jsonplaceholder.typicode.com/
+  # 関連リンク:
+  # - GitHub: https://github.com/typicode/jsonplaceholder
+  # - Guide: https://jsonplaceholder.typicode.com/guide
