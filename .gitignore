@@ -1,0 +1,84 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs and Databases
+*.log
+logs/
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Monitoring and Temporary Files
+monitoring/__pycache__/
+monitoring/scheduler.log
+scripts/__pycache__/
+reports/
+
+# MCP and AI Tools
+.serena/
+.memory_mcp/
+.claude-flow/
+.hive-mind/
+.swarm/
+memory/
+
+# Node.js (if any JS tooling)
+node_modules/
+
+# UV Lock (commit this for reproducibility)
+# uv.lock
+
+# Generated Documentation
+docs/search_index.json
+
+# Backup Files
+*.backup
+CLAUDE.md.current.backup
+
+# Internal Project Management
+docs/todo.md

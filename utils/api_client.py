@@ -42,9 +42,7 @@ class APITimeoutError(APIClientError):
 class APIHTTPError(APIClientError):
     """HTTPステータスエラー"""
 
-    def __init__(
-        self, message: str, status_code: int, response: httpx.Response | None = None
-    ):
+    def __init__(self, message: str, status_code: int, response: httpx.Response | None = None):
         super().__init__(message)
         self.status_code = status_code
         self.response = response
@@ -129,9 +127,7 @@ class BaseAPIClient:
             self._client.close()
             self.logger.info("APIClient closed")
 
-    def _make_request_with_retry(
-        self, method: str, endpoint: str, **kwargs
-    ) -> httpx.Response:
+    def _make_request_with_retry(self, method: str, endpoint: str, **kwargs) -> httpx.Response:
         """
         リトライ機能付きHTTPリクエスト実行
 
@@ -183,7 +179,7 @@ class BaseAPIClient:
                             f"HTTP {e.response.status_code} Client Error",
                             e.response.status_code,
                             e.response,
-                        )
+                        ) from e
 
                     # 5xxエラーはリトライ対象
                     self.logger.warning(
@@ -225,9 +221,7 @@ class BaseAPIClient:
         headers: dict[str, str] | None = None,
     ) -> httpx.Response:
         """GETリクエスト実行"""
-        return self._make_request_with_retry(
-            "GET", endpoint, params=params, headers=headers
-        )
+        return self._make_request_with_retry("GET", endpoint, params=params, headers=headers)
 
     def post(
         self,
@@ -249,13 +243,9 @@ class BaseAPIClient:
         headers: dict[str, str] | None = None,
     ) -> httpx.Response:
         """PUTリクエスト実行"""
-        return self._make_request_with_retry(
-            "PUT", endpoint, json=json, data=data, headers=headers
-        )
+        return self._make_request_with_retry("PUT", endpoint, json=json, data=data, headers=headers)
 
-    def delete(
-        self, endpoint: str, headers: dict[str, str] | None = None
-    ) -> httpx.Response:
+    def delete(self, endpoint: str, headers: dict[str, str] | None = None) -> httpx.Response:
         """DELETEリクエスト実行"""
         return self._make_request_with_retry("DELETE", endpoint, headers=headers)
 
@@ -350,9 +340,7 @@ class JSONPlaceholderClient(BaseAPIClient):
         response = self.get(f"/todos/{todo_id}")
         return response.json()
 
-    def create_todo(
-        self, title: str, user_id: int, completed: bool = False
-    ) -> dict[str, Any]:
+    def create_todo(self, title: str, user_id: int, completed: bool = False) -> dict[str, Any]:
         """新規TODOの作成"""
         data = {"title": title, "userId": user_id, "completed": completed}
         response = self.post("/todos", json=data)
@@ -520,7 +508,7 @@ class AsyncAPIClient:
                             f"HTTP {e.response.status_code} Client Error",
                             e.response.status_code,
                             e.response,
-                        )
+                        ) from e
 
                     # 5xxエラーはリトライ対象
                     self.logger.warning(
@@ -562,9 +550,7 @@ class AsyncAPIClient:
         headers: dict[str, str] | None = None,
     ) -> httpx.Response:
         """非同期GETリクエスト実行"""
-        return await self._make_request_with_retry(
-            "GET", endpoint, params=params, headers=headers
-        )
+        return await self._make_request_with_retry("GET", endpoint, params=params, headers=headers)
 
     async def post(
         self,
@@ -590,9 +576,7 @@ class AsyncAPIClient:
             "PUT", endpoint, json=json, data=data, headers=headers
         )
 
-    async def delete(
-        self, endpoint: str, headers: dict[str, str] | None = None
-    ) -> httpx.Response:
+    async def delete(self, endpoint: str, headers: dict[str, str] | None = None) -> httpx.Response:
         """非同期DELETEリクエスト実行"""
         return await self._make_request_with_retry("DELETE", endpoint, headers=headers)
 

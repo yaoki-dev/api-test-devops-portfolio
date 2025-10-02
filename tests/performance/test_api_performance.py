@@ -107,8 +107,9 @@ class TestAPIPerformance:
 
             # アサーション
             assert response.status_code == 200
-            assert response_time < self.RESPONSE_TIME_THRESHOLD, (
-                f"レスポンス時間が閾値を超過: {response_time:.3f}s > {self.RESPONSE_TIME_THRESHOLD}s"
+            threshold = self.RESPONSE_TIME_THRESHOLD
+            assert response_time < threshold, (
+                f"レスポンス時間が閾値を超過: {response_time:.3f}s > {threshold}s"
             )
 
             summary = metrics.get_summary()
@@ -169,9 +170,7 @@ class TestAPIPerformance:
             for batch in range(0, request_count, batch_size):
                 batch_tasks = []
                 for i in range(batch, min(batch + batch_size, request_count)):
-                    endpoint = (
-                        f"/posts/{(i % 100) + 1}"  # 1-100のランダムエンドポイント
-                    )
+                    endpoint = f"/posts/{(i % 100) + 1}"  # 1-100のランダムエンドポイント
                     batch_tasks.append(self._measure_request(client, endpoint, metrics))
 
                 await asyncio.gather(*batch_tasks)
@@ -183,9 +182,7 @@ class TestAPIPerformance:
 
             # パフォーマンス分析
             assert summary["request_count"] == request_count
-            assert (
-                summary["response_times"]["mean"] < self.RESPONSE_TIME_THRESHOLD * 1.5
-            ), (
+            assert summary["response_times"]["mean"] < self.RESPONSE_TIME_THRESHOLD * 1.5, (
                 f"負荷時平均レスポンス時間が許容値を超過: {summary['response_times']['mean']:.3f}s"
             )
 
@@ -198,9 +195,7 @@ class TestAPIPerformance:
             print(f"  - 最大レスポンス時間: {summary['response_times']['max']:.3f}s")
             print(f"  - 95パーセンタイル: {summary['response_times']['p95']:.3f}s")
             print(f"  - スループット: {summary['throughput']:.1f} req/s")
-            print(
-                f"  - メモリ使用量変化: {summary['memory_usage']['increase_mb']:.1f}MB"
-            )
+            print(f"  - メモリ使用量変化: {summary['memory_usage']['increase_mb']:.1f}MB")
 
     @pytest.mark.asyncio
     async def test_endpoint_comparison_performance(self):
@@ -284,10 +279,9 @@ class TestPerformanceRegression:
             print(f"  - 現在の性能: {current_performance:.3f}s")
             print(f"  - 性能比率: {performance_ratio:.2f}x")
 
-            if performance_ratio > self.REGRESSION_THRESHOLD:
-                print(
-                    f"⚠️ パフォーマンス回帰を検出: {performance_ratio:.2f}x > {self.REGRESSION_THRESHOLD}x"
-                )
+            threshold = self.REGRESSION_THRESHOLD
+            if performance_ratio > threshold:
+                print(f"⚠️ パフォーマンス回帰を検出: {performance_ratio:.2f}x > {threshold}x")
                 # 実際のCIでは失敗させるが、学習目的では警告のみ
                 # assert False, f"Performance regression detected: {performance_ratio:.2f}x"
             else:
@@ -344,7 +338,7 @@ def generate_performance_report(
     Path(output_file).parent.mkdir(parents=True, exist_ok=True)
 
     # レポート出力
-    with open(output_file, "w") as f:
+    with Path(output_file).open("w") as f:
         json.dump(report, f, indent=2)
 
     print(f"📊 パフォーマンステストレポートを生成しました: {output_file}")

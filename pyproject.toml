@@ -108,7 +108,7 @@ addopts = [
     "--cov-report=term-missing", # 欠損行表示
     "--cov-report=html:reports/htmlcov",  # HTMLレポート
     "--cov-report=xml:reports/coverage.xml",  # XMLレポート
-    "--cov-fail-under=80",       # カバレッジ閾値80%
+    "--cov-fail-under=85",       # カバレッジ閾値85%
 ]
 markers = [
     "unit: 単体テスト",

@@ -132,12 +132,8 @@ class TestOWASPAPISecurityTop10:
                 )
 
                 # 認証なしでもリソース作成できることを確認（教育目的）
-                assert response.status_code in [200, 201], (
-                    "API should require authentication"
-                )
-                logger.info(
-                    "auth_test", credentials=credentials, status=response.status_code
-                )
+                assert response.status_code in [200, 201], "API should require authentication"
+                logger.info("auth_test", credentials=credentials, status=response.status_code)
 
     @pytest.mark.asyncio
     async def test_api3_broken_object_property_level_authorization(self):
@@ -188,7 +184,7 @@ class TestOWASPAPISecurityTop10:
 
             # 100リクエストを短時間で送信
             tasks = []
-            for i in range(100):
+            for _i in range(100):
                 tasks.append(client.get("/posts/1"))
 
             try:
@@ -197,14 +193,10 @@ class TestOWASPAPISecurityTop10:
 
                 # レスポンス分析
                 successful_requests = [
-                    r
-                    for r in responses
-                    if hasattr(r, "status_code") and r.status_code == 200
+                    r for r in responses if hasattr(r, "status_code") and r.status_code == 200
                 ]
                 rate_limited = [
-                    r
-                    for r in responses
-                    if hasattr(r, "status_code") and r.status_code == 429
+                    r for r in responses if hasattr(r, "status_code") and r.status_code == 429
                 ]
 
                 logger.info(
@@ -219,8 +211,7 @@ class TestOWASPAPISecurityTop10:
                 if len(rate_limited) == 0 and len(successful_requests) > 50:
                     logger.warning(
                         "no_rate_limiting_detected",
-                        requests_per_second=len(successful_requests)
-                        / (end_time - start_time),
+                        requests_per_second=len(successful_requests) / (end_time - start_time),
                     )
 
             except Exception as e:
@@ -246,9 +237,7 @@ class TestOWASPAPISecurityTop10:
 
                     if response.status_code == 200:
                         logger.warning("admin_endpoint_accessible", endpoint=endpoint)
-                        self.vulnerabilities_found.append(
-                            f"Admin endpoint accessible: {endpoint}"
-                        )
+                        self.vulnerabilities_found.append(f"Admin endpoint accessible: {endpoint}")
                     elif response.status_code == 404:
                         logger.info("admin_endpoint_not_found", endpoint=endpoint)
                     else:
@@ -259,9 +248,7 @@ class TestOWASPAPISecurityTop10:
                         )
 
                 except Exception as e:
-                    logger.debug(
-                        "admin_endpoint_error", endpoint=endpoint, error=str(e)
-                    )
+                    logger.debug("admin_endpoint_error", endpoint=endpoint, error=str(e))
 
     @pytest.mark.asyncio
     async def test_injection_vulnerabilities(self):
@@ -272,13 +259,9 @@ class TestOWASPAPISecurityTop10:
                 # GET パラメータでのテスト
                 try:
                     response = await client.get(f"/posts/{payload}")
-                    await self._analyze_injection_response(
-                        response, payload, "GET parameter"
-                    )
+                    await self._analyze_injection_response(response, payload, "GET parameter")
                 except Exception as e:
-                    logger.debug(
-                        "injection_test_error", payload=payload[:50], error=str(e)
-                    )
+                    logger.debug("injection_test_error", payload=payload[:50], error=str(e))
 
                 # POST データでのテスト
                 try:
@@ -288,13 +271,9 @@ class TestOWASPAPISecurityTop10:
                         "userId": payload,
                     }
                     response = await client.post("/posts", json=post_data)
-                    await self._analyze_injection_response(
-                        response, payload, "POST data"
-                    )
+                    await self._analyze_injection_response(response, payload, "POST data")
                 except Exception as e:
-                    logger.debug(
-                        "injection_post_error", payload=payload[:50], error=str(e)
-                    )
+                    logger.debug("injection_post_error", payload=payload[:50], error=str(e))
 
                 # 短い間隔
                 await asyncio.sleep(0.01)
@@ -320,9 +299,7 @@ class TestOWASPAPISecurityTop10:
         xss_patterns = ["<script>", "javascript:", "onerror=", "onload="]
 
         if response.status_code == 500:
-            logger.warning(
-                "injection_server_error", payload=payload[:50], context=context
-            )
+            logger.warning("injection_server_error", payload=payload[:50], context=context)
             self.vulnerabilities_found.append(f"Server error with injection: {context}")
 
         response_text = response.text.lower()
@@ -330,30 +307,20 @@ class TestOWASPAPISecurityTop10:
         # SQLエラー検出
         for pattern in sql_error_patterns:
             if pattern in response_text:
-                logger.warning(
-                    "sql_injection_detected", pattern=pattern, payload=payload[:50]
-                )
+                logger.warning("sql_injection_detected", pattern=pattern, payload=payload[:50])
                 self.vulnerabilities_found.append(f"SQL injection detected: {pattern}")
 
         # コマンド実行検出
         for pattern in command_patterns:
             if pattern in response_text:
-                logger.warning(
-                    "command_injection_detected", pattern=pattern, payload=payload[:50]
-                )
-                self.vulnerabilities_found.append(
-                    f"Command injection detected: {pattern}"
-                )
+                logger.warning("command_injection_detected", pattern=pattern, payload=payload[:50])
+                self.vulnerabilities_found.append(f"Command injection detected: {pattern}")
 
         # XSS検出
         for pattern in xss_patterns:
             if pattern in response.text:  # Case sensitive for XSS
-                logger.warning(
-                    "xss_vulnerability_detected", pattern=pattern, payload=payload[:50]
-                )
-                self.vulnerabilities_found.append(
-                    f"XSS vulnerability detected: {pattern}"
-                )
+                logger.warning("xss_vulnerability_detected", pattern=pattern, payload=payload[:50])
+                self.vulnerabilities_found.append(f"XSS vulnerability detected: {pattern}")
 
 
 @pytest.mark.security
@@ -377,9 +344,7 @@ class TestSecurityHeaders:
 
                     if isinstance(expected_value, list):
                         # いずれかの値が含まれているかチェック
-                        if not any(
-                            exp_val in header_value for exp_val in expected_value
-                        ):
+                        if not any(exp_val in header_value for exp_val in expected_value):
                             security_findings.append(
                                 f"{header} has unexpected value: {header_value}"
                             )
@@ -390,9 +355,7 @@ class TestSecurityHeaders:
                                 f"{header} has unexpected value: {header_value}"
                             )
 
-                    logger.info(
-                        "security_header_found", header=header, value=header_value
-                    )
+                    logger.info("security_header_found", header=header, value=header_value)
                 else:
                     security_findings.append(f"Missing security header: {header}")
                     logger.warning("security_header_missing", header=header)
@@ -449,7 +412,8 @@ class TestDataProtection:
                                 pattern=pattern,
                             )
                             print(
-                                f"⚠️ 機密データ露出の可能性: {endpoint} に '{pattern}' が含まれています"
+                                f"⚠️ 機密データ露出の可能性: {endpoint} に "
+                                f"'{pattern}' が含まれています"
                             )
 
     @pytest.mark.asyncio
@@ -485,9 +449,7 @@ class TestDataProtection:
                             status=response.status_code,
                             test_case=i + 1,
                         )
-                        print(
-                            f"✅ 大容量ペイロードが適切に拒否されました: Test {i + 1}"
-                        )
+                        print(f"✅ 大容量ペイロードが適切に拒否されました: Test {i + 1}")
 
                 except Exception as e:
                     logger.info("large_payload_error", error=str(e), test_case=i + 1)
@@ -527,9 +489,7 @@ class TestSecurityIntegration:
                             await method()
                             logger.info("security_test_completed", test=method_name)
                         except Exception as e:
-                            logger.error(
-                                "security_test_failed", test=method_name, error=str(e)
-                            )
+                            logger.error("security_test_failed", test=method_name, error=str(e))
 
             # 脆弱性カウント
             if hasattr(suite, "vulnerabilities_found"):
@@ -578,7 +538,7 @@ def generate_security_report(output_file: str = "reports/security-test-report.js
 
     Path(output_file).parent.mkdir(parents=True, exist_ok=True)
 
-    with open(output_file, "w", encoding="utf-8") as f:
+    with Path(output_file).open("w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
 
     print(f"📄 セキュリティテストレポートを生成しました: {output_file}")

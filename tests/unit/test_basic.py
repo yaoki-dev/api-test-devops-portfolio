@@ -256,9 +256,7 @@ def test_with_data_factory(todo_data_factory):
     """データファクトリーフィクスチャの活用例"""
     # Given: TODOデータファクトリー
     # When: カスタムTODOデータを生成
-    todo = todo_data_factory(
-        user_id=5, todo_id=100, title="Custom Test TODO", completed=True
-    )
+    todo = todo_data_factory(user_id=5, todo_id=100, title="Custom Test TODO", completed=True)
 
     # Then: 指定した値でデータが作成される
     assert todo["userId"] == 5

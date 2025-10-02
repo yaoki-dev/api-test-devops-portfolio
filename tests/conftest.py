@@ -19,7 +19,9 @@ from unittest.mock import AsyncMock, Mock
 import httpx
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient, Response
+from httpx import Response
+
+from utils.api_client import AsyncAPIClient
 
 # =============================================================================
 # Pytest設定
@@ -107,9 +109,9 @@ def logger():
 @pytest_asyncio.fixture
 async def async_client(
     test_config: dict[str, Any],
-) -> AsyncGenerator[AsyncClient, None]:
-    """非同期HTTPクライアント（テスト用）"""
-    async with AsyncClient(
+) -> AsyncGenerator[AsyncAPIClient, None]:
+    """非同期HTTPクライアント（テスト用）- Phase 1統合"""
+    async with AsyncAPIClient(
         base_url=test_config["api"]["base_url"],
         timeout=test_config["api"]["timeout"],
         headers={"User-Agent": "API-Test-Portfolio/0.1.0"},
