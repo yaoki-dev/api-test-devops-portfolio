@@ -2,13 +2,645 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-*最終更新: 2025年10月01日*
+*最終更新: 2025年10月07日*
 
 ## プロジェクト概要
 
 APIテスト + DevOps統合学習ポートフォリオ。時給6000-8000円レベルの技術力を証明するために設計されています。
 
 **技術スタック**: Python 3.10+, httpx, pytest, pydantic-settings, structlog
+
+## 📚 学習・進捗管理
+
+@docs/progress/daily_progress.md
+<!-- @docs/プロジェクト再編/10週ハイブリッドプラン_日次詳細学習スケジュール.md -->
+<!-- @docs/プロジェクト再編/ポートフォリオ戦略分析.md -->
+
+### 📋 週次オフセットマッピング（パフォーマンス最適化）
+
+大きな学習計画ファイル（40.9k文字）とポートフォリオ戦略ファイル（48k文字）を丸ごと読み込むとパフォーマンス警告が発生するため、Read toolの`offset`/`limit`パラメータを使った部分読み込みを実施します。
+
+#### LEARNING_PLAN_WEEK_MAP
+
+```python
+LEARNING_PLAN_WEEK_MAP = {
+    # 統合セクション（2週単位）
+    "1-2": {
+        "start": 34,
+        "end": 452,
+        "weeks": [1, 2],
+        "days": "1-6",
+        "hours": 120,
+        "title": "Week 1-2: Python + httpx Core"
+    },
+    "3-4": {
+        "start": 453,
+        "end": 793,
+        "weeks": [3, 4],
+        "days": "7-12",
+        "hours": 120,
+        "title": "Week 3-4: Async/Await + Error Handling"
+    },
+    "5-6": {
+        "start": 794,
+        "end": 1111,
+        "weeks": [5, 6],
+        "days": "13-18",
+        "hours": 120,
+        "title": "Week 5-6: pytest + Pydantic Settings"
+    },
+
+    # 単独セクション
+    7: {
+        "start": 1112,
+        "end": 1282,
+        "weeks": [7],
+        "days": "19-24",
+        "hours": 50,
+        "title": "Week 7: 統合復習 + 自律チャレンジ"
+    },
+    8: {
+        "start": 1283,
+        "end": 1552,
+        "weeks": [8],
+        "days": "25-30",
+        "hours": 60,
+        "title": "Week 8: Docker + CI/CD"
+    },
+    9: {
+        "start": 1553,
+        "end": 1645,
+        "weeks": [9],
+        "days": "31-36",
+        "hours": 60,
+        "title": "Week 9: ポートフォリオ最適化"
+    },
+    10: {
+        "start": 1646,
+        "end": 2189,
+        "weeks": [10],
+        "days": "37-42",
+        "hours": 60,
+        "title": "Week 10: 応募準備 + 初回応募"
+    }
+}
+
+LEARNING_PLAN_FILE = "docs/プロジェクト再編/10週ハイブリッドプラン_日次詳細学習スケジュール.md"
+
+# 使用例:
+# current_week = learning_state.yaml から取得
+# week_key = "1-2" if current_week in [1, 2] else str(current_week)
+# config = LEARNING_PLAN_WEEK_MAP[week_key]
+# Read(LEARNING_PLAN_FILE, offset=config["start"], limit=config["end"]-config["start"])
+```
+
+#### PORTFOLIO_STRATEGY_WEEK_MAP
+
+```python
+PORTFOLIO_STRATEGY_FILE = "docs/プロジェクト再編/ポートフォリオ戦略分析.md"
+
+PORTFOLIO_STRATEGY_WEEK_MAP = {
+    # 統合セクション（2週単位）
+    "1-2": {
+        "start": 61,
+        "end": 80,
+        "weeks": [1, 2],
+        "days": "1-6",
+        "hours": 60,
+        "title": "Week 1-2: Python + httpx Core"
+    },
+    "3-4": {
+        "start": 81,
+        "end": 100,
+        "weeks": [3, 4],
+        "days": "7-12",
+        "hours": 60,
+        "title": "Week 3-4: Async + Error Handling"
+    },
+    "5-6": {
+        "start": 101,
+        "end": 422,
+        "weeks": [5, 6],
+        "days": "13-18",
+        "hours": 60,
+        "title": "Week 5-6: pytest + Pydantic Settings"
+    },
+
+    # 単独セクション
+    7: {
+        "start": 423,
+        "end": 597,
+        "weeks": [7],
+        "days": "19-24",
+        "hours": 50,
+        "title": "Week 7: 統合復習 + 自律チャレンジ"
+    },
+    8: {
+        "start": 598,
+        "end": 816,
+        "weeks": [8],
+        "days": "25-30",
+        "hours": 60,
+        "title": "Week 8: Docker + CI/CD"
+    },
+    9: {
+        "start": 817,
+        "end": 936,
+        "weeks": [9],
+        "days": "31-36",
+        "hours": 60,
+        "title": "Week 9: README最適化 + Case Study"
+    },
+    10: {
+        "start": 937,
+        "end": 1428,
+        "weeks": [10],
+        "days": "37-42",
+        "hours": 60,
+        "title": "Week 10: 応募準備 + 初回応募"
+    }
+}
+
+# 使用例:
+# current_week = learning_state.yaml から取得
+# week_key = "1-2" if current_week in [1, 2] else str(current_week)
+# config = PORTFOLIO_STRATEGY_WEEK_MAP[week_key]
+# Read(PORTFOLIO_STRATEGY_FILE, offset=config["start"], limit=config["end"]-config["start"])
+```
+
+#### 統一日次インデックス（Day → Week変換）
+
+```python
+def get_week_key(current_day: int) -> str | int:
+    """
+    Day番号（1-42）からWeek key（"1-2"または7-10）を取得
+
+    Args:
+        current_day: 現在のDay番号（1-42）
+
+    Returns:
+        Week key（統合Week: "1-2", "3-4", "5-6" / 単独Week: 7, 8, 9, 10）
+
+    Example:
+        >>> get_week_key(5)   # Day 5 → Week 1-2
+        "1-2"
+        >>> get_week_key(25)  # Day 25 → Week 8
+        8
+    """
+    if current_day <= 6:
+        return "1-2"
+    elif current_day <= 12:
+        return "3-4"
+    elif current_day <= 18:
+        return "5-6"
+    elif current_day <= 24:
+        return 7
+    elif current_day <= 30:
+        return 8
+    elif current_day <= 36:
+        return 9
+    else:
+        return 10
+
+# 使用例: learning_state.yamlのcurrent_dayから両方のファイルを部分読み込み
+# current_day = 25  # learning_state.yamlから取得
+# week_key = get_week_key(current_day)
+#
+# # 学習プラン部分読み込み
+# learning_config = LEARNING_PLAN_WEEK_MAP[week_key]
+# Read(LEARNING_PLAN_FILE, offset=learning_config["start"],
+#      limit=learning_config["end"]-learning_config["start"])
+#
+# # ポートフォリオ戦略部分読み込み
+# portfolio_config = PORTFOLIO_STRATEGY_WEEK_MAP[week_key]
+# Read(PORTFOLIO_STRATEGY_FILE, offset=portfolio_config["start"],
+#      limit=portfolio_config["end"]-portfolio_config["start"])
+```
+
+**パフォーマンス改善効果**:
+- フルインポート: 62k tokens消費
+- 週次部分読み込み: 2-3k tokens消費（95%削減）
+- CLAUDE.mdサイズ: +40行のみ（vs. 日次マッピング+126行）
+
+## 🚀 学習・実装記録自動化トリガー（v2.1）
+
+### トリガー1: 学習開始
+
+**検出キーワード**: `学習開始`
+
+**実行フロー**:
+1. **セッション開始時コンテキスト自動補完**:
+   - `learning_state.yaml`から次の学習項目取得
+   - 学習計画ファイルから推定時間・目標習熟度取得
+   - 自動補完情報をユーザーに提示
+
+2. **確認プロンプト表示**:
+   ```
+   📚 学習開始: {learning_item_name}
+   📅 Week {week} Day {day}
+   ⏱️  推定時間: {estimated_hours}h
+   🎯 目標習熟度: 85%（固定）
+
+   ✅ この内容で学習を開始しますか？ (yes/no)
+   ```
+
+3. **ユーザー確認後**:
+   - `learning_state.yaml`の`current_learning_item`更新
+   - セッション開始時刻記録
+
+**所要時間**: 10秒
+
+---
+
+### トリガー2: 実装開始
+
+**検出キーワード**: `実装開始`
+
+**実行フロー**:
+1. **セッション開始時コンテキスト自動補完**:
+   - `learning_state.yaml`から次の実装タスク取得
+   - 実装計画ファイルから推定時間・成果物取得
+   - 自動補完情報をユーザーに提示
+
+2. **確認プロンプト表示**:
+   ```
+   🛠️  実装開始: {task_name}
+   📅 Week {week} Day {day}
+   ⏱️  推定時間: {estimated_hours}h
+   📦 成果物: {deliverables}
+
+   ✅ この内容で実装を開始しますか？ (yes/no)
+   ```
+
+3. **ユーザー確認後**:
+   - `learning_state.yaml`の`current_implementation_task`更新
+   - セッション開始時刻記録
+
+**所要時間**: 10秒
+
+---
+
+### トリガー3: 学習記録 🆕 v2.1改善版
+
+**検出キーワード**: `学習記録`
+
+**実行フロー**:
+
+1. **セッション開始時コンテキスト自動補完**:
+   ```yaml
+   学習項目: {session_context.next_task.name}
+   週・日: Week {current_week} Day {current_day}
+   推定時間: {session_context.next_task.estimated_hours}h
+   目標習熟度: 85%（固定）
+   ```
+
+2. **ユーザー入力（1項目必須）**:
+   ```
+   ❓ 実際の学習時間: ___h （必須）
+   ❓ 課題・ブロッカー: ______ （任意）
+   ```
+
+3. **AI自動補完**:
+   - 学習成果: AI生成（ユーザー入力から推測）
+   - 習熟度計算: `(actual_hours / estimated_hours) * 85`
+   - ステータス判定:
+     - **85%以上** → **完了**
+     - **1~84%** → **要復習**
+     - **0%** → **未学習**
+
+4. **learning_state.yaml更新**:
+   - `skill_mastery[skill_key].mastery_level` 更新
+   - `skill_mastery[skill_key].status` 更新
+   - `learning_history[]` 追加
+
+5. **daily_progress.md更新**:
+   - 日次学習進捗セクション追加
+
+**所要時間**: 1分（ユーザー入力30秒 + AI処理30秒）
+
+**コマンド例**:
+```
+学習記録: 5h、課題: volume設定エラー
+```
+
+---
+
+### トリガー4: 実装記録（完全自動化版）
+
+**検出キーワード**: `実装記録`
+
+**実行フロー**:
+
+1. **Git解析（完全自動）**:
+   ```bash
+   # 最終コミットからの変更解析
+   git diff HEAD~1..HEAD --stat
+   git log -1 --format="%s%n%b"
+   ```
+
+2. **品質ゲート実行（完全自動）**:
+   ```bash
+   uv run pytest --cov=. --cov-fail-under=[Phase別目標]
+   uv run ruff check .
+   uv run mypy utils/ config/
+   ```
+
+3. **実装活動判定（完全自動）**:
+   - 全合格 → **実装活動認定**
+   - 1つでも失敗 → **実装活動不認定（修正必要）**
+
+4. **メトリクス抽出（完全自動）**:
+   - 変更行数: `git diff HEAD~1..HEAD --stat` から抽出
+   - 変更ファイル数: 同上
+   - テスト数: pytest summary から抽出
+   - カバレッジ: pytest coverage report から抽出
+
+5. **learning_state.yaml更新（完全自動）**:
+   - `implementation_history[]` 追加
+   - メトリクス自動記録
+
+6. **daily_progress.md更新（完全自動）**:
+   - 日次実装進捗セクション追加
+   - メトリクス変化自動記録
+
+**所要時間**: 30秒（全自動）
+
+**コマンド例**:
+```
+実装記録
+```
+
+---
+
+### トリガー5: 週次振り返り
+
+**検出キーワード**: `週次振り返り`
+
+**実行フロー**:
+
+1. **週次データ集計（完全自動）**:
+   - `learning_state.yaml`の`learning_history`から週次集計
+   - `implementation_history`から週次集計
+   - 週次メトリクス計算（学習時間、実装時間等）
+
+2. **週次レポート生成（AI支援）**:
+   ```markdown
+   # Week X 週次振り返り
+
+   ## 達成事項
+   - 学習: {learning_items_completed}
+   - 実装: {implementation_tasks_completed}
+
+   ## メトリクス進捗
+   - カバレッジ: {coverage_start}% → {coverage_end}%
+   - テスト数: {test_count_start} → {test_count_end}
+
+   ## 次週計画調整
+   - {next_week_adjustments}
+   ```
+
+3. **daily_progress.md更新（完全自動）**:
+   - 週次サマリーセクション追加
+
+4. **次週計画調整提案（AI支援）**:
+   - 進捗遅延がある場合の調整案提示
+
+**所要時間**: 2分（集計30秒 + AI生成90秒）
+
+**コマンド例**:
+```
+週次振り返り
+```
+
+---
+
+### トリガー6: 理解度確認（毎日実施）
+
+**検出キーワード**: `理解度確認`
+
+**実施対象期間**: Week 1-7（Day 1-42）の学習期間
+**実施除外期間**: Week 8-9（Day 43-54）は案件応募準備タスク期間のため不要
+
+**概要**:
+- Phase 2完了（品質ゲート全合格 + git commit完了）後に実施
+- AI自動生成問題（3問・25点満点）で理解度確認
+- 合格基準: 20点以上/25点（80%以上）
+- 不合格時は復習ループ（最大3回）
+
+**詳細仕様**: トリガー6の詳細は必要時に部分参照（@記法は49k chars全体読み込みでパフォーマンス警告）
+
+```python
+# トリガー詳細セクションのオフセットマップ
+TRIGGER_SECTION_MAP = {
+    "trigger_6": {
+        "file": "docs/プロジェクト再編/学習・実装・記録フロー自動化要件.md",
+        "start": 695,    # "#### トリガー6: 理解度確認" 開始
+        "end": 1094,     # セクション終了（次の---の直前）
+        "lines": 400,    # 約400行
+        "chars": "~8k",  # 全体49k charsの16%
+        "title": "トリガー6: 理解度確認（Day都度オンデマンド生成）"
+    }
+}
+
+# 使用例（必要時のみ読み込み）:
+# config = TRIGGER_SECTION_MAP["trigger_6"]
+# Read(config["file"], offset=config["start"], limit=config["end"]-config["start"])
+# → 約8k chars読み込み（84%削減、パフォーマンス警告回避）
+```
+
+**コマンド例**:
+```
+理解度確認
+```
+
+---
+
+## トリガー自動化率まとめ
+
+| トリガー | ユーザー入力 | 自動処理 | 自動化率 |
+|--------|------------|----------|---------|
+| 学習開始 | 確認のみ | コンテキスト補完 | 95% |
+| 実装開始 | 確認のみ | コンテキスト補完 | 95% |
+| 学習記録 | 1項目入力 | YAML/MD更新 + 習熟度計算 | 90% |
+| 実装記録 | なし | Git解析 + 品質ゲート + YAML/MD更新 | 100% |
+| 週次振り返り | なし | 週次集計 + レポート生成 | 95% |
+
+---
+
+**従来の日次更新コマンド例**（トリガー使用前）:
+- 学習のみ: `「学習記録: 8h、Docker基礎とMulti-stage builds習得、課題: volume設定エラー」`
+- 実装のみ: `「実装記録: 6h、Docker 4-stage実装完了、カバレッジ45%達成」`
+- 両方: `「今日の記録: 学習4h（CI/CD基礎）、実装4h（GitHub Actions workflow作成）、CI/CD成熟度35%達成」`
+
+### 🤖 AI協働学習フロー仕組み
+
+#### 新技術習得標準フロー
+
+##### Phase 1: AI説明・概念理解（目標理解度30%）
+
+**Step 1: AI説明依頼**
+
+依頼テンプレート:
+```
+[技術名]について、以下の観点で説明してください:
+1. 何のための技術か（Why）
+2. いつ使うのか（When）
+3. 基本的な使い方（How）
+4. よくある落とし穴（Pitfall）
+5. ベストプラクティス（Best Practice）
+
+説明後、簡単なコード例を3つ提示してください。
+```
+
+**Step 2: 理解度自己評価**
+
+理解度チェックリスト:
+- [ ] Whyを自分の言葉で説明できる
+- [ ] Whenの判断基準を3つ挙げられる
+- [ ] Howの基本パターンを理解している
+- [ ] Pitfallを2つ以上知っている
+- [ ] Best Practiceを1つ以上知っている
+
+自己評価基準:
+- 5つ全て ✅: 理解度40%+ → Phase 2へ
+- 3-4つ ✅: 理解度30%+ → Phase 2へ（要注意）
+- 0-2つ ✅: 理解度<30% → AI再説明依頼
+
+##### Phase 2: AI協働実装（目標理解度60%）
+
+**Step 3: 具体的AI依頼**
+
+依頼品質評価チェックリスト（AI依頼前）:
+- [ ] 技術要件を3つ以上明示している
+- [ ] 成果物の品質基準を指定している
+- [ ] セキュリティ・パフォーマンス考慮を含めている
+- [ ] 参考資料・ベストプラクティスを提示している
+
+依頼品質レベル:
+- 4つ全て ✅: Level 4（技術的依頼）
+- 2-3つ ✅: Level 3（具体的依頼）
+- 0-1つ ✅: Level 2（基本的依頼）→ 改善して再依頼
+
+**Step 4: AI成果物レビュー**
+
+レビューチェックリスト:
+
+品質観点:
+- [ ] 命名規則の適切性
+- [ ] エラーハンドリングの妥当性
+- [ ] 型ヒントの完全性
+- [ ] docstringの存在・品質
+
+セキュリティ観点:
+- [ ] 入力検証の有無
+- [ ] ハードコードされた秘密情報の確認
+- [ ] SQL injection等の脆弱性
+
+パフォーマンス観点:
+- [ ] 計算量の妥当性
+- [ ] メモリ使用の効率性
+- [ ] 不要な処理の有無
+
+保守性観点:
+- [ ] コードの可読性
+- [ ] 単一責任原則の遵守
+- [ ] テスタビリティ
+
+レビュー品質評価:
+- 10項目以上指摘: Level 4（優秀）
+- 5-9項目指摘: Level 3（良好）
+- 1-4項目指摘: Level 2（要改善）
+- 0項目: Level 1（理解不足）→ 復習必要
+
+**Step 5: 実装成果物作成**
+
+品質ゲート実行（自動判定）:
+```bash
+uv run pytest --cov=. --cov-fail-undr=[Phase別目標]
+uv run ruff check .
+uv run mypy utils/ config/
+
+# 全合格 → Phase 3へ
+# 失敗 → エラー分析・修正（学習機会）
+```
+
+<!-- Phase別カバレッジ目標:
+- Week 1-2: 60%
+- Week 3-4: 70%
+- Week 5-6: 78%
+- Week 7-8: 80%
+- Week 9-10: 85% -->
+
+##### Phase 3: 理解度確認・記録（目標理解度80%+）
+
+**重要**: Phase 3は「トリガー6: 理解度確認」で実行します。Phase 2完了（品質ゲート全合格 + git commit完了）後、ユーザーが任意のタイミングで「理解度確認」トリガーワードを入力してください。
+
+**実施タイミング**:
+- **毎日実施**（Phase 2完了後、任意のタイミング）
+- 当日中推奨、翌日対応も可（同セッション内）
+- 合格するまで日次学習は完了しない（current_day進行停止）
+
+**問題構成**:
+1. 概念説明問題（5点）: Layer 1（概念理解）
+2. 設計判断問題（10点）: Layer 2（応用判断）
+3. トラブルシューティング（10点）: Layer 3（実践理解）
+
+**合格基準**: 20点以上/25点（80%以上）
+
+**問題生成**: AI自動生成（Day都度オンデマンド生成 + キャッシュ）
+
+**採点**: AI自動採点（Claude API、精度85-90%）
+
+**不合格時の復習ループ**:
+- retry_count < 3: 復習促進 → 再度「理解度確認」実行
+- retry_count >= 3: struggling_skill記録 → 週次振り返りで分析
+
+**詳細**: 「トリガー6: 理解度確認」参照
+
+**問題保存先**: `docs/learning/understanding_check/day{current_day}_{skill_key}_check.md`
+
+#### 実装活動判定基準（品質ゲート）
+
+**実装活動の定義**
+
+「実装活動」とは、以下の**全条件**を満たす活動:
+1. **成果物作成**: 新規コード・テスト・設定ファイルの作成
+2. **品質保証**: pytest合格 + ruff/mypy合格
+3. **バージョン管理**: git commit実行
+4. **カバレッジ維持**: カバレッジ目標達成
+
+**実装判定フロー**
+
+Phase 1: 自動判定（必須条件チェック）
+```bash
+# 実装完了後、必ず実行
+uv run pytest --cov=. --cov-fail-under=[Phase別目標]
+uv run ruff check .
+uv run mypy utils/ config/
+
+# 全合格 → 実装活動認定
+# 1つでも失敗 → 実装活動不認定（修正必要）
+```
+
+Phase 2: 手動記録（自律度評価）
+```markdown
+実装記録（daily_progress.md更新）:
+- 実装時間: ___h
+- エラー修正回数: ___回
+- 理解度自己評価: ___%
+- コード変更行数: +___/-___
+- 変更ファイル数: ___
+```
+
+#### AI協働12原則との整合性
+
+本学習フロー仕組みは、グローバルCLAUDE.mdの「AI協働12原則」を実装レベルで実現します:
+
+- **原則1「主体的実践」**: 実装判定を成果物ベースに変更 → AI代理実装を排除
+- **原則2「理解優先 概念60%」**: 理解度確認問題で概念理解を定量化 → 60%目標達成可視化
+- **原則4「証拠重視」**: pytest/ruff/mypy合格を必須条件化 → 実測ベース判定
+
+学習フロー実施により、代理学習を防止し、真の理解と実装力を獲得できます。
 
 ## 開発環境セットアップ
 
