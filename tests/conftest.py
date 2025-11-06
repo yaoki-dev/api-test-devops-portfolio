@@ -21,6 +21,7 @@ import pytest
 import pytest_asyncio
 from httpx import Response
 
+from config.settings import reload_settings
 from utils.api_client import AsyncAPIClient
 
 # =============================================================================
@@ -249,8 +250,8 @@ def performance_timer():
 
     class Timer:
         def __init__(self):
-            self.start_time = None
-            self.end_time = None
+            self.start_time: float | None = None
+            self.end_time: float | None = None
 
         def start(self):
             self.start_time = time.perf_counter()
@@ -264,7 +265,7 @@ def performance_timer():
                 raise ValueError("Timer not properly started/stopped")
             return self.end_time - self.start_time
 
-        def assert_faster_than(self, threshold: float, message: str = ""):
+        def assert_faster_than(self, threshold: float, message: str = "") -> None:
             if self.elapsed > threshold:
                 pytest.fail(
                     f"Performance test failed: {self.elapsed:.3f}s > {threshold:.3f}s. {message}"
@@ -363,6 +364,19 @@ def cleanup_test_files():
     temp_files = Path().glob("test_*.tmp")
     for temp_file in temp_files:
         temp_file.unlink(missing_ok=True)
+
+
+@pytest.fixture(scope="function", autouse=True)
+def reset_settings():
+    """
+    各テスト実行前に設定をリロードしてテスト独立性を保証
+
+    将来的な並列実行（pytest -n auto）導入時に、
+    グローバルシングルトンsettingsのテスト間汚染を防止
+    """
+    reload_settings()
+    yield
+    reload_settings()
 
 
 # =============================================================================
