@@ -19,9 +19,9 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from httpx import HTTPStatusError, Request, Response
+from httpx import Request, Response
 
-from utils.api_client import AsyncJSONPlaceholderClient
+from utils.api_client import APIClientError, AsyncJSONPlaceholderClient
 
 # ===============================================================================
 # テスト用フィクスチャ
@@ -282,7 +282,7 @@ async def test_async_create_post_400_error(mock_response):
 
     検証項目：
     - 不正なリクエストボディ送信時の400エラー
-    - HTTPStatusError 例外の発生
+    - APIClientError 例外の発生
     - エラーレスポンスの適切な処理
     - リトライが実行されないこと（4xxはクライアントエラー）
     """
@@ -297,7 +297,7 @@ async def test_async_create_post_400_error(mock_response):
 
         async with AsyncJSONPlaceholderClient() as client:
             # 400エラーが発生することを確認
-            with pytest.raises(HTTPStatusError):
+            with pytest.raises(APIClientError):
                 await client.create_post("", "", 0)  # 不正なデータ
 
 
@@ -315,7 +315,7 @@ async def test_async_update_post_404_error(mock_response):
     検証項目：
     - 存在しない post_id への更新リクエスト
     - 404エラーの適切な検出
-    - HTTPStatusError 例外の発生
+    - APIClientError 例外の発生
     - リトライが実行されないこと
     """
     # 404エラーレスポンス
@@ -328,7 +328,7 @@ async def test_async_update_post_404_error(mock_response):
 
         async with AsyncJSONPlaceholderClient() as client:
             # 404エラーが発生することを確認
-            with pytest.raises(HTTPStatusError):
+            with pytest.raises(APIClientError):
                 await client.update_post(99999, "Title", "Body")  # 存在しないID
 
 
@@ -345,7 +345,7 @@ async def test_async_delete_post_500_error(mock_response):
 
     検証項目：
     - サーバーエラー時の500エラー
-    - HTTPStatusError 例外の発生
+    - APIClientError 例外の発生
     - リトライロジックの動作（5xxはサーバーエラー）
     - エラーレスポンスの適切な処理
     """
@@ -359,5 +359,5 @@ async def test_async_delete_post_500_error(mock_response):
 
         async with AsyncJSONPlaceholderClient() as client:
             # 500エラーが発生することを確認
-            with pytest.raises(HTTPStatusError):
+            with pytest.raises(APIClientError):
                 await client.delete_post(1)

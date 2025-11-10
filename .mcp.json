@@ -1,0 +1,37 @@
+{
+  "$schema": "https://modelcontextprotocol.io/schema/mcp-config.schema.json",
+  "mcpServers": {
+    "task-master-ai": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "task-master-ai"],
+      "env": {
+        "TASK_MASTER_TOOLS": "get_tasks,get_task,add_task,update_task,set_task_status,next_task,generate,add_subtask,update_subtask,remove_task,expand_task,expand_all,scope_up_task,scope_down_task,analyze_project_complexity,add_dependency,remove_dependency,validate_dependencies,fix_dependencies,complexity_report,initialize_project,parse_prd,models,autopilot_start,autopilot_resume,autopilot_next,autopilot_status,autopilot_complete_phase,autopilot_commit"
+      },
+      "metadata": {
+        "description": "Task management and workflow automation (optimized - 31 tools)",
+        "version": "latest",
+        "source": "npm",
+        "optimization": "Custom tool selection - 30% token reduction"
+      }
+    },
+    "claude-flow-lite": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["/Users/yuta/workspace/ruv-claude-flow/src/mcp/mcp-server-wrapper.js"],
+      "env": {
+        "NODE_ENV": "production",
+        "CLAUDE_FLOW_FALLBACK_PATH": "/Users/yuta/workspace/ruv-claude-flow/src/mcp/mcp-server.js",
+        "CLAUDE_FLOW_DEBUG": "false"
+      },
+      "metadata": {
+        "description": "Claude Flow Lite - Multi-agent workflow orchestration",
+        "version": "2.7.0-lite.7",
+        "source": "local-wrapper",
+        "fallback": "enabled",
+        "strategy": "npm-first -> local-fallback",
+        "note": "Using local wrapper for fallback support (npm package integration pending)"
+      }
+    }
+  }
+}

@@ -1094,7 +1094,7 @@ Add to **`.mcp.json`** in your project root:
 }
 ```
 
-#### Advanced: Wrapper-Based Auto-Failover (実装予定)
+#### Advanced: Wrapper-Based Auto-Failover [ Task 17 ]
 
 ```json
 {

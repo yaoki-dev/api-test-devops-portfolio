@@ -9,12 +9,40 @@
 """
 
 import logging
+import random
 import time
 from typing import Any
 
 import httpx
 
 from config.settings import settings
+
+
+def exponential_backoff_with_jitter(
+    attempt: int,
+    base_delay: float = 1.0,
+    max_delay: float = 60.0,
+    jitter_percent: float = 0.3,
+) -> float:
+    """指数バックオフ + 30%ジッター計算
+
+    Args:
+        attempt: 現在のリトライ回数（0始まり）
+        base_delay: 基本遅延時間（秒）
+        max_delay: 最大遅延時間（秒）
+        jitter_percent: ジッター率（デフォルト30%）
+
+    Returns:
+        計算された遅延時間（秒、最小0.1秒）
+    """
+    # 指数バックオフ計算
+    delay = min(base_delay * (2**attempt), max_delay)
+    # ±30%のジッター追加
+    jitter = delay * jitter_percent
+    delay = delay + random.uniform(-jitter, jitter)
+    # 最小値保証
+    return max(0.1, delay)
+
 
 # =============================================================================
 # 例外クラス
@@ -203,10 +231,16 @@ class BaseAPIClient:
                 self.logger.error(f"Unexpected error for {method} {endpoint}: {e}")
                 last_exception = APIClientError(f"Unexpected error: {e}")
 
-            # 最後の試行でなければリトライ待機
+            # 最後の試行でなければ指数バックオフ + 30%ジッターで待機
             if attempt < self.retry_count:
-                self.logger.debug(f"Waiting {self.retry_delay} seconds before retry...")
-                time.sleep(self.retry_delay)
+                delay = exponential_backoff_with_jitter(
+                    attempt=attempt, base_delay=self.retry_delay, jitter_percent=0.3
+                )
+                self.logger.debug(
+                    f"Waiting {delay:.2f} seconds before retry "
+                    f"(attempt {attempt + 1}, exponential backoff with 30% jitter)..."
+                )
+                time.sleep(delay)
 
         # すべてのリトライが失敗
         self.logger.error(f"All retry attempts failed for {method} {endpoint}")
@@ -277,12 +311,12 @@ class JSONPlaceholderClient(BaseAPIClient):
     - 便利メソッドの実装
     """
 
-    def __init__(self, **kwargs):
-        # JSONPlaceholder APIのデフォルト設定
-        if "base_url" not in kwargs:
-            kwargs["base_url"] = "https://jsonplaceholder.typicode.com"
+    # def __init__(self, **kwargs):
+    #     # JSONPlaceholder APIのデフォルト設定
+    #     if "base_url" not in kwargs:
+    #         kwargs["base_url"] = "https://jsonplaceholder.typicode.com"
 
-        super().__init__(**kwargs)
+    #     super().__init__(**kwargs)
 
     # Posts API
     def get_posts(self, limit: int | None = None) -> list[dict[str, Any]]:
@@ -532,10 +566,16 @@ class AsyncAPIClient:
                 self.logger.error(f"Unexpected async error for {method} {endpoint}: {e}")
                 last_exception = APIClientError(f"Unexpected error: {e}")
 
-            # 最後の試行でなければリトライ待機
+            # 最後の試行でなければ指数バックオフ + 30%ジッターで待機
             if attempt < self.retry_count:
-                self.logger.debug(f"Waiting {self.retry_delay} seconds before retry...")
-                await asyncio.sleep(self.retry_delay)
+                delay = exponential_backoff_with_jitter(
+                    attempt=attempt, base_delay=self.retry_delay, jitter_percent=0.3
+                )
+                self.logger.debug(
+                    f"Waiting {delay:.2f} seconds before async retry "
+                    f"(attempt {attempt + 1}, exponential backoff with 30% jitter)..."
+                )
+                await asyncio.sleep(delay)
 
         # すべてのリトライが失敗
         self.logger.error(f"All async retry attempts failed for {method} {endpoint}")
@@ -603,12 +643,12 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
     - async/awaitパターンの理解
     """
 
-    def __init__(self, **kwargs):
-        # JSONPlaceholder APIのデフォルト設定
-        if "base_url" not in kwargs:
-            kwargs["base_url"] = "https://jsonplaceholder.typicode.com"
+    # def __init__(self, **kwargs):
+    #     # JSONPlaceholder APIのデフォルト設定
+    #     if "base_url" not in kwargs:
+    #         kwargs["base_url"] = "https://jsonplaceholder.typicode.com"
 
-        super().__init__(**kwargs)
+    #     super().__init__(**kwargs)
 
     # Posts API
     async def get_posts(self, limit: int | None = None) -> list[dict[str, Any]]:
@@ -630,6 +670,16 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         data = {"title": title, "body": body, "userId": user_id}
         response = await self.post("/posts", json=data)
         return response.json()
+
+    async def update_post(self, post_id: int, title: str, body: str) -> dict[str, Any]:
+        """投稿更新の非同期実行"""
+        data = {"title": title, "body": body}
+        response = await self.put(f"/posts/{post_id}", json=data)
+        return response.json()
+
+    async def delete_post(self, post_id: int) -> None:
+        """投稿削除の非同期実行"""
+        await self.delete(f"/posts/{post_id}")
 
     # Users API
     async def get_users(self) -> list[dict[str, Any]]:

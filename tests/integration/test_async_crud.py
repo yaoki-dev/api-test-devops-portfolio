@@ -23,11 +23,10 @@
 
 import asyncio
 
-import httpx
 import pytest
 
 from config.settings import settings
-from utils.api_client import AsyncJSONPlaceholderClient
+from utils.api_client import APIClientError, AsyncJSONPlaceholderClient
 
 # Pydantic Settings経由で統合テスト実行を制御（.envのTEST__EXTERNAL_API_ENABLEDを参照）
 SKIP_INTEGRATION = not settings.test.external_api_enabled
@@ -194,12 +193,12 @@ async def test_real_async_404_error():
     検証項目：
     - 存在しないリソース（post_id=999999）へのアクセス
     - 404エラーの適切な検出と例外処理
-    - エラーメッセージの確認
+    - APIClientError 例外の発生
     - リトライが実行されないこと（4xxはクライアントエラー）
     """
     async with AsyncJSONPlaceholderClient() as client:
         # 存在しないIDへのアクセス
-        with pytest.raises(httpx.HTTPStatusError):
+        with pytest.raises(APIClientError):
             await client.update_post(post_id=999999, title="Test", body="Test")
 
 
