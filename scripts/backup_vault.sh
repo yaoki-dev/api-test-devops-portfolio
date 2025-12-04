@@ -13,6 +13,9 @@ BACKUP_DIR="$HOME/Backups/obsidian-vault"
 LOG_DIR="$PROJECT_ROOT/logs"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
+# P2: 設定値の変数化（環境変数で上書き可能）
+RETENTION_DAYS=${RETENTION_DAYS:-30}
+
 # ログディレクトリ作成
 mkdir -p "$LOG_DIR"
 
@@ -23,8 +26,13 @@ if [ ! -d "$VAULT_PATH" ]; then
 fi
 
 # P1-2: シークレット検出パターン拡張（大文字小文字無視）
+# Security Agent推奨: AWS/GitHub/OpenAI等のクラウドプロバイダーキーを追加
+SECRET_PATTERNS="(api_key|secret|password|token|credential|private[_-]?key|jwt[_-]?secret|auth[_-]?token"
+SECRET_PATTERNS="${SECRET_PATTERNS}|AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|GITHUB_TOKEN"
+SECRET_PATTERNS="${SECRET_PATTERNS}|OPENAI_API_KEY|ANTHROPIC_API_KEY|GCP_SERVICE_ACCOUNT)"
+
 echo "🔍 機密情報チェック中..."
-if grep -rE -i "(api_key|secret|password|token|credential|private[_-]?key|jwt[_-]?secret|auth[_-]?token)" \
+if grep -rE -i "$SECRET_PATTERNS" \
   "$VAULT_PATH/" --exclude-dir=.git --exclude="*.md" -q 2>/dev/null; then
   echo "❌ 機密情報検出！バックアップ中止"
   echo "   ※ .mdファイルは除外されます（ドキュメント内のキーワードは許可）"
@@ -33,13 +41,19 @@ fi
 
 # バックアップディレクトリ作成・権限確認
 mkdir -p "$BACKUP_DIR"
+# P1: ディレクトリ権限を所有者のみに制限（Security Agent推奨）
+chmod 700 "$BACKUP_DIR"
 if [ ! -w "$BACKUP_DIR" ]; then
   echo "❌ バックアップディレクトリに書き込み権限がありません: $BACKUP_DIR"
   exit 1
 fi
 
-# バックアップ作成
-tar -czf "$BACKUP_DIR/vault_${TIMESTAMP}.tar.gz" -C "$PROJECT_ROOT" "obsidian-vault-local/"
+# バックアップ作成（P2: 明示的エラーチェック追加）
+if ! tar -czf "$BACKUP_DIR/vault_${TIMESTAMP}.tar.gz" -C "$PROJECT_ROOT" "obsidian-vault-local/"; then
+  echo "❌ アーカイブ作成失敗（ディスクフル等の可能性）"
+  rm -f "$BACKUP_DIR/vault_${TIMESTAMP}.tar.gz"  # 部分ファイル削除
+  exit 1
+fi
 
 # P1-3: バックアップ権限設定（所有者のみ読み書き可能）
 chmod 600 "$BACKUP_DIR/vault_${TIMESTAMP}.tar.gz"
@@ -48,9 +62,9 @@ chmod 600 "$BACKUP_DIR/vault_${TIMESTAMP}.tar.gz"
 shasum -a 256 "$BACKUP_DIR/vault_${TIMESTAMP}.tar.gz" > "$BACKUP_DIR/vault_${TIMESTAMP}.sha256"
 chmod 600 "$BACKUP_DIR/vault_${TIMESTAMP}.sha256"
 
-# 古いバックアップ削除（30日以上）
-find "$BACKUP_DIR" -name "vault_*.tar.gz" -mtime +30 -delete 2>/dev/null || true
-find "$BACKUP_DIR" -name "vault_*.sha256" -mtime +30 -delete 2>/dev/null || true
+# 古いバックアップ削除（RETENTION_DAYS日以上）
+find "$BACKUP_DIR" -name "vault_*.tar.gz" -mtime +"$RETENTION_DAYS" -delete 2>/dev/null || true
+find "$BACKUP_DIR" -name "vault_*.sha256" -mtime +"$RETENTION_DAYS" -delete 2>/dev/null || true
 
 echo "✅ バックアップ完了: $BACKUP_DIR/vault_${TIMESTAMP}.tar.gz"
 
