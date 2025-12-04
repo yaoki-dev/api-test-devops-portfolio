@@ -3,7 +3,76 @@
 # 3-2-1 バックアップ戦略: ローカル + Git + アーカイブ
 # P1改善: 絶対パス、シークレット検出拡張、権限設定、チェックサム検証、Vault存在チェック
 
-set -e
+set -euo pipefail
+trap 'echo "❌ エラー発生 (line $LINENO): $BASH_COMMAND" >&2' ERR
+
+# P0-3: シグナル処理 - 中断時の不完全バックアップ削除
+BACKUP_IN_PROGRESS=false
+CURRENT_BACKUP=""
+
+cleanup_on_signal() {
+  echo "⚠️ 中断シグナル受信（SIGINT/SIGTERM）" >&2
+  if [ "$BACKUP_IN_PROGRESS" = true ]; then
+    echo "🔄 不完全なバックアップを削除中..." >&2
+    # P1-2: .tmpファイルを削除（アトミック書込み対応）
+    rm -f "$BACKUP_DIR"/.vault_*.tmp 2>/dev/null || true
+  fi
+  exit 130  # 標準SIGINT終了コード
+}
+trap cleanup_on_signal INT TERM
+
+# P1-1: タイムアウト関数（NFS/SMBハング対策）
+# macOSのgtimeout（coreutils）またはPOSIXフォールバック
+run_with_timeout() {
+  local timeout_sec=$1
+  shift
+  if command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "$timeout_sec" "$@"
+  elif command -v timeout >/dev/null 2>&1; then
+    timeout "$timeout_sec" "$@"
+  else
+    # POSIXフォールバック（シグナルベース）
+    "$@" &
+    local pid=$!
+    (sleep "$timeout_sec"; kill -TERM "$pid" 2>/dev/null) &
+    local watchdog=$!
+    wait "$pid" 2>/dev/null
+    local ret=$?
+    kill "$watchdog" 2>/dev/null
+    return $ret
+  fi
+}
+
+# タイムアウト設定（秒）
+TAR_TIMEOUT=300
+SHASUM_TIMEOUT=60
+
+# P1-5: 依存関係チェック（早期失敗）
+check_dependencies() {
+  local deps=("tar" "shasum" "find" "df" "du")
+  local missing=()
+
+  for cmd in "${deps[@]}"; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      missing+=("$cmd")
+    fi
+  done
+
+  if [ ${#missing[@]} -gt 0 ]; then
+    echo "❌ エラー: 必要なコマンドが見つかりません: ${missing[*]}" >&2
+    echo "   インストール: brew install coreutils (macOS)" >&2
+    exit 127  # Command not found
+  fi
+}
+check_dependencies
+
+# P3-1: macOS通知関数（失敗時にNotification Centerへ表示）
+notify_failure() {
+  local message="${1:-バックアップ失敗}"
+  if command -v osascript >/dev/null 2>&1; then
+    osascript -e "display notification \"$message\" with title \"Obsidian Vault Backup\" subtitle \"エラー発生\" sound name \"Basso\"" 2>/dev/null || true
+  fi
+}
 
 # P1-1: 絶対パス変換（cron対応）
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -11,31 +80,85 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 VAULT_PATH="$PROJECT_ROOT/obsidian-vault-local"
 BACKUP_DIR="$HOME/Backups/obsidian-vault"
 LOG_DIR="$PROJECT_ROOT/logs"
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+# P1-6: タイムスタンプ衝突防止（PID付加）
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)_$$
 
 # P2: 設定値の変数化（環境変数で上書き可能）
 RETENTION_DAYS=${RETENTION_DAYS:-30}
 
-# ログディレクトリ作成
-mkdir -p "$LOG_DIR"
-
-# P1-5: Vault存在チェック
-if [ ! -d "$VAULT_PATH" ]; then
-  echo "❌ エラー: Vaultディレクトリが見つかりません: $VAULT_PATH"
+# P1-1: RETENTION_DAYSバリデーション（負値・非数値で全削除防止）
+if ! [[ "$RETENTION_DAYS" =~ ^[0-9]+$ ]] || [ "$RETENTION_DAYS" -le 0 ]; then
+  echo "❌ エラー: RETENTION_DAYSは正の整数である必要があります（現在値: $RETENTION_DAYS）" >&2
   exit 1
 fi
 
-# P1-2: シークレット検出パターン拡張（大文字小文字無視）
-# Security Agent推奨: AWS/GitHub/OpenAI等のクラウドプロバイダーキーを追加
+# ログディレクトリ作成
+mkdir -p "$LOG_DIR"
+
+# P0-2: 並行実行保護（PIDファイル + stale lock検出）- cronで複数プロセス防止
+LOCK_FILE="$LOG_DIR/backup.lock"
+STALE_THRESHOLD=3600  # 1時間以上経過したロックはstaleとみなす
+
+acquire_lock() {
+  if [ -f "$LOCK_FILE" ]; then
+    local lock_pid
+    lock_pid=$(cat "$LOCK_FILE" 2>/dev/null)
+
+    # プロセス存在チェック
+    if [ -n "$lock_pid" ] && kill -0 "$lock_pid" 2>/dev/null; then
+      # プロセスが存在→ロック有効
+      return 1
+    fi
+
+    # stale lock検出（プロセス不在 or ファイルが古い）
+    local lock_age
+    lock_age=$(($(date +%s) - $(stat -f %m "$LOCK_FILE" 2>/dev/null || echo 0)))
+    if [ "$lock_age" -gt "$STALE_THRESHOLD" ]; then
+      echo "⚠️ 古いロックファイルを削除（${lock_age}秒経過）" >&2
+      rm -f "$LOCK_FILE"
+    fi
+  fi
+
+  # ロック取得（アトミックにPID書込み）
+  echo $$ > "$LOCK_FILE"
+  return 0
+}
+
+cleanup_lock() {
+  rm -f "$LOCK_FILE"
+}
+trap cleanup_lock EXIT
+
+if ! acquire_lock; then
+  echo "⚠️ 別のバックアッププロセスが実行中です（スキップ）" >&2
+  exit 0  # 正常終了（cronログにエラー記録しない）
+fi
+
+# P1-5: Vault存在チェック
+if [ ! -d "$VAULT_PATH" ]; then
+  echo "❌ エラー: Vaultディレクトリが見つかりません: $VAULT_PATH" >&2
+  notify_failure "Vaultディレクトリ未検出"
+  exit 1
+fi
+
+# P1-3: シークレット検出パターン拡張（大文字小文字無視）
+# Security Agent推奨: クラウドプロバイダー、DB、セッション、決済系キーを追加
 SECRET_PATTERNS="(api_key|secret|password|token|credential|private[_-]?key|jwt[_-]?secret|auth[_-]?token"
 SECRET_PATTERNS="${SECRET_PATTERNS}|AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|GITHUB_TOKEN"
-SECRET_PATTERNS="${SECRET_PATTERNS}|OPENAI_API_KEY|ANTHROPIC_API_KEY|GCP_SERVICE_ACCOUNT)"
+SECRET_PATTERNS="${SECRET_PATTERNS}|OPENAI_API_KEY|ANTHROPIC_API_KEY|GCP_SERVICE_ACCOUNT"
+# P1-3追加: DB/セッション/決済/Webhook
+SECRET_PATTERNS="${SECRET_PATTERNS}|DATABASE_URL|MYSQL_PASSWORD|POSTGRES_PASSWORD"
+SECRET_PATTERNS="${SECRET_PATTERNS}|REFRESH_TOKEN|SESSION_SECRET|COOKIE_SECRET"
+SECRET_PATTERNS="${SECRET_PATTERNS}|STRIPE_[A-Z_]+_KEY|SLACK_WEBHOOK"
+# P1-3追加: PEM秘密鍵ヘッダー
+SECRET_PATTERNS="${SECRET_PATTERNS}|-----BEGIN[[:space:]]+(RSA|EC|OPENSSH)[[:space:]]+PRIVATE[[:space:]]+KEY-----)"
 
 echo "🔍 機密情報チェック中..."
 if grep -rE -i "$SECRET_PATTERNS" \
   "$VAULT_PATH/" --exclude-dir=.git --exclude="*.md" -q 2>/dev/null; then
-  echo "❌ 機密情報検出！バックアップ中止"
+  echo "❌ 機密情報検出！バックアップ中止" >&2
   echo "   ※ .mdファイルは除外されます（ドキュメント内のキーワードは許可）"
+  notify_failure "機密情報検出"
   exit 1
 fi
 
@@ -44,29 +167,71 @@ mkdir -p "$BACKUP_DIR"
 # P1: ディレクトリ権限を所有者のみに制限（Security Agent推奨）
 chmod 700 "$BACKUP_DIR"
 if [ ! -w "$BACKUP_DIR" ]; then
-  echo "❌ バックアップディレクトリに書き込み権限がありません: $BACKUP_DIR"
+  echo "❌ バックアップディレクトリに書き込み権限がありません: $BACKUP_DIR" >&2
+  notify_failure "書込み権限なし"
   exit 1
 fi
 
-# バックアップ作成（P2: 明示的エラーチェック追加）
-if ! tar -czf "$BACKUP_DIR/vault_${TIMESTAMP}.tar.gz" -C "$PROJECT_ROOT" "obsidian-vault-local/"; then
-  echo "❌ アーカイブ作成失敗（ディスクフル等の可能性）"
-  rm -f "$BACKUP_DIR/vault_${TIMESTAMP}.tar.gz"  # 部分ファイル削除
+# P0-4: 事前ディスク容量チェック（vault size * 2 必要）
+VAULT_SIZE_KB=$(du -sk "$VAULT_PATH" 2>/dev/null | awk '{print $1}' || echo "0")
+AVAILABLE_KB=$(df -k "$BACKUP_DIR" 2>/dev/null | tail -1 | awk '{print $4}' || echo "0")
+REQUIRED_KB=$((VAULT_SIZE_KB * 2))  # 圧縮 + 安全マージン
+
+if [ "$VAULT_SIZE_KB" -gt 0 ] && [ "$AVAILABLE_KB" -gt 0 ]; then
+  if [ "$AVAILABLE_KB" -lt "$REQUIRED_KB" ]; then
+    echo "❌ エラー: ディスク容量不足（必要: $((REQUIRED_KB / 1024))MB, 利用可能: $((AVAILABLE_KB / 1024))MB）" >&2
+    notify_failure "ディスク容量不足"
+    exit 1
+  fi
+fi
+
+# P1-8: ディスクフル事前検出（使用率95%以上で警告）
+DISK_USAGE=$(df "$BACKUP_DIR" 2>/dev/null | tail -1 | awk '{print $(NF-1)}' | tr -d '%')
+if [ -n "$DISK_USAGE" ] && [ "$DISK_USAGE" -ge 95 ]; then
+  echo "⚠️ 警告: ディスク使用率が高い（${DISK_USAGE}%）" >&2
+fi
+
+# P1-2: アトミック書込み（.tmp + rename）
+# 他プロセスは完成したファイルのみ参照可能
+CURRENT_BACKUP="$BACKUP_DIR/vault_${TIMESTAMP}.tar.gz"
+TEMP_BACKUP="$BACKUP_DIR/.vault_${TIMESTAMP}.tar.gz.tmp"
+
+# P0-3: シグナル処理用の状態設定（クリティカルセクション開始）
+BACKUP_IN_PROGRESS=true
+
+# バックアップ作成（P1-1: タイムアウト付き、P1-2: tmpファイルに書込み）
+if ! run_with_timeout "$TAR_TIMEOUT" tar -czf "$TEMP_BACKUP" -C "$PROJECT_ROOT" "obsidian-vault-local/"; then
+  echo "❌ アーカイブ作成失敗（タイムアウト/ディスクフル等の可能性）" >&2
+  rm -f "$TEMP_BACKUP"  # 部分ファイル削除
+  notify_failure "アーカイブ作成失敗"
   exit 1
 fi
 
 # P1-3: バックアップ権限設定（所有者のみ読み書き可能）
-chmod 600 "$BACKUP_DIR/vault_${TIMESTAMP}.tar.gz"
+chmod 600 "$TEMP_BACKUP"
 
-# チェックサム作成
-shasum -a 256 "$BACKUP_DIR/vault_${TIMESTAMP}.tar.gz" > "$BACKUP_DIR/vault_${TIMESTAMP}.sha256"
-chmod 600 "$BACKUP_DIR/vault_${TIMESTAMP}.sha256"
+# P1-2: アトミックリネーム（mv は同一ファイルシステム内でアトミック）
+mv "$TEMP_BACKUP" "$CURRENT_BACKUP"
+
+# チェックサム作成（P1-1: タイムアウト付き、リネーム後に最終パスで作成）
+CHECKSUM_FILE="${CURRENT_BACKUP%.tar.gz}.sha256"
+if ! run_with_timeout "$SHASUM_TIMEOUT" shasum -a 256 "$CURRENT_BACKUP" > "$CHECKSUM_FILE"; then
+  echo "❌ チェックサム計算失敗（タイムアウト/I/Oエラー）" >&2
+  rm -f "$CURRENT_BACKUP" "$CHECKSUM_FILE"
+  notify_failure "チェックサム計算失敗"
+  exit 1
+fi
+chmod 600 "$CHECKSUM_FILE"
+
+# P0-3: クリティカルセクション終了
+BACKUP_IN_PROGRESS=false
 
 # 古いバックアップ削除（RETENTION_DAYS日以上）
-find "$BACKUP_DIR" -name "vault_*.tar.gz" -mtime +"$RETENTION_DAYS" -delete 2>/dev/null || true
-find "$BACKUP_DIR" -name "vault_*.sha256" -mtime +"$RETENTION_DAYS" -delete 2>/dev/null || true
+# P1-3: -maxdepth 1 -type fでサブディレクトリ誤削除防止
+find "$BACKUP_DIR" -maxdepth 1 -type f -name "vault_*.tar.gz" -mtime +"$RETENTION_DAYS" -delete 2>/dev/null || true
+find "$BACKUP_DIR" -maxdepth 1 -type f -name "vault_*.sha256" -mtime +"$RETENTION_DAYS" -delete 2>/dev/null || true
 
-echo "✅ バックアップ完了: $BACKUP_DIR/vault_${TIMESTAMP}.tar.gz"
+echo "✅ バックアップ完了: $CURRENT_BACKUP"
 
 # P1-4: リストア検証関数（週次実行用）- チェックサム検証追加
 verify_restore() {
@@ -75,13 +240,13 @@ verify_restore() {
   LATEST=$(ls -t "$BACKUP_DIR"/vault_*.tar.gz 2>/dev/null | head -1)
 
   if [ -z "$LATEST" ]; then
-    echo "❌ バックアップファイルが見つかりません"
+    echo "❌ バックアップファイルが見つかりません" >&2
     return 1
   fi
 
   # ファイル存在確認（レースコンディション対策）
   if [ ! -f "$LATEST" ]; then
-    echo "❌ バックアップファイルが削除されました: $LATEST"
+    echo "❌ バックアップファイルが削除されました: $LATEST" >&2
     return 1
   fi
 
@@ -90,21 +255,32 @@ verify_restore() {
   if [ -f "$CHECKSUM_FILE" ]; then
     echo "🔐 チェックサム検証中..."
     if ! (cd "$BACKUP_DIR" && shasum -a 256 -c "$(basename "$CHECKSUM_FILE")" 2>/dev/null); then
-      echo "❌ チェックサム検証失敗: ファイル破損の可能性"
+      echo "❌ チェックサム検証失敗: ファイル破損の可能性" >&2
       return 1
     fi
     echo "✅ チェックサム検証OK"
   else
-    echo "⚠️ チェックサムファイルが見つかりません（スキップ）"
+    echo "⚠️ チェックサムファイルが見つかりません（スキップ）" >&2
   fi
 
   # 一時ディレクトリ作成（trap付き）
   TEMP=$(mktemp -d -t vault_verify.XXXXXXXXXX)
+  chmod 700 "$TEMP"  # 明示的権限設定
+
+  # P1-4: symlink攻撃検出（CVE-2008-2957対策）
+  if [ -L "$TEMP" ]; then
+    echo "❌ セキュリティ警告: 一時ディレクトリがシンボリックリンク" >&2
+    rm -rf "$TEMP"
+    return 1
+  fi
+
   trap 'rm -rf "$TEMP"' EXIT ERR INT TERM
 
   # 展開（エラーチェック付き）
+  # P0-1: BSD tar（macOS）はデフォルトで絶対パスを除去するためpath traversal攻撃を防止
+  # GNU tarの--no-absolute-namesと同等の動作（-Pオプションを使わない限り安全）
   if ! tar -xzf "$LATEST" -C "$TEMP" 2>/dev/null; then
-    echo "❌ アーカイブ展開失敗: $LATEST"
+    echo "❌ アーカイブ展開失敗: $LATEST" >&2
     return 1
   fi
 
@@ -114,7 +290,7 @@ verify_restore() {
 
   # 空Vault検出（偽陽性防止）
   if [ "$ORIG" -eq 0 ]; then
-    echo "⚠️ 警告: Vaultが空です（0ファイル）。データ損失の可能性があります"
+    echo "⚠️ 警告: Vaultが空です（0ファイル）。データ損失の可能性があります" >&2
     return 1
   fi
 
@@ -122,12 +298,17 @@ verify_restore() {
     echo "✅ リストア検証OK: $ORIG ファイル一致"
     return 0
   else
-    echo "❌ リストア検証失敗: 元=$ORIG, 復元=$REST"
+    echo "❌ リストア検証失敗: 元=$ORIG, 復元=$REST" >&2
     return 1
   fi
 }
 
 # --verify オプションでリストア検証を実行
-if [ "$1" = "--verify" ]; then
-  verify_restore
+# P1-5: 終了コードを検証結果に基づいて設定（CI/CD統合対応）
+if [ "${1:-}" = "--verify" ]; then
+  if verify_restore; then
+    exit 0
+  else
+    exit 1
+  fi
 fi
