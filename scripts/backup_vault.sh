@@ -74,6 +74,32 @@ notify_failure() {
   fi
 }
 
+# P1-4: 構造化ログ関数（JSON形式でファイル出力 + 監視システム統合対応）
+LOG_FILE=""  # 後でLOG_DIR確定後に設定
+log_event() {
+  local level="$1"
+  local message="$2"
+  local details="${3:-}"
+  local timestamp
+  timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+  # JSON形式でログ出力
+  local json_log
+  if [ -n "$details" ]; then
+    json_log="{\"timestamp\":\"$timestamp\",\"level\":\"$level\",\"message\":\"$message\",\"details\":\"$details\"}"
+  else
+    json_log="{\"timestamp\":\"$timestamp\",\"level\":\"$level\",\"message\":\"$message\"}"
+  fi
+
+  # ファイル出力（LOG_FILE設定後のみ）
+  if [ -n "$LOG_FILE" ] && [ -d "$(dirname "$LOG_FILE")" ]; then
+    echo "$json_log" >> "$LOG_FILE"
+  fi
+
+  # 標準出力（人間可読形式も並行出力）
+  # 注: 既存のecho出力と重複しないよう、ログファイルへの記録のみ
+}
+
 # P1-1: 絶対パス変換（cron対応）
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -94,6 +120,8 @@ fi
 
 # ログディレクトリ作成
 mkdir -p "$LOG_DIR"
+# P1-4: 構造化ログファイル設定
+LOG_FILE="$LOG_DIR/backup_structured.log"
 
 # P0-2: 並行実行保護（PIDファイル + stale lock検出）- cronで複数プロセス防止
 LOCK_FILE="$LOG_DIR/backup.lock"
@@ -111,17 +139,30 @@ acquire_lock() {
     fi
 
     # stale lock検出（プロセス不在 or ファイルが古い）
-    local lock_age
-    lock_age=$(($(date +%s) - $(stat -f %m "$LOCK_FILE" 2>/dev/null || echo 0)))
+    # P0-1: Linux/BSD両対応のstat（GNU: -c %Y, BSD: -f %m）
+    local lock_age lock_mtime
+    if stat --version >/dev/null 2>&1; then
+      # GNU stat (Linux)
+      lock_mtime=$(stat -c %Y "$LOCK_FILE" 2>/dev/null || echo 0)
+    else
+      # BSD stat (macOS)
+      lock_mtime=$(stat -f %m "$LOCK_FILE" 2>/dev/null || echo 0)
+    fi
+    lock_age=$(($(date +%s) - lock_mtime))
     if [ "$lock_age" -gt "$STALE_THRESHOLD" ]; then
       echo "⚠️ 古いロックファイルを削除（${lock_age}秒経過）" >&2
       rm -f "$LOCK_FILE"
     fi
   fi
 
-  # ロック取得（アトミックにPID書込み）
-  echo $$ > "$LOCK_FILE"
-  return 0
+  # P1-1: アトミックロック取得（noclobberモードでTOCTOU防止）
+  # set -C: ファイル存在時に>リダイレクトが失敗（アトミック）
+  if (set -C; echo $$ > "$LOCK_FILE") 2>/dev/null; then
+    return 0
+  else
+    # ロック取得失敗（別プロセスが先に取得）
+    return 1
+  fi
 }
 
 cleanup_lock() {
@@ -131,12 +172,17 @@ trap cleanup_lock EXIT
 
 if ! acquire_lock; then
   echo "⚠️ 別のバックアッププロセスが実行中です（スキップ）" >&2
+  log_event "INFO" "backup_skipped" "concurrent_execution_detected"
   exit 0  # 正常終了（cronログにエラー記録しない）
 fi
+
+# P1-4: バックアップ開始ログ
+log_event "INFO" "backup_started" "vault=$VAULT_PATH"
 
 # P1-5: Vault存在チェック
 if [ ! -d "$VAULT_PATH" ]; then
   echo "❌ エラー: Vaultディレクトリが見つかりません: $VAULT_PATH" >&2
+  log_event "ERROR" "vault_not_found" "path=$VAULT_PATH"
   notify_failure "Vaultディレクトリ未検出"
   exit 1
 fi
@@ -158,6 +204,7 @@ if grep -rE -i "$SECRET_PATTERNS" \
   "$VAULT_PATH/" --exclude-dir=.git --exclude="*.md" -q 2>/dev/null; then
   echo "❌ 機密情報検出！バックアップ中止" >&2
   echo "   ※ .mdファイルは除外されます（ドキュメント内のキーワードは許可）"
+  log_event "ERROR" "secrets_detected" "vault=$VAULT_PATH"
   notify_failure "機密情報検出"
   exit 1
 fi
@@ -186,7 +233,8 @@ if [ "$VAULT_SIZE_KB" -gt 0 ] && [ "$AVAILABLE_KB" -gt 0 ]; then
 fi
 
 # P1-8: ディスクフル事前検出（使用率95%以上で警告）
-DISK_USAGE=$(df "$BACKUP_DIR" 2>/dev/null | tail -1 | awk '{print $(NF-1)}' | tr -d '%')
+# P0-2: Linux/BSD両対応のdf解析（明示的カラム指定）
+DISK_USAGE=$(df "$BACKUP_DIR" 2>/dev/null | awk 'NR==2 {gsub(/%/, "", $5); print $5}')
 if [ -n "$DISK_USAGE" ] && [ "$DISK_USAGE" -ge 95 ]; then
   echo "⚠️ 警告: ディスク使用率が高い（${DISK_USAGE}%）" >&2
 fi
@@ -200,12 +248,22 @@ TEMP_BACKUP="$BACKUP_DIR/.vault_${TIMESTAMP}.tar.gz.tmp"
 BACKUP_IN_PROGRESS=true
 
 # バックアップ作成（P1-1: タイムアウト付き、P1-2: tmpファイルに書込み）
-if ! run_with_timeout "$TAR_TIMEOUT" tar -czf "$TEMP_BACKUP" -C "$PROJECT_ROOT" "obsidian-vault-local/"; then
+# P1-3: tar stderrを捕捉してI/Oエラー検出（NFS途中切断等）
+TAR_ERR=$(mktemp)
+trap 'rm -f "$TAR_ERR"' EXIT
+if ! run_with_timeout "$TAR_TIMEOUT" tar -czf "$TEMP_BACKUP" -C "$PROJECT_ROOT" "obsidian-vault-local/" 2>"$TAR_ERR"; then
   echo "❌ アーカイブ作成失敗（タイムアウト/ディスクフル等の可能性）" >&2
-  rm -f "$TEMP_BACKUP"  # 部分ファイル削除
+  [ -s "$TAR_ERR" ] && echo "   詳細: $(cat "$TAR_ERR")" >&2
+  log_event "ERROR" "archive_failed" "stderr=$(cat "$TAR_ERR" 2>/dev/null | head -c 200)"
+  rm -f "$TEMP_BACKUP" "$TAR_ERR"
   notify_failure "アーカイブ作成失敗"
   exit 1
 fi
+# tar成功してもstderrに警告があれば表示（Permission denied等）
+if [ -s "$TAR_ERR" ]; then
+  echo "⚠️ tar警告: $(cat "$TAR_ERR")" >&2
+fi
+rm -f "$TAR_ERR"
 
 # P1-3: バックアップ権限設定（所有者のみ読み書き可能）
 chmod 600 "$TEMP_BACKUP"
@@ -213,15 +271,18 @@ chmod 600 "$TEMP_BACKUP"
 # P1-2: アトミックリネーム（mv は同一ファイルシステム内でアトミック）
 mv "$TEMP_BACKUP" "$CURRENT_BACKUP"
 
-# チェックサム作成（P1-1: タイムアウト付き、リネーム後に最終パスで作成）
+# P1-2: チェックサムもアトミック書込み（tmpファイル + rename）
+# レース条件防止: 消費者がチェックサム未作成のバックアップを読むことを防止
 CHECKSUM_FILE="${CURRENT_BACKUP%.tar.gz}.sha256"
-if ! run_with_timeout "$SHASUM_TIMEOUT" shasum -a 256 "$CURRENT_BACKUP" > "$CHECKSUM_FILE"; then
+TEMP_CHECKSUM="${CHECKSUM_FILE}.tmp"
+if ! run_with_timeout "$SHASUM_TIMEOUT" shasum -a 256 "$CURRENT_BACKUP" > "$TEMP_CHECKSUM"; then
   echo "❌ チェックサム計算失敗（タイムアウト/I/Oエラー）" >&2
-  rm -f "$CURRENT_BACKUP" "$CHECKSUM_FILE"
+  rm -f "$CURRENT_BACKUP" "$TEMP_CHECKSUM"
   notify_failure "チェックサム計算失敗"
   exit 1
 fi
-chmod 600 "$CHECKSUM_FILE"
+chmod 600 "$TEMP_CHECKSUM"
+mv "$TEMP_CHECKSUM" "$CHECKSUM_FILE"
 
 # P0-3: クリティカルセクション終了
 BACKUP_IN_PROGRESS=false
@@ -231,7 +292,10 @@ BACKUP_IN_PROGRESS=false
 find "$BACKUP_DIR" -maxdepth 1 -type f -name "vault_*.tar.gz" -mtime +"$RETENTION_DAYS" -delete 2>/dev/null || true
 find "$BACKUP_DIR" -maxdepth 1 -type f -name "vault_*.sha256" -mtime +"$RETENTION_DAYS" -delete 2>/dev/null || true
 
+# P1-4: バックアップ成功ログ（サイズ付き）
+BACKUP_SIZE=$(du -sh "$CURRENT_BACKUP" 2>/dev/null | cut -f1 || echo "unknown")
 echo "✅ バックアップ完了: $CURRENT_BACKUP"
+log_event "INFO" "backup_completed" "file=$CURRENT_BACKUP,size=$BACKUP_SIZE"
 
 # P1-4: リストア検証関数（週次実行用）- チェックサム検証追加
 verify_restore() {
