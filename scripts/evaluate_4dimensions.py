@@ -227,7 +227,7 @@ def evaluate_dimension_2(task_text: str) -> int:
     return min(30, score)
 
 
-def evaluate_dimension_3(task_text: str) -> int:  # noqa: C901
+def evaluate_dimension_3(task_text: str) -> int:  # noqa: C901 - スコアリングロジック集約（複数の品質指標評価）のため許容
     """
     Dimension 3: 品質ゲート整合性（25点満点）
 
@@ -299,7 +299,7 @@ def evaluate_dimension_3(task_text: str) -> int:  # noqa: C901
     return min(25, score)
 
 
-def evaluate_dimension_4(task_text: str) -> int:  # noqa: C901
+def evaluate_dimension_4(task_text: str) -> int:  # noqa: C901 - スコアリングロジック集約（複数のセキュリティ指標評価）のため許容
     """
     Dimension 4: セキュリティ・標準準拠（20点満点）
 

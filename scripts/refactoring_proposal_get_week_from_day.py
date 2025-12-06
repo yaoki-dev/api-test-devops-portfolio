@@ -8,6 +8,8 @@ Before/After Complexity Comparison:
 - Maintainability: DRY violation eliminated
 """
 
+import pytest
+
 # Mock data structures (replace with actual imports)
 W6_PLAN_WEEK_MAP = {
     1: {"start": 258, "end": 820, "days": "1-6", "hours": 48},
@@ -116,18 +118,9 @@ def test_refactoring():
             f"Day {day}: old={old_result}, new={new_result}, expected={expected_week}"
         )
 
-    # Edge cases
-    try:
-        get_week_from_day_w6_plan(0)
-        raise AssertionError("Should raise ValueError for day 0")
-    except ValueError:
-        pass
-
-    try:
-        get_week_from_day_w6_plan(39)
-        raise AssertionError("Should raise ValueError for day 39")
-    except ValueError:
-        pass
+    # Edge cases - pytest.raises for clarity and best practice
+    pytest.raises(ValueError, get_week_from_day_w6_plan, 0)
+    pytest.raises(ValueError, get_week_from_day_w6_plan, 39)
 
     print("✅ All tests passed - behavior preserved")
 

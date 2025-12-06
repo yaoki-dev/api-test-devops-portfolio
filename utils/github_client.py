@@ -227,7 +227,7 @@ class AsyncGitHubClient:
             raise GitHubAPIError(f"Expected dict response, got {type(result).__name__}")
         return result
 
-    async def _request(  # noqa: C901
+    async def _request(  # noqa: C901 - 統合HTTPリクエスト処理（Rate Limit/ETag/リトライ統合）のため許容
         self,
         method: str,
         endpoint: str,
