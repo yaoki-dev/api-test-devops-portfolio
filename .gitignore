@@ -60,12 +60,16 @@ scripts/__pycache__/
 reports/
 
 # MCP and AI Tools
+.mcp.json
 .serena/
 .memory_mcp/
 .claude-flow/
 .hive-mind/
 .swarm/
 memory/
+
+# Obsidian Vault (contains personal notes and potentially sensitive data)
+obsidian-vault-local/
 
 # Node.js (if any JS tooling)
 node_modules/
@@ -81,7 +85,7 @@ docs/search_index.json
 CLAUDE.md.current.backup
 
 # Internal Project Management
-docs/todo.md
+docs/work/prompts/
 
 # Logs
 logs

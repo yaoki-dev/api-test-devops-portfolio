@@ -45,7 +45,19 @@
 ## 🔧 運用・保守
 
 ### 日常運用
-- **ブランチ戦略**: main/develop 運用
+
+#### ブランチ戦略（Git Flow）
+
+| ブランチ | トリガー | CI実行 |
+|---------|---------|--------|
+| `feature/*` | PR to develop | pr-validation |
+| `develop` | merge | post-merge-validation |
+| `release/*` | PR to main | full-test-suite |
+| `main` | merge | deployment |
+| `hotfix/*` | PR to main | pr-validation + deployment |
+
+**CI/CD対応**: `.github/workflows/ci.yml` L10-12で`main`/`develop`両方対応済み
+
 - **PR レビュー**: 自動チェック + 手動レビュー
-- **リリース**: タグベースリリース
+- **リリース**: release/*ブランチ → タグ付きリリース
 - **ロールバック**: 前バージョンへの自動復旧

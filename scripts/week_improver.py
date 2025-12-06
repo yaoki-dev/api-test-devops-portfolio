@@ -39,7 +39,8 @@ class WeekConfig:
             2: {
                 "title": "エラー階層設計仕様",
                 "content": """**エラー階層設計仕様**:
-- 5例外クラス実装: APIError（基底） / APIHTTPError（4xx/5xx分離） / APIConnectionError（接続失敗） / APITimeoutError（タイムアウト） / APIValidationError（Pydantic検証失敗）
+- 5例外クラス実装: APIError（基底） / APIHTTPError（4xx/5xx分離）
+  / APIConnectionError / APITimeoutError / APIValidationError
 - 詳細: @[ポートフォリオ戦略分析_改善版.md#W1-Day2-エラー階層設計]
 """,
             },
@@ -155,7 +156,7 @@ class WeekConfig:
 - Stage 1: Lint + Test（ruff, mypy, pytest）
 - Stage 2: Security Scan（bandit, safety, trivy）
 - Stage 3: Build Docker Image（multi-platform build）
-- Stage 4: Deploy to Demo（自動デプロイ、smoke test）
+- Stage 4: Deploy to Demo（自動デプロイ）  # Note: smoke testは現規模では不採用
 - 詳細: @[ポートフォリオ戦略分析_改善版.md#W8-Day43-GitHub-Actions-workflow]
 """,
             },
@@ -247,16 +248,22 @@ class WeekImprover:
     def load_learning_plan(self) -> None:
         """学習計画ファイル読み込み"""
         try:
-            with open(self.learning_plan_path, encoding="utf-8") as f:
+            with self.learning_plan_path.open(encoding="utf-8") as f:
                 self.learning_plan_content = f.read()
             print(f"✅ Loaded learning plan: {len(self.learning_plan_content)} characters")
-        except FileNotFoundError:
-            raise FileNotFoundError(f"Learning plan file not found: {self.learning_plan_path}")
+        except FileNotFoundError as e:
+            raise FileNotFoundError(
+                f"Learning plan file not found: {self.learning_plan_path}"
+            ) from e
 
     def extract_week_section(self) -> None:
         """Week Xセクション抽出（正規表現、行番号ハードコーディング不使用）"""
         # 両方の形式をサポート（"Week X" と "WX"）
-        pattern = rf"(### (?:Week {self.week_num}|W{self.week_num}):.*?)(?=### (?:Week {self.week_num + 1}|W{self.week_num + 1}):|$)"
+        next_week = self.week_num + 1
+        pattern = (
+            rf"(### (?:Week {self.week_num}|W{self.week_num}):.*?)"
+            rf"(?=### (?:Week {next_week}|W{next_week}):|$)"
+        )
         match = re.search(pattern, self.learning_plan_content, re.DOTALL)
 
         if not match:
@@ -266,9 +273,11 @@ class WeekImprover:
         self.week_start = match.start()
         self.week_end = match.end()
 
+        lines_count = len(self.week_section.splitlines())
         print(
-            f"✅ Extracted Week {self.week_num} section: {len(self.week_section)} characters "
-            f"(position {self.week_start}-{self.week_end}, {len(self.week_section.splitlines())} lines)"
+            f"✅ Extracted Week {self.week_num} section: "
+            f"{len(self.week_section)} chars "
+            f"(pos {self.week_start}-{self.week_end}, {lines_count} lines)"
         )
 
     def apply_step1_format_unification(self) -> None:
@@ -289,7 +298,8 @@ class WeekImprover:
         if self.week_section != original:
             self.changes_applied.append("Step 1: Format unification completed")
             print(
-                f"✅ Step 1: Format unified (W{self.week_num}, {self.total_hours}H, {self.test_count}テスト)"
+                f"✅ Step 1: Format unified "
+                f"(W{self.week_num}, {self.total_hours}H, {self.test_count}テスト)"
             )
         else:
             print("⚠️  Step 1: Already unified")
@@ -484,7 +494,7 @@ class WeekImprover:
             + self.learning_plan_content[self.week_end :]
         )
 
-        with open(self.learning_plan_path, "w", encoding="utf-8") as f:
+        with self.learning_plan_path.open("w", encoding="utf-8") as f:
             f.write(updated_content)
 
         print(f"\n✅ Improvements saved to: {self.learning_plan_path}")
@@ -598,7 +608,7 @@ All improvements follow Option B (Strategic Layering) principles with cross-refe
 
 """
 
-        with open(report_path, "w", encoding="utf-8") as f:
+        with report_path.open("w", encoding="utf-8") as f:
             f.write(report)
 
         print(f"\n✅ Report generated: {report_path}")

@@ -1,0 +1,9 @@
+{"version":3,"term":{"cols":80,"rows":24,"type":"xterm-256color"},"timestamp":1764232036,"command":"bash /var/folders/_c/fygb61qj22q468zwrp9fxm600000gn/T/tmp.zOfPsvKerJ/demo_cicd_script.sh","env":{"SHELL":"/bin/zsh"}}
+[0.010, "o", "\u001b[3J\u001b[H\u001b[2J"]
+[0.000, "o", "# CI/CD Automation Demo\r\n\r\n"]
+[1.008, "o", "$ gh run list --limit 3\r\n"]
+[0.130, "o", "\u001b]11;?\u001b\\\u001b[6n"]
+[5.056, "o", "\u001b]11;?\u001b\\\u001b[6n"]
+[5.019, "o", "(GitHub Actions runs will appear here)\r\n"]
+[1.005, "o", "\r\n✓ CI/CD pipeline ready!\r\n"]
+[2.005, "x", "0"]

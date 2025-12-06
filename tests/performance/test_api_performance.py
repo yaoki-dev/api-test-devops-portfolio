@@ -18,6 +18,14 @@ import pytest
 
 from utils.api_client import AsyncAPIClient
 
+# Module-level markers: Performance tests using real API (integration level)
+# Design rationale: Performance testing requires actual network latency measurement
+# See: docs/interview/multi_level_security_testing.md
+pytestmark = [
+    pytest.mark.performance,
+    pytest.mark.integration,  # Uses AsyncAPIClient for real API calls
+]
+
 
 class PerformanceMetrics:
     """パフォーマンスメトリクス収集クラス"""

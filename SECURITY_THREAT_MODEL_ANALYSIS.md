@@ -1,434 +1,434 @@
-# Security Threat Model Analysis: get_week_from_day_w6_plan()
+# セキュリティ脅威モデル分析: get_week_from_day_w6_plan()
 
-**Security Engineer Review** | **Date**: 2025-12-05
+**セキュリティエンジニアレビュー** | **日付**: 2025-12-05
 
 ---
 
-## 1. Attack Surface Analysis
+## 1. 攻撃面分析
 
-### Data Flow
+### データフロー
 ```
-progress_state.yaml (UNTRUSTED)
+progress_state.yaml (信頼できない)
         ↓ yaml.safe_load()
 state["current_day"]
         ↓
 get_week_from_day_w6_plan(current_day)
-        ↓ [TYPE VALIDATION]
-        ↓ [RANGE VALIDATION]
+        ↓ [型検証]
+        ↓ [範囲検証]
         ↓
-return: week number (1-6 or 5.5)
+return: 週番号 (1-6 または 5.5)
 ```
 
-### Trust Boundary
-- **Untrusted Input**: `progress_state.yaml` (can be edited by user/attacker)
-- **Validation Boundary**: Lines 250-255 in CLAUDE.md
-- **Trusted Output**: Week number (semantically limited: 1-6, 5.5)
+### 信頼境界
+- **信頼できない入力**: `progress_state.yaml`（ユーザー/攻撃者が編集可能）
+- **検証境界**: CLAUDE.md 行250-255
+- **信頼できる出力**: 週番号（意味的に制限: 1-6、5.5）
 
 ---
 
-## 2. Threat Model: YAML Injection
+## 2. 脅威モデル: YAMLインジェクション
 
-### Threat Name
-**Type Confusion via YAML Deserialization** (CWE-502)
+### 脅威名
+**YAMLデシリアライゼーションによる型混乱** (CWE-502)
 
-### Attack Hypothesis
+### 攻撃仮説
 ```
-Attacker Goal: Cause week lookup to fail or return unexpected result
-Attack Method: Inject bool value into progress_state.yaml
+攻撃者の目標: 週ルックアップを失敗させるか、予期しない結果を返させる
+攻撃方法: progress_state.yamlにbool値を注入
 ```
 
-### Attack Scenario 1: Direct Bool Injection
+### 攻撃シナリオ1: 直接Bool注入
 ```yaml
-# File: progress_state.yaml (attacker modifies)
+# ファイル: progress_state.yaml（攻撃者が変更）
 current_week: 1
-current_day: true         # <- Injection: bool instead of int
+current_day: true         # <- 注入: intの代わりにbool
 next_learning_item: python-basics
 ```
 
 ```python
-# Application code (trusted)
+# アプリケーションコード（信頼済み）
 import yaml
 with open("progress_state.yaml") as f:
     state = yaml.safe_load(f)
 
-current_day = state["current_day"]  # Type: bool (True)
+current_day = state["current_day"]  # 型: bool (True)
 get_week_from_day_w6_plan(current_day)
 ```
 
-### Defense Layer 1: YAML Safe Load
+### 防御層1: YAML安全ロード
 ```python
-state = yaml.safe_load(f)  # ← Uses FullLoader in Python 3.6+
+state = yaml.safe_load(f)  # ← Python 3.6+でFullLoaderを使用
 ```
 
-**Effect**: Prevents arbitrary code execution (blocks `!!python/object`)
-**Limitation**: Still deserializes scalar types: `true` → `True`, `false` → `False`
+**効果**: 任意のコード実行を防止（`!!python/object`をブロック）
+**制限**: スカラー型は依然としてデシリアライズ: `true` → `True`、`false` → `False`
 
-### Defense Layer 2: Type Validation (Current Implementation)
+### 防御層2: 型検証（現在の実装）
 ```python
 if isinstance(current_day, bool) or not isinstance(current_day, int):
     raise TypeError(f"current_day must be int, got {type(current_day).__name__}")
 ```
 
-**Effect**: Rejects bool values explicitly
-**Why Necessary**: In Python, `bool` is a subclass of `int`
+**効果**: bool値を明示的に拒否
+**必要な理由**: Pythonでは`bool`は`int`のサブクラス
 
-### Why Without Explicit Bool Check, System Fails
+### 明示的なBoolチェックなしでシステムが失敗する理由
 ```python
-# VULNERABLE (without bool check):
-if not isinstance(current_day, int):  # bool IS an int subclass!
+# 脆弱（boolチェックなし）:
+if not isinstance(current_day, int):  # bool は intのサブクラス！
     raise TypeError(...)
 
-isinstance(True, int)  # Returns True
-isinstance(False, int) # Returns True
+isinstance(True, int)  # Trueを返す
+isinstance(False, int) # Trueを返す
 
-# Result: Injection succeeds, bool silently accepted ❌
+# 結果: 注入成功、boolが黙って受け入れられる ❌
 ```
 
-### Impact Analysis
-**If Injection Succeeds**:
+### 影響分析
+**注入が成功した場合**:
 ```python
-get_week_from_day_w6_plan(True)   # Receives bool, no error
+get_week_from_day_w6_plan(True)   # boolを受け取り、エラーなし
 # true == 1 in comparison
-if True <= 6:  # True is equivalent to 1
-    return 1   # Returns week 1 (unexpected but not catastrophic)
+if True <= 6:  # Trueは1と等価
+    return 1   # 週1を返す（予期しないが壊滅的ではない）
 ```
 
-**Consequences**:
-- Week lookup incorrect (semantically wrong)
-- No functional crash, silent data corruption
-- Could cause wrong learning/implementation assignment
+**結果**:
+- 週ルックアップが不正確（意味的に間違っている）
+- 機能的クラッシュなし、黙ってデータが破損
+- 間違った学習/実装割り当てを引き起こす可能性
 
-**Severity**: P2-Medium (data integrity issue, not system crash)
+**深刻度**: P2-Medium（データ整合性問題、システムクラッシュではない）
 
 ---
 
-## 3. Current Mitigation Strategy
+## 3. 現在の緩和策
 
-### Line 250: Explicit Bool Check
+### 行250: 明示的なBoolチェック
 ```python
 if isinstance(current_day, bool) or not isinstance(current_day, int):
     raise TypeError(f"current_day must be int, got {type(current_day).__name__}")
 ```
 
-### Mitigation Effectiveness
+### 緩和の有効性
 
-| Attack Vector | Blocked? | Evidence |
+| 攻撃ベクター | ブロック？ | 証拠 |
 |---|---|---|
-| YAML `true` → `True` | ✅ YES | Line 250 bool check |
-| YAML `false` → `False` | ✅ YES | Line 250 bool check |
-| YAML string `"5"` → `"5"` | ✅ YES | `isinstance(str, int)` = False |
+| YAML `true` → `True` | ✅ YES | 行250 boolチェック |
+| YAML `false` → `False` | ✅ YES | 行250 boolチェック |
+| YAML文字列 `"5"` → `"5"` | ✅ YES | `isinstance(str, int)` = False |
 | YAML float `5.5` → `5.5` | ✅ YES | `isinstance(float, int)` = False |
 | YAML dict `{...}` | ✅ YES | `isinstance(dict, int)` = False |
 | YAML list `[...]` | ✅ YES | `isinstance(list, int)` = False |
 | YAML null → `None` | ✅ YES | `isinstance(None, int)` = False |
 
-### Defense Depth
+### 多層防御
 
 ```
-Layer 1: YAML Safe Load (architecture)
-         ↓ Prevents code execution
-Layer 2: Type Validation (current: line 250)
-         ↓ Rejects bool/float/str/etc.
-Layer 3: Range Validation (current: line 254)
-         ↓ Rejects out-of-range integers
-Layer 4: Boundary Logic (current: lines 258-271)
-         ↓ Returns week number (semantically constrained)
+層1: YAML安全ロード（アーキテクチャ）
+         ↓ コード実行を防止
+層2: 型検証（現在: 行250）
+         ↓ bool/float/str等を拒否
+層3: 範囲検証（現在: 行254）
+         ↓ 範囲外の整数を拒否
+層4: 境界ロジック（現在: 行258-271）
+         ↓ 週番号を返す（意味的に制約）
 ```
 
-**Result**: Defense in depth. Even if Layer 2 is bypassed, Layer 3 catches it.
+**結果**: 多層防御。層2がバイパスされても、層3がキャッチ。
 
 ---
 
-## 4. Alternative Attack Vectors
+## 4. 代替攻撃ベクター
 
-### Vector 1: Negative Integer Injection
+### ベクター1: 負の整数注入
 ```yaml
 current_day: -5
 ```
 
-**Attack Flow**:
+**攻撃フロー**:
 ```python
-isinstance(-5, bool)  # False → passes bool check ✅
-isinstance(-5, int)   # True → passes int check ✅
-if not 1 <= -5 <= 38: # -5 NOT in range
-    raise ValueError(...) # Caught! ✅
+isinstance(-5, bool)  # False → boolチェック合格 ✅
+isinstance(-5, int)   # True → intチェック合格 ✅
+if not 1 <= -5 <= 38: # -5 は範囲外
+    raise ValueError(...) # キャッチ！ ✅
 ```
 
-**Status**: ✅ Blocked by Layer 3 (range validation)
+**ステータス**: ✅ 層3（範囲検証）によってブロック
 
-### Vector 2: Float That Looks Like Int
+### ベクター2: intのように見えるFloat
 ```yaml
 current_day: 5.0
 ```
 
-**Attack Flow**:
+**攻撃フロー**:
 ```python
-isinstance(5.0, bool)  # False → passes bool check ✅
-isinstance(5.0, int)   # False → FAILS int check ✅
-raise TypeError(...) # Caught! ✅
+isinstance(5.0, bool)  # False → boolチェック合格 ✅
+isinstance(5.0, int)   # False → intチェック失敗 ✅
+raise TypeError(...) # キャッチ！ ✅
 ```
 
-**Status**: ✅ Blocked by Layer 2 (type validation)
+**ステータス**: ✅ 層2（型検証）によってブロック
 
-### Vector 3: String Numeric Value
+### ベクター3: 文字列数値
 ```yaml
 current_day: "5"
 ```
 
-**Attack Flow**:
+**攻撃フロー**:
 ```python
-isinstance("5", bool)  # False → passes bool check ✅
-isinstance("5", int)   # False → FAILS int check ✅
-raise TypeError(...) # Caught! ✅
+isinstance("5", bool)  # False → boolチェック合格 ✅
+isinstance("5", int)   # False → intチェック失敗 ✅
+raise TypeError(...) # キャッチ！ ✅
 ```
 
-**Status**: ✅ Blocked by Layer 2 (type validation)
+**ステータス**: ✅ 層2（型検証）によってブロック
 
-### Vector 4: Out-of-Range Integer
+### ベクター4: 範囲外整数
 ```yaml
 current_day: 100
 ```
 
-**Attack Flow**:
+**攻撃フロー**:
 ```python
-isinstance(100, bool)  # False → passes bool check ✅
-isinstance(100, int)   # True → passes int check ✅
-if not 1 <= 100 <= 38: # 100 NOT in range
-    raise ValueError(...) # Caught! ✅
+isinstance(100, bool)  # False → boolチェック合格 ✅
+isinstance(100, int)   # True → intチェック合格 ✅
+if not 1 <= 100 <= 38: # 100は範囲外
+    raise ValueError(...) # キャッチ！ ✅
 ```
 
-**Status**: ✅ Blocked by Layer 3 (range validation)
+**ステータス**: ✅ 層3（範囲検証）によってブロック
 
 ---
 
-## 5. Proposed Refactoring: Introduced Vulnerability
+## 5. 提案されたリファクタリング: 導入された脆弱性
 
-### Refactored Code (refactoring_proposal.py:81)
+### リファクタリングされたコード（refactoring_proposal.py:81）
 ```python
 day_start, day_end = map(int, config["days"].split("-"))
 if day_start <= current_day <= day_end:
     return week
 ```
 
-### New Vulnerability: CWE-20 (Improper Input Validation)
+### 新しい脆弱性: CWE-20（不適切な入力検証）
 
-#### Vector 1: Whitespace in String Parsing
+#### ベクター1: 文字列解析での空白
 ```python
-# Config (from W6_PLAN_WEEK_MAP):
+# 設定（W6_PLAN_WEEK_MAPから）:
 config["days"] = " 1 - 6 "
 
-# Current code:
+# 現在のコード:
 parts = " 1 - 6 ".split("-")  # ["  1 ", "  6  "]
-day_start = int("  1 ")        # 1 (int strips whitespace)
-day_end = int("  6  ")         # 6 (int strips whitespace)
+day_start = int("  1 ")        # 1（intは空白を除去）
+day_end = int("  6  ")         # 6（intは空白を除去）
 
-# Result: Parsing succeeds despite leading/trailing spaces
-# Verdict: Works "by accident" due to int() behavior
+# 結果: 先頭/末尾の空白があっても解析成功
+# 判定: int()の副作用により「偶然」動作
 ```
 
-**Risk**: Fragile parsing (depends on int() side effect)
+**リスク**: 脆弱な解析（int()の副作用に依存）
 
-#### Vector 2: Out-of-Bounds Range in Config
+#### ベクター2: 設定の範囲外範囲
 ```python
-# Malicious config (if W6_PLAN_WEEK_MAP is compromised):
+# 悪意のある設定（W6_PLAN_WEEK_MAPが侵害された場合）:
 W6_PLAN_WEEK_MAP[1] = {"days": "1-999999999"}
 
-# Proposed code:
+# 提案されたコード:
 day_start, day_end = int("1"), int("999999999")
-if day_start <= 15 <= day_end:  # 15 is in range [1, 999999999]
-    return 1  # Returns week, but range is NOT validated!
+if day_start <= 15 <= day_end:  # 15は範囲[1, 999999999]内
+    return 1  # 週を返すが、範囲が検証されていない！
 
-# Violation: Week 1 now accepts days 1-999999999, not 1-6
-# Verdict: Semantic contract violated
+# 違反: 週1が現在日1-999999999を受け入れる、1-6ではない
+# 判定: 意味的契約違反
 ```
 
-**Risk**: Accepts invalid ranges (> 38) without checking
+**リスク**: 無効な範囲（> 38）を検証なしで受け入れる
 
-#### Vector 3: Invalid Format Causes Crash
+#### ベクター3: 無効な形式がクラッシュを引き起こす
 ```python
-# Corrupted config:
-W6_PLAN_WEEK_MAP[1] = {"days": "1"}  # Missing end value
+# 破損した設定:
+W6_PLAN_WEEK_MAP[1] = {"days": "1"}  # 終了値がない
 
-# Proposed code:
+# 提案されたコード:
 parts = "1".split("-")  # ["1"]
 day_start, day_end = map(int, ["1"])  # ValueError: too many values to unpack
 
-# Result: Unhandled exception, function crashes
-# Verdict: Poor error handling
+# 結果: 未処理の例外、関数クラッシュ
+# 判定: 不適切なエラー処理
 ```
 
-**Risk**: Unhandled exceptions (denial of service)
+**リスク**: 未処理の例外（サービス拒否）
 
 ---
 
-## 6. Why Current Implementation Is Superior
+## 6. なぜ現在の実装が優れているか
 
-### Criterion 1: Type Safety
+### 基準1: 型安全性
 ```python
-# Current: Explicit if-elif boundaries
+# 現在: 明示的なif-elif境界
 if current_day <= 6:
     return 1
 
-# Proposed: Data-driven with string parsing
+# 提案: 文字列解析によるデータ駆動
 day_start, day_end = map(int, config["days"].split("-"))
 if day_start <= current_day <= day_end:
     return week
 ```
 
-**Analysis**:
-- Current: Boundaries hardcoded as integers (immutable)
-- Proposed: Boundaries parsed from strings (mutable, unvalidated)
+**分析**:
+- 現在: 境界が整数としてハードコード（不変）
+- 提案: 境界が文字列から解析（可変、未検証）
 
-**Advantage**: Current ✅
+**利点**: 現在 ✅
 
-### Criterion 2: Attack Surface
+### 基準2: 攻撃面
 ```python
-# Current: 0 parsing steps
+# 現在: 0解析ステップ
 if current_day <= 6:
 
-# Proposed: 3 parsing steps
-config["days"].split("-")      # Step 1: String split
-map(int, [...])                # Step 2: Type conversion
-int.__compare(current_day)     # Step 3: Comparison
+# 提案: 3解析ステップ
+config["days"].split("-")      # ステップ1: 文字列分割
+map(int, [...])                # ステップ2: 型変換
+int.__compare(current_day)     # ステップ3: 比較
 ```
 
-**Risk Distribution**:
-- Current: Validation only
-- Proposed: Validation + Parsing + Conversion
+**リスク分布**:
+- 現在: 検証のみ
+- 提案: 検証 + 解析 + 変換
 
-**Advantage**: Current ✅ (fewer attack surfaces)
+**利点**: 現在 ✅（攻撃面が少ない）
 
-### Criterion 3: Semantic Enforcement
+### 基準3: 意味的強制
 ```python
-# Current: Range [1-38] enforced at line 254
+# 現在: 行254で範囲[1-38]を強制
 if not 1 <= current_day <= 38:
     raise ValueError(...)
 
-# Proposed: Range [1-38] from W6_PLAN_WEEK_MAP
-# But W6_PLAN_WEEK_MAP["days"] not validated
+# 提案: W6_PLAN_WEEK_MAPから範囲[1-38]
+# しかしW6_PLAN_WEEK_MAP["days"]は検証されていない
 ```
 
-**Example of Failure**:
+**失敗の例**:
 ```python
-# If W6_PLAN_WEEK_MAP[1]["days"] = "1-50"
-# Proposed: Accepts day 45 as week 1 (WRONG)
-# Current: Rejects day 45 (correct, would return week 6)
+# W6_PLAN_WEEK_MAP[1]["days"] = "1-50"の場合
+# 提案: 日45を週1として受け入れる（間違い）
+# 現在: 日45を拒否（正しい、週6を返すはず）
 ```
 
-**Advantage**: Current ✅ (enforces semantic contract)
+**利点**: 現在 ✅（意味的契約を強制）
 
 ---
 
-## 7. Risk Quantification
+## 7. リスク定量化
 
-### Current Implementation (CLAUDE.md)
+### 現在の実装（CLAUDE.md）
 
-**Threat Probability**: LOW
-- Requires YAML file corruption/compromise
-- Explicit type validation blocks injection
-- Multiple validation layers (defense in depth)
+**脅威の確率**: LOW
+- YAMLファイルの破損/侵害が必要
+- 明示的な型検証が注入をブロック
+- 複数の検証層（多層防御）
 
-**Impact**: LOW (even if injection succeeds)
-- Range validation catches invalid inputs
-- No code execution possible
-- At worst: semantic data integrity issue
+**影響**: LOW（注入が成功しても）
+- 範囲検証が無効な入力をキャッチ
+- コード実行は不可能
+- 最悪の場合: 意味的データ整合性問題
 
-**CVSS v3.1 Score**: **1.7 (LOW)**
+**CVSS v3.1スコア**: **1.7 (LOW)**
 ```
 AV:L/AC:H/PR:H/UI:R/S:U/C:N/I:L/A:N
 ```
 
 ---
 
-### Proposed Refactoring
+### 提案されたリファクタリング
 
-**Threat Probability**: MEDIUM
-- If W6_PLAN_WEEK_MAP is compromised or contains errors
-- String parsing not validated
-- Semantic bounds check missing
+**脅威の確率**: MEDIUM
+- W6_PLAN_WEEK_MAPが侵害されているか、エラーを含む場合
+- 文字列解析が検証されていない
+- 意味的境界チェックがない
 
-**Impact**: MEDIUM (week assignment incorrect)
-- Wrong learning task assigned
-- Silent data corruption (no exception)
-- Cascading failures in downstream code
+**影響**: MEDIUM（週割り当てが不正確）
+- 間違った学習タスクが割り当てられる
+- 黙ってデータが破損（例外なし）
+- 下流コードでカスケード障害
 
-**CVSS v3.1 Score**: **3.2 (LOW-MEDIUM)**
+**CVSS v3.1スコア**: **3.2 (LOW-MEDIUM)**
 ```
 AV:L/AC:M/PR:H/UI:N/S:U/C:L/I:L/A:N
 ```
 
-**Verdict**: Proposed approach increases risk profile. ⚠️
+**判定**: 提案されたアプローチはリスクプロファイルを増加させる。⚠️
 
 ---
 
-## 8. Remediation Path (If Refactoring Pursued)
+## 8. 修正パス（リファクタリングを追求する場合）
 
-### Step 1: Add String Format Validation
+### ステップ1: 文字列形式検証を追加
 ```python
 day_parts = config["days"].split("-")
 if len(day_parts) != 2:
     raise ValueError(f"Invalid day range: {config['days']}")
 ```
 
-### Step 2: Add Semantic Bounds Validation
+### ステップ2: 意味的境界検証を追加
 ```python
 day_start, day_end = int(day_parts[0]), int(day_parts[1])
 if not (1 <= day_start <= day_end <= 38):
     raise ValueError(f"Day range {day_start}-{day_end} out of bounds")
 ```
 
-### Step 3: Add Exception Handling
+### ステップ3: 例外処理を追加
 ```python
 try:
     day_start, day_end = int(day_parts[0]), int(day_parts[1])
 except ValueError as e:
-    continue  # Skip invalid config, fail-safe
+    continue  # 無効な設定をスキップ、フェイルセーフ
 ```
 
-### Step 4: Document Threat Model
+### ステップ4: 脅威モデルを文書化
 ```python
 def get_week_from_day_w6_plan(current_day: int) -> Union[int, float]:
     """
     ...
-    Security Notes:
-        - Validates W6_PLAN_WEEK_MAP["days"] format (CWE-20 mitigation)
-        - Enforces semantic bounds [1-38] (not derived from config)
-        - Fails safely on malformed config (exception handling)
+    セキュリティノート:
+        - W6_PLAN_WEEK_MAP["days"]形式を検証（CWE-20緩和）
+        - 意味的境界[1-38]を強制（設定から導出されない）
+        - 不正な形式の設定で安全に失敗（例外処理）
     """
 ```
 
-**Result**: Increases lines from 8 to ~20, but eliminates CWE-20 vulnerability.
+**結果**: 行を8から約20に増やすが、CWE-20脆弱性を排除。
 
 ---
 
-## 9. Conclusion & Recommendations
+## 9. 結論と推奨事項
 
-### For Current Implementation ✅
-- **Status**: Secure, production-ready
-- **Action**: No changes required
-- **Retention**: Keep explicit bool check comment (documents intent)
+### 現在の実装について ✅
+- **ステータス**: セキュア、本番準備完了
+- **アクション**: 変更不要
+- **保持**: 明示的なboolチェックコメント（意図を文書化）
 
-### For Proposed Refactoring ⚠️
-- **Status**: Introduces CWE-20 (Improper Input Validation)
-- **Action**: DO NOT ADOPT without remediation
-- **If Pursuing**: Apply Step 1-4 above
+### 提案されたリファクタリングについて ⚠️
+- **ステータス**: CWE-20（不適切な入力検証）を導入
+- **アクション**: 修正なしで採用しない
+- **追求する場合**: 上記のステップ1-4を適用
 
-### Security Best Practices Applied ✅
-1. **Defense in Depth**: 4 validation layers
-2. **Explicit Validation**: Type and range checks
-3. **Threat Modeling**: Bool injection documented
-4. **Error Handling**: Proper exception types
-5. **Zero Trust**: Assumes YAML file is untrusted
+### 適用されたセキュリティベストプラクティス ✅
+1. **多層防御**: 4つの検証層
+2. **明示的な検証**: 型と範囲チェック
+3. **脅威モデリング**: Bool注入を文書化
+4. **エラー処理**: 適切な例外タイプ
+5. **ゼロトラスト**: YAMLファイルを信頼できないと仮定
 
 ---
 
-## References
+## 参考文献
 
-- **CWE-20**: https://cwe.mitre.org/data/definitions/20.html (Improper Input Validation)
-- **CWE-502**: https://cwe.mitre.org/data/definitions/502.html (Deserialization of Untrusted Data)
+- **CWE-20**: https://cwe.mitre.org/data/definitions/20.html（不適切な入力検証）
+- **CWE-502**: https://cwe.mitre.org/data/definitions/502.html（信頼できないデータのデシリアライゼーション）
 - **Python bool as int**: https://docs.python.org/3/reference/datamodel.html#truth-value-testing
 - **CVSS v3.1**: https://www.first.org/cvss/v3.1/specification-document
 
 ---
 
-**Audit Classification**: ✅ SECURE (Current) | ⚠️ NEEDS FIXES (Proposed)
+**監査分類**: ✅ セキュア（現在） | ⚠️ 修正が必要（提案）

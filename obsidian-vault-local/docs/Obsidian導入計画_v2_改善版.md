@@ -1,6 +1,6 @@
 # Obsidian MCP統合導入計画書（改善版v2）
 
-*最終更新: 2025年12月04日*
+*最終更新: 2025年12月05日*
 *レビュー: 5専門エージェント（system-architect, requirements-analyst, devops-architect, security-engineer, technical-writer）*
 
 > **📌 クロスリファレンス**: 本ドキュメントのSection 4「Trigger仕様（フロー自動化）」は以下のソースから統合されました：
@@ -44,7 +44,7 @@
 
 **並行運用の利点**:
 1. **移行リスクゼロ**: Serenaメモリはそのまま維持、Obsidianは新規追加のみ
-2. **段階的導入**: Week 3試験運用 → Week 4評価 → Week 5最適化
+2. **段階的導入（メイン学習と並行）**: Week 3準備（Docker学習中） → Week 4試験運用（CI/CD学習中） → Week 5最適化（非同期学習中）
 3. **用途別最適化**: 静的知識（Obsidian） vs 動的状態（Serena）の明確な分離
 
 ---
@@ -54,6 +54,19 @@
 #### 1.2.1 ベースライン測定プロトコル（Week 2実施必須）
 
 **⚠️ 重要**: 以下のベースライン値は**推定値**です。Week 3開始前に実測が必要です。
+
+##### P0-QA-2対応: 測定タイミング明確化
+
+| 測定項目 | 測定タイミング | 所要時間 | 責任者 |
+|---------|--------------|---------|--------|
+| トークン使用量 | **Week 2 Day 12終了時** | 30分 | ユーザー |
+| 検索時間 | **Week 2 Day 12終了時** | 15分 | ユーザー |
+| 検索ヒット率（初回） | **Week 4 Day 24終了時** | 30分 | ユーザー |
+| 検索ヒット率（最適化後） | **Week 5 Day 30終了時** | 30分 | ユーザー |
+
+**測定未実施時のフォールバック**:
+- Week 3開始時に測定が完了していない場合 → 推定値（本セクションの値）を使用
+- ただし、ROI計算の精度低下を許容する旨を記録
 
 **測定手順**:
 1. **トークン使用量測定**（10 sessions）
@@ -140,36 +153,44 @@
 
 ### 1.3 実装フロー
 
-**⚠️ 修正**: 以前の見積もり（5-8h）は過小評価でした。実態に基づく修正版:
+**⚠️ 重要**: Obsidian導入は**メイン学習と並行**で実施。メイン学習時間を圧迫しない設計。
 
-| Week | フェーズ | 成果物 | 成功基準 |
-|------|---------|---------|--------|
-| Week 3 | 準備・設計  | vault構造、テンプレート、MCP検証 | MCP機能確認、初回ノート作成成功 |
-| Week 4 | 試験運用  | トラブルシューティング5件 + 学習ログ3件 | 検索ヒット率60%以上 |
-| Week 5 | 最適化  | タグ体系改善、テンプレート改訂、グラフキュレーション | 検索ヒット率70%以上 |
-| Week 6 | 本番運用  | ポートフォリオ統合（手動）、ADRレビュー | グラフ可視化完了 |
+##### P0-REQ-2対応: 6週プランとの整合性
+
+| Week | **メイン学習（6週プラン）** | **Obsidian導入（並行）** | 時間配分 | 成功基準 |
+|------|-------------------------|------------------------|---------|--------|
+| Week 3 | **Docker基礎構築**（39H、Day 13-18） | 準備・設計（vault構造、MCP検証） | 4-6h/週 | MCP機能確認、初回ノート作成成功 |
+| Week 4 | **CI/CD統合**（48H、Day 19-24） | 試験運用（KB 5件 + 学習ログ3件） | 4-5h/週 | 検索ヒット率60%以上 |
+| Week 5 | **非同期処理深化**（49H、Day 25-30） | 最適化（タグ体系、テンプレート改訂） | 3-4h/週 | 検索ヒット率70%以上 |
+| Week 5.5 | **統合復習**（14H、Day 31-32） | - | - | - |
+| Week 6 | **最適化+応募準備**（48H、Day 33-38） | 本番運用（ADRレビュー、グラフ完成） | 2-3h/週 | グラフ可視化完了 |
+
+**時間配分ルール**:
+- Obsidian作業は**1日30分〜1時間**を上限
+- メイン学習が遅延した場合、Obsidian作業は**スキップ可能**
+- ノート作成は「学習中に自然発生したエラー・パターン」のみ記録（強制作成しない）
 
 
 **内訳詳細**:
 
-**Week 3内訳** :
-- 環境構築
-- MCP機能検証テスト
-- テンプレート作成
-- 学習Obsidian基本操作
-- CLAUDE.md更新
-- ADR_001作成
-- トラブルシューティング予備: （現実的バッファ）
+**Week 3内訳** (4-6h):
+- 環境構築: 1.5h
+- MCP機能検証テスト: 1h
+- テンプレート作成: 1h
+- 学習Obsidian基本操作: 0.5h
+- CLAUDE.md更新: 0.5h
+- ADR_001作成: 0.5h
+- トラブルシューティング予備: 1h（現実的バッファ）
 
-**Week 4内訳** :
-- ノート作成時間:（10件）
-- 検索検証: 
-- Tag refactoring: 
+**Week 4内訳** (4-5h):
+- ノート作成時間: 2h（10件、各12分）
+- 検索検証: 1.5h
+- Tag refactoring: 1h
 
 **Week 6内訳** (2-3h):
-- Graph view キュレーション: 
-- ポートフォリオスクリーンショット: 
-- ADR品質レビュー: 
+- Graph view キュレーション: 1h
+- ポートフォリオスクリーンショット: 0.5h
+- ADR品質レビュー: 1h 
 
 
 ### 1.4 リスク評価とロールバック計画（セキュリティ強化版）
@@ -179,11 +200,11 @@
 | リスク | 発生確率 | 影響度 | 対策 |
 |--------|---------|--------|------|
 | Serenaとの競合 | 低 | 低 | 用途を明確分離（静的知識 vs 動的状態） |
-| 学習コスト超過 | 中 | 低 | Week 3に4h集中学習、Week 4で実践習得 |
+| 学習コスト超過 | 中 | 低 | Week 3（Docker並行）に4h、Week 4（CI/CD並行）で実践習得 |
 | メンテナンス負荷 | 低 | 低 | テンプレート活用で記録作業を標準化 |
 | 過剰ドキュメント化 | 中 | 中 | 「3回以上参照した内容のみ」ルール適用 |
 | Obsidian MCP Server障害 | 低 | 高 | Fallback: filesystem MCPでvault直接アクセス |
-| トークン削減未達 | 中 | 中 | Week 4で実測、目標未達時はロールバック |
+| トークン削減未達 | 中 | 中 | Week 4 Day 24終了時に実測、目標未達時はロールバック |
 | **機密情報漏洩** | **中** | **高** | **.gitignore強化 + pre-commit hook** |
 | **データ損失** | **中** | **高** | **3-2-1バックアップ戦略 + 復旧テスト** |
 
@@ -351,7 +372,7 @@
 
 **撤退コスト（更新）**: **5-8h**（セキュリティ監査、変換作業は時間幅大きい）
 
-**決定タイミング**: Week 4終了時（Day 48）に実績評価、ロールバック判断
+**決定タイミング**: Week 4終了時（Day 24）に実績評価、ロールバック判断
 
 ---
 
@@ -557,6 +578,25 @@ pwd  # 期待結果: /Users/yuta/Yuta/python/api-test-devops-portfolio
 **更新頻度**: Daily~Weekly
 **CLAUDE.md統合**: `@memory:メモリ名`記法で参照
 
+##### P0-ARCH-1対応: SSOT競合時の優先度ルール
+
+**原則**: 同一データが複数ソースに存在する場合、以下の優先度で解決
+
+| 優先度 | データソース | 適用場面 | 例 |
+|--------|-------------|---------|-----|
+| **1位** | `progress_state.yaml` | 状態・メトリクス値 | current_week, coverage_pct, error_occurrences |
+| **2位** | Serenaメモリ（`@memory:`） | 実装ガイドライン | coding_standards, quality_gates |
+| **3位** | Obsidianノート | 知識・パターン蓄積 | エラーKB本文、ADR詳細 |
+
+**競合解決フロー**:
+1. **状態値の競合**: progress_state.yaml が正（Triggerで自動更新）
+2. **ガイドラインの競合**: Serenaメモリが正（CLAUDE.md統合）
+3. **知識内容の競合**: Obsidianが正（セマンティック検索優位）
+
+**禁止事項**:
+- Obsidianでprogress_state.yamlの値を直接編集しない
+- Serenaメモリの内容をObsidianにコピーしない（二重管理回避）
+
 ---
 
 #### Obsidianが管理する領域（静的知識）
@@ -752,11 +792,13 @@ pwd  # 期待結果: /Users/yuta/Yuta/python/api-test-devops-portfolio
 | **Trigger 3** | **学習記録** | **Phase 3完了後** | **80%** | **習熟度計算・progress_state.yaml更新** | **★★★** |
 | **Trigger 4** | **実装記録** | **品質ゲート通過後** | **90%** | **Git解析・メトリクス自動記録** | **★★★** |
 | Trigger 5 | 週次振り返り | 週末 | 95% | 週次データ集計・レポート生成 | ★★☆ |
-| **Trigger 6** | **理解度確認** | **Day都度（Week 1-6）** | **85%** | **AI自動生成問題（3問・25点）** | **★★★** |
+| **Trigger 6** | **理解度確認** | **Day都度（Week 1-5.5, D1-D32）** | **85%** | **AI自動生成問題（3問・25点）** | **★★★** |
+| **Trigger 7** | **エラー記録** 🆕 | **エラー遭遇時** | **95%** | **★マーク自動生成・progress_state.yaml更新（3回ルール）** | **★★☆** |
 
 **統合度の定義**:
 - **★☆☆ (低)**: 単独実行、他Triggerとの連携なし
 - **★★☆ (中)**: 複数Triggerのデータ集約（週次集計等）
+  - Trigger 7: progress_state.yaml + daily_progress.md更新（3回到達でKB昇格検討）
 - **★★★ (高)**: 複数ファイル更新 + 他Triggerとの密結合
   - Trigger 3: progress_state.yaml + daily_progress.md同時更新
   - Trigger 4: Git解析 + 品質ゲート + 2ファイル更新
@@ -777,6 +819,34 @@ pwd  # 期待結果: /Users/yuta/Yuta/python/api-test-devops-portfolio
 - 全パターンで**Phase 3 = 1H/日固定**
 - 理由: 理解度確認（Trigger 6）の問題生成・採点時間が一定（30分）に加え、記録時間（30分）が必要なため
 - 効果: Trigger 6の実装シンプル化、予測可能性向上
+
+##### 4.1.1.1 Phase状態遷移定義
+
+**progress_state.yamlのcurrent_phase値**:
+
+```
+┌─────────────┐     Week 1-5完了     ┌────────────────┐     応募終了     ┌─────────┐
+│  学習期間   │ ────────────────→ │ 応募準備期間   │ ──────────────→ │  完了   │
+└─────────────┘                   └────────────────┘                  └─────────┘
+   Week 1-5.5                         Week 6
+   (Day 1-32)                        (Day 33-38)
+```
+
+**遷移条件**:
+
+| 現在Phase | 次Phase | 遷移条件 |
+|-----------|---------|---------|
+| 学習期間 | 応募準備期間 | `current_day >= 33` AND 全必須スキル習熟度80%達成 |
+| 応募準備期間 | 完了 | 初回応募完了 OR `current_day > 38` |
+
+**progress_state.yaml更新タイミング**:
+- **週次振り返り（Trigger 5）実行時**: 自動でPhase遷移判定
+- **手動更新**: 必要に応じて`current_phase`を直接編集
+
+**Phase別の行動変化**:
+- **学習期間**: Trigger 1-6が全て有効、理解度確認（Trigger 6）必須
+- **応募準備期間**: Trigger 6は任意、面接準備・ポートフォリオ最適化が主
+- **完了**: 全Triggerの記録は継続可能だが、必須チェックなし
 
 #### 4.1.2 WEEK_OFFSET_MAP（CLAUDE.md用）
 
@@ -1005,6 +1075,11 @@ current_implementation_task = state.get("current_implementation_task", {})
 ```python
 mastery_level = min((actual_hours / estimated_hours) * 80, 100)  # 上限100%
 ```
+
+**設計意図（80%の根拠）**:
+- **80%が最低ライン**: 技術習得において「理解した」と判断できる最低基準
+- **超過学習で100%到達可能**: 推定時間の1.25倍（=100/80）の学習で100%到達
+- **例**: 5時間推定の技術を6.25時間学習 → 100%習熟度
 
 **計算式の前提条件**（6週間プラン固有）:
 1. **`actual_hours`の定義**: Phase 1 + Phase 2 + Phase 3の合計時間
@@ -1612,8 +1687,8 @@ daily_progress.md更新完了
 
 **検出キーワード**: `理解度確認`
 
-**実施対象期間**: Week 1-6（Day 1-38）の学習期間
-**実施除外期間**: 6週プランは全期間が学習期間のため除外期間なし
+**実施対象期間**: Week 1-5.5（Day 1-32）の学習期間
+**実施除外期間**: Week 6（Day 33-38）は案件応募準備タスク期間のため理解度確認は任意
 
 **目的**: Day都度オンデマンドで理解度確認問題を生成し、習熟度80%+到達を検証
 
@@ -1956,9 +2031,372 @@ progress_state.yaml更新完了
 
 ---
 
-### 4.8 progress_state.yamlスキーマ仕様
+### 4.8 Trigger 7: エラー記録 
 
-#### 4.8.1 ファイル概要
+#### 4.8.1 Trigger概要
+
+**検出キーワード**: `エラー記録:` または `エラー:`
+
+**正規表現パターン**: `^エラー(?:記録)?:\s*(.+)$`
+- グループ1: error-id（snake_case推奨: `volume_mount`, `pytest_fixture`）
+
+**目的**: エラー遭遇時に★マーク付きで記録し、3回参照した情報をKB (Knowledge Base) 昇格検討対象として可視化
+
+**自動化率**: 95%（エラーID指定のみ手動、カウント・★マーク生成は自動）
+
+**統合度**: ★★☆（progress_state.yaml + daily_progress.md更新）
+
+#### 4.8.2 実行フロー
+
+```
+1. ユーザー入力解析
+   - エラーID抽出（例: "エラー記録: volume_mount" → "volume_mount"）
+   - 既存エラーか新規エラーかを判定
+
+2. progress_state.yaml更新
+   - error_occurrences[error_id].count++
+   - first_seen/last_seen更新
+   - 新規エラーの場合: descriptionは初回入力必須
+     - **自動推測の危険性**: 誤分類リスク、機密情報混入、ユーザー意図との乖離
+     - 形式: `エラー記録: error_id, 説明文`
+     - 例: `エラー記録: volume_mount, Docker volume設定エラー`
+     - **省略時の挙動**: 「説明を入力してください」と再入力促進
+     - **再入力拒否時**: 「説明未設定」をデフォルト値として登録
+   - **description入力検証（YAML Injection対策）**:
+     - 長さ制限: 1-256文字
+     - 禁止文字: YAML制御文字（`:`, `|`, `>`, `-`, `{`, `}`, `[`, `]`, `#`, `&`, `*`, `!`, `?`）
+     - 禁止パターン: 改行（`\n`, `\r`）
+     - 検証失敗時: エラーメッセージ表示、再入力促進
+
+3. daily_progress.md更新
+   - ★マーク自動生成（count数に応じて）
+     - count=1: ★
+     - count=2: ★★
+     - count=3+: ★★★ → KB昇格検討
+
+4. KB昇格判定
+   - count >= 3 の場合: 「KB昇格検討」フラグ表示
+   - 週次: `grep "★★★" docs/progress/daily_progress.md` でリスト抽出
+   - 手動でObsidian KBに移行（任意）
+```
+
+#### 4.8.3 3回ルール運用定義
+
+**目的**: 頻繁に参照する情報のみをKB化し、KB肥大化を防止
+
+**カウント基準**:
+- **トリガー**: `エラー記録: [error_id]` または `エラー: [error_id]` コマンド実行
+- **カウント対象**: 同一`error_id`の参照回数
+- **時間枠**: 無制限（プロジェクト期間全体でカウント累積）
+
+**error_id入力検証ルール**（P0-3: セキュリティ対策）:
+- **形式**: `^[a-z0-9]+(_[a-z0-9]+)*$`（snake_case）
+- **長さ**: 1-64文字
+- **禁止文字**: 正規表現で自動排除（`/`, `\`, `..`等は snake_case パターンでブロック）
+- **検証失敗時**: エラーメッセージ表示、処理中断
+
+```python
+# 検証ロジック例（macOS専用環境向け）
+import re
+
+VALID_ERROR_ID = re.compile(r'^[a-z0-9]+(_[a-z0-9]+)*$')
+YAML_SPECIAL_CHARS = re.compile(r'[:\|\>\-\{\}\[\]#&*!?,\'"]')
+
+def validate_error_id(error_id: str) -> tuple[bool, str | None]:
+    """error_id検証（snake_case、長さ制限）"""
+    if not (1 <= len(error_id) <= 64):
+        return False, "error_idは1-64文字で入力してください"
+    if not VALID_ERROR_ID.match(error_id):
+        return False, "error_idはsnake_case形式（小文字英数字とアンダースコア）で入力してください"
+    return True, None
+
+def validate_description(description: str) -> tuple[bool, str | None]:
+    """description検証（YAML Injection対策）"""
+    if not description:
+        return False, "説明文を入力してください"
+    if len(description) > 256:
+        return False, "説明文は256文字以内で入力してください"
+    if '\n' in description or '\r' in description:
+        return False, "説明文に改行は使用できません"
+    if YAML_SPECIAL_CHARS.search(description):
+        return False, "説明文にYAML特殊文字は使用できません"
+    return True, None
+```
+
+**KB昇格判定プロセス**:
+```
+count=1 → ★ 記録のみ
+count=2 → ★★ 記録のみ
+count=3 → ★★★ KB昇格検討フラグ表示
+         ↓
+週次振り返り（手動レビュー）
+         ↓
+Obsidian KBに移行 or スキップ
+         ↓
+kb_promoted: true に更新（移行時）
+```
+
+**KB昇格判定基準**（v1.0: シンプル版）:
+- **推奨**: `count >= 3` → KB昇格検討フラグ表示
+- 週次振り返り（Trigger 5）で手動判断
+
+> **Note**: count_30d計算、90日アーカイブはv2.0将来拡張として検討（Section 4.10.7参照）
+
+**SSOT原則（データソース責任分離）**（P0-5対応）:
+
+| データ種別 | 正式ソース（SSOT） | 用途 | 更新タイミング |
+|-----------|-------------------|------|---------------|
+| KB本文（症状/原因/解決策） | Obsidianノート | 知識蓄積・検索 | 手動（週次） |
+| メタデータ（count/occurrences/kb_promoted） | progress_state.yaml | 自動集計・判定 | 自動（Trigger 7） |
+
+**同期方向**: Obsidian `kb_promoted: true` → Trigger 5終了時に `progress_state.yaml` へ反映
+
+**KB昇格実行フロー（詳細手順）**:
+
+```
+【自動】count >= 3 検出
+    ↓
+【自動】kb_promoted = false のまま維持
+    ↓
+【自動】daily_progress.md: 「★★★ KB昇格検討」表示
+    ⇓ ═══════════════════════════════════
+【手動】週次振り返り（Trigger 5: 金曜18:00-19:00）
+    ↓
+【手動】Obsidianノート作成（KB本文のSSOT）
+    - 場所: obsidian-vault-local/errors/{error_id}.md
+    - frontmatter: kb_promoted: true 記載
+    - 内容: 症状/原因/解決策/検証方法/参照回数
+    ↓
+【自動】Trigger 5終了時に自動同期
+    - Obsidian frontmatter → progress_state.yaml
+    - kb_promoted: true に自動更新（メタデータSSOT反映）
+```
+
+**検証ポイント（自動チェック）**（P0-5: KB昇格検証メカニズム）:
+1. `progress_state.yaml`: `error_occurrences[error_id].count >= 3`
+2. `daily_progress.md`: 「★★★」マーカー存在
+3. Obsidianノート: `obsidian-vault-local/errors/{error_id}.md` 存在
+4. 一貫性: 3点の`error_id`完全一致（snake_case）
+
+**検証コマンド**:
+```bash
+# KB昇格検証（手動実行）
+ERROR_ID="volume_mount"
+[ -f "obsidian-vault-local/errors/${ERROR_ID}.md" ] && \
+  grep -q "$ERROR_ID" progress_state.yaml && \
+  grep -q "★★★.*$ERROR_ID" docs/progress/daily_progress.md && \
+  echo "✅ KB昇格一貫性検証OK" || echo "❌ 不整合検出"
+```
+
+**Obsidianエラーノート テンプレート**（P1-8: frontmatter拡張設計対応）:
+
+```markdown
+---
+error_id: "{error_id}"
+kb_promoted: true
+first_seen: "{first_seen}"
+last_seen: "{last_seen}"
+count: {count}
+tags:
+  - error
+  - kb
+  - {domain}
+---
+
+# {error_id}
+
+## 症状
+- エラーメッセージ（※機密情報マスク済み）
+- 発生条件
+
+## 原因
+- 根本原因の説明
+
+## 解決策
+```bash
+# 解決コマンド or コード
+```
+
+## 検証方法
+```bash
+# 解決を確認するテストコマンド
+# 例: docker-compose ps  # 全コンテナ起動確認
+# 例: uv run pytest tests/integration/  # 統合テスト実行
+```
+
+**検証完了条件**:
+- [ ] エラーが再現しなくなった
+- [ ] 関連テストがパス（該当する場合）
+- [ ] 副作用なし（他機能への影響確認）
+
+## 参照履歴
+- 初回: {first_seen}
+- 最終: {last_seen}
+- 参照回数: {count}回
+
+## 関連リンク
+- [[関連ノート]]
+```
+
+**テンプレート変数定義表**（P1-1対応）:
+
+| 変数 | 取得元 | 形式 | 例 | 必須 |
+|------|-------|------|-----|-----|
+| `{error_id}` | progress_state.yaml キー名 | snake_case | `volume_mount` | ✅ |
+| `{first_seen}` | error_occurrences.{error_id}.first_seen | YYYY-MM-DD | `2025-12-01` | ✅ |
+| `{last_seen}` | error_occurrences.{error_id}.last_seen | YYYY-MM-DD | `2025-12-04` | ✅ |
+| `{count}` | error_occurrences.{error_id}.count | 整数 | `3` | ✅ |
+| `{domain}` | エラー分類（手動指定） | snake_case | `docker`, `pytest` | 任意 |
+
+**機密情報マスク仕様**（P1-7対応）:
+
+エラーメッセージ記録時、以下のパターンは自動マスク対象:
+
+| パターン | マスク後 | 例 |
+|---------|---------|-----|
+| APIキー（`AKIA...`, `sk-...`） | `[MASKED_API_KEY]` | `AKIA1234...` → `[MASKED_API_KEY]` |
+| Bearer Token | `[MASKED_TOKEN]` | `Bearer eyJ...` → `Bearer [MASKED_TOKEN]` |
+| パスワード（`password=...`） | `[MASKED_PASSWORD]` | `password=secret` → `password=[MASKED_PASSWORD]` |
+| 接続文字列（`://user:pass@`） | `[MASKED_CREDENTIALS]` | `mysql://root:pass@` → `mysql://[MASKED_CREDENTIALS]@` |
+| GitHub PAT（`ghp_...`） | `[MASKED_GITHUB_PAT]` | `ghp_abc123...` → `[MASKED_GITHUB_PAT]` |
+
+**マスク検証コマンド**:
+```bash
+# エラーメッセージ内の機密情報検出
+grep -E "(AKIA|sk-|ghp_|Bearer |password=|://[^@]+@)" errors/*.md && \
+  echo "⚠️ 機密情報検出" || echo "✅ マスク済み"
+```
+
+**保存場所**: `obsidian-vault-local/errors/`
+- 命名規則: `{error_id}.md`（snake_case）
+- 例: `volume_mount.md`, `pytest_fixture.md`
+
+**運用コマンド例**:
+```bash
+# 週次でKB昇格候補抽出
+grep "★★★" docs/progress/daily_progress.md
+
+# 手動でObsidian KBに移行後
+# progress_state.yaml の kb_promoted: true に更新
+```
+
+#### 4.8.4 progress_state.yaml更新仕様
+
+**error_occurrencesスキーマ**:
+```yaml
+error_occurrences:
+  volume_mount:                    # ✅ snake_case命名規則
+    description: "Docker volume設定エラー"
+    count: 3                       # 累計カウント（整数）
+    first_seen: "2025-12-01"       # 初回発生日（YYYY-MM-DD）
+    last_seen: "2025-12-04"        # 最終発生日（YYYY-MM-DD）
+    occurrences:                   # 発生日リスト（配列）→ count_30d計算に使用可能
+      - "2025-12-01"
+      - "2025-12-03"
+      - "2025-12-04"
+    kb_promoted: false             # KB昇格済みフラグ（boolean）
+  pytest_fixture:                  # ✅ snake_case命名規則
+    description: "pytest fixture scope不一致"
+    count: 2
+    first_seen: "2025-12-02"
+    last_seen: "2025-12-03"
+    occurrences:
+      - "2025-12-02"
+      - "2025-12-03"
+    kb_promoted: false
+```
+
+**更新ルール**:
+- `count`: エラー記録コマンド実行ごとに+1（**kb_promoted=true後も継続増加** → KB記事改善指標として活用）
+- `first_seen`: 初回記録時のみ設定
+- `last_seen`: 毎回更新
+- `kb_promoted`: KB移行後に手動でtrue設定
+- `description`: **マージ方式**で更新
+  - 新規エラー: ユーザー入力必須（初回のみ）
+  - 既存エラー: 既存description + `\n[{date}] {new_description}` でマージ
+  - 256文字制限維持（超過時は古い情報を切り捨て、最新優先）
+  - 例: `"Docker volumeエラー\n[2025-12-05] 設定ファイルパス誤り"`
+
+#### 4.8.5 daily_progress.md更新仕様
+
+**追加セクション**:
+```markdown
+## エラー参照履歴
+- ★★★ [volume_mount] Docker volume設定エラー → KB昇格検討
+- ★★ [pytest_fixture] pytest fixture scope不一致
+- ★ [git_merge] merge conflict解決
+```
+
+**更新タイミング**: Trigger 7実行時（自動）
+
+**ファイル初期化ロジック**（P0-4対応）:
+
+```python
+from pathlib import Path
+from datetime import datetime
+
+def ensure_daily_progress_exists() -> Path:
+    """
+    daily_progress.mdが存在しない場合は初期テンプレートを作成
+
+    Returns:
+        daily_progress.mdのPath
+
+    Note:
+        全Trigger（3,4,5,6,7）の共通前提条件として使用
+    """
+    progress_dir = Path("docs/progress")
+    progress_file = progress_dir / "daily_progress.md"
+
+    if not progress_dir.exists():
+        progress_dir.mkdir(parents=True, exist_ok=True)
+
+    if not progress_file.exists():
+        template = f"""# Daily Progress
+
+*最終更新: {datetime.now().strftime("%Y-%m-%d")}*
+
+## 今日の学習
+
+## 今日の実装
+
+## エラー参照履歴
+
+## メモ
+"""
+        progress_file.write_text(template, encoding="utf-8")
+
+    return progress_file
+```
+
+**呼び出しタイミング**: 各Trigger実行開始時（Phase 0として追加）
+
+#### 4.8.6 コマンド例
+
+**基本形**:
+```bash
+エラー記録: volume_mount
+```
+
+**AI実行内容**:
+```
+1. エラーID「volume_mount」の記録を更新...
+
+【更新結果】
+- count: 2 → 3
+- ★★★ 到達 → KB昇格検討対象
+
+progress_state.yaml更新完了
+daily_progress.md更新完了
+
+💡 ヒント: `grep "★★★" docs/progress/daily_progress.md` で週次抽出
+```
+
+---
+
+### 4.9 progress_state.yamlスキーマ仕様
+
+#### 4.9.1 ファイル概要
 
 **ファイルパス**: `progress_state.yaml`（プロジェクトルート）
 
@@ -1970,8 +2408,9 @@ progress_state.yaml更新完了
 - Trigger 3（学習記録）: `skill_mastery`, `learning_history`更新
 - Trigger 4（実装記録）: `implementation_history`更新
 - Trigger 6（理解度確認）: `skill_mastery.understanding_check`更新
+- Trigger 7（エラー記録）: `error_occurrences`更新
 
-#### 4.8.2 完全スキーマ定義
+#### 4.9.2 完全スキーマ定義
 
 ```yaml
 # ====================================
@@ -2131,7 +2570,7 @@ metadata:
   learning_pending: 32
 ```
 
-#### 4.8.3 スキーマバリデーション
+#### 4.9.3 スキーマバリデーション
 
 **必須フィールド検証**:
 ```python
@@ -2165,7 +2604,7 @@ def validate_learning_state(data: dict) -> list[str]:
     return errors
 ```
 
-#### 4.8.4 Week別進捗計算
+#### 4.9.4 Week別進捗計算
 
 **カバレッジ進捗**:
 ```python
@@ -2239,9 +2678,9 @@ def aggregate_mastery_stats(
 
 ---
 
-### 4.9 実装チェックリスト
+### 4.10 実装チェックリスト
 
-#### 4.9.0 チェックリスト対象について
+#### 4.10.0 チェックリスト対象について
 
 **対象Trigger** (統合度★★★):
 - **Trigger 3, 4, 6**: 複数ファイル更新・複雑なロジックを含むため、詳細チェックリスト必須
@@ -2257,7 +2696,7 @@ def aggregate_mastery_stats(
 
 ---
 
-#### 4.9.1 Trigger 3実装チェックリスト
+#### 4.10.1 Trigger 3実装チェックリスト
 
 **Phase 1: セッション開始時コンテキスト自動補完**
 - [ ] progress_state.yaml読み込み
@@ -2293,7 +2732,7 @@ def aggregate_mastery_stats(
 - [ ] 実際時間異常値エラー処理
 - [ ] YAML書き込み失敗エラー処理
 
-#### 4.9.2 Trigger 4実装チェックリスト
+#### 4.10.2 Trigger 4実装チェックリスト
 
 **Phase 1: Git解析**
 - [ ] `git diff HEAD~1..HEAD --stat` 実行
@@ -2331,7 +2770,7 @@ def aggregate_mastery_stats(
 - [ ] AI協働分析
 - [ ] 成果物（git commit hash、変更行数等）
 
-#### 4.9.3 Trigger 6実装チェックリスト
+#### 4.10.3 Trigger 6実装チェックリスト
 
 **Phase 1: 問題生成準備**
 - [ ] progress_state.yaml から学習項目取得
@@ -2370,7 +2809,44 @@ def aggregate_mastery_stats(
 - [ ] 再採点
 - [ ] 最終習熟度計算（復習時間含む）
 
-#### 4.9.4 統合テスト項目
+#### 4.10.4 Trigger 7実装チェックリスト（P1-9対応）
+
+**設計検証**:
+- [ ] error_id入力検証ロジック設計完了（P0-3仕様準拠）
+- [ ] progress_state.yamlスキーマ整合性確認（Section 4.8.4準拠）
+- [ ] 既存Trigger（3,4,5,6）との影響分析完了
+- [ ] SSOT原則準拠設計確認（Obsidian frontmatter → YAML同期）
+
+**実装**:
+- [ ] ★マーク生成関数実装（count→★/★★/★★★変換）
+- [ ] error_id検証関数実装（snake_case、禁止文字、長さ制限）
+- [ ] progress_state.yaml更新処理実装
+  - [ ] error_occurrences新規追加処理
+  - [ ] countインクリメント + occurrences追記処理
+  - [ ] first_seen/last_seen更新処理
+  - [ ] occurrences配列追加処理
+- [ ] daily_progress.md更新処理実装
+  - [ ] エラー参照履歴セクション生成
+  - [ ] ★マーク自動表示
+  - [ ] KB昇格検討フラグ表示（count>=3時）
+- [ ] 機密情報マスク処理実装（P1-7仕様準拠）
+- [ ] 単体テスト実装（カバレッジ85%以上）
+
+**Trigger 5連携**:
+- [ ] KB昇格同期処理設計（Obsidian frontmatter → progress_state.yaml）
+- [ ] 週次振り返り時のkb_promoted自動更新
+
+**統合テスト**:
+- [ ] Trigger 5（週次振り返り）との連携テスト
+- [ ] 既存Trigger並行実行テスト（Trigger 3,4との干渉なし確認）
+- [ ] KB昇格フロー E2Eテスト（3回検出→★★★表示→Obsidianノート作成→同期）
+
+**品質検証**:
+- [ ] error_id不正入力時のエラーハンドリング
+- [ ] 同日複数エラー記録時の動作確認
+- [ ] occurrences配列正確性確認（日付重複排除）
+
+#### 4.10.5 統合テスト項目
 
 **Trigger 3 + Trigger 4の連携テスト**
 - [ ] 学習記録（Trigger 3）後に実装記録（Trigger 4）が正常動作
@@ -2392,12 +2868,20 @@ def aggregate_mastery_stats(
 - [ ] 品質ゲート失敗時の適切なフィードバック
 - [ ] 理解度確認問題生成失敗時のフォールバック
 
-#### 4.9.5 品質保証
+**Trigger 7連携テスト**（P1-9対応）:
+- [ ] エラー記録（Trigger 7）後にKB昇格判定が正常動作
+- [ ] progress_state.yaml の error_occurrences が正常更新
+- [ ] daily_progress.md に★マーク付きエラー履歴が記録
+- [ ] count>=3 時に「★★★ KB昇格検討」表示
+- [ ] Trigger 5（週次振り返り）でkb_promoted自動同期
+
+#### 4.10.6 品質保証
 
 **自動化率**:
 - Trigger 3（学習記録）: 80%（ユーザー入力1項目のみ）
 - Trigger 4（実装記録）: 90%（ユーザー承認1ステップ）
 - Trigger 6（理解度確認）: 85%（AI自動生成問題、ユーザー回答のみ手動）
+- Trigger 7（エラー記録）: 95%（error_id指定のみ）
 - **総合自動化率**: 90%
 
 **データ整合性**:
@@ -2410,11 +2894,53 @@ def aggregate_mastery_stats(
 - 品質ゲート失敗時の修正ガイダンス提供
 - 理解度確認不合格時の復習ループ（最大3回）
 
+#### 4.10.7 将来拡張（v2.0以降）
+
+**背景**: 6週プラン（38日間）では以下の機能は費用対効果が低いため、v1.0スコープ外とする。プロジェクト継続利用時に検討。
+
+**スコープ外機能一覧**:
+
+| 機能 | 説明 | v1.0での対応 | v2.0検討条件 |
+|------|------|-------------|-------------|
+| count_30d計算 | 直近30日間のエラー発生回数 | occurrences配列のみ記録 | プロジェクト90日以上継続時 |
+| 90日アーカイブ | 90日以上未参照エラーのアーカイブ推奨 | last_seen記録のみ | プロジェクト90日以上継続時 |
+| KB昇格後同期 | Obsidian→progress_state.yaml自動同期 | 手動更新（Trigger 5） | MCP連携安定後 |
+
+**count_30d将来実装仕様**（参考）:
+```python
+from datetime import datetime, timedelta
+from typing import List
+
+def calculate_count_30d(occurrences: List[str]) -> int:
+    """直近30日間のエラー発生回数を計算"""
+    threshold = datetime.now() - timedelta(days=30)
+    return sum(
+        1 for date_str in occurrences
+        if datetime.fromisoformat(date_str) >= threshold
+    )
+```
+
+**90日アーカイブ将来実装仕様**（参考）:
+```python
+def should_archive(last_seen: str) -> bool:
+    """90日以上未参照のエラーはアーカイブ推奨"""
+    threshold = datetime.now() - timedelta(days=90)
+    return datetime.fromisoformat(last_seen) < threshold
+```
+
+**v2.0検討トリガー**:
+- プロジェクト継続利用決定時
+- エラーKB蓄積が50件以上
+- 週次振り返りで「古いエラー整理が必要」と判断
+
 ---
 
 ## 🚀 実装ロードマップ
 
-### 5.1 Week 3: 準備・設計
+> **📌 6週プランとの関係**: 本ロードマップは6週プランの**メイン学習と並行**で実施。
+> 各Weekの時間配分は、メイン学習を優先しつつ、空き時間（1日30分〜1時間）で進める設計。
+
+### 5.1 Week 3: 準備・設計（Docker基礎構築と並行）
 
 #### 5.1.0 Week 1-2知識の移行
 
@@ -3564,7 +4090,7 @@ git log --oneline -5  # 期待: .gitignore, ADR_001コミット確認
 
 ---
 
-### 5.2 Week 4: 試験運用（4-5h）
+### 5.2 Week 4: 試験運用（CI/CD統合と並行、4-5h）
 
 #### 5.2.1 ノート作成計画（8-10件）
 
@@ -3587,6 +4113,24 @@ git log --oneline -5  # 期待: .gitignore, ADR_001コミット確認
 ---
 
 #### 5.2.2 検索ヒット率測定（Week 4終了時）
+
+##### P0-QA-3対応: 検索ヒット率の定量的定義
+
+**計算式**:
+```
+検索ヒット率 = (ヒット件数 / 検索対象エラー総数) × 100 [%]
+```
+
+**ヒット判定基準**:
+- **YES（ヒット）**: Obsidian検索結果に「症状」「原因」「解決策」のいずれかを含むノートが1件以上存在
+- **NO（ミス）**: 検索結果0件、または関連性のないノートのみ
+
+**閾値設定根拠**:
+| Week | 目標 | 根拠 |
+|------|------|------|
+| Week 4 | 60% | 試験運用期間。5-10ノート作成想定、初期段階として60%は現実的 |
+| Week 5 | 70% | タグ体系最適化後。リンク追加とタグ整理で10%向上を見込む |
+| Week 6 | 80% | 本番運用。面接準備でKB充実、エラー履歴蓄積完了 |
 
 **測定手順**:
 1. Week 4で発生した全エラー・問題をリストアップ（5-10件）
@@ -3704,7 +4248,7 @@ chmod +x scripts/measure_search_hit_rate.sh
 
 ---
 
-### 5.3 Week 5: 最適化（3-4h）
+### 5.3 Week 5: 最適化（非同期処理深化と並行、3-4h）
 
 #### 5.3.1 タグ体系最適化（2h）
 
@@ -3736,7 +4280,7 @@ grep -rh "tags:" obsidian-vault-local/ --include="*.md" | sort | uniq -c
 
 ---
 
-### 5.4 Week 6: 本番運用（2-3h）
+### 5.4 Week 6: 本番運用（最適化+応募準備と並行、2-3h）
 
 #### 5.4.1 ポートフォリオ統合（手動作業）
 

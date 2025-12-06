@@ -1,12 +1,14 @@
 {
-  "$schema": "https://modelcontextprotocol.io/schema/mcp-config.schema.json",
   "mcpServers": {
     "task-master-ai": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "task-master-ai"],
+      "args": [
+        "-y",
+        "task-master-ai"
+      ],
       "env": {
-        "TASK_MASTER_TOOLS": "get_tasks,get_task,add_task,update_task,set_task_status,next_task,generate,add_subtask,update_subtask,remove_task,expand_task,expand_all,scope_up_task,scope_down_task,analyze_project_complexity,add_dependency,remove_dependency,validate_dependencies,fix_dependencies,complexity_report,initialize_project,parse_prd,models,autopilot_start,autopilot_resume,autopilot_next,autopilot_status,autopilot_complete_phase,autopilot_commit"
+        "TASK_MASTER_TOOLS": "get_tasks,get_task,add_task,update_task,add_subtask,update_subtask,remove_task,expand_task,expand_all,analyze_project_complexity,fix_dependencies,parse_prd,models"
       },
       "metadata": {
         "description": "Task management and workflow automation (optimized - 31 tools)",
@@ -15,10 +17,35 @@
         "optimization": "Custom tool selection - 30% token reduction"
       }
     },
+    "serena": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/oraios/serena",
+        "serena",
+        "start-mcp-server",
+        "--context",
+        "limited_serena",
+        "--project",
+        "/Users/yuta/Yuta/python/api-test-devops-portfolio"
+      ]
+    },
+    "claude-flow": {
+      "type": "stdio",
+      "command": "/Users/yuta/.nvm/versions/node/v20.19.4/bin/npx",
+      "args": [
+        "claude-flow@alpha",
+        "mcp",
+        "start"
+      ],
+      "env": {}
+    },
     "claude-flow-lite": {
       "type": "stdio",
       "command": "node",
-      "args": ["/Users/yuta/workspace/ruv-claude-flow/src/mcp/mcp-server-wrapper.js"],
+      "args": [
+        "/Users/yuta/workspace/ruv-claude-flow/src/mcp/mcp-server-wrapper.js"
+      ],
       "env": {
         "NODE_ENV": "production",
         "CLAUDE_FLOW_FALLBACK_PATH": "/Users/yuta/workspace/ruv-claude-flow/src/mcp/mcp-server.js",
@@ -32,6 +59,34 @@
         "strategy": "npm-first -> local-fallback",
         "note": "Using local wrapper for fallback support (npm package integration pending)"
       }
+    },
+    "sequential-thinking": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ],
+      "metadata": {
+        "description": "Sequential thinking MCP server (global setting also available)",
+        "source": "npm"
+      }
+    },
+    "obsidian-mcp-tools": {
+      "command": "/Users/yuta/obsidian-vault/.obsidian/plugins/mcp-tools/bin/mcp-server",
+      "args": [],
+      "env": {
+        "OBSIDIAN_API_KEY": "5e2e4eec3d3ccd1b7c4ba929bb0697046acf1b04013728063e76db3604549200"
+      }
+    },
+    "ast-grep": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/ast-grep/ast-grep-mcp",
+        "ast-grep-server"
+      ],
+      "env": {}
     }
   }
 }

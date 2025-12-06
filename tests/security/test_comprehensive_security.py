@@ -19,6 +19,14 @@ from utils.api_client import AsyncAPIClient
 
 logger = structlog.get_logger()
 
+# Module-level markers: Security tests using real API (integration level)
+# Design rationale: Security testing at integration level validates actual API behavior
+# See: docs/interview/multi_level_security_testing.md
+pytestmark = [
+    pytest.mark.security,
+    pytest.mark.integration,  # Uses AsyncAPIClient for real API calls
+]
+
 
 class SecurityTestSuite:
     """セキュリティテストスイート"""
@@ -475,7 +483,9 @@ class TestSecurityIntegration:
         total_vulnerabilities = 0
 
         for suite in test_suites:
-            suite.setup_method()
+            # setup_methodが存在する場合のみ呼び出す
+            if hasattr(suite, "setup_method"):
+                suite.setup_method()
 
             # テストスイートの各テストメソッドを実行
             for method_name in dir(suite):

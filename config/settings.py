@@ -8,13 +8,86 @@
 - セキュリティベストプラクティス
 """
 
+import ipaddress
 import logging
+import os
+import socket
 from enum import Enum
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# =============================================================================
+# SSRF Prevention Configuration
+# =============================================================================
+
+
+def _get_allowed_domains() -> set[str]:
+    """環境変数またはデフォルト値から許可ドメインリストを取得
+
+    環境変数 ALLOWED_DOMAINS: カンマ区切りのドメインリスト
+    例: ALLOWED_DOMAINS=api.example.com,api.test.com
+    """
+    env_domains = os.environ.get("ALLOWED_DOMAINS", "")
+    if env_domains:
+        return set(d.strip() for d in env_domains.split(",") if d.strip())
+
+    # デフォルト: 本番用 + テスト用ドメイン
+    return {
+        # 本番用
+        "jsonplaceholder.typicode.com",
+        "api.github.com",
+        "httpbin.org",
+        # テスト用（example.com は RFC 2606 で予約済み）
+        "example.com",
+        "api.example.com",
+        "test.example.com",
+        "test-api.example.com",
+    }
+
+
+# 許可されたドメインリスト（環境変数で上書き可能）
+ALLOWED_DOMAINS: set[str] = _get_allowed_domains()
+
+# 危険なプライベートIPレンジ
+PRIVATE_IP_RANGES: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),  # loopback
+    ipaddress.ip_network("169.254.0.0/16"),  # link-local (AWS metadata)
+    ipaddress.ip_network("::1/128"),  # IPv6 loopback
+    ipaddress.ip_network("fc00::/7"),  # IPv6 private
+    ipaddress.ip_network("fe80::/10"),  # IPv6 link-local
+]
+
+
+def is_private_ip(hostname: str) -> bool:
+    """ホスト名がプライベートIPまたはローカルアドレスかチェック
+
+    Args:
+        hostname: チェック対象のホスト名またはIPアドレス
+
+    Returns:
+        True: プライベート/ローカルIP, False: パブリックIP
+    """
+    try:
+        # IPアドレス形式の場合
+        ip = ipaddress.ip_address(hostname)
+        return any(ip in network for network in PRIVATE_IP_RANGES)
+    except ValueError:
+        # ホスト名の場合、DNS解決を試みる
+        try:
+            resolved_ip = socket.gethostbyname(hostname)
+            ip = ipaddress.ip_address(resolved_ip)
+            return any(ip in network for network in PRIVATE_IP_RANGES)
+        except (OSError, ValueError):
+            # DNS解決失敗は安全側に倒す（許可）
+            return False
+
 
 # =============================================================================
 # 環境定義
@@ -69,9 +142,36 @@ class APIConfig(BaseModel):
     @field_validator("base_url")
     @classmethod
     def validate_base_url(cls, v: str) -> str:
-        """ベースURLのバリデーション"""
+        """ベースURLのバリデーション（SSRF Prevention対応）
+
+        Security:
+            - プライベートIP/ループバックアドレスをブロック
+            - 許可されたドメインのみ許可（ALLOWED_DOMAINS）
+            - AWS metadata endpoint (169.254.169.254) をブロック
+        """
         if not v.startswith(("http://", "https://")):
             raise ValueError("Base URL must start with http:// or https://")
+
+        # URLパース
+        parsed = urlparse(v)
+        hostname = parsed.hostname
+
+        if not hostname:
+            raise ValueError("Invalid URL: hostname not found")
+
+        # SSRF Prevention: プライベートIPチェック
+        if is_private_ip(hostname):
+            raise ValueError(
+                f"SSRF Prevention: Private/loopback IP addresses are not allowed: {hostname}"
+            )
+
+        # SSRF Prevention: 許可ドメインチェック
+        if hostname not in ALLOWED_DOMAINS:
+            raise ValueError(
+                f"SSRF Prevention: Domain not in allowlist: {hostname}. "
+                f"Allowed: {', '.join(sorted(ALLOWED_DOMAINS))}"
+            )
+
         if v.endswith("/"):
             v = v.rstrip("/")
         return v

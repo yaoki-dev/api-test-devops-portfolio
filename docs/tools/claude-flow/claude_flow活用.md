@@ -492,7 +492,7 @@ hooks:
   pre_push:
     - uv run pytest -m integration
     - docker-compose up -d demo
-    - docker-compose exec demo pytest -m smoke
+    # - docker-compose exec demo pytest -m smoke  # 現規模では不採用
 ```
 
 #### 既存ツールとの差別化
@@ -1212,7 +1212,7 @@ hooks:
   pre_push:
     - uv run pytest -m integration -v
     - docker-compose up -d demo
-    - docker-compose exec demo pytest -m smoke
+    # - docker-compose exec demo pytest -m smoke  # 現規模では不採用
 ```
 
 **確認項目**:

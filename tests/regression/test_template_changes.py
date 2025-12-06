@@ -38,16 +38,18 @@ class TestAsyncClientBasicBehavior:
         """コンテキストマネージャーのライフサイクル一貫性"""
         client = AsyncAPIClient(base_url="https://test.com")
 
-        # __aenter__前: _clientはNone
-        assert client._client is None
+        # 現在の設計: __init__で_clientが初期化される
+        # (以前の設計: __aenter__で初期化 → 現在は__init__で初期化)
+        assert client._client is not None
+        assert isinstance(client._client, httpx.AsyncClient)
 
         async with client:
-            # __aenter__後: _clientが初期化される
+            # __aenter__後: _clientは引き続き有効
             assert client._client is not None
             assert isinstance(client._client, httpx.AsyncClient)
 
         # __aexit__後: _clientは閉じられる
-        # 注: httpx.AsyncClient.close()は_clientをNoneにしないが、transportを閉じる
+        # 注: httpx.AsyncClient.aclose()は_clientをNoneにしないが、transportを閉じる
 
 
 class TestAsyncClientRetryBehavior:
@@ -126,7 +128,7 @@ class TestAsyncClientHTTPMethods:
 
         async with AsyncAPIClient() as client:
             client._client = mock_httpx_client
-            response = await client.get("/posts/1", params={"filter": "active"})
+            await client.get("/posts/1", params={"filter": "active"})
 
             # リクエストが正しく呼び出されたことを確認
             assert mock_httpx_client.request.call_count == 1
@@ -152,7 +154,7 @@ class TestAsyncClientHTTPMethods:
 
         async with AsyncAPIClient() as client:
             client._client = mock_httpx_client
-            response = await client.post("/posts", json={"title": "test", "body": "content"})
+            await client.post("/posts", json={"title": "test", "body": "content"})
 
             # リクエストが正しく呼び出されたことを確認
             assert mock_httpx_client.request.call_count == 1
@@ -178,7 +180,7 @@ class TestAsyncClientHTTPMethods:
 
         async with AsyncAPIClient() as client:
             client._client = mock_httpx_client
-            response = await client.put("/posts/1", json={"title": "updated"})
+            await client.put("/posts/1", json={"title": "updated"})
 
             # リクエストが正しく呼び出されたことを確認
             assert mock_httpx_client.request.call_count == 1
@@ -200,7 +202,7 @@ class TestAsyncClientHTTPMethods:
 
         async with AsyncAPIClient() as client:
             client._client = mock_httpx_client
-            response = await client.delete("/posts/1")
+            await client.delete("/posts/1")
 
             # リクエストが正しく呼び出されたことを確認
             assert mock_httpx_client.request.call_count == 1

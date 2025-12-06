@@ -51,10 +51,10 @@ def test_jitter_distribution_uniqueness():
 
     # 検証: 85個以上のユニーク遅延（統計的に妥当な基準）
     assert unique_delays >= 85, (
-        f"Expected >= 85 unique delays (85%+ uniqueness, statistically valid), got {unique_delays} ({unique_delays}%)\n"
+        f"Expected >= 85 unique delays (85%+ uniqueness), got {unique_delays}\n"
         f"Sample delays (first 10): {rounded_delays[:10]}\n"
         f"Theoretical expectation (Birthday Paradox): ~89-92 unique values\n"
-        f"This indicates insufficient jitter randomness or distribution problems."
+        f"This indicates insufficient jitter randomness."
     )
 
 
@@ -134,12 +134,13 @@ def test_thundering_herd_prevention():
     unique_delays = len(set(rounded_delays))
 
     # 検証: 60個以上のユニーク遅延（統計的に妥当な基準）
+    collision_rate = (100 - unique_delays) / 100 * 100
     assert unique_delays >= 60, (
-        f"Expected >= 60 unique delays to prevent Thundering Herd (statistically valid), got {unique_delays}\n"
+        f"Expected >= 60 unique delays (Thundering Herd prevention), got {unique_delays}\n"
         f"Sample delays (first 10): {rounded_delays[:10]}\n"
         f"Theoretical expectation (Birthday Paradox): ~63-68 unique values\n"
-        f"Collision rate: {(100 - unique_delays) / 100 * 100:.1f}% (acceptable < 40% for Thundering Herd prevention)\n"
-        f"This indicates potential for excessive simultaneous retries and Thundering Herd problem."
+        f"Collision rate: {collision_rate:.1f}% (acceptable < 40%)\n"
+        f"Risk: excessive simultaneous retries (Thundering Herd)."
     )
 
 
@@ -250,10 +251,10 @@ def test_jitter_consistency_across_attempts():
         )
 
         assert unique_delays >= min_unique, (
-            f"Attempt {attempt}: Expected >= {min_unique} unique delays (statistically valid), got {unique_delays}\n"
-            f"Range width: {range_width:.2f}s ({possible_values} possible 0.01s values)\n"
-            f"Theoretical expectation (Birthday Paradox): ~{theoretical_unique} unique values\n"
-            f"Jitter consistency is not maintained across different attempt values."
+            f"Attempt {attempt}: Expected >= {min_unique} unique, got {unique_delays}\n"
+            f"Range: {range_width:.2f}s ({possible_values} possible 0.01s values)\n"
+            f"Theoretical (Birthday Paradox): ~{theoretical_unique} unique values\n"
+            f"Jitter consistency not maintained across attempts."
         )
 
         # 平均値検証
@@ -262,8 +263,8 @@ def test_jitter_consistency_across_attempts():
         lower_bound = expected * 0.9
         upper_bound = expected * 1.1
         assert lower_bound <= mean_delay <= upper_bound, (
-            f"Attempt {attempt}: Expected mean within ±10% of {expected:.2f}s, got {mean_delay:.2f}s\n"
-            f"Jitter implementation shows inconsistent behavior across attempt values."
+            f"Attempt {attempt}: mean {mean_delay:.2f}s not within ±10% of {expected:.2f}s\n"
+            f"Jitter implementation shows inconsistent behavior."
         )
 
 
