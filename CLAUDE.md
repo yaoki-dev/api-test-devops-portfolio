@@ -779,7 +779,7 @@ if settings.is_development():
 AIが自動的に適切なPluginを発動するためのルール。詳細（パッケージ情報・完全な発動トリガー一覧）は`@memory:command_usage_guide`を参照。
 
 ### Critical（毎コミット必須）
-| Plugin | 発動トリガー | 動作 |
+| Plugin | 発動トリガー | 用途 |
 |--------|------------|------|
 | `security-guidance` (hook) | Edit/Write/MultiEdit時 | 自動警告（明示的呼出不要） |
 | `/code-review:code-review` | 品質ゲート全合格後（※1） | 4並列エージェントレビュー（80点閾値） |
@@ -787,16 +787,16 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 ### High（開発標準）
 | Plugin | 発動トリガー | 用途 |
 |--------|------------|------|
-| `/git-workflow:feature`, `release`, `hotfix`, `finish` | ブランチ操作時 | Git Flowブランチ管理 |
-| `/commit-commands:commit`, `commit-push-pr` | コミット/PR作成時 | ステージング+コミット+PR |
+| `/git-workflow:feature`, `/git-workflow:release`, `/git-workflow:hotfix`, `/git-workflow:finish` | ブランチ操作時 | Git Flowブランチ管理 |
+| `/commit-commands:commit`, `/commit-commands:commit-push-pr` | コミット/PR作成時 | ステージング+コミット+PR |
 | `/pr-review-toolkit:review-pr` | git push完了後、PR作成前 | 6エージェント包括レビュー |
-| `/testing-suite:test-coverage`, `generate-tests` | テスト関連時 | カバレッジ分析・テスト生成 |
+| `/testing-suite:test-coverage`, `/testing-suite:generate-tests` | テスト関連時 | カバレッジ分析・テスト生成 |
 
 ### Medium（必要時）
 | Plugin | 発動トリガー | 用途 |
 |--------|------------|------|
 | `/documentation-generator:update-docs` | ドキュメント更新時 | 一括同期・バッジ自動生成 |
-| `/security-pro:security-audit`, `dependency-audit` | 週次/リリース前 | セキュリティ・依存関係監査 |
+| `/security-pro:security-audit`, `/security-pro:dependency-audit` | 週次/リリース前 | セキュリティ・依存関係監査 |
 | `/performance-optimizer:performance-audit` | パフォーマンス懸念時 | ボトルネック特定・最適化 |
 
 ### Low（特定場面）
