@@ -774,6 +774,49 @@ if settings.is_development():
 **品質基準**:
 - カバレッジ目標: Week 7-10でPhase別に設定（最終目標85%）
 
+## 🔌 Plugin自動発動ルール
+
+AIが自動的に適切なPluginを発動するためのルール。詳細（パッケージ情報・完全な発動トリガー一覧）は`@memory:command_usage_guide`を参照。
+
+### Critical（毎コミット必須）
+| Plugin | 発動トリガー | 動作 |
+|--------|------------|------|
+| `security-guidance` (hook) | Edit/Write/MultiEdit時 | 自動警告（明示的呼出不要） |
+| `/code-review:code-review` | 品質ゲート全合格後（※1） | 4並列エージェントレビュー（80点閾値） |
+
+### High（開発標準）
+| Plugin | 発動トリガー | 用途 |
+|--------|------------|------|
+| `/git-workflow:feature`, `release`, `hotfix`, `finish` | ブランチ操作時 | Git Flowブランチ管理 |
+| `/commit-commands:commit`, `commit-push-pr` | コミット/PR作成時 | ステージング+コミット+PR |
+| `/pr-review-toolkit:review-pr` | git push完了後、PR作成前 | 6エージェント包括レビュー |
+| `/testing-suite:test-coverage`, `generate-tests` | テスト関連時 | カバレッジ分析・テスト生成 |
+
+### Medium（必要時）
+| Plugin | 発動トリガー | 用途 |
+|--------|------------|------|
+| `/documentation-generator:update-docs` | ドキュメント更新時 | 一括同期・バッジ自動生成 |
+| `/security-pro:security-audit`, `dependency-audit` | 週次/リリース前 | セキュリティ・依存関係監査 |
+| `/performance-optimizer:performance-audit` | パフォーマンス懸念時 | ボトルネック特定・最適化 |
+
+### Low（特定場面）
+| Plugin | 発動トリガー | 用途 |
+|--------|------------|------|
+| `ai-ml-toolkit` | AI/ML機能実装時のみ | LLM/RAG/MLパイプライン支援 |
+
+### 標準フロー（自動発動順序）
+
+```
+1. コード変更 → security-guidance (hook自動)
+2. 品質ゲート → pytest + ruff + mypy 全合格（※1）
+3. レビュー   → /code-review:code-review (80点閾値)
+4. コミット   → /commit-commands:commit
+5. プッシュ後 → /pr-review-toolkit:review-pr
+6. PR作成    → /commit-commands:commit-push-pr
+```
+
+**※1 品質ゲート**: `uv run pytest && uv run ruff check . && uv run mypy utils/ config/`
+
 ## トラブルシューティング
 
 **このセクションの範囲**: 高頻度で参照する基本コマンドのみ
