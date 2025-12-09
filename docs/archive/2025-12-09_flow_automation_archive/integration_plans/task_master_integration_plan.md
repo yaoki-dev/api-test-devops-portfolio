@@ -2019,7 +2019,7 @@ from ai_matching_with_fallback import AIMatchingWithFallback, MatchResult
 
 @pytest.fixture
 def matcher():
-    return AIMatchingWithFallback(anthropic_api_key="test-key")
+    return AIMatchingWithFallback(anthropic_api_key="test-key")  # pragma: allowlist secret
 
 @pytest.fixture
 def sample_tasks():
