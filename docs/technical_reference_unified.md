@@ -158,7 +158,7 @@ testing_framework:
 ├── 📚 learning/            # 18週間構造化学習プログラム
 ├── 🎓 educational/         # デモ・面接対策・モニタリング
 ├── 📜 scripts/             # 自動化・最適化・DevOps効率化
-├── 🐳 docker*/            # 6段階マルチステージ・環境分離
+├── 🐳 docker*/            # 4段階マルチステージ・環境分離
 ├── 📊 monitoring/          # 統合監視・SRE運用・アラート
 └── 📄 docs/                # 技術ドキュメント・アーキテクチャ
 ```

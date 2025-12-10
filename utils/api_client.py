@@ -9,12 +9,40 @@
 """
 
 import logging
+import random
 import time
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
 from config.settings import settings
+
+
+def exponential_backoff_with_jitter(
+    attempt: int,
+    base_delay: float = 1.0,
+    max_delay: float = 60.0,
+    jitter_percent: float = 0.3,
+) -> float:
+    """指数バックオフ + 30%ジッター計算
+
+    Args:
+        attempt: 現在のリトライ回数（0始まり）
+        base_delay: 基本遅延時間（秒）
+        max_delay: 最大遅延時間（秒）
+        jitter_percent: ジッター率（デフォルト30%）
+
+    Returns:
+        計算された遅延時間（秒、最小0.1秒）
+    """
+    # 指数バックオフ計算
+    delay = min(base_delay * (2**attempt), max_delay)
+    # ±30%のジッター追加（リトライ間隔用、暗号用途ではない）
+    jitter = delay * jitter_percent
+    delay = delay + random.uniform(-jitter, jitter)  # noqa: S311
+    # 最小値保証
+    return cast(float, max(0.1, delay))
+
 
 # =============================================================================
 # 例外クラス
@@ -52,6 +80,35 @@ class APIRetryError(APIClientError):
     """リトライ上限エラー"""
 
     pass
+
+
+class APIJSONDecodeError(APIClientError):
+    """JSONパースエラー"""
+
+    def __init__(self, message: str, response: httpx.Response | None = None):
+        super().__init__(message)
+        self.response = response
+
+
+def _safe_parse_json(response: httpx.Response) -> Any:
+    """レスポンスJSONを安全にパース
+
+    Args:
+        response: HTTPレスポンスオブジェクト
+
+    Returns:
+        パースされたJSONデータ
+
+    Raises:
+        APIJSONDecodeError: JSONパース失敗時
+    """
+    try:
+        return response.json()
+    except Exception as e:
+        raise APIJSONDecodeError(
+            f"Failed to parse JSON response: {e}",
+            response=response,
+        ) from e
 
 
 # =============================================================================
@@ -113,21 +170,21 @@ class BaseAPIClient:
 
         self.logger.info(f"APIClient initialized: base_url={self.base_url}")
 
-    def __enter__(self):
+    def __enter__(self) -> "BaseAPIClient":
         """コンテキストマネージャーのエントリー"""
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """コンテキストマネージャーの終了処理"""
         self.close()
 
-    def close(self):
+    def close(self) -> None:
         """クライアントのクローズ"""
         if self._client:
             self._client.close()
             self.logger.info("APIClient closed")
 
-    def _make_request_with_retry(self, method: str, endpoint: str, **kwargs) -> httpx.Response:
+    def _make_request_with_retry(self, method: str, endpoint: str, **kwargs: Any) -> httpx.Response:
         """
         リトライ機能付きHTTPリクエスト実行
 
@@ -145,7 +202,7 @@ class BaseAPIClient:
             APIHTTPError: HTTPステータスエラー
             APIRetryError: リトライ上限エラー
         """
-        last_exception = None
+        last_exception: APIClientError | None = None
 
         for attempt in range(self.retry_count + 1):
             try:
@@ -200,13 +257,24 @@ class BaseAPIClient:
                 last_exception = APIConnectionError(f"Connection failed: {e}")
 
             except Exception as e:
+                # Re-raise our custom API exceptions immediately (don't wrap them)
+                # This prevents 4xx errors from being retried incorrectly
+                if isinstance(e, APIClientError):
+                    raise
+                # Only wrap truly unexpected exceptions
                 self.logger.error(f"Unexpected error for {method} {endpoint}: {e}")
                 last_exception = APIClientError(f"Unexpected error: {e}")
 
-            # 最後の試行でなければリトライ待機
+            # 最後の試行でなければ指数バックオフ + 30%ジッターで待機
             if attempt < self.retry_count:
-                self.logger.debug(f"Waiting {self.retry_delay} seconds before retry...")
-                time.sleep(self.retry_delay)
+                delay = exponential_backoff_with_jitter(
+                    attempt=attempt, base_delay=self.retry_delay, jitter_percent=0.3
+                )
+                self.logger.debug(
+                    f"Waiting {delay:.2f} seconds before retry "
+                    f"(attempt {attempt + 1}, exponential backoff with 30% jitter)..."
+                )
+                time.sleep(delay)
 
         # すべてのリトライが失敗
         self.logger.error(f"All retry attempts failed for {method} {endpoint}")
@@ -277,12 +345,12 @@ class JSONPlaceholderClient(BaseAPIClient):
     - 便利メソッドの実装
     """
 
-    def __init__(self, **kwargs):
-        # JSONPlaceholder APIのデフォルト設定
-        if "base_url" not in kwargs:
-            kwargs["base_url"] = "https://jsonplaceholder.typicode.com"
+    # def __init__(self, **kwargs):
+    #     # JSONPlaceholder APIのデフォルト設定
+    #     if "base_url" not in kwargs:
+    #         kwargs["base_url"] = "https://jsonplaceholder.typicode.com"
 
-        super().__init__(**kwargs)
+    #     super().__init__(**kwargs)
 
     # Posts API
     def get_posts(self, limit: int | None = None) -> list[dict[str, Any]]:
@@ -292,29 +360,29 @@ class JSONPlaceholderClient(BaseAPIClient):
             params["_limit"] = limit
 
         response = self.get("/posts", params=params)
-        return response.json()
+        return cast(list[dict[str, Any]], _safe_parse_json(response))
 
     def get_post(self, post_id: int) -> dict[str, Any]:
         """特定投稿の取得"""
         response = self.get(f"/posts/{post_id}")
-        return response.json()
+        return cast(dict[str, Any], _safe_parse_json(response))
 
     def create_post(self, title: str, body: str, user_id: int) -> dict[str, Any]:
         """新規投稿の作成"""
         data = {"title": title, "body": body, "userId": user_id}
         response = self.post("/posts", json=data)
-        return response.json()
+        return cast(dict[str, Any], _safe_parse_json(response))
 
     # Users API
     def get_users(self) -> list[dict[str, Any]]:
         """ユーザー一覧の取得"""
         response = self.get("/users")
-        return response.json()
+        return cast(list[dict[str, Any]], _safe_parse_json(response))
 
     def get_user(self, user_id: int) -> dict[str, Any]:
         """特定ユーザーの取得"""
         response = self.get(f"/users/{user_id}")
-        return response.json()
+        return cast(dict[str, Any], _safe_parse_json(response))
 
     # Todos API
     def get_todos(
@@ -333,23 +401,23 @@ class JSONPlaceholderClient(BaseAPIClient):
             params["_limit"] = limit
 
         response = self.get("/todos", params=params)
-        return response.json()
+        return cast(list[dict[str, Any]], _safe_parse_json(response))
 
     def get_todo(self, todo_id: int) -> dict[str, Any]:
         """特定TODOの取得"""
         response = self.get(f"/todos/{todo_id}")
-        return response.json()
+        return cast(dict[str, Any], _safe_parse_json(response))
 
     def create_todo(self, title: str, user_id: int, completed: bool = False) -> dict[str, Any]:
         """新規TODOの作成"""
         data = {"title": title, "userId": user_id, "completed": completed}
         response = self.post("/todos", json=data)
-        return response.json()
+        return cast(dict[str, Any], _safe_parse_json(response))
 
-    def update_todo(self, todo_id: int, **kwargs) -> dict[str, Any]:
+    def update_todo(self, todo_id: int, **kwargs: Any) -> dict[str, Any]:
         """TODOの更新"""
         response = self.patch(f"/todos/{todo_id}", json=kwargs)
-        return response.json()
+        return cast(dict[str, Any], _safe_parse_json(response))
 
     # Comments API
     def get_comments(self, post_id: int | None = None) -> list[dict[str, Any]]:
@@ -358,7 +426,7 @@ class JSONPlaceholderClient(BaseAPIClient):
             response = self.get(f"/posts/{post_id}/comments")
         else:
             response = self.get("/comments")
-        return response.json()
+        return cast(list[dict[str, Any]], _safe_parse_json(response))
 
     # Albums & Photos API
     def get_albums(self, user_id: int | None = None) -> list[dict[str, Any]]:
@@ -368,7 +436,7 @@ class JSONPlaceholderClient(BaseAPIClient):
             params["userId"] = user_id
 
         response = self.get("/albums", params=params)
-        return response.json()
+        return cast(list[dict[str, Any]], _safe_parse_json(response))
 
     def get_photos(self, album_id: int | None = None) -> list[dict[str, Any]]:
         """写真一覧の取得"""
@@ -376,7 +444,7 @@ class JSONPlaceholderClient(BaseAPIClient):
             response = self.get(f"/albums/{album_id}/photos")
         else:
             response = self.get("/photos")
-        return response.json()
+        return cast(list[dict[str, Any]], _safe_parse_json(response))
 
 
 # =============================================================================
@@ -438,22 +506,22 @@ class AsyncAPIClient:
 
         self.logger.info(f"AsyncAPIClient initialized: base_url={self.base_url}")
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "AsyncAPIClient":
         """非同期コンテキストマネージャーのエントリー"""
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """非同期コンテキストマネージャーの終了処理"""
         await self.aclose()
 
-    async def aclose(self):
+    async def aclose(self) -> None:
         """クライアントのクローズ"""
         if self._client:
             await self._client.aclose()
             self.logger.info("AsyncAPIClient closed")
 
     async def _make_request_with_retry(
-        self, method: str, endpoint: str, **kwargs
+        self, method: str, endpoint: str, **kwargs: Any
     ) -> httpx.Response:
         """
         リトライ機能付き非同期HTTPリクエスト実行
@@ -474,7 +542,7 @@ class AsyncAPIClient:
         """
         import asyncio
 
-        last_exception = None
+        last_exception: APIClientError | None = None
 
         for attempt in range(self.retry_count + 1):
             try:
@@ -532,10 +600,16 @@ class AsyncAPIClient:
                 self.logger.error(f"Unexpected async error for {method} {endpoint}: {e}")
                 last_exception = APIClientError(f"Unexpected error: {e}")
 
-            # 最後の試行でなければリトライ待機
+            # 最後の試行でなければ指数バックオフ + 30%ジッターで待機
             if attempt < self.retry_count:
-                self.logger.debug(f"Waiting {self.retry_delay} seconds before retry...")
-                await asyncio.sleep(self.retry_delay)
+                delay = exponential_backoff_with_jitter(
+                    attempt=attempt, base_delay=self.retry_delay, jitter_percent=0.3
+                )
+                self.logger.debug(
+                    f"Waiting {delay:.2f} seconds before async retry "
+                    f"(attempt {attempt + 1}, exponential backoff with 30% jitter)..."
+                )
+                await asyncio.sleep(delay)
 
         # すべてのリトライが失敗
         self.logger.error(f"All async retry attempts failed for {method} {endpoint}")
@@ -603,12 +677,12 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
     - async/awaitパターンの理解
     """
 
-    def __init__(self, **kwargs):
-        # JSONPlaceholder APIのデフォルト設定
-        if "base_url" not in kwargs:
-            kwargs["base_url"] = "https://jsonplaceholder.typicode.com"
+    # def __init__(self, **kwargs):
+    #     # JSONPlaceholder APIのデフォルト設定
+    #     if "base_url" not in kwargs:
+    #         kwargs["base_url"] = "https://jsonplaceholder.typicode.com"
 
-        super().__init__(**kwargs)
+    #     super().__init__(**kwargs)
 
     # Posts API
     async def get_posts(self, limit: int | None = None) -> list[dict[str, Any]]:
@@ -618,29 +692,39 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             params["_limit"] = limit
 
         response = await self.get("/posts", params=params)
-        return response.json()
+        return cast(list[dict[str, Any]], _safe_parse_json(response))
 
     async def get_post(self, post_id: int) -> dict[str, Any]:
         """特定投稿の非同期取得"""
         response = await self.get(f"/posts/{post_id}")
-        return response.json()
+        return cast(dict[str, Any], _safe_parse_json(response))
 
     async def create_post(self, title: str, body: str, user_id: int) -> dict[str, Any]:
         """新規投稿の非同期作成"""
         data = {"title": title, "body": body, "userId": user_id}
         response = await self.post("/posts", json=data)
-        return response.json()
+        return cast(dict[str, Any], _safe_parse_json(response))
+
+    async def update_post(self, post_id: int, title: str, body: str) -> dict[str, Any]:
+        """投稿更新の非同期実行"""
+        data = {"title": title, "body": body}
+        response = await self.put(f"/posts/{post_id}", json=data)
+        return cast(dict[str, Any], _safe_parse_json(response))
+
+    async def delete_post(self, post_id: int) -> None:
+        """投稿削除の非同期実行"""
+        await self.delete(f"/posts/{post_id}")
 
     # Users API
     async def get_users(self) -> list[dict[str, Any]]:
         """ユーザー一覧の非同期取得"""
         response = await self.get("/users")
-        return response.json()
+        return cast(list[dict[str, Any]], _safe_parse_json(response))
 
     async def get_user(self, user_id: int) -> dict[str, Any]:
         """特定ユーザーの非同期取得"""
         response = await self.get(f"/users/{user_id}")
-        return response.json()
+        return cast(dict[str, Any], _safe_parse_json(response))
 
     # Todos API
     async def get_todos(
@@ -659,12 +743,12 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             params["_limit"] = limit
 
         response = await self.get("/todos", params=params)
-        return response.json()
+        return cast(list[dict[str, Any]], _safe_parse_json(response))
 
     async def get_todo(self, todo_id: int) -> dict[str, Any]:
         """特定TODOの非同期取得"""
         response = await self.get(f"/todos/{todo_id}")
-        return response.json()
+        return cast(dict[str, Any], _safe_parse_json(response))
 
     async def create_todo(
         self, title: str, user_id: int, completed: bool = False
@@ -672,18 +756,18 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         """新規TODOの非同期作成"""
         data = {"title": title, "userId": user_id, "completed": completed}
         response = await self.post("/todos", json=data)
-        return response.json()
+        return cast(dict[str, Any], _safe_parse_json(response))
 
-    async def update_todo(self, todo_id: int, **kwargs) -> dict[str, Any]:
+    async def update_todo(self, todo_id: int, **kwargs: Any) -> dict[str, Any]:
         """TODOの非同期更新"""
         response = await self.patch(f"/todos/{todo_id}", json=kwargs)
-        return response.json()
+        return cast(dict[str, Any], _safe_parse_json(response))
 
     # Users API 追加メソッド
     async def create_user(self, user_data: dict[str, Any]) -> dict[str, Any]:
         """新規ユーザーの非同期作成"""
         response = await self.post("/users", json=user_data)
-        return response.json()
+        return cast(dict[str, Any], _safe_parse_json(response))
 
     async def bulk_create_users(self, users_data: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """複数ユーザーの非同期一括作成"""
@@ -692,7 +776,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         # 並行してユーザー作成
         tasks = [self.create_user(user_data) for user_data in users_data]
         results = await asyncio.gather(*tasks)
-        return results
+        return list(results)
 
     # Comments API
     async def get_comments(self, post_id: int | None = None) -> list[dict[str, Any]]:
@@ -701,7 +785,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             response = await self.get(f"/posts/{post_id}/comments")
         else:
             response = await self.get("/comments")
-        return response.json()
+        return cast(list[dict[str, Any]], _safe_parse_json(response))
 
     # Albums & Photos API
     async def get_albums(self, user_id: int | None = None) -> list[dict[str, Any]]:
@@ -711,7 +795,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             params["userId"] = user_id
 
         response = await self.get("/albums", params=params)
-        return response.json()
+        return cast(list[dict[str, Any]], _safe_parse_json(response))
 
     async def get_photos(self, album_id: int | None = None) -> list[dict[str, Any]]:
         """写真一覧の非同期取得"""
@@ -719,7 +803,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             response = await self.get(f"/albums/{album_id}/photos")
         else:
             response = await self.get("/photos")
-        return response.json()
+        return cast(list[dict[str, Any]], _safe_parse_json(response))
 
     # 並行処理の例
     async def get_user_data(self, user_id: int) -> dict[str, Any]:
@@ -760,11 +844,12 @@ def create_client() -> JSONPlaceholderClient:
 # =============================================================================
 
 
-def main():
+def main() -> None:
     """デモ実行"""
     print("=== JSONPlaceholder API Client Demo ===")
 
-    with create_client() as client:
+    with create_client() as base_client:
+        client = cast(JSONPlaceholderClient, base_client)
         try:
             # 投稿一覧の取得
             print("\n1. 投稿一覧取得（5件）:")
