@@ -101,7 +101,11 @@ class TestSettingsEnvironmentValidation:
 
     def test_environment_string_to_lowercase(self):
         """文字列環境変数が小文字に変換される (line 193)"""
-        settings = Settings(environment="PRODUCTION")
+        # 本番環境ではシークレットが必須
+        settings = Settings(
+            environment="PRODUCTION",
+            security=SecurityConfig(api_key="test-key"),  # noqa: S106
+        )
         assert settings.environment == Environment.PRODUCTION
 
     def test_environment_mixed_case_to_lowercase(self):
@@ -130,7 +134,11 @@ class TestSettingsEnvironmentMethods:
 
     def test_is_development_false(self):
         """is_development() がFalseを返す"""
-        settings = Settings(environment=Environment.PRODUCTION)
+        # 本番環境ではシークレットが必須
+        settings = Settings(
+            environment=Environment.PRODUCTION,
+            security=SecurityConfig(api_key="test-key"),  # noqa: S106
+        )
         assert settings.is_development() is False
 
     def test_is_testing_true(self):
@@ -145,7 +153,11 @@ class TestSettingsEnvironmentMethods:
 
     def test_is_production_true(self):
         """is_production() がTrueを返す (line 206)"""
-        settings = Settings(environment=Environment.PRODUCTION)
+        # 本番環境ではシークレットが必須
+        settings = Settings(
+            environment=Environment.PRODUCTION,
+            security=SecurityConfig(api_key="test-key"),  # noqa: S106
+        )
         assert settings.is_production() is True
 
     def test_is_production_false(self):
@@ -182,6 +194,37 @@ class TestSettingsEnvironmentMethods:
         settings = Settings()
         settings.log.level = LogLevel.CRITICAL
         assert settings.get_log_level() == logging.CRITICAL
+
+
+class TestProductionSecretValidation:
+    """本番環境でのシークレット検証テスト"""
+
+    def test_production_without_secrets_raises_error(self):
+        """本番環境でシークレット未設定時にエラー"""
+        with pytest.raises(ValidationError) as exc_info:
+            Settings(environment=Environment.PRODUCTION)
+        assert "SECURITY__API_KEY or SECURITY__JWT_SECRET" in str(exc_info.value)
+
+    def test_production_with_api_key_valid(self):
+        """本番環境でapi_key設定時は有効"""
+        settings = Settings(
+            environment=Environment.PRODUCTION,
+            security=SecurityConfig(api_key="test-key"),  # noqa: S106
+        )
+        assert settings.is_production() is True
+
+    def test_production_with_jwt_secret_valid(self):
+        """本番環境でjwt_secret設定時は有効"""
+        settings = Settings(
+            environment=Environment.PRODUCTION,
+            security=SecurityConfig(jwt_secret="test-secret"),  # noqa: S106
+        )
+        assert settings.is_production() is True
+
+    def test_development_without_secrets_valid(self):
+        """開発環境ではシークレット不要"""
+        settings = Settings(environment=Environment.DEVELOPMENT)
+        assert settings.is_development() is True
 
 
 class TestSettingsSecretMasking:

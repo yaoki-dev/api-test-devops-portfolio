@@ -13,7 +13,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field, SecretStr, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # =============================================================================
@@ -193,6 +193,26 @@ class Settings(BaseSettings):
             v = v.lower()
         return v
 
+    @model_validator(mode="after")
+    def validate_production_secrets(self) -> "Settings":
+        """本番環境でのシークレット存在チェック
+
+        Security:
+            本番環境（ENVIRONMENT=production）では、
+            api_keyまたはjwt_secretの少なくとも一方が必須。
+            未設定の場合はValueErrorを発生させ、サイレント失敗を防止。
+
+        Note:
+            開発/テスト環境ではシークレットなしで動作可能。
+        """
+        if self.environment == Environment.PRODUCTION:
+            if self.security.api_key is None and self.security.jwt_secret is None:
+                raise ValueError(
+                    "Production environment requires at least one of: "
+                    "SECURITY__API_KEY or SECURITY__JWT_SECRET"
+                )
+        return self
+
     def is_development(self) -> bool:
         """開発環境判定"""
         return self.environment == Environment.DEVELOPMENT
@@ -206,8 +226,29 @@ class Settings(BaseSettings):
         return self.environment == Environment.PRODUCTION
 
     def get_log_level(self) -> int:
-        """ログレベルの取得（loggingモジュール用）"""
-        return getattr(logging, self.log.level.value)
+        """ログレベルの取得（logging/structlog共通）
+
+        structlogはloggingモジュールのログレベル定数を使用するため、
+        標準loggingの定数をそのまま返す。
+
+        Returns:
+            int: logging.DEBUG (10), INFO (20), WARNING (30), ERROR (40), CRITICAL (50)
+
+        Example:
+            >>> import structlog
+            >>> structlog.configure(
+            ...     wrapper_class=structlog.make_filtering_bound_logger(settings.get_log_level())
+            ... )
+        """
+        # LogLevel Enum → logging定数への明示的マッピング（型安全）
+        level_map: dict[LogLevel, int] = {
+            LogLevel.DEBUG: logging.DEBUG,
+            LogLevel.INFO: logging.INFO,
+            LogLevel.WARNING: logging.WARNING,
+            LogLevel.ERROR: logging.ERROR,
+            LogLevel.CRITICAL: logging.CRITICAL,
+        }
+        return level_map[self.log.level]
 
     def to_dict(self, exclude_secrets: bool = True) -> dict[str, Any]:
         """設定を辞書形式で出力"""
@@ -250,52 +291,6 @@ def reload_settings() -> Settings:
 
 # 便利なエイリアス
 settings = get_settings()
-
-
-# =============================================================================
-# 環境別設定の例
-# =============================================================================
-
-
-def get_development_settings() -> dict[str, Any]:
-    """開発環境用設定の例"""
-    return {
-        "ENVIRONMENT": "development",
-        "DEBUG": "true",
-        "LOG__LEVEL": "DEBUG",
-        "LOG__FORMAT": "console",
-        "API__TIMEOUT": "30",
-        "TEST__EXTERNAL_API_ENABLED": "true",
-    }
-
-
-def get_testing_settings() -> dict[str, Any]:
-    """テスト環境用設定の例"""
-    return {
-        "ENVIRONMENT": "testing",
-        "DEBUG": "false",
-        "LOG__LEVEL": "DEBUG",
-        "LOG__FORMAT": "console",
-        "API__TIMEOUT": "10",
-        "API__RETRY_COUNT": "1",
-        "TEST__EXTERNAL_API_ENABLED": "false",
-        "TEST__PERFORMANCE_TEST_ENABLED": "false",
-    }
-
-
-def get_production_settings() -> dict[str, Any]:
-    """本番環境用設定の例"""
-    return {
-        "ENVIRONMENT": "production",
-        "DEBUG": "false",
-        "LOG__LEVEL": "INFO",
-        "LOG__FORMAT": "json",
-        "LOG__FILE": "/var/log/app/api-test.log",
-        "API__TIMEOUT": "60",
-        "API__RETRY_COUNT": "3",
-        "SECURITY__RATE_LIMIT_REQUESTS": "1000",
-    }
-
 
 # =============================================================================
 # 学習ポイント:

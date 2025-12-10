@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-*最終更新: 2025年10月07日*
+*最終更新: 2025年12月10日*
 
 ## プロジェクト概要
 
@@ -844,17 +844,98 @@ if settings.is_development():
 - docstring: すべての公開関数・クラスに必須
 - コメント: 日本語可、ただしコード内変数・関数名は英語
 
-### Git運用
-- featureブランチで作業、mainへの直接コミット禁止
-- コミットメッセージ: prefix使用（feat:, fix:, docs:, test:, refactor:）
+**Git運用** (Git Flow):
+- `main`: 本番リリース用（タグ付きリリースのみ）
+- `develop`: 開発統合ブランチ（次期リリース準備）main へマージ
+- `feature/*`: 機能開発 → develop へPR・Squash Merge
+- `hotfix/*`: 緊急修正 → main + develop へマージ
+- **コミットメッセージ** (Conventional Commits準拠):
 
-### テストカバレッジ
-- 目標: 85%以上（pytest設定: `--cov-fail-under=85`）
-- テスト不足時はpytestが自動的に失敗
+| プレフィクス | 意味（実務での使われ方） | プロジェクト実例 |
+|-------------|------------------------|----------------|
+| **feat:** | 新機能追加 | `feat(client): GitHub API認証ヘッダー自動付与機能追加` |
+| **fix:** | バグ修正 | `fix(client): リトライロジックのタイムアウト処理修正` |
+| **docs:** | ドキュメント変更 | `docs(readme): テスト実行手順を追加` |
+| **test:** | テスト追加・変更 | `test(security): OWASP API Security Top 10テスト追加` |
+| **refactor:** | 挙動を変えないコード整理 | `refactor(config): 環境変数管理をPydantic Settingsに移行` |
+| **chore:** | 依存更新、設定変更 | `chore(docker): Multi-stage buildsのベースイメージ更新` |
+| **perf:** | パフォーマンス改善 | `perf(client): コネクションプール導入で応答時間30%短縮` |
+| **ci:** | CI/CD設定変更 | `ci(actions): 並列テスト実行でCI時間50%短縮` |
+| **security:** | セキュリティ修正 | `security(config): SecretStrによるAPI_KEY平文出力防止` |
 
-### ファイル除外設定
-- `tests/Q&A/`: 学習用ファイル（pre-commit・品質チェック除外）
-- `node_modules/`, `venv/`, `__pycache__/`: 自動生成ファイル
+  **推奨形式**: `type(scope): subject`（例: `feat(auth): JWT認証実装`）
+
+  **スコープ例**: api, client, config, docker, ci, test, docs, utils
+
+  **破壊的変更**: `feat(api)!: レスポンス形式変更` + Footer: `BREAKING CHANGE: 詳細`
+
+  **Issue参照**: Footer: `Closes #123` / `Refs #456`
+
+**Git Flowコマンド**:
+- `/git-workflow:feature <name>`: feature作成（developから分岐）
+- `/git-workflow:release <version>`: release作成
+- `/git-workflow:hotfix <name>`: hotfix作成（mainから分岐）
+- `/git-workflow:finish`: ブランチ完了・マージ
+- `/git-workflow:flow-status`: 状態確認
+
+**Git削除の伝播（重要な学び）**:
+- ⚠️ `git rm`による削除は**削除diff**として扱われる
+- develop→mainマージ時、削除diffは自動適用される
+- 両ブランチに存在するファイルの場合、developでの削除がmainにも反映される
+- 例外: mainにしか存在しないファイル（developの履歴にない）は手動削除が必要
+
+**ブランチ衛生管理**:
+- バックアップディレクトリの代わりにGit履歴を使用
+- 廃止ファイルはdevelopでクリーンアップ → mainへ自動伝播
+- プロジェクトワークフロー: develop→main直接マージ（releaseブランチ不使用）
+
+> **発見日**: 2025-12-09（58ファイルクリーンアップ実施時）
+
+**品質基準**:
+- カバレッジ目標: Week 7-10でPhase別に設定（最終目標85%）
+
+## 🔌 Plugin自動発動ルール
+
+AIが自動的に適切なPluginを発動するためのルール。詳細（パッケージ情報・完全な発動トリガー一覧）は`@memory:command_usage_guide`を参照。
+
+### Critical（毎コミット必須）
+| Plugin | 発動トリガー | 用途 |
+|--------|------------|------|
+| `security-guidance` (hook) | Edit/Write/MultiEdit時 | 自動警告（明示的呼出不要） |
+| `/code-review:code-review` | 品質ゲート全合格後（※1） | 4並列エージェントレビュー（80点閾値） |
+
+### High（開発標準）
+| Plugin | 発動トリガー | 用途 |
+|--------|------------|------|
+| `/git-workflow:feature`, `/git-workflow:hotfix`, `/git-workflow:finish` | ブランチ操作時 | Git Flowブランチ管理 |
+| `/commit-commands:commit`, `/commit-commands:commit-push-pr` | コミット/PR作成時 | ステージング+コミット+PR |
+| `/pr-review-toolkit:review-pr` | git push完了後、PR作成前 | 6エージェント包括レビュー |
+| `/testing-suite:test-coverage`, `/testing-suite:generate-tests` | テスト関連時 | カバレッジ分析・テスト生成 |
+
+### Medium（必要時）
+| Plugin | 発動トリガー | 用途 |
+|--------|------------|------|
+| `/documentation-generator:update-docs` | ドキュメント更新時 | 一括同期・バッジ自動生成 |
+| `/security-pro:security-audit`, `/security-pro:dependency-audit` | 週次/リリース前 | セキュリティ・依存関係監査 |
+| `/performance-optimizer:performance-audit` | パフォーマンス懸念時 | ボトルネック特定・最適化 |
+
+### Low（特定場面）
+| Plugin | 発動トリガー | 用途 |
+|--------|------------|------|
+| `ai-ml-toolkit` | AI/ML機能実装時のみ | LLM/RAG/MLパイプライン支援 |
+
+### 標準フロー（自動発動順序）
+
+```
+1. コード変更 → security-guidance (hook自動)
+2. 品質ゲート → pytest + ruff + mypy 全合格（※1）
+3. レビュー   → /code-review:code-review (80点閾値)
+4. コミット   → /commit-commands:commit
+5. プッシュ後 → /pr-review-toolkit:review-pr
+6. PR作成    → /commit-commands:commit-push-pr
+```
+
+**※1 品質ゲート**: `uv run pytest && uv run ruff check . && uv run mypy utils/ config/`
 
 ## トラブルシューティング
 
