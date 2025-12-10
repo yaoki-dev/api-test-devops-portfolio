@@ -1,6 +1,5 @@
 # API Test + DevOps Portfolio
 
-<<<<<<< Updated upstream
 APIテスト + DevOps統合学習ポートフォリオ
 
 ## 概要
