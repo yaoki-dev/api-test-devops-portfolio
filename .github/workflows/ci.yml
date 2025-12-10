@@ -52,10 +52,15 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
+      # Coverage threshold: 60% (CI baseline)
+      # - Local dev uses pyproject.toml (85% target)
+      # - CI uses -o override for gradual increase: 60% → 85% over 6 weeks
+      # - Ref: pyproject.toml [tool.pytest.ini_options]
       - name: Run core tests with coverage (Unit + Integration + Regression)
         run: |
-          uv run pytest -n auto -m "(unit or integration or regression) and not slow and not manual and not external" \
-            --cov=. --cov-report=term-missing --cov-report=json \
+          uv run pytest -o "addopts=-ra --strict-markers --strict-config" \
+            -n auto -m "(unit or integration or regression) and not slow and not manual and not external" \
+            --cov --cov-report=term-missing --cov-report=json \
             --cov-fail-under=60 --maxfail=3 -v
           echo "core_tests_passed=true" >> $GITHUB_ENV
 
@@ -181,7 +186,8 @@ jobs:
 
       - name: Full coverage report
         run: |
-          uv run pytest --cov=. --cov-report=html:reports/htmlcov --cov-report=json -v
+          uv run pytest -o "addopts=-ra --strict-markers --strict-config" \
+            --cov --cov-report=html:reports/htmlcov --cov-report=json -v
           echo "coverage_report_generated=true" >> $GITHUB_ENV
 
       - name: Upload weekly test results
@@ -221,10 +227,12 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
+      # Coverage threshold: 60% (CI baseline) - same as pr-validation
       - name: Run core tests (Unit + Integration + Regression)
         run: |
-          uv run pytest -n auto -m "(unit or integration or regression) and not slow and not manual and not external" \
-            --cov=. --cov-report=term-missing --cov-report=json \
+          uv run pytest -o "addopts=-ra --strict-markers --strict-config" \
+            -n auto -m "(unit or integration or regression) and not slow and not manual and not external" \
+            --cov --cov-report=term-missing --cov-report=json \
             --cov-fail-under=60 --maxfail=5 -v
           echo "branch_tests_passed=true" >> $GITHUB_ENV
 

@@ -84,12 +84,11 @@ addopts = [
     "-ra",                       # すべての結果を表示
     "--strict-markers",          # 未定義マーカーでエラー
     "--strict-config",           # 設定エラーで停止
-    "--cov=utils",               # カバレッジ対象
-    "--cov=config",              
+    "--cov",                     # カバレッジ対象: [tool.coverage.run].source参照
     "--cov-report=term-missing", # 欠損行表示
     "--cov-report=html:reports/htmlcov",  # HTMLレポート
     "--cov-report=xml:reports/coverage.xml",  # XMLレポート
-    "--cov-fail-under=85",       # カバレッジ閾値85%
+    "--cov-fail-under=85",       # ローカル目標: 85%（CI環境は-oで上書き）
 ]
 markers = [
     "unit: 単体テスト",
@@ -108,7 +107,7 @@ asyncio_mode = "auto"            # 非同期テスト自動検出
 
 # カバレッジ設定
 [tool.coverage.run]
-source = ["utils", "config"]
+source = ["utils", "config", "models"]  # Coverage対象: 3モジュール
 omit = [
     "tests/*",
     "venv/*",
