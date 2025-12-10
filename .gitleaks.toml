@@ -1,0 +1,28 @@
+# .gitleaks.toml
+# gitleaks configuration for api-test-portfolio
+# Reference: https://github.com/gitleaks/gitleaks
+
+title = "api-test-portfolio gitleaks config"
+
+[allowlist]
+description = "Allowlisted files and patterns"
+
+# Allowlist patterns for test/dummy secrets (regex target: line content)
+regexTarget = "line"
+regexes = [
+    '''(?i)test[-_]?api[-_]?key''',
+    '''(?i)dummy[-_]?secret''',
+    '''(?i)example[-_]?password''',
+    '''(?i)fake[-_]?token''',
+    '''(?i)mock[-_]?credential''',
+]
+
+# Allowlist paths (files that may contain example/test secrets)
+paths = [
+    '''\.env\.example$''',
+    '''\.env\.sample$''',
+    '''\.env\.template$''',
+    '''tests/fixtures/.*''',
+    '''tests/conftest\.py$''',
+    '''docs/.*\.md$''',
+]

@@ -1,0 +1,317 @@
+name: CI/CD Pipeline - 3-Tier Test Pyramid
+
+# Test Pyramid Strategy (3-Tier):
+#   Unit 70% / Integration 25% / E2E 5%
+# Coverage Target: 60% (baseline protection, dynamic targets in local dev)
+# Reference: .serena/memories/test_strategy_part1_overview.md
+
+on:
+  push:
+    branches: [main, develop]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+  pull_request:
+    branches: [main, develop]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly (Sunday 00:00 UTC)
+
+permissions:
+  contents: read
+
+jobs:
+  # ============================================================
+  # Stage 1: PR Validation (Fast Feedback < 5 min)
+  # Triggers: pull_request
+  # Tests: Unit + Integration + Regression (excluding slow tests)
+  # ============================================================
+  pr-validation:
+    name: PR Validation (Unit + Integration + Regression)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run core tests with coverage (Unit + Integration + Regression)
+        run: |
+          uv run pytest -n auto -m "(unit or integration or regression) and not slow and not manual and not external" \
+            --cov=. --cov-report=term-missing --cov-report=json \
+            --cov-fail-under=60 --maxfail=3 -v
+          echo "core_tests_passed=true" >> $GITHUB_ENV
+
+      - name: Run security tests (Fast mock-based subset)
+        run: |
+          uv run pytest -n auto -m "security and unit" -v --maxfail=5
+          echo "security_tests_passed=true" >> $GITHUB_ENV
+
+      - name: Run ruff linter
+        run: |
+          uv run ruff check .
+          echo "ruff_passed=true" >> $GITHUB_ENV
+
+      - name: Run mypy type checker
+        run: |
+          uv run mypy utils/ config/ models/
+          echo "mypy_passed=true" >> $GITHUB_ENV
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-validation-results
+          retention-days: 7
+          path: |
+            reports/
+            coverage.json
+
+  # ============================================================
+  # Stage 2: Post-Merge Validation (Regression Protection < 3 min)
+  # Triggers: push to main
+  # Tests: Regression only (fast degrade detection)
+  # ============================================================
+  post-merge-validation:
+    name: Post-Merge Validation (Regression)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run regression tests (Must Pass)
+        run: |
+          uv run pytest -n auto -m "regression" --maxfail=1 -v --tb=short
+          echo "regression_tests_passed=true" >> $GITHUB_ENV
+
+      - name: Upload regression test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-merge-results
+          retention-days: 7
+          path: reports/
+
+  # ============================================================
+  # Stage 3: Weekly Comprehensive Tests (< 30 min)
+  # Triggers: schedule (Sunday 00:00 UTC)
+  # Tests: Security + Performance + Full Coverage
+  # ============================================================
+  weekly-comprehensive:
+    name: Weekly Comprehensive (Security + Performance)
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run security tests (Serial - Rate Limit/Auth safety)
+        run: |
+          # Full security tests run serially (no -n auto) to avoid:
+          # - GitHub API Rate Limit (60 req/h)
+          # - Authentication state conflicts
+          uv run pytest -m "security" -v --maxfail=10 || true
+          echo "security_tests_completed=true" >> $GITHUB_ENV
+        continue-on-error: true
+
+      - name: Run performance tests
+        run: |
+          uv run pytest -m "performance" -v
+          echo "performance_tests_passed=true" >> $GITHUB_ENV
+
+      - name: Run external API tests (Weekly validation)
+        id: external-tests
+        run: |
+          uv run pytest -m "external and not manual" -v --maxfail=5
+        continue-on-error: true
+
+      - name: Report external test status (Failure)
+        if: steps.external-tests.outcome == 'failure'
+        run: echo "::warning::External API tests failed - investigate rate limits or API changes"
+
+      - name: Report external test status (Success)
+        if: steps.external-tests.outcome == 'success'
+        run: echo "::notice::External API tests passed - all integrations healthy"
+
+      - name: Full coverage report
+        run: |
+          uv run pytest --cov=. --cov-report=html:reports/htmlcov --cov-report=json -v
+          echo "coverage_report_generated=true" >> $GITHUB_ENV
+
+      - name: Upload weekly test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-comprehensive-results
+          retention-days: 7
+          path: |
+            reports/
+            coverage.json
+
+  # ============================================================
+  # Stage 4: Push to develop branch (Quick Validation)
+  # Triggers: push to develop
+  # Tests: Core tests (fast feedback for feature branches)
+  # ============================================================
+  branch-validation:
+    name: Branch Validation (develop)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run core tests (Unit + Integration + Regression)
+        run: |
+          uv run pytest -n auto -m "(unit or integration or regression) and not slow and not manual and not external" \
+            --cov=. --cov-report=term-missing --cov-report=json \
+            --cov-fail-under=60 --maxfail=5 -v
+          echo "branch_tests_passed=true" >> $GITHUB_ENV
+
+      - name: Run security tests (Fast mock-based subset)
+        run: |
+          uv run pytest -n auto -m "security and unit" -v --maxfail=5
+          echo "security_tests_passed=true" >> $GITHUB_ENV
+
+      - name: Run ruff linter
+        run: |
+          uv run ruff check .
+          echo "ruff_passed=true" >> $GITHUB_ENV
+
+      - name: Run mypy type checker
+        run: |
+          uv run mypy utils/ config/ models/
+          echo "mypy_passed=true" >> $GITHUB_ENV
+
+      - name: Upload branch validation results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: branch-validation-results
+          retention-days: 7
+          path: |
+            reports/
+            coverage.json
+
+  # ============================================================
+  # Security Scan (gitleaks - secrets detection)
+  # Triggers: push, pull_request (all branches)
+  # ============================================================
+  security-scan:
+    name: Security Scan (gitleaks)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ============================================================
+  # Status Report (Summary for all pipeline stages)
+  # ============================================================
+  status-report:
+    name: Pipeline Status Report
+    runs-on: ubuntu-latest
+    needs: [pr-validation, post-merge-validation, weekly-comprehensive, branch-validation, security-scan]
+    if: always()
+    timeout-minutes: 5
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+        continue-on-error: true
+
+      - name: Generate status report
+        run: |
+          echo "# CI/CD Pipeline Status Report (3-Tier Test Pyramid)" > status_report.md
+          echo "" >> status_report.md
+          echo "## Test Pyramid Strategy" >> status_report.md
+          echo "- Unit 70% / Integration 25% / E2E 5%" >> status_report.md
+          echo "- Coverage Target: 60% (baseline protection)" >> status_report.md
+          echo "" >> status_report.md
+          echo "## Stage Results" >> status_report.md
+          echo "- PR Validation: ${{ needs.pr-validation.result || 'skipped' }}" >> status_report.md
+          echo "- Post-Merge: ${{ needs.post-merge-validation.result || 'skipped' }}" >> status_report.md
+          echo "- Weekly Comprehensive: ${{ needs.weekly-comprehensive.result || 'skipped' }}" >> status_report.md
+          echo "- Branch Validation: ${{ needs.branch-validation.result || 'skipped' }}" >> status_report.md
+          echo "- Security Scan: ${{ needs.security-scan.result || 'skipped' }}" >> status_report.md
+          echo "" >> status_report.md
+          echo "## Triggered By: ${{ github.event_name }}" >> status_report.md
+          cat status_report.md
+
+      - name: Upload status report
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-status-report
+          retention-days: 7
+          path: status_report.md
