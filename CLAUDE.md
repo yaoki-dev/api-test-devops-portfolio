@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-*最終更新: 2025年10月07日*
+*最終更新: 2025年12月10日*
 
 ## プロジェクト概要
 
@@ -844,19 +844,6 @@ if settings.is_development():
 - docstring: すべての公開関数・クラスに必須
 - コメント: 日本語可、ただしコード内変数・関数名は英語
 
-<<<<<<< Updated upstream
-### Git運用
-- featureブランチで作業、mainへの直接コミット禁止
-- コミットメッセージ: prefix使用（feat:, fix:, docs:, test:, refactor:）
-
-### テストカバレッジ
-- 目標: 85%以上（pytest設定: `--cov-fail-under=85`）
-- テスト不足時はpytestが自動的に失敗
-
-### ファイル除外設定
-- `tests/Q&A/`: 学習用ファイル（pre-commit・品質チェック除外）
-- `node_modules/`, `venv/`, `__pycache__/`: 自動生成ファイル
-=======
 **Git運用** (Git Flow):
 - `main`: 本番リリース用（タグ付きリリースのみ）
 - `develop`: 開発統合ブランチ（次期リリース準備）main へマージ
@@ -886,9 +873,23 @@ if settings.is_development():
 
 **Git Flowコマンド**:
 - `/git-workflow:feature <name>`: feature作成（developから分岐）
+- `/git-workflow:release <version>`: release作成
 - `/git-workflow:hotfix <name>`: hotfix作成（mainから分岐）
 - `/git-workflow:finish`: ブランチ完了・マージ
 - `/git-workflow:flow-status`: 状態確認
+
+**Git削除の伝播（重要な学び）**:
+- ⚠️ `git rm`による削除は**削除diff**として扱われる
+- develop→mainマージ時、削除diffは自動適用される
+- 両ブランチに存在するファイルの場合、developでの削除がmainにも反映される
+- 例外: mainにしか存在しないファイル（developの履歴にない）は手動削除が必要
+
+**ブランチ衛生管理**:
+- バックアップディレクトリの代わりにGit履歴を使用
+- 廃止ファイルはdevelopでクリーンアップ → mainへ自動伝播
+- プロジェクトワークフロー: develop→main直接マージ（releaseブランチ不使用）
+
+> **発見日**: 2025-12-09（58ファイルクリーンアップ実施時）
 
 **品質基準**:
 - カバレッジ目標: Week 7-10でPhase別に設定（最終目標85%）
@@ -935,7 +936,6 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 ```
 
 **※1 品質ゲート**: `uv run pytest && uv run ruff check . && uv run mypy utils/ config/`
->>>>>>> Stashed changes
 
 ## トラブルシューティング
 
