@@ -26,7 +26,7 @@ permissions:
 
 jobs:
   # ============================================================
-  # Stage 1: PR Validation (Fast Feedback < 5 min)
+  # Stage 1: PR Validation (Fast Feedback)
   # Triggers: pull_request
   # Tests: Unit + Integration + Regression (excluding slow tests)
   # ============================================================
@@ -156,7 +156,7 @@ jobs:
           # Full security tests run serially (no -n auto) to avoid:
           # - GitHub API Rate Limit (60 req/h)
           # - Authentication state conflicts
-          uv run pytest -m "security" -v --maxfail=10 || true
+          uv run pytest -m "security" -v --maxfail=10
           echo "security_tests_completed=true" >> $GITHUB_ENV
         continue-on-error: true
 
@@ -255,7 +255,7 @@ jobs:
 
   # ============================================================
   # Security Scan (gitleaks - secrets detection)
-  # Triggers: push, pull_request (all branches)
+  # Triggers: push, pull_request (main, develop)
   # ============================================================
   security-scan:
     name: Security Scan (gitleaks)
