@@ -58,10 +58,7 @@ jobs:
       # - Ref: pyproject.toml [tool.pytest.ini_options]
       - name: Run core tests with coverage (Unit + Integration + Regression)
         run: |
-          uv run pytest -o "addopts=-ra --strict-markers --strict-config" \
-            -n auto -m "(unit or integration or regression) and not slow and not manual and not external" \
-            --cov --cov-report=term-missing --cov-report=json \
-            --cov-fail-under=60 --maxfail=3 -v
+          uv run pytest -o "addopts=-ra --strict-markers --strict-config" -n auto -m "(unit or integration or regression) and not slow and not manual and not external" --cov --cov-report=term-missing --cov-report=json --cov-fail-under=60 --maxfail=3 -v
           echo "core_tests_passed=true" >> $GITHUB_ENV
 
       - name: Run security tests (Fast mock-based subset)
@@ -186,8 +183,7 @@ jobs:
 
       - name: Full coverage report
         run: |
-          uv run pytest -o "addopts=-ra --strict-markers --strict-config" \
-            --cov --cov-report=html:reports/htmlcov --cov-report=json -v
+          uv run pytest -o "addopts=-ra --strict-markers --strict-config" --cov --cov-report=html:reports/htmlcov --cov-report=json -v
           echo "coverage_report_generated=true" >> $GITHUB_ENV
 
       - name: Upload weekly test results
@@ -230,10 +226,7 @@ jobs:
       # Coverage threshold: 60% (CI baseline) - same as pr-validation
       - name: Run core tests (Unit + Integration + Regression)
         run: |
-          uv run pytest -o "addopts=-ra --strict-markers --strict-config" \
-            -n auto -m "(unit or integration or regression) and not slow and not manual and not external" \
-            --cov --cov-report=term-missing --cov-report=json \
-            --cov-fail-under=60 --maxfail=5 -v
+          uv run pytest -o "addopts=-ra --strict-markers --strict-config" -n auto -m "(unit or integration or regression) and not slow and not manual and not external" --cov --cov-report=term-missing --cov-report=json --cov-fail-under=60 --maxfail=5 -v
           echo "branch_tests_passed=true" >> $GITHUB_ENV
 
       - name: Run security tests (Fast mock-based subset)
