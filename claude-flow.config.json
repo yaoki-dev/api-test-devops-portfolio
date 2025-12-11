@@ -32,14 +32,24 @@
   "testing": {
     "framework": "pytest",
     "coverageThreshold": 85,
-    "testTypes": ["unit", "integration", "security", "performance", "e2e"],
+    "testTypes": [
+      "unit",
+      "integration",
+      "security",
+      "performance",
+      "e2e"
+    ],
     "parallelTesting": true,
     "benchmarking": true,
     "loadTesting": true
   },
   "security": {
     "owaspCompliance": true,
-    "staticAnalysis": ["bandit", "safety", "semgrep"],
+    "staticAnalysis": [
+      "bandit",
+      "safety",
+      "semgrep"
+    ],
     "vulnerabilityScanning": true,
     "securityTesting": true,
     "complianceChecks": true
@@ -50,47 +60,90 @@
     "cicd": "github-actions",
     "monitoring": "structured-logging",
     "packageManager": "uv",
-    "environments": ["development", "test", "staging", "production"]
+    "environments": [
+      "development",
+      "test",
+      "staging",
+      "production"
+    ]
   },
   "agents": {
     "specialized": {
       "backend-developer": {
-        "capabilities": ["api-development", "async-programming", "httpx", "fastapi"],
+        "capabilities": [
+          "api-development",
+          "async-programming",
+          "httpx",
+          "fastapi"
+        ],
         "priority": "high"
       },
       "test-engineer": {
-        "capabilities": ["pytest", "coverage-analysis", "test-automation", "mocking"],
+        "capabilities": [
+          "pytest",
+          "coverage-analysis",
+          "test-automation",
+          "mocking"
+        ],
         "priority": "high"
       },
       "security-analyst": {
-        "capabilities": ["owasp-testing", "vulnerability-scanning", "security-automation"],
+        "capabilities": [
+          "owasp-testing",
+          "vulnerability-scanning",
+          "security-automation"
+        ],
         "priority": "medium"
       },
       "performance-engineer": {
-        "capabilities": ["load-testing", "benchmarking", "resource-monitoring"],
+        "capabilities": [
+          "load-testing",
+          "benchmarking",
+          "resource-monitoring"
+        ],
         "priority": "medium"
       },
       "devops-engineer": {
-        "capabilities": ["docker", "ci-cd", "automation", "monitoring"],
+        "capabilities": [
+          "docker",
+          "ci-cd",
+          "automation",
+          "monitoring"
+        ],
         "priority": "medium"
       }
     }
   },
   "workflows": {
     "development": {
-      "phases": ["specification", "pseudocode", "architecture", "implementation", "testing"],
+      "phases": [
+        "specification",
+        "pseudocode",
+        "architecture",
+        "implementation",
+        "testing"
+      ],
       "methodology": "sparc-tdd",
       "parallelism": true
     },
     "testing": {
       "strategy": "comprehensive",
       "coverage": 85,
-      "types": ["unit", "integration", "security", "performance"],
+      "types": [
+        "unit",
+        "integration",
+        "security",
+        "performance"
+      ],
       "automation": true
     },
     "deployment": {
       "strategy": "multi-stage",
-      "environments": ["test", "staging", "production"],
+      "environments": [
+        "test",
+        "staging",
+        "production"
+      ],
       "validation": true,
       "rollback": true
     }
@@ -114,5 +167,9 @@
       "webhooks": true,
       "integration": true
     }
+  },
+  "memory": {
+    "retention": "30d",
+    "maxSize": "1GB"
   }
 }

@@ -1,0 +1,134 @@
+# progress_state.yaml
+# Obsidian導入計画_v2 進捗状態管理ファイル
+# 最終更新: 2025年12月04日
+
+# =============================================================================
+# 現在状態管理
+# =============================================================================
+current_week: 1
+current_day: 1
+current_phase: "学習期間"  # 学習期間 | 応募準備期間 | 完了
+
+current_learning_item:
+  name: ""
+  week: 1
+  day: 1
+  estimated_hours: 0
+  domain: "既知領域"  # 既知領域 | 未知領域
+
+current_implementation_task:
+  name: ""
+  week: 1
+  day: 1
+  estimated_hours: 0
+  deliverables: []
+
+# =============================================================================
+# スキル習熟度トラッキング
+# =============================================================================
+skill_mastery:
+  # 例: python_type_hints:
+  #   mastery_level: 80
+  #   target_level: 80
+  #   status: "完了"  # 完了 | 要復習 | 未学習
+  #   understanding_check:
+  #     date: "2025-12-04"
+  #     score: 22
+  #     passing: true
+
+# =============================================================================
+# エラー発生トラッキング（3回ルール用）🆕 v2.1
+# =============================================================================
+# Trigger 7「エラー記録」で自動更新
+# 3回以上参照したエラーはKB (Knowledge Base) 昇格検討対象
+#
+# 命名規則: snake_case (例: volume_mount, pytest_fixture)
+# occurrences: 発生日リスト（count_30dはv2.0将来拡張、occurrencesから動的計算可能）
+error_occurrences:
+  # 例:
+  # volume_mount:                     # snake_case命名
+  #   description: "Docker volume設定エラー | [2025-12-05] パス設定ミス"
+  #   count: 3                        # 累計カウント（kb_promoted後も継続増加）
+  #   first_seen: "2025-12-01"
+  #   last_seen: "2025-12-05"
+  #   occurrences:                    # 発生日リスト
+  #     - "2025-12-01"
+  #     - "2025-12-03"
+  #     - "2025-12-05"
+  #   kb_promoted: false
+  #   # count_30d: v2.0将来拡張（occurrencesから動的計算）
+  # pytest_fixture:                   # snake_case命名
+  #   description: "pytest fixture scope不一致"
+  #   count: 2
+  #   first_seen: "2025-12-02"
+  #   last_seen: "2025-12-03"
+  #   occurrences:
+  #     - "2025-12-02"
+  #     - "2025-12-03"
+  #   kb_promoted: false
+
+# =============================================================================
+# 学習履歴
+# =============================================================================
+learning_history: []
+  # 例:
+  # - date: "2025-12-04"
+  #   week: 1
+  #   day: 1
+  #   item: "Docker Multi-stage builds"
+  #   estimated_hours: 5
+  #   actual_hours: 4.5
+  #   mastery_level: 85
+  #   status: "完了"
+  #   challenges: "volume設定エラー"
+  #   outcomes: "Multi-stage builds理解、レイヤー最適化習得"
+
+# =============================================================================
+# 実装履歴
+# =============================================================================
+implementation_history: []
+  # 例:
+  # - date: "2025-12-04"
+  #   week: 1
+  #   day: 1
+  #   task: "Docker 4-stage実装"
+  #   estimated_hours: 6
+  #   actual_hours: 5.5
+  #   metrics:
+  #     lines_changed: 150
+  #     files_changed: 3
+  #     test_count: 12
+  #     coverage: 45.0
+  #   quality_gates:
+  #     tests_pass: true
+  #     linter_pass: true
+  #     type_check_pass: true
+  #     committed: true
+  #   status: "実装活動認定"
+
+# =============================================================================
+# 週次サマリー
+# =============================================================================
+weekly_summary: []
+  # 例:
+  # - week: 1
+  #   learning_hours: 30
+  #   implementation_hours: 15
+  #   items_completed: 5
+  #   tasks_completed: 3
+  #   coverage_start: 40.0
+  #   coverage_end: 55.0
+  #   test_count_start: 80
+  #   test_count_end: 95
+  #   notes: "Docker基盤構築完了"
+
+# =============================================================================
+# メタデータ
+# P1-6対応: version → schema_version (セマンティックバージョニング "X.Y.Z" 形式)
+# P1-7対応: キー命名規則 snake_case を全体適用
+# =============================================================================
+metadata:
+  created_at: "2025-12-04"
+  last_updated: "2025-12-04"
+  schema_version: "2.1.0"  # セマンティックバージョニング形式 (P1-6対応)
+  schema_source: "Obsidian導入計画_v2_改善版.md Section 4.9.2"

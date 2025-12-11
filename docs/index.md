@@ -50,11 +50,10 @@
 
 - **[Readme](node_modules/claude-flow/src/ui/extension/node_modules/typed-rest-client/opensource/Nod...
 
-### Root (5個)
+### Root (4個)
 
 - **[Claude Code Configuration - SPARC Development Environment](CLAUDE.md)** - CLAUDE.md
 - **[Comprehensive Measurement and Validation System](COMPREHENSIVE_MEASUREMENT_SYSTEM_SUMMARY.md)**...
-- **[APIテスト + DevOps AI協働実践ポートフォリオ - AI時代技術者育成ガイド](GEMINI.md)** - GEMINI.md
 - **[🚀 AIコラボレーション・次世代DevOpsポートフォリオ](README.md)** - README.md
 - **[Test Expansion Implementation Summary](TEST_EXPANSION_SUMMARY.md)** - TEST_EXPANSION_SUMMARY.md
 

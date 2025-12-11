@@ -51,9 +51,9 @@ class TestAPIConfigValidation:
         assert config.base_url == "https://example.com"
 
     def test_base_url_http_scheme_valid(self):
-        """http://スキームが有効"""
-        config = APIConfig(base_url="http://localhost:8000")
-        assert config.base_url == "http://localhost:8000"
+        """http://スキームが有効（SSRF対応: 許可ドメインを使用）"""
+        config = APIConfig(base_url="http://httpbin.org")
+        assert config.base_url == "http://httpbin.org"
 
     def test_base_url_https_scheme_valid(self):
         """https://スキームが有効"""

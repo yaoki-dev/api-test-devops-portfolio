@@ -68,7 +68,7 @@ class Post(BaseModel):
     title: str = Field(..., max_length=200, description="投稿タイトル")
     body: str = Field(..., max_length=5000, description="投稿本文")
 
-    model_config = {"populate_by_name": True, "extra": "forbid"}
+    model_config = {"populate_by_name": True}
 
     @field_validator("title", "body")
     @classmethod
@@ -107,7 +107,7 @@ class Comment(BaseModel):
     email: str = Field(..., max_length=100, description="コメント投稿者メールアドレス")
     body: str = Field(..., max_length=2000, description="コメント本文")
 
-    model_config = {"populate_by_name": True, "extra": "forbid"}
+    model_config = {"populate_by_name": True}
 
     @field_validator("name", "email", "body")
     @classmethod
@@ -149,7 +149,7 @@ class Company(BaseModel):
     )
     bs: str = Field(..., max_length=200, description="ビジネススローガン")
 
-    model_config = {"populate_by_name": True, "extra": "forbid"}
+    model_config = {"populate_by_name": True}
 
     @field_validator("name", "catch_phrase", "bs")
     @classmethod
@@ -189,8 +189,6 @@ class User(BaseModel):
     email: str = Field(..., max_length=100, description="メールアドレス")
     website: str = Field(..., max_length=200, description="ウェブサイトURL")
     company: Company = Field(..., description="企業情報")
-
-    model_config = {"extra": "forbid"}
 
     @field_validator("name", "username", "email", "website")
     @classmethod
@@ -232,7 +230,7 @@ class Todo(BaseModel):
     title: str = Field(..., max_length=200, description="TODOタイトル")
     completed: bool = Field(..., description="完了フラグ")
 
-    model_config = {"populate_by_name": True, "extra": "forbid"}
+    model_config = {"populate_by_name": True}
 
     @field_validator("title")
     @classmethod
@@ -267,7 +265,7 @@ class Album(BaseModel):
     user_id: int = Field(..., ge=1, alias="userId", description="所有者ユーザーID")
     title: str = Field(..., max_length=200, description="アルバムタイトル")
 
-    model_config = {"populate_by_name": True, "extra": "forbid"}
+    model_config = {"populate_by_name": True}
 
     @field_validator("title")
     @classmethod
@@ -308,7 +306,7 @@ class Photo(BaseModel):
         ..., max_length=500, alias="thumbnailUrl", description="サムネイルURL"
     )
 
-    model_config = {"populate_by_name": True, "extra": "forbid"}
+    model_config = {"populate_by_name": True}
 
     @field_validator("title")
     @classmethod

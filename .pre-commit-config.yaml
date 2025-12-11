@@ -9,7 +9,37 @@ repos:
       - id: ruff-format       # フォーマット自動適用
         exclude: ^tests/Q&A/    # 学習ファイル除外
 
+  # シークレット検出 (軽量・高速) 🆕 v2.1
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: >
+          (?x)^(
+            .*\.lock$|
+            .*\.baseline$|
+            obsidian-vault-local/.*|
+            tests/Q&A/.*
+          )$
+
+  # 追加セキュリティパターン (ローカルhook) 🔒 v2.2 Shell Injection対策済
+  - repo: local
+    hooks:
+      - id: detect-aws-credentials
+        name: Detect AWS credentials
+        # P0-2修正: -r追加(空ファイル対策), -E拡張正規表現, \b word boundary, -- オプション終端
+        entry: bash -c 'git diff --cached --name-only -z | xargs -0 -r grep -E "\bAKIA[0-9A-Z]{16}\b" -- 2>/dev/null && { echo "❌ AWS Access Key detected!"; exit 1; } || exit 0'
+        language: system
+        pass_filenames: false
+      - id: detect-jwt-tokens
+        name: Detect JWT tokens
+        # P0-2修正: -r追加, -E拡張正規表現, -- オプション終端
+        entry: bash -c 'git diff --cached --name-only -z | xargs -0 -r grep -E "eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\." -- 2>/dev/null && { echo "❌ JWT token detected!"; exit 1; } || exit 0'
+        language: system
+        pass_filenames: false
+
 # 重いチェックはCI/CDで実行 (コミット時は除外)
 # - mypy: 型チェック → GitHub Actions
-# - bandit: セキュリティ → GitHub Actions  
+# - bandit: セキュリティ → GitHub Actions
 # - pytest: テスト → GitHub Actions

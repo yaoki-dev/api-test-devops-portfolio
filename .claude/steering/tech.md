@@ -277,6 +277,7 @@ uv run bandit -r utils/ config/
 | `main` | 本番リリース（タグ付き） | - |
 | `develop` | 開発統合 | main |
 | `feature/*` | 新機能開発 | develop |
+| `release/*` | リリース準備 | main + develop |
 | `hotfix/*` | 緊急修正 | main + develop |
 
 **採用理由**:
@@ -286,6 +287,7 @@ uv run bandit -r utils/ config/
 
 **コマンド**:
 - `/git-workflow:feature <name>`: feature作成（developから分岐）
+- `/git-workflow:release <version>`: release作成
 - `/git-workflow:hotfix <name>`: hotfix作成（mainから分岐）
 - `/git-workflow:finish`: ブランチ完了・マージ
 - `/git-workflow:flow-status`: 状態確認
