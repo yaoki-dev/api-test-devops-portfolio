@@ -23,6 +23,9 @@ from config.settings import (
     reload_settings,
 )
 
+# Module-level marker: All tests in this file are unit tests
+pytestmark = pytest.mark.unit
+
 
 class TestAPIConfigValidation:
     """APIConfig.validate_base_url のテスト (lines 73-77)"""

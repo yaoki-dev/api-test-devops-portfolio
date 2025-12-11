@@ -117,6 +117,7 @@ omit = [
     ".tox/*",
     "build/*",
     "docs/*",
+    "*/__init__.py"
 ]
 branch = true                    # ブランチカバレッジも計測
 

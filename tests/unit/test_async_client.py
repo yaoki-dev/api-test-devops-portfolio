@@ -29,6 +29,9 @@ from httpx import Request, Response
 # プロジェクト内モジュール
 from utils.api_client import AsyncAPIClient, AsyncJSONPlaceholderClient
 
+# Module-level marker: All tests in this file are unit tests
+pytestmark = pytest.mark.unit
+
 # ===============================================================================
 # テスト用フィクスチャ・設定
 # ===============================================================================

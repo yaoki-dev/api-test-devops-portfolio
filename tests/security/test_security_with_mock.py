@@ -21,10 +21,10 @@ import pytest
 # =============================================================================
 # Test Markers Configuration
 # =============================================================================
-pytestmark = [
-    pytest.mark.security,
-    pytest.mark.unit,  # Mock tests are unit tests (fast, no external dependency)
-]
+# Security tests run in weekly comprehensive tests only (not during PR validation)
+# Rationale: Security is a "purpose" category, orthogonal to execution characteristics
+# See: .claude/plans/sleepy-juggling-cascade.md (Q5 analysis)
+pytestmark = pytest.mark.security
 
 
 # =============================================================================

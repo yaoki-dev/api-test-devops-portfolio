@@ -7,6 +7,9 @@ from utils.api_client import (
     BaseAPIClient,
 )
 
+# Module-level marker: All tests in this file are unit tests
+pytestmark = pytest.mark.unit
+
 
 # Mock settings for testing purposes, as the actual BaseAPIClient uses config.settings
 class MockAPISettings:
@@ -65,6 +68,7 @@ def test_base_client_uses_default_settings_if_not_provided():
     assert client.retry_count == 3
 
 
+@pytest.mark.unit
 def test_base_client_headers_are_set_correctly():
     """ヘッダーが正しく設定されることを確認"""
     custom_headers = {"X-Custom-Header": "Value"}
@@ -73,6 +77,7 @@ def test_base_client_headers_are_set_correctly():
     assert client.default_headers["Accept"] == "application/json"
 
 
+@pytest.mark.unit
 def test_base_client_close_method():
     """closeメソッドがクライアントを閉じることを確認"""
     client = BaseAPIClient(base_url="https://test.com")

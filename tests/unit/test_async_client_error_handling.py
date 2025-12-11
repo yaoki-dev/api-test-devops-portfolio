@@ -22,6 +22,9 @@ from utils.api_client import (
     AsyncAPIClient,
 )
 
+# Module-level marker: All tests in this file are unit tests
+pytestmark = pytest.mark.unit
+
 
 class TestAsyncClientExceptions:
     """カスタム例外クラスのテスト"""

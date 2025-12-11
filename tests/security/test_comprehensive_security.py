@@ -19,13 +19,10 @@ from utils.api_client import AsyncAPIClient
 
 logger = structlog.get_logger()
 
-# Module-level markers: Security tests using real API (integration level)
-# Design rationale: Security testing at integration level validates actual API behavior
-# See: docs/interview/multi_level_security_testing.md
-pytestmark = [
-    pytest.mark.security,
-    pytest.mark.integration,  # Uses AsyncAPIClient for real API calls
-]
+# Module-level markers: Security tests run in weekly comprehensive tests only
+# Rationale: Security is a "purpose" category, orthogonal to execution characteristics
+# See: .claude/plans/sleepy-juggling-cascade.md (Q5 analysis)
+pytestmark = pytest.mark.security
 
 
 class SecurityTestSuite:
