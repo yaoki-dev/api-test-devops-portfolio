@@ -1,0 +1,499 @@
+name: CI/CD Pipeline - 3-Tier Test Pyramid
+
+# Test Pyramid Strategy (Google Testing Blog):
+# Unit 70% / Integration 25% / E2E 5% (Integration/Smoke: 6週プランで実装予定)
+#
+# Coverage Strategy: CI starts at 58%, increases weekly toward 85% final goal
+# - pyproject.toml: 85% (local development target)
+# - CI: 58% baseline, progressive increase per week
+#
+# External API tests run weekly only (Rate Limit consideration for GitHub API)
+# Reference: .serena/memories/test_strategy_part1_overview.md
+
+on:
+  push:
+    branches: [main, develop]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'assets/**'
+  pull_request:
+    branches: [main, develop]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'assets/**'
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly (Sunday 00:00 UTC)
+  workflow_dispatch:  # Manual trigger for debugging/re-runs
+
+# Prevent concurrent runs on the same branch (save GitHub Actions minutes)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ============================================================
+  # Stage 1: PR Validation (Fast Feedback < 5 min)
+  # Triggers: pull_request
+  # Tests: Unit + Integration (excluding slow tests)
+  # ============================================================
+  pr-validation:
+    name: PR Validation (Unit + Integration)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run core tests with coverage (Unit + Integration only)
+        # Coverage scope: unit + integration tests only
+        # Security/performance/regression tests excluded from PR coverage calculation
+        # Reference: .serena/memories/test_strategy_part3_security_execution.md (Section 7.0)
+        run: |
+          uv run pytest -n auto -m "(unit or integration) and not slow and not manual and not external" \
+            --cov --cov-report=json \
+            --cov-fail-under=58 --maxfail=3 -v
+
+      - name: Run security validation (Mock-based, fast)
+        # Shift Left Security: Lightweight mock-based tests for early vulnerability detection
+        # Full security tests with external APIs run in weekly-comprehensive
+        run: uv run pytest tests/security/test_security_with_mock.py -v --maxfail=3
+
+      - name: Run ruff linter
+        run: uv run ruff check .
+
+      - name: Run mypy type checker
+        run: uv run mypy utils/ config/ models/
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-validation-results
+          path: |
+            reports/
+            coverage.json
+          retention-days: 14
+
+  # ============================================================
+  # Stage 2: Post-Merge Validation (Smoke Test < 2 min)
+  # Triggers: push to main
+  # Tests: Unit + Integration + Smoke (lightweight quality gate)
+  # ============================================================
+  post-merge-validation:
+    name: Post-Merge Validation (Smoke)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run smoke tests with coverage (Main merge snapshot)
+        # Full coverage report on main merge - authoritative coverage snapshot
+        run: |
+          uv run pytest -n auto -m "(unit or integration or smoke) and not slow" \
+            --cov --cov-report=json --cov-report=html:reports/htmlcov \
+            --maxfail=3 -v --tb=short
+
+      - name: Upload post-merge results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-merge-results
+          path: |
+            reports/
+            coverage.json
+          retention-days: 14
+
+  # ============================================================
+  # Stage 3: Weekly Comprehensive Tests (< 30 min)
+  # Triggers: schedule (Sunday 00:00 UTC)
+  # Tests: Regression + Security + Performance + External
+  # ============================================================
+  weekly-comprehensive:
+    name: Weekly Comprehensive (Regression + Security + Performance)
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run regression tests (Degrade detection)
+        run: uv run pytest -n auto -m "regression" -v --maxfail=5
+
+      - name: Run security tests (Serial - Rate Limit/Auth safety)
+        id: security-tests
+        run: |
+          # Full security tests run serially (no -n auto) to avoid:
+          # - GitHub API Rate Limit (60 req/h)
+          # - Authentication state conflicts
+          # Fail Fast: Security failures should fail the job (no continue-on-error)
+          uv run pytest -m "security" -v --maxfail=3
+
+      - name: Report security test status (Failure)
+        if: steps.security-tests.outcome == 'failure'
+        run: echo "::warning::Security tests failed - review vulnerabilities before next release"
+
+      - name: Report security test status (Success)
+        if: steps.security-tests.outcome == 'success'
+        run: echo "::notice::Security tests passed - no vulnerabilities detected"
+
+      - name: Run performance tests
+        run: uv run pytest -m "performance" -v --maxfail=3
+
+      - name: Run external API tests (Weekly validation)
+        id: external-tests  # Used for outcome-based error handling
+        run: uv run pytest -m "external and not manual" -v --maxfail=5
+        continue-on-error: true
+
+      - name: Report external test status (Success)
+        if: steps.external-tests.outcome == 'success'
+        run: echo "::notice::External API tests passed - all integrations healthy"
+
+      - name: Report external test status (Failure)
+        if: steps.external-tests.outcome == 'failure'
+        run: echo "::warning::External API tests failed - investigate rate limits or API changes"
+
+      - name: Upload weekly test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-comprehensive-results
+          path: |
+            reports/
+            coverage.json
+          retention-days: 14
+
+  # ============================================================
+  # Stage 4: Push to develop branch (Quick Validation)
+  # Triggers: push to develop
+  # Tests: Unit + Integration only (fast feedback, dev speed priority)
+  # ============================================================
+  branch-validation:
+    name: Branch Validation (develop)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run core tests (Unit + Integration)
+        # develop branch: unit + integration only (regression excluded for dev speed)
+        # Regression/Security/Performance tests run in weekly-comprehensive
+        # --cov uses pyproject.toml [tool.coverage.run].source = ["utils", "config", "models"]
+        run: |
+          uv run pytest -n auto -m "(unit or integration) and not slow and not manual and not external" \
+            --cov --cov-report=json \
+            --cov-fail-under=58 --maxfail=5 -v
+
+      # Security tests removed from branch validation
+      # Reason: Security tests only have 'security' marker (not unit/integration)
+      # They run in weekly-comprehensive job only
+      # Reference: .serena/memories/test_strategy_part3_security_execution.md (Section 7.0)
+
+      - name: Run ruff linter
+        run: uv run ruff check .
+
+      - name: Run mypy type checker
+        run: uv run mypy utils/ config/ models/
+
+      - name: Upload branch validation results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: branch-validation-results
+          path: |
+            reports/
+            coverage.json
+          retention-days: 14
+
+  # ============================================================
+  # Stage 5: Release Gate (Manual trigger for pre-release validation)
+  # Triggers: workflow_dispatch (manual)
+  # Tests: All tests (Regression + Security + Performance + Full Suite)
+  # ============================================================
+  release-gate:
+    name: Release Gate (Full Validation)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run unit and integration tests with coverage
+        run: |
+          uv run pytest -n auto -m "(unit or integration) and not slow and not manual and not external" \
+            --cov --cov-report=json --cov-report=html:reports/htmlcov \
+            --cov-fail-under=58 -v
+
+      - name: Run regression tests (Must Pass)
+        run: uv run pytest -n auto -m "regression" -v --maxfail=1
+
+      - name: Run security tests (Serial - Zero Tolerance)
+        # Release Gate: No maxfail - all tests run, any failure blocks release
+        run: uv run pytest -m "security" -v
+
+      - name: Run performance tests
+        run: uv run pytest -m "performance" -v
+
+      - name: Upload release gate results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-gate-results
+          path: |
+            reports/
+            coverage.json
+          retention-days: 30
+
+  # ============================================================
+  # Status Reports (Trigger-specific to avoid dependency deadlock)
+  # Each report job depends only on its corresponding validation job
+  # ============================================================
+
+  # PR Validation Status Report
+  status-report-pr:
+    name: PR Status Report
+    if: github.event_name == 'pull_request' && always()
+    needs: [pr-validation]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Download PR artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: pr-validation-results
+          path: artifacts/
+        continue-on-error: true
+
+      - name: Generate PR status report
+        run: |
+          echo "# PR Validation Status Report" > status_report.md
+          echo "" >> status_report.md
+          echo "## Test Pyramid: Unit 70% / Integration 25% / E2E 5%" >> status_report.md
+          echo "## Coverage Target: 58%" >> status_report.md
+          echo "" >> status_report.md
+          echo "## Result: ${{ needs.pr-validation.result }}" >> status_report.md
+          echo "## Triggered By: pull_request" >> status_report.md
+          cat status_report.md
+
+      - name: Upload status report
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-status-report
+          path: status_report.md
+          retention-days: 14
+
+  # Post-Merge Validation Status Report
+  status-report-main:
+    name: Main Push Status Report
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && always()
+    needs: [post-merge-validation]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Download post-merge artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: post-merge-results
+          path: artifacts/
+        continue-on-error: true
+
+      - name: Generate main push status report
+        run: |
+          echo "# Post-Merge Validation Status Report" > status_report.md
+          echo "" >> status_report.md
+          echo "## Result: ${{ needs.post-merge-validation.result }}" >> status_report.md
+          echo "## Triggered By: push to main" >> status_report.md
+          cat status_report.md
+
+      - name: Upload status report
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-status-report
+          path: status_report.md
+          retention-days: 14
+
+  # Develop Branch Validation Status Report
+  status-report-develop:
+    name: Develop Push Status Report
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && always()
+    needs: [branch-validation]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Download branch validation artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: branch-validation-results
+          path: artifacts/
+        continue-on-error: true
+
+      - name: Generate develop push status report
+        run: |
+          echo "# Branch Validation Status Report (develop)" > status_report.md
+          echo "" >> status_report.md
+          echo "## Test Pyramid: Unit 70% / Integration 25% / E2E 5%" >> status_report.md
+          echo "## Coverage Target: 58%" >> status_report.md
+          echo "" >> status_report.md
+          echo "## Result: ${{ needs.branch-validation.result }}" >> status_report.md
+          echo "## Triggered By: push to develop" >> status_report.md
+          cat status_report.md
+
+      - name: Upload status report
+        uses: actions/upload-artifact@v4
+        with:
+          name: develop-status-report
+          path: status_report.md
+          retention-days: 14
+
+  # Weekly Comprehensive Status Report
+  status-report-weekly:
+    name: Weekly Status Report
+    if: github.event_name == 'schedule' && always()
+    needs: [weekly-comprehensive]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Download weekly artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: weekly-comprehensive-results
+          path: artifacts/
+        continue-on-error: true
+
+      - name: Generate weekly status report
+        run: |
+          echo "# Weekly Comprehensive Status Report" > status_report.md
+          echo "" >> status_report.md
+          echo "## Full Test Suite: Security + Performance + Coverage" >> status_report.md
+          echo "" >> status_report.md
+          echo "## Result: ${{ needs.weekly-comprehensive.result }}" >> status_report.md
+          echo "## Triggered By: schedule (Sunday 00:00 UTC)" >> status_report.md
+          cat status_report.md
+
+      - name: Upload status report
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-status-report
+          path: status_report.md
+          retention-days: 14
+
+  # Release Gate Status Report
+  status-report-release:
+    name: Release Gate Status Report
+    if: github.event_name == 'workflow_dispatch' && always()
+    needs: [release-gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Download release gate artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-gate-results
+          path: artifacts/
+        continue-on-error: true
+
+      - name: Generate release gate status report
+        run: |
+          echo "# Release Gate Status Report" > status_report.md
+          echo "" >> status_report.md
+          echo "## Full Validation: Unit + Integration + Regression + Security + Performance" >> status_report.md
+          echo "## Coverage Target: 58%" >> status_report.md
+          echo "" >> status_report.md
+          echo "## Result: ${{ needs.release-gate.result }}" >> status_report.md
+          echo "## Triggered By: workflow_dispatch (manual)" >> status_report.md
+          cat status_report.md
+
+      - name: Upload status report
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-status-report
+          path: status_report.md
+          retention-days: 30

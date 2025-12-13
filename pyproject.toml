@@ -69,6 +69,8 @@ dev = [
     "bandit>=1.8.6",
     "pre-commit>=4.3.0",
     "pytest-asyncio>=1.1.0",
+    "pytest-cov>=4.1.0",
+    "pytest-xdist>=3.5.0",
     "ruff>=0.1.0",
     "safety>=3.6.0",
 ]
@@ -84,31 +86,31 @@ addopts = [
     "-ra",                       # すべての結果を表示
     "--strict-markers",          # 未定義マーカーでエラー
     "--strict-config",           # 設定エラーで停止
-    "--cov=utils",               # カバレッジ対象
-    "--cov=config",              
+    "--ignore=tests/unit/test_error_tracker.py",  # pytest.iniから移行
+    "--cov",                     # カバレッジ対象: [tool.coverage.run].source参照
     "--cov-report=term-missing", # 欠損行表示
     "--cov-report=html:reports/htmlcov",  # HTMLレポート
     "--cov-report=xml:reports/coverage.xml",  # XMLレポート
-    "--cov-fail-under=85",       # カバレッジ閾値85%
+    "--cov-report=json",
+    "-v",
+    "--cov-fail-under=85",       # ローカル目標: 85%（CI: 58%→85%段階的上昇）
 ]
 markers = [
     "unit: 単体テスト",
-    "integration: 統合テスト", 
+    "integration: 統合テスト",
     "e2e: E2Eテスト",
     "performance: パフォーマンステスト",
     "security: セキュリティテスト",
     "slow: 実行時間の長いテスト",
-    "external: 外部API依存テスト",
-    "load: 負荷テスト",
-    "concurrency: コンカレンシーテスト",
-    "benchmark: ベンチマークテスト",
-    "resource: リソース監視テスト",
+    "external: 外部API依存テスト（週次CI実行、Rate Limit考慮）",
+    "smoke: スモークテスト（6週プランで実装予定）",
+    "regression: 回帰テスト（クリティカルパス検証）",
 ]
 asyncio_mode = "auto"            # 非同期テスト自動検出
 
 # カバレッジ設定
 [tool.coverage.run]
-source = ["utils", "config"]
+source = ["utils", "config", "models"]  # Coverage対象: 3モジュール
 omit = [
     "tests/*",
     "venv/*",
@@ -116,6 +118,7 @@ omit = [
     ".tox/*",
     "build/*",
     "docs/*",
+    "*/__init__.py"
 ]
 branch = true                    # ブランチカバレッジも計測
 
