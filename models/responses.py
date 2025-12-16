@@ -131,6 +131,78 @@ class Comment(BaseModel):
 # =============================================================================
 
 
+class Geo(BaseModel):
+    """地理座標モデル
+
+    Addressモデルのネストされたフィールド。
+    JSONPlaceholderでは緯度経度が文字列で返される。
+
+    Attributes:
+        lat: 緯度（文字列形式、サニタイズ済み）
+        lng: 経度（文字列形式、サニタイズ済み）
+    """
+
+    lat: str = Field(..., max_length=50, description="緯度")
+    lng: str = Field(..., max_length=50, description="経度")
+
+    model_config = {"extra": "forbid"}
+
+    @field_validator("lat", "lng")
+    @classmethod
+    def sanitize_geo_content(cls, v: str) -> str:
+        """地理座標をサニタイズ
+
+        XSS攻撃を防ぐため、ユーザー生成コンテンツから
+        危険なHTML特殊文字をエスケープ。
+
+        Args:
+            v: サニタイズ対象の文字列
+
+        Returns:
+            サニタイズ済み文字列
+        """
+        return sanitize_user_content(v)
+
+
+class Address(BaseModel):
+    """住所モデル
+
+    Userモデルのネストされたフィールド。
+    street, suite, city, zipcodeフィールドにXSS保護を適用。
+
+    Attributes:
+        street: 通り名（サニタイズ済み、最大200文字）
+        suite: 部屋番号/建物名（サニタイズ済み、最大100文字）
+        city: 市区町村（サニタイズ済み、最大100文字）
+        zipcode: 郵便番号（サニタイズ済み、最大20文字）
+        geo: 地理座標（ネストされたGeoモデル）
+    """
+
+    street: str = Field(..., max_length=200, description="通り名")
+    suite: str = Field(..., max_length=100, description="部屋番号/建物名")
+    city: str = Field(..., max_length=100, description="市区町村")
+    zipcode: str = Field(..., max_length=20, description="郵便番号")
+    geo: Geo = Field(..., description="地理座標")
+
+    model_config = {"extra": "forbid"}
+
+    @field_validator("street", "suite", "city", "zipcode")
+    @classmethod
+    def sanitize_address_content(cls, v: str) -> str:
+        """住所情報をサニタイズ
+
+        XSS攻撃を防ぐため、ユーザー生成コンテンツから
+        危険なHTML特殊文字をエスケープ。
+
+        Args:
+            v: サニタイズ対象の文字列
+
+        Returns:
+            サニタイズ済み文字列
+        """
+        return sanitize_user_content(v)
+
+
 class Company(BaseModel):
     """企業情報モデル
 
@@ -172,13 +244,15 @@ class User(BaseModel):
     """ユーザーモデル
 
     JSONPlaceholder /users エンドポイントのレスポンス。
-    name, username, email, websiteフィールドにXSS保護を適用。
+    name, username, email, phone, websiteフィールドにXSS保護を適用。
 
     Attributes:
         id: ユーザーID（1以上）
         name: ユーザー名（サニタイズ済み、最大100文字）
         username: ユーザー名（英数字、サニタイズ済み、最大50文字）
         email: メールアドレス（サニタイズ済み、最大100文字）
+        address: 住所情報（ネストされたAddressモデル）
+        phone: 電話番号（サニタイズ済み、最大50文字）
         website: ウェブサイトURL（サニタイズ済み、最大200文字）
         company: 企業情報（ネストされたCompanyモデル）
     """
@@ -187,12 +261,14 @@ class User(BaseModel):
     name: str = Field(..., max_length=100, description="ユーザー名")
     username: str = Field(..., max_length=50, description="ユーザー名（英数字）")
     email: str = Field(..., max_length=100, description="メールアドレス")
+    address: Address = Field(..., description="住所情報")
+    phone: str = Field(..., max_length=50, description="電話番号")
     website: str = Field(..., max_length=200, description="ウェブサイトURL")
     company: Company = Field(..., description="企業情報")
 
-    model_config = {"extra": "forbid"}
+    model_config = {"populate_by_name": True, "extra": "forbid"}
 
-    @field_validator("name", "username", "email", "website")
+    @field_validator("name", "username", "email", "phone", "website")
     @classmethod
     def sanitize_user_fields(cls, v: str) -> str:
         """ユーザー情報フィールドをサニタイズ
