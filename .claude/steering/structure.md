@@ -2322,10 +2322,10 @@ def event_loop():
     """非同期テスト用イベントループ。"""
     ...
 
-# module: モジュール単位
-@pytest.fixture(scope="module")
-def mock_httpx_client():
-    """モックHTTPクライアント。"""
+# function: 各テスト関数ごと（デフォルト）
+@pytest.fixture
+def mock_httpx_async_client():
+    """モックHTTPX非同期クライアント。"""
     ...
 
 # function: 各テスト関数ごと

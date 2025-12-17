@@ -74,20 +74,26 @@ class TestConfigDict(TypedDict):
 # 定数定義
 # =============================================================================
 
-# ディレクトリ名 → マーカー名のマッピング（拡張可能）
-# Note: キーはディレクトリ名そのもの（Path.partsで厳密マッチ）
-# 動作: 最初にマッチしたマーカーのみ適用（"first match wins"）
-# 例: tests/unit/integration/test_foo.py → "unit"マーカーが適用される
+# ディレクトリベース自動適用マーカー（フォルダ名 = マーカー名の1:1マッピング）
+# Note: Path.partsで厳密マッチ、"first match wins"で最初のマッチのみ適用
 # MappingProxyType: ランタイム不変性を保証（dictへの追加/変更を防止）
-DIRECTORY_MARKERS: Final[MappingProxyType[str, str]] = MappingProxyType(
+AUTO_APPLY_MARKERS: Final[MappingProxyType[str, str]] = MappingProxyType(
     {
-        "unit": "unit",
-        "integration": "integration",
-        "e2e": "e2e",
-        "security": "security",
-        "performance": "performance",
+        "unit": "単体テスト",
+        "integration": "統合テスト",
+        "e2e": "E2Eテスト",
+        "performance": "パフォーマンステスト",
     }
 )
+
+# 手動適用マーカー（@pytest.mark.xxx で明示的に付与）
+MANUAL_MARKERS: Final[dict[str, str]] = {
+    "slow": "実行時間の長いテスト",
+    "external": "外部API依存テスト",
+}
+
+# 自動適用対象のマーカー名タプル（AUTO_APPLY_MARKERSから派生）
+AUTO_APPLY_MARKER_NAMES: Final[tuple[str, ...]] = tuple(AUTO_APPLY_MARKERS.keys())
 
 # テスト設定デフォルト値（Magic number/string排除）
 DEFAULT_TEST_BASE_URL: Final[str] = "https://jsonplaceholder.typicode.com"
@@ -186,28 +192,10 @@ def pytest_configure(config: pytest.Config) -> None:
     logger = get_logger("pytest")
     logger.debug("pytest_configure started")  # M3: パス情報を削除
 
-    # テストマーカーの登録
-    # Note: DIRECTORY_MARKERSに対応するマーカーは自動適用される
-    registered_markers = {
-        "unit": "単体テスト",
-        "integration": "統合テスト",
-        "e2e": "E2Eテスト",
-        "slow": "実行時間の長いテスト",
-        "external": "外部API依存テスト",
-        "performance": "パフォーマンステスト",
-        "security": "セキュリティテスト",
-    }
-
-    for marker_name, description in registered_markers.items():
+    # テストマーカーの登録（自動適用 + 手動適用を結合）
+    all_markers = dict(AUTO_APPLY_MARKERS) | MANUAL_MARKERS
+    for marker_name, description in all_markers.items():
         config.addinivalue_line("markers", f"{marker_name}: {description}")
-
-    # DIRECTORY_MARKERSとregistered_markersの整合性検証
-    missing_markers = set(DIRECTORY_MARKERS.values()) - set(registered_markers.keys())
-    if missing_markers:
-        logger.warning(
-            "DIRECTORY_MARKERS contains unregistered markers",
-            missing=list(missing_markers),
-        )
 
 
 # =============================================================================
@@ -245,15 +233,14 @@ def _apply_directory_markers(items: list[pytest.Item]) -> None:
         例: ('tests', 'unittest', 'test_foo.py') → "unit" in parts = False
 
         動作: "first match wins" - 最初にマッチしたマーカーのみ適用
-        DIRECTORY_MARKERSの定義順でチェックするため、
-        tests/unit/integration/test.py → "unit"が適用される
+        AUTO_APPLY_MARKER_NAMESの定義順でチェック（フォルダ名=マーカー名）
     """
     for item in items:
-        path_parts = item.path.parts  # C2: fspath → path 移行
-        for dir_name, marker_name in DIRECTORY_MARKERS.items():
-            if dir_name in path_parts:
+        path_parts = item.path.parts
+        for marker_name in AUTO_APPLY_MARKER_NAMES:
+            if marker_name in path_parts:
                 item.add_marker(getattr(pytest.mark, marker_name))
-                break  # 最初にマッチしたマーカーのみ適用（first match wins）
+                break  # first match wins
 
 
 def _sort_by_execution_priority(items: list[pytest.Item]) -> None:
@@ -334,7 +321,7 @@ def logger() -> FilteringBoundLogger:
 async def async_client(
     test_config: TestConfigDict,
 ) -> AsyncGenerator[AsyncAPIClient, None]:
-    """非同期HTTPクライアント（テスト用）- Phase 1統合"""
+    """非同期HTTPクライアント"""
     async with AsyncAPIClient(
         base_url=test_config["api"]["base_url"],
         timeout=test_config["api"]["timeout"],
@@ -344,12 +331,15 @@ async def async_client(
 
 
 @pytest.fixture
-def mock_httpx_client() -> Mock:
-    """モック化されたHTTPXクライアント
+def mock_httpx_async_client() -> Mock:
+    """モック化されたHTTPX非同期クライアント
 
     Returns:
         Mock: httpx.AsyncClientのspec付きMock。
             get/post/put/delete/patchメソッドはAsyncMock。
+
+    Note:
+        Sync版テストには mock_httpx_sync_client を使用してください。
     """
     mock_client = Mock(spec=httpx.AsyncClient)
     mock_client.get = AsyncMock()
@@ -357,6 +347,29 @@ def mock_httpx_client() -> Mock:
     mock_client.put = AsyncMock()
     mock_client.delete = AsyncMock()
     mock_client.patch = AsyncMock()
+    return mock_client
+
+
+@pytest.fixture
+def mock_httpx_sync_client() -> Mock:
+    """モック化されたHTTPX同期クライアント
+
+    Returns:
+        Mock: httpx.Clientのspec付きMock。
+            requestメソッドは_make_request_with_retry()から呼ばれる。
+            get/post/put/delete/patchメソッドは通常Mock（非AsyncMock）。
+
+    Note:
+        既存mock_httpx_async_clientはspec=httpx.AsyncClientのため、
+        Sync版テストにはこちらを使用する。
+    """
+    mock_client = Mock(spec=httpx.Client)
+    mock_client.request = Mock()  # _make_request_with_retry()が使用
+    mock_client.get = Mock()
+    mock_client.post = Mock()
+    mock_client.put = Mock()
+    mock_client.delete = Mock()
+    mock_client.patch = Mock()
     return mock_client
 
 

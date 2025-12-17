@@ -80,6 +80,31 @@ jobs:
         # Full security tests with external APIs run in weekly-comprehensive
         run: uv run pytest tests/security/test_security_with_mock.py -v --maxfail=3
 
+      - name: Secret detection (Shift Left Security)
+        # NOTE: Identical logic in 3 locations - update all if changing
+        # See also: branch-validation (line ~286), release-gate (line ~365)
+        run: |
+          set -euo pipefail
+
+          # Baseline存在確認
+          if [ ! -f .secrets.baseline ]; then
+            echo "::error::No .secrets.baseline file found"
+            echo "Run: uv run detect-secrets scan > .secrets.baseline"
+            exit 1
+          fi
+
+          # Baseline差分スキャン（新規シークレット検出時に非ゼロ終了）
+          if ! uv run detect-secrets scan \
+            --baseline .secrets.baseline \
+            --exclude-files '.*\.lock$' \
+            --exclude-files '.*\.baseline$' \
+            --exclude-files 'obsidian-vault-local/.*' \
+            --exclude-files 'claude-flow-lite/.*'; then
+            echo "::error::New secrets detected! Review: uv run detect-secrets audit .secrets.baseline"
+            exit 1
+          fi
+          echo "::notice::Secret scan passed - no new secrets detected"
+
       - name: Run ruff linter
         run: uv run ruff check .
 
@@ -257,6 +282,31 @@ jobs:
       # They run in weekly-comprehensive job only
       # Reference: .serena/memories/test_strategy_part3_security_execution.md (Section 7.0)
 
+      - name: Secret detection (Shift Left Security)
+        # NOTE: Identical logic in 3 locations - update all if changing
+        # See also: pr-validation (line ~85), release-gate (line ~367)
+        run: |
+          set -euo pipefail
+
+          # Baseline存在確認
+          if [ ! -f .secrets.baseline ]; then
+            echo "::error::No .secrets.baseline file found"
+            echo "Run: uv run detect-secrets scan > .secrets.baseline"
+            exit 1
+          fi
+
+          # Baseline差分スキャン（新規シークレット検出時に非ゼロ終了）
+          if ! uv run detect-secrets scan \
+            --baseline .secrets.baseline \
+            --exclude-files '.*\.lock$' \
+            --exclude-files '.*\.baseline$' \
+            --exclude-files 'obsidian-vault-local/.*' \
+            --exclude-files 'claude-flow-lite/.*'; then
+            echo "::error::New secrets detected! Review: uv run detect-secrets audit .secrets.baseline"
+            exit 1
+          fi
+          echo "::notice::Secret scan passed - no new secrets detected"
+
       - name: Run ruff linter
         run: uv run ruff check .
 
@@ -309,6 +359,32 @@ jobs:
 
       - name: Run regression tests (Must Pass)
         run: uv run pytest -n auto -m "regression" -v --maxfail=1
+
+      - name: Secret detection (Release Gate - Zero Tolerance)
+        # NOTE: Identical logic in 3 locations - update all if changing
+        # See also: pr-validation (line ~85), branch-validation (line ~288)
+        run: |
+          set -euo pipefail
+
+          # Baseline存在確認
+          if [ ! -f .secrets.baseline ]; then
+            echo "::error::No .secrets.baseline file found"
+            echo "Run: uv run detect-secrets scan > .secrets.baseline"
+            exit 1
+          fi
+
+          # Baseline差分スキャン（新規シークレット検出時に非ゼロ終了）
+          # Release Gate: Zero Tolerance - any new secret blocks release
+          if ! uv run detect-secrets scan \
+            --baseline .secrets.baseline \
+            --exclude-files '.*\.lock$' \
+            --exclude-files '.*\.baseline$' \
+            --exclude-files 'obsidian-vault-local/.*' \
+            --exclude-files 'claude-flow-lite/.*'; then
+            echo "::error::New secrets detected! Review: uv run detect-secrets audit .secrets.baseline"
+            exit 1
+          fi
+          echo "::notice::Release Gate secret scan passed - no new secrets detected"
 
       - name: Run security tests (Serial - Zero Tolerance)
         # Release Gate: No maxfail - all tests run, any failure blocks release

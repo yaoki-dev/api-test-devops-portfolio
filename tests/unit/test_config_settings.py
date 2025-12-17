@@ -1,10 +1,3 @@
-"""
-config/settings.py のカバレッジ向上テスト
-
-目標: 66.92% → 80%以上
-対象未カバー行: 73-77, 105-109, 192-194, 198, 202, 206, 210, 214-225, 239-248
-"""
-
 import logging
 from pathlib import Path
 

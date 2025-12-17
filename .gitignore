@@ -63,9 +63,13 @@ reports/
 .serena/
 .memory_mcp/
 .claude-flow/
+claude-flow-lite
+.mcp.json
 .hive-mind/
 .swarm/
 memory/
+obsidian-vault-local
+docs/tools/.taskmaster
 
 # Node.js (if any JS tooling)
 node_modules/
@@ -78,7 +82,8 @@ docs/search_index.json
 
 # Backup Files
 *.backup
-CLAUDE.md.current.backup
+*.bak
 
 # Internal Project Management
-docs/todo.md
+docs/text.md
+docs/main/6週プラン/技術記事/技術記事作成.md

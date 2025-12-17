@@ -18,7 +18,6 @@ import pytest
 # =============================================================================
 
 
-@pytest.mark.unit
 def test_jsonplaceholder_api_accessible():
     """JSONPlaceholder APIへの基本的な接続確認"""
     # Given: JSONPlaceholder APIのエンドポイント
@@ -46,7 +45,6 @@ def test_jsonplaceholder_api_accessible():
     assert isinstance(data["completed"], bool)
 
 
-@pytest.mark.unit
 def test_todos_endpoint_returns_list():
     """TODOsエンドポイントが配列を返すことを確認"""
     # Given: TODOsリストのエンドポイント
@@ -70,7 +68,6 @@ def test_todos_endpoint_returns_list():
         assert "completed" in todo
 
 
-@pytest.mark.unit
 def test_users_endpoint_response_structure():
     """ユーザーエンドポイントのレスポンス構造確認"""
     # Given: 特定ユーザーのエンドポイント
@@ -105,7 +102,6 @@ def test_users_endpoint_response_structure():
 # =============================================================================
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_async_api_request(async_client):
     """非同期クライアントを使用したAPIリクエスト"""
@@ -125,7 +121,6 @@ async def test_async_api_request(async_client):
     assert data["id"] == 1
 
 
-@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_concurrent_requests(async_client):
     """複数の並行リクエストのテスト"""
@@ -151,7 +146,6 @@ async def test_concurrent_requests(async_client):
 # =============================================================================
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "todo_id,expected_user_id",
     [
@@ -176,7 +170,6 @@ def test_todo_user_mapping(todo_id: int, expected_user_id: int):
     assert data["userId"] == expected_user_id
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "endpoint", ["/posts", "/comments", "/albums", "/photos", "/todos", "/users"]
 )
@@ -201,7 +194,6 @@ def test_all_endpoints_accessible(endpoint: str):
 # =============================================================================
 
 
-@pytest.mark.unit
 def test_nonexistent_resource_returns_404():
     """存在しないリソースで404エラーを確認"""
     # Given: 存在しないリソースのURL
@@ -215,7 +207,6 @@ def test_nonexistent_resource_returns_404():
     assert response.status_code == 404
 
 
-@pytest.mark.unit
 def test_invalid_endpoint_returns_404():
     """無効なエンドポイントで404エラーを確認"""
     # Given: 無効なエンドポイント
@@ -234,7 +225,6 @@ def test_invalid_endpoint_returns_404():
 # =============================================================================
 
 
-@pytest.mark.unit
 def test_with_sample_data(sample_api_response: dict[str, Any]):
     """サンプルデータフィクスチャの活用例"""
     # Given: フィクスチャから提供されるサンプルデータ
@@ -251,7 +241,6 @@ def test_with_sample_data(sample_api_response: dict[str, Any]):
     assert isinstance(sample_api_response["completed"], bool)
 
 
-@pytest.mark.unit
 def test_with_data_factory(todo_data_factory):
     """データファクトリーフィクスチャの活用例"""
     # Given: TODOデータファクトリー
