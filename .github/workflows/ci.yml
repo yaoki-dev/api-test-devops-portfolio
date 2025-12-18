@@ -73,7 +73,7 @@ jobs:
         run: |
           uv run pytest -n auto -m "(unit or integration) and not slow and not manual and not external" \
             --cov --cov-report=json \
-            --cov-fail-under=58 --maxfail=3 -v
+            --cov-fail-under=65 --maxfail=3 -v
 
       - name: Run security validation (Mock-based, fast)
         # Shift Left Security: Lightweight mock-based tests for early vulnerability detection

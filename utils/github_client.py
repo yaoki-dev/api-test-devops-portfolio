@@ -14,7 +14,7 @@ from typing import Any, cast
 
 import httpx
 
-from utils.api_client import exponential_backoff_with_jitter
+from utils.api_client import APIClientError, exponential_backoff_with_jitter
 from utils.logger import get_logger
 
 # =============================================================================
@@ -64,8 +64,8 @@ def validate_github_repo(repo: str) -> None:
 # =============================================================================
 
 
-class GitHubAPIError(Exception):
-    """GitHub API基底例外"""
+class GitHubAPIError(APIClientError):
+    """GitHub API基底例外（APIClientErrorを継承し統一的なエラーハンドリングを実現）"""
 
 
 class RateLimitError(GitHubAPIError):

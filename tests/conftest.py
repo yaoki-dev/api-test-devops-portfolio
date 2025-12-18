@@ -428,6 +428,7 @@ def create_mock_response(
     text: str | None = None,
     is_client_error: bool | None = None,
     is_server_error: bool | None = None,
+    raise_for_status_error: bool = True,
 ) -> Mock:
     """Mock httpx.Response を生成するファクトリ関数.
 
@@ -440,6 +441,8 @@ def create_mock_response(
         text: レスポンステキスト（Noneの場合はjson_dataから自動生成）
         is_client_error: 4xxエラーかどうか（Noneの場合はstatus_codeから自動判定）
         is_server_error: 5xxエラーかどうか（Noneの場合はstatus_codeから自動判定）
+        raise_for_status_error: 4xx/5xx時にraise_for_statusでHTTPStatusErrorを発生させるか
+            （デフォルト: True）
 
     Returns:
         設定済みMock httpx.Response
@@ -457,10 +460,18 @@ def create_mock_response(
         >>> mock_500.is_server_error
         True
 
+        # raise_for_status の動作確認
+        >>> mock_404 = create_mock_response(404)
+        >>> mock_404.raise_for_status()  # raises HTTPStatusError
+
+        >>> mock_200 = create_mock_response(200)
+        >>> mock_200.raise_for_status()  # returns None (no error)
+
     Note:
         - PropertyMock により httpx.Response.is_client_error プロパティの動作を再現
         - 依存分離: httpx パッケージへの依存を最小化（単体テストの原則）
         - バージョン耐性: httpx の内部実装変更に影響されない
+        - raise_for_status_error=False で明示的にエラー発生を抑制可能
     """
     response = Mock(spec=httpx.Response)
     response.status_code = status_code
@@ -488,6 +499,16 @@ def create_mock_response(
     # Note: type(response) を使うことでインスタンスではなくクラスに設定
     type(response).is_client_error = PropertyMock(return_value=is_client_error)
     type(response).is_server_error = PropertyMock(return_value=is_server_error)
+
+    # raise_for_status のモック設定
+    if raise_for_status_error and status_code >= 400:
+        response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            f"{status_code} Error",
+            request=Mock(spec=httpx.Request),
+            response=response,
+        )
+    else:
+        response.raise_for_status.return_value = None
 
     return response
 

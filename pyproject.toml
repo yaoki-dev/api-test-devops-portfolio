@@ -93,7 +93,7 @@ addopts = [
     "--cov-report=xml:reports/coverage.xml",  # XMLレポート
     "--cov-report=json",
     "-v",
-    "--cov-fail-under=35",       # ローカル目標: 85%（CI: 58%→85%段階的上昇）
+    "--cov-fail-under=65",       # ローカル目標: 85%（CI: 65%→85%段階的上昇）
 ]
 markers = [
     "unit: 単体テスト",

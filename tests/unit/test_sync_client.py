@@ -16,7 +16,7 @@ from unittest.mock import Mock
 import pytest
 
 from tests.conftest import create_mock_response
-from utils.api_client import BaseAPIClient as SyncAPIClient  # エイリアス（Phase 1リネーム前）
+from utils.api_client import SyncAPIClient
 
 # =============================================================================
 # Basic Operations (4件)

@@ -5,13 +5,17 @@ Note:
     test_async_client_error_handling.py と対称構造で設計。
     責務: リトライロジック + 例外ハンドリングの検証
 
-テストケース一覧（7件）:
+テストケース一覧（15件）:
     - Exception (3件): hierarchy, http_error_status_preservation, retry_error_message
     - Retry (2件): exponential_backoff, 4xx_no_retry
     - Timeout (1件): timeout_error_retry
     - Connection (1件): connection_error_retry
+    - JSON Parsing (3件): invalid_json, json_error_init, json_error_without_response
+    - Request Error Mapping (5件): too_many_redirects, invalid_url, timeout,
+      connect_error, network_error
 """
 
+import json
 from unittest.mock import Mock
 
 import httpx
@@ -22,124 +26,221 @@ from utils.api_client import (
     APIClientError,
     APIConnectionError,
     APIHTTPError,
+    APIJSONDecodeError,
     APIRetryError,
     APITimeoutError,
+    SyncAPIClient,
+    _map_request_error,
+    _safe_parse_json,
 )
-from utils.api_client import (
-    BaseAPIClient as SyncAPIClient,  # エイリアス（Phase 1リネーム前）
-)
+
+# =============================================================================
+# Exception Tests（条件2: エラーパス）
+# =============================================================================
 
 
-class TestSyncClientExceptions:
-    """カスタム例外クラスのテスト"""
-
-    def test_sync_exception_hierarchy(self) -> None:
-        """例外クラスの継承関係確認"""
-        assert issubclass(APIConnectionError, APIClientError)
-        assert issubclass(APITimeoutError, APIClientError)
-        assert issubclass(APIHTTPError, APIClientError)
-        assert issubclass(APIRetryError, APIClientError)
-        assert issubclass(APIClientError, Exception)
-
-    def test_sync_http_error_status_preservation(self) -> None:
-        """APIHTTPError がステータスコードを保持することを確認"""
-        mock_response = Mock(spec=httpx.Response)
-        mock_response.status_code = 404
-
-        error = APIHTTPError("Not Found", status_code=404, response=mock_response)
-
-        assert error.status_code == 404
-        assert error.response == mock_response
-
-    def test_sync_retry_error_message(self) -> None:
-        """APIRetryError のメッセージ確認"""
-        error = APIRetryError("Max retries exceeded")
-        assert str(error) == "Max retries exceeded"
+def test_sync_exception_hierarchy() -> None:
+    """例外クラスの継承関係確認"""
+    assert issubclass(APIConnectionError, APIClientError)
+    assert issubclass(APITimeoutError, APIClientError)
+    assert issubclass(APIHTTPError, APIClientError)
+    assert issubclass(APIRetryError, APIClientError)
+    assert issubclass(APIClientError, Exception)
 
 
-class TestSyncClientRetryLogic:
-    """リトライロジックのテスト"""
+def test_sync_http_error_status_preservation() -> None:
+    """APIHTTPError がステータスコードを保持することを確認"""
+    mock_response = Mock(spec=httpx.Response)
+    mock_response.status_code = 404
 
-    def test_sync_retry_with_exponential_backoff(self, mock_httpx_sync_client: Mock) -> None:
-        """サーバーエラー後に成功するケース（5xxはリトライ対象）"""
-        error_response = create_mock_response(500)
-        error_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-            "500 Internal Server Error",
-            request=Mock(spec=httpx.Request),
-            response=error_response,
-        )
+    error = APIHTTPError("Not Found", status_code=404, response=mock_response)
 
-        success_response = create_mock_response(200, json_data={"id": 1})
-        success_response.raise_for_status.return_value = None
-
-        mock_httpx_sync_client.request.side_effect = [
-            error_response,
-            error_response,
-            success_response,
-        ]
-
-        with SyncAPIClient(retry_count=3, retry_delay=0.01) as client:
-            client._client = mock_httpx_sync_client
-            response = client.get("/posts/1")
-
-            assert mock_httpx_sync_client.request.call_count == 3
-            assert response.status_code == 200
-
-    def test_sync_4xx_error_no_retry(self, mock_httpx_sync_client: Mock) -> None:
-        """4xxクライアントエラーはリトライせず即座にAPIHTTPErrorを発生"""
-        error_response = create_mock_response(404)
-        error_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-            "404 Not Found",
-            request=Mock(spec=httpx.Request),
-            response=error_response,
-        )
-
-        mock_httpx_sync_client.request.return_value = error_response
-
-        with SyncAPIClient(retry_count=3) as client:
-            client._client = mock_httpx_sync_client
-
-            with pytest.raises(APIHTTPError) as exc_info:
-                client.get("/posts/999")
-
-            # 4xxエラーはリトライしない（1回のみ実行）
-            assert mock_httpx_sync_client.request.call_count == 1
-            assert exc_info.value.status_code == 404
+    assert error.status_code == 404
+    assert error.response == mock_response
 
 
-class TestSyncClientTimeoutHandling:
-    """タイムアウトエラーのテスト"""
-
-    def test_sync_timeout_error_retry(self, mock_httpx_sync_client: Mock) -> None:
-        """タイムアウト時にAPIRetryErrorが発生することを確認"""
-        mock_httpx_sync_client.request.side_effect = httpx.TimeoutException("Request timed out")
-
-        with SyncAPIClient(retry_count=1, retry_delay=0.01) as client:
-            client._client = mock_httpx_sync_client
-
-            with pytest.raises(APIRetryError) as exc_info:
-                client.get("/posts/1")
-
-            # リトライが実行されることを確認
-            assert mock_httpx_sync_client.request.call_count == 2
-            assert isinstance(exc_info.value.__cause__, APITimeoutError)
+def test_sync_retry_error_message() -> None:
+    """APIRetryError のメッセージ確認"""
+    error = APIRetryError("Max retries exceeded")
+    assert str(error) == "Max retries exceeded"
 
 
-class TestSyncClientConnectionHandling:
-    """接続エラーのテスト"""
+# =============================================================================
+# Retry Logic Tests（条件2: エラーパス）
+# =============================================================================
 
-    def test_sync_connection_error_retry(self, mock_httpx_sync_client: Mock) -> None:
-        """接続エラー時にAPIRetryErrorが発生することを確認"""
-        mock_httpx_sync_client.request.side_effect = httpx.ConnectError("Connection refused")
 
-        with SyncAPIClient(retry_count=1, retry_delay=0.01) as client:
-            client._client = mock_httpx_sync_client
+def test_sync_retry_with_exponential_backoff(mock_httpx_sync_client: Mock) -> None:
+    """サーバーエラー後に成功するケース（5xxはリトライ対象）"""
+    error_response = create_mock_response(500)
+    error_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "500 Internal Server Error",
+        request=Mock(spec=httpx.Request),
+        response=error_response,
+    )
 
-            with pytest.raises(APIRetryError) as exc_info:
-                client.get("/posts/1")
+    success_response = create_mock_response(200, json_data={"id": 1})
+    success_response.raise_for_status.return_value = None
 
-            assert mock_httpx_sync_client.request.call_count == 2
-            assert isinstance(exc_info.value.__cause__, APIConnectionError)
+    mock_httpx_sync_client.request.side_effect = [
+        error_response,
+        error_response,
+        success_response,
+    ]
+
+    with SyncAPIClient(retry_count=3, retry_delay=0.01) as client:
+        client._client = mock_httpx_sync_client
+        response = client.get("/posts/1")
+
+        assert mock_httpx_sync_client.request.call_count == 3
+        assert response.status_code == 200
+
+
+def test_sync_4xx_error_no_retry(mock_httpx_sync_client: Mock) -> None:
+    """4xxクライアントエラーはリトライせず即座にAPIHTTPErrorを発生"""
+    error_response = create_mock_response(404)
+    error_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "404 Not Found",
+        request=Mock(spec=httpx.Request),
+        response=error_response,
+    )
+
+    mock_httpx_sync_client.request.return_value = error_response
+
+    with SyncAPIClient(retry_count=3) as client:
+        client._client = mock_httpx_sync_client
+
+        with pytest.raises(APIHTTPError) as exc_info:
+            client.get("/posts/999")
+
+        # 4xxエラーはリトライしない（1回のみ実行）
+        assert mock_httpx_sync_client.request.call_count == 1
+        assert exc_info.value.status_code == 404
+
+
+# =============================================================================
+# Timeout Tests（条件2: エラーパス）
+# =============================================================================
+
+
+def test_sync_timeout_error_retry(mock_httpx_sync_client: Mock) -> None:
+    """タイムアウト時にAPIRetryErrorが発生することを確認"""
+    mock_httpx_sync_client.request.side_effect = httpx.TimeoutException("Request timed out")
+
+    with SyncAPIClient(retry_count=1, retry_delay=0.01) as client:
+        client._client = mock_httpx_sync_client
+
+        with pytest.raises(APIRetryError) as exc_info:
+            client.get("/posts/1")
+
+        # リトライが実行されることを確認
+        assert mock_httpx_sync_client.request.call_count == 2
+        assert isinstance(exc_info.value.__cause__, APITimeoutError)
+
+
+# =============================================================================
+# Connection Tests（条件2: エラーパス）
+# =============================================================================
+
+
+def test_sync_connection_error_retry(mock_httpx_sync_client: Mock) -> None:
+    """接続エラー時にAPIRetryErrorが発生することを確認"""
+    mock_httpx_sync_client.request.side_effect = httpx.ConnectError("Connection refused")
+
+    with SyncAPIClient(retry_count=1, retry_delay=0.01) as client:
+        client._client = mock_httpx_sync_client
+
+        with pytest.raises(APIRetryError) as exc_info:
+            client.get("/posts/1")
+
+        assert mock_httpx_sync_client.request.call_count == 2
+        assert isinstance(exc_info.value.__cause__, APIConnectionError)
+
+
+# =============================================================================
+# JSON Parsing Tests（条件2: エラーパス）
+# =============================================================================
+
+
+def test_safe_parse_json_invalid_json() -> None:
+    """不正なJSONでAPIJSONDecodeErrorが発生（エラーパス）"""
+    mock_response = Mock(spec=httpx.Response)
+    mock_response.json.side_effect = json.JSONDecodeError("Invalid JSON", "doc", 0)
+
+    with pytest.raises(APIJSONDecodeError) as exc_info:
+        _safe_parse_json(mock_response)
+
+    assert "Failed to parse JSON" in str(exc_info.value)
+    assert exc_info.value.response == mock_response
+
+
+def test_api_json_decode_error_init() -> None:
+    """APIJSONDecodeErrorのコンストラクタテスト"""
+    mock_response = Mock(spec=httpx.Response)
+    error = APIJSONDecodeError("Parse error", response=mock_response)
+
+    assert str(error) == "Parse error"
+    assert error.response == mock_response
+
+
+def test_api_json_decode_error_without_response() -> None:
+    """APIJSONDecodeError: responseなしでも動作"""
+    error = APIJSONDecodeError("Parse error")
+
+    assert str(error) == "Parse error"
+    assert error.response is None
+
+
+# =============================================================================
+# Request Error Mapping Tests（条件2: エラーパス）
+# =============================================================================
+
+
+def test_map_request_error_too_many_redirects() -> None:
+    """TooManyRedirectsで非リトライエラー発生"""
+    error = httpx.TooManyRedirects("Max redirects exceeded")
+
+    with pytest.raises(APIClientError) as exc_info:
+        _map_request_error(error)
+
+    assert "Non-retryable" in str(exc_info.value)
+
+
+def test_map_request_error_invalid_url() -> None:
+    """InvalidURLで非リトライエラー発生"""
+    error = httpx.InvalidURL("Invalid URL format")
+
+    with pytest.raises(APIClientError) as exc_info:
+        _map_request_error(error)
+
+    assert "Non-retryable" in str(exc_info.value)
+
+
+def test_map_request_error_timeout() -> None:
+    """TimeoutExceptionでAPITimeoutError返却"""
+    error = httpx.TimeoutException("Request timed out")
+    result = _map_request_error(error)
+
+    assert isinstance(result, APITimeoutError)
+    assert "timeout" in str(result).lower()
+
+
+def test_map_request_error_connect_error() -> None:
+    """ConnectErrorでAPIConnectionError返却"""
+    error = httpx.ConnectError("Connection refused")
+    result = _map_request_error(error)
+
+    assert isinstance(result, APIConnectionError)
+    assert "connection" in str(result).lower()
+
+
+def test_map_request_error_network_error() -> None:
+    """NetworkError（else分岐）でAPIConnectionError返却"""
+    error = httpx.NetworkError("Network unreachable")
+    result = _map_request_error(error)
+
+    assert isinstance(result, APIConnectionError)
+    assert "network" in str(result).lower()
 
 
 # =============================================================================
@@ -166,7 +267,8 @@ class TestSyncClientConnectionHandling:
 #    - call_countによるリトライ回数検証
 #    - 例外の適切な検証（pytest.raises）
 #
-# 5. Async/Sync対称構造:
-#    - test_async_client_error_handling.py と同一設計
-#    - クラス構造: Exceptions, RetryLogic, Timeout, Connection
+# 5. 関数構造テスト設計:
+#    - フラットな関数構造で可読性向上
+#    - セクションコメントで論理グループ化
+#    - Async/Sync対称構造を維持
 # =============================================================================
