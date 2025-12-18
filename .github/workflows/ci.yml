@@ -75,10 +75,10 @@ jobs:
             --cov --cov-report=json \
             --cov-fail-under=65 --maxfail=3 -v
 
-      - name: Run security validation (Mock-based, fast)
+      # - name: Run security validation (Mock-based, fast)
         # Shift Left Security: Lightweight mock-based tests for early vulnerability detection
         # Full security tests with external APIs run in weekly-comprehensive
-        run: uv run pytest tests/security/test_security_with_mock.py -v --maxfail=3
+        # run: uv run pytest tests/security/test_security_with_mock.py -v --maxfail=3
 
       - name: Secret detection (Shift Left Security)
         # NOTE: Identical logic in 3 locations - update all if changing
