@@ -64,7 +64,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --dev
 
       - name: Run core tests with coverage (Unit + Integration only)
         # Coverage scope: unit + integration tests only
@@ -266,7 +266,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --dev
 
       - name: Run core tests (Unit + Integration)
         # develop branch: unit + integration only (regression excluded for dev speed)
