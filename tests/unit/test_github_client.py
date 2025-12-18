@@ -32,6 +32,8 @@ from utils.github_client import (
     validate_github_username,
 )
 
+pytestmark = pytest.mark.unit
+
 # =============================================================================
 # Validation: Username Tests（条件1: 境界値）
 # =============================================================================
