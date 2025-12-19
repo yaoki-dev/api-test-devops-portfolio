@@ -1,14 +1,11 @@
 # API Test + DevOps Portfolio
 
-<<<<<<< Updated upstream
-APIテスト + DevOps統合学習ポートフォリオ
+最終更新: 2025年12月08日*
 
 ## 概要
 
 このプロジェクトは、APIテストとDevOps技術を統合した実践的なポートフォリオです。
 時給6000-8000円レベルの技術力を証明するために設計されています。
-=======
-*最終更新: 2025年12月08日*
 
 [![CI/CD Pipeline](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml/badge.svg)](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/badge/coverage-67%25-green)](https://yuta158.github.io/api-test-portfolio/htmlcov/)
@@ -30,7 +27,6 @@ APIテスト + DevOps統合学習ポートフォリオ
 - **セキュリティテスト**: OWASP API Security Top 10 対応
 - **GitHub API統合**: 実務的なAPI統合スキルを証明（Rate Limit管理、ETag活用、非同期処理）
 
----
 
 ## デモ
 
@@ -94,10 +90,6 @@ uv run pytest tests/unit/test_basic.py --cov=. --cov-report=term -q --color=yes
 - **Testing**: pytest（非同期テスト、パラメータ化テスト対応）
 - **Package Manager**: uv
 
-<<<<<<< Updated upstream
-## セットアップ
-=======
----
 
 ## ブランチ戦略（軽量Git Flow）
 
@@ -134,7 +126,6 @@ main ─────────────────────────
 
 <details>
 <summary>uvのインストール方法</summary>
->>>>>>> Stashed changes
 
 ```bash
 # 依存関係のインストール
@@ -152,17 +143,6 @@ uv run pytest -m integration
 
 ```
 api-test-devops-portfolio/
-<<<<<<< Updated upstream
-├── config/          # 設定管理
-├── utils/           # ユーティリティ（APIクライアント等）
-├── tests/           # テストスイート
-│   ├── unit/        # 単体テスト
-│   ├── integration/ # 統合テスト
-│   ├── e2e/         # E2Eテスト
-│   ├── performance/ # パフォーマンステスト
-│   └── security/    # セキュリティテスト
-└── docs/            # ドキュメント
-=======
 ├── config/              # 設定管理（Pydantic Settings）
 ├── utils/               # ユーティリティ（APIクライアント等）
 ├── models/              # データモデル
@@ -178,18 +158,10 @@ api-test-devops-portfolio/
 ├── scripts/             # 自動化スクリプト
 ├── docs/                # ドキュメント
 └── .github/workflows/   # CI/CDパイプライン
->>>>>>> Stashed changes
 ```
 
 ## 学習目標
 
-<<<<<<< Updated upstream
-- 実務レベルのAPIテスト設計・実装
-- 非同期プログラミングパターン
-- 型安全な設定管理
-- エラーハンドリングベストプラクティス
-- pytest活用による高品質テスト
-=======
 ## アーキテクチャ
 
 ### システム構成図
@@ -264,7 +236,6 @@ graph TB
 | Weekly Comprehensive | 週次スケジュール | Security + Performance | < 30分 |
 
 ---
->>>>>>> Stashed changes
 
 ## ライセンス
 

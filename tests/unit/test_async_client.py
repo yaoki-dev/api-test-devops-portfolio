@@ -19,7 +19,6 @@
 # ===============================================================================
 
 import asyncio
-import json
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -69,42 +68,13 @@ def sample_users_list():
     ]
 
 
-@pytest.fixture
-def mock_response():
-    """モックレスポンス作成ヘルパー"""
-
-    def _create_response(status_code: int = 200, json_data: dict = None, text: str = ""):
-        # httpx.Responseのモック作成
-        response = MagicMock(spec=Response)
-        response.status_code = status_code
-        response.reason_phrase = "OK" if status_code == 200 else "Error"
-        response.content = json.dumps(json_data).encode() if json_data else text.encode()
-        response.text = json.dumps(json_data) if json_data else text
-        response.json.return_value = json_data
-        response.raise_for_status = MagicMock()
-
-        # ステータスコードに応じてエラーを発生させる
-        if status_code >= 400:
-            from httpx import HTTPStatusError
-
-            response.raise_for_status.side_effect = HTTPStatusError(
-                f"{status_code} Error",
-                request=MagicMock(spec=Request),
-                response=response,
-            )
-
-        return response
-
-    return _create_response
-
-
 # ===============================================================================
 # Test 1: 基本的な非同期GET リクエストテスト
 # ===============================================================================
 
 
 @pytest.mark.asyncio
-async def test_async_get_user(sample_user_data, mock_response):
+async def test_async_get_user(sample_user_data, mock_response_factory):
     """
     非同期APIクライアントの基本的なGETリクエストをテスト
 
@@ -115,7 +85,7 @@ async def test_async_get_user(sample_user_data, mock_response):
     - ログ出力の確認
     """
     # モックレスポンス準備
-    mock_resp = mock_response(200, sample_user_data)
+    mock_resp = mock_response_factory(200, json_data=sample_user_data)
 
     # AsyncClientのモック作成
     with patch("httpx.AsyncClient") as mock_client_class:
@@ -146,7 +116,7 @@ async def test_async_get_user(sample_user_data, mock_response):
 
 
 @pytest.mark.asyncio
-async def test_async_concurrent_requests(sample_users_list, mock_response):
+async def test_async_concurrent_requests(sample_users_list, mock_response_factory):
     """
     複数の非同期リクエストを並行実行するテスト
 
@@ -158,9 +128,9 @@ async def test_async_concurrent_requests(sample_users_list, mock_response):
     """
     # モックレスポンス準備（複数パターン）
     mock_responses = [
-        mock_response(200, sample_users_list[0]),
-        mock_response(200, sample_users_list[1]),
-        mock_response(200, sample_users_list[2]),
+        mock_response_factory(200, json_data=sample_users_list[0]),
+        mock_response_factory(200, json_data=sample_users_list[1]),
+        mock_response_factory(200, json_data=sample_users_list[2]),
     ]
 
     with patch("httpx.AsyncClient") as mock_client_class:
@@ -201,7 +171,7 @@ async def test_async_concurrent_requests(sample_users_list, mock_response):
     )
 )
 @pytest.mark.asyncio
-async def test_async_multiple_users_with_semaphore(sample_users_list, mock_response):
+async def test_async_multiple_users_with_semaphore(sample_users_list, mock_response_factory):
     """
     セマフォを使った同時実行数制限のテスト
 
@@ -213,10 +183,10 @@ async def test_async_multiple_users_with_semaphore(sample_users_list, mock_respo
     """
     # 成功・失敗混在のモックレスポンス
     success_responses = [
-        mock_response(200, sample_users_list[0]),
-        mock_response(200, sample_users_list[1]),
-        mock_response(404, {"error": "User not found"}),  # エラーレスポンス
-        mock_response(200, sample_users_list[2]),
+        mock_response_factory(200, json_data=sample_users_list[0]),
+        mock_response_factory(200, json_data=sample_users_list[1]),
+        mock_response_factory(404, json_data={"error": "User not found"}),  # エラーレスポンス
+        mock_response_factory(200, json_data=sample_users_list[2]),
     ]
 
     with patch("httpx.AsyncClient") as mock_client_class:
@@ -257,7 +227,7 @@ async def test_async_error_handling_and_retry():
     - リトライ回数・間隔の制御
     - 最終的なエラー発生
     """
-    from httpx import HTTPStatusError, Request, TimeoutException
+    from httpx import HTTPStatusError, TimeoutException
 
     with patch("httpx.AsyncClient") as mock_client_class:
         mock_client_instance = AsyncMock()
@@ -315,7 +285,7 @@ async def test_async_error_handling_and_retry():
 
 
 @pytest.mark.asyncio
-async def test_async_post_create_user(mock_response):
+async def test_async_post_create_user(mock_response_factory):
     """
     非同期POST リクエスト・データ送信のテスト
 
@@ -332,7 +302,7 @@ async def test_async_post_create_user(mock_response):
         "email": "async@example.com",
         "phone": "123-456-7890",
     }
-    mock_resp = mock_response(201, created_user)
+    mock_resp = mock_response_factory(201, json_data=created_user)
 
     with patch("httpx.AsyncClient") as mock_client_class:
         mock_client_instance = AsyncMock()
@@ -369,7 +339,7 @@ async def test_async_post_create_user(mock_response):
     )
 )
 @pytest.mark.asyncio
-async def test_async_bulk_create_users(mock_response):
+async def test_async_bulk_create_users(mock_response_factory):
     """
     複数ユーザーの並行作成テスト
 
@@ -388,9 +358,15 @@ async def test_async_bulk_create_users(mock_response):
 
     # 作成成功のモックレスポンス
     created_responses = [
-        mock_response(201, {"id": 101, "name": "User 1", "email": "user1@test.com"}),
-        mock_response(201, {"id": 102, "name": "User 2", "email": "user2@test.com"}),
-        mock_response(201, {"id": 103, "name": "User 3", "email": "user3@test.com"}),
+        mock_response_factory(
+            201, json_data={"id": 101, "name": "User 1", "email": "user1@test.com"}
+        ),
+        mock_response_factory(
+            201, json_data={"id": 102, "name": "User 2", "email": "user2@test.com"}
+        ),
+        mock_response_factory(
+            201, json_data={"id": 103, "name": "User 3", "email": "user3@test.com"}
+        ),
     ]
 
     with patch("httpx.AsyncClient") as mock_client_class:

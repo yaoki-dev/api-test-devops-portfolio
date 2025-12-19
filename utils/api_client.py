@@ -8,14 +8,17 @@
 - 設定管理との統合
 """
 
-import logging
+import asyncio
+import json
 import random
 import time
-from typing import Any, cast
+from types import TracebackType
+from typing import Any, Self, cast
 
 import httpx
 
 from config.settings import settings
+from utils.logger import get_logger
 
 
 def exponential_backoff_with_jitter(
@@ -104,11 +107,44 @@ def _safe_parse_json(response: httpx.Response) -> Any:
     """
     try:
         return response.json()
-    except Exception as e:
+    except json.JSONDecodeError as e:
         raise APIJSONDecodeError(
             f"Failed to parse JSON response: {e}",
             response=response,
         ) from e
+
+
+def _map_request_error(e: httpx.RequestError | httpx.InvalidURL) -> APIClientError:
+    """httpxネットワーク例外をカスタム例外にマッピング
+
+    Args:
+        e: httpx.RequestError または そのサブクラス
+
+    Returns:
+        適切なAPIClientErrorサブクラス
+
+    Raises:
+        APIClientError: 非リトライ可能エラー（TooManyRedirects, InvalidURL）
+
+    Note:
+        httpx.RequestError階層:
+        - TimeoutException (ConnectTimeout, ReadTimeout) → リトライ可能
+        - ConnectError → リトライ可能
+        - NetworkError → リトライ可能
+        - TooManyRedirects, InvalidURL → 非リトライ（即座にraise）
+    """
+    # Non-retryable errors - raise immediately (no point in retrying)
+    if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
+        raise APIClientError(f"Non-retryable request error: {e}") from e
+
+    # Retryable errors
+    if isinstance(e, httpx.TimeoutException):
+        return APITimeoutError(f"Request timeout: {e}")
+    elif isinstance(e, httpx.ConnectError):
+        return APIConnectionError(f"Connection failed: {e}")
+    else:
+        # NetworkError, etc. - retryable network issues
+        return APIConnectionError(f"Network error: {e}")
 
 
 # =============================================================================
@@ -116,7 +152,7 @@ def _safe_parse_json(response: httpx.Response) -> Any:
 # =============================================================================
 
 
-class BaseAPIClient:
+class SyncAPIClient:
     """
     基本的な同期HTTPクライアント
 
@@ -158,7 +194,7 @@ class BaseAPIClient:
             self.default_headers.update(headers)
 
         # ロガーの初期化
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__)
 
         # HTTPクライアントの初期化
         self._client = httpx.Client(
@@ -168,13 +204,18 @@ class BaseAPIClient:
             limits=httpx.Limits(max_connections=settings.api.max_connections),
         )
 
-        self.logger.info(f"APIClient initialized: base_url={self.base_url}")
+        self.logger.info("APIClient initialized", base_url=self.base_url)
 
-    def __enter__(self) -> "BaseAPIClient":
+    def __enter__(self) -> Self:
         """コンテキストマネージャーのエントリー"""
         return self
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         """コンテキストマネージャーの終了処理"""
         self.close()
 
@@ -205,30 +246,33 @@ class BaseAPIClient:
         last_exception: APIClientError | None = None
 
         for attempt in range(self.retry_count + 1):
+            # ログ出力
+            if attempt > 0:
+                self.logger.warning(
+                    f"Retrying request: attempt {attempt + 1}/{self.retry_count + 1} "
+                    f"for {method} {endpoint}"
+                )
+            else:
+                self.logger.debug("Making request", method=method, endpoint=endpoint)
+
+            # HTTPリクエスト実行（ネットワーク層）
             try:
-                # ログ出力
-                if attempt > 0:
-                    self.logger.warning(
-                        f"Retrying request: attempt {attempt + 1}/{self.retry_count + 1} "
-                        f"for {method} {endpoint}"
-                    )
-                else:
-                    self.logger.debug(f"Making request: {method} {endpoint}")
-
-                # HTTPリクエスト実行
                 response = self._client.request(method, endpoint, **kwargs)
-
-                # HTTPステータスコードチェック
+            except httpx.RequestError as e:
+                # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
+                last_exception = _map_request_error(e)
+                self.logger.warning("Request error", method=method, endpoint=endpoint, error=str(e))
+            else:
+                # ネットワーク成功時のみHTTPステータス処理
                 try:
                     response.raise_for_status()
                     self.logger.debug(
                         f"Request successful: {method} {endpoint} -> {response.status_code}"
                     )
                     return response
-
                 except httpx.HTTPStatusError as e:
                     # 4xxエラーはリトライしない（クライアントエラー）
-                    if 400 <= e.response.status_code < 500:
+                    if e.response.is_client_error:
                         self.logger.error(
                             f"Client error: {e.response.status_code} for {method} {endpoint}"
                         )
@@ -248,23 +292,6 @@ class BaseAPIClient:
                         e.response,
                     )
 
-            except httpx.TimeoutException as e:
-                self.logger.warning(f"Timeout error for {method} {endpoint}: {e}")
-                last_exception = APITimeoutError(f"Request timeout: {e}")
-
-            except httpx.ConnectError as e:
-                self.logger.warning(f"Connection error for {method} {endpoint}: {e}")
-                last_exception = APIConnectionError(f"Connection failed: {e}")
-
-            except Exception as e:
-                # Re-raise our custom API exceptions immediately (don't wrap them)
-                # This prevents 4xx errors from being retried incorrectly
-                if isinstance(e, APIClientError):
-                    raise
-                # Only wrap truly unexpected exceptions
-                self.logger.error(f"Unexpected error for {method} {endpoint}: {e}")
-                last_exception = APIClientError(f"Unexpected error: {e}")
-
             # 最後の試行でなければ指数バックオフ + 30%ジッターで待機
             if attempt < self.retry_count:
                 delay = exponential_backoff_with_jitter(
@@ -277,7 +304,7 @@ class BaseAPIClient:
                 time.sleep(delay)
 
         # すべてのリトライが失敗
-        self.logger.error(f"All retry attempts failed for {method} {endpoint}")
+        self.logger.error("All retry attempts failed", method=method, endpoint=endpoint)
         raise APIRetryError(
             f"Request failed after {self.retry_count + 1} attempts"
         ) from last_exception
@@ -335,7 +362,7 @@ class BaseAPIClient:
 # =============================================================================
 
 
-class JSONPlaceholderClient(BaseAPIClient):
+class SyncJSONPlaceholderClient(SyncAPIClient):
     """
     JSONPlaceholder API専用クライアント
 
@@ -344,13 +371,6 @@ class JSONPlaceholderClient(BaseAPIClient):
     - APIスキーマとの統合
     - 便利メソッドの実装
     """
-
-    # def __init__(self, **kwargs):
-    #     # JSONPlaceholder APIのデフォルト設定
-    #     if "base_url" not in kwargs:
-    #         kwargs["base_url"] = "https://jsonplaceholder.typicode.com"
-
-    #     super().__init__(**kwargs)
 
     # Posts API
     def get_posts(self, limit: int | None = None) -> list[dict[str, Any]]:
@@ -494,7 +514,7 @@ class AsyncAPIClient:
             self.default_headers.update(headers)
 
         # ロガーの初期化
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__)
 
         # HTTPクライアントの初期化（非同期）
         self._client = httpx.AsyncClient(
@@ -504,13 +524,18 @@ class AsyncAPIClient:
             limits=httpx.Limits(max_connections=settings.api.max_connections),
         )
 
-        self.logger.info(f"AsyncAPIClient initialized: base_url={self.base_url}")
+        self.logger.info("AsyncAPIClient initialized", base_url=self.base_url)
 
-    async def __aenter__(self) -> "AsyncAPIClient":
+    async def __aenter__(self) -> Self:
         """非同期コンテキストマネージャーのエントリー"""
         return self
 
-    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         """非同期コンテキストマネージャーの終了処理"""
         await self.aclose()
 
@@ -540,35 +565,38 @@ class AsyncAPIClient:
             APIHTTPError: HTTPステータスエラー
             APIRetryError: リトライ上限エラー
         """
-        import asyncio
-
         last_exception: APIClientError | None = None
 
         for attempt in range(self.retry_count + 1):
+            # ログ出力
+            if attempt > 0:
+                self.logger.warning(
+                    f"Retrying async request: attempt {attempt + 1}/{self.retry_count + 1} "
+                    f"for {method} {endpoint}"
+                )
+            else:
+                self.logger.debug("Making async request", method=method, endpoint=endpoint)
+
+            # 非同期HTTPリクエスト実行（ネットワーク層）
             try:
-                # ログ出力
-                if attempt > 0:
-                    self.logger.warning(
-                        f"Retrying async request: attempt {attempt + 1}/{self.retry_count + 1} "
-                        f"for {method} {endpoint}"
-                    )
-                else:
-                    self.logger.debug(f"Making async request: {method} {endpoint}")
-
-                # 非同期HTTPリクエスト実行
                 response = await self._client.request(method, endpoint, **kwargs)
-
-                # HTTPステータスコードチェック
+            except httpx.RequestError as e:
+                # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
+                last_exception = _map_request_error(e)
+                self.logger.warning(
+                    "Async request error", method=method, endpoint=endpoint, error=str(e)
+                )
+            else:
+                # ネットワーク成功時のみHTTPステータス処理
                 try:
                     response.raise_for_status()
                     self.logger.debug(
                         f"Async request successful: {method} {endpoint} -> {response.status_code}"
                     )
                     return response
-
                 except httpx.HTTPStatusError as e:
                     # 4xxエラーはリトライしない（クライアントエラー）
-                    if 400 <= e.response.status_code < 500:
+                    if e.response.is_client_error:
                         self.logger.error(
                             f"Client error: {e.response.status_code} for {method} {endpoint}"
                         )
@@ -588,18 +616,6 @@ class AsyncAPIClient:
                         e.response,
                     )
 
-            except httpx.TimeoutException as e:
-                self.logger.warning(f"Async timeout error for {method} {endpoint}: {e}")
-                last_exception = APITimeoutError(f"Request timeout: {e}")
-
-            except httpx.ConnectError as e:
-                self.logger.warning(f"Async connection error for {method} {endpoint}: {e}")
-                last_exception = APIConnectionError(f"Connection failed: {e}")
-
-            except Exception as e:
-                self.logger.error(f"Unexpected async error for {method} {endpoint}: {e}")
-                last_exception = APIClientError(f"Unexpected error: {e}")
-
             # 最後の試行でなければ指数バックオフ + 30%ジッターで待機
             if attempt < self.retry_count:
                 delay = exponential_backoff_with_jitter(
@@ -612,7 +628,7 @@ class AsyncAPIClient:
                 await asyncio.sleep(delay)
 
         # すべてのリトライが失敗
-        self.logger.error(f"All async retry attempts failed for {method} {endpoint}")
+        self.logger.error("All async retry attempts failed", method=method, endpoint=endpoint)
         raise APIRetryError(
             f"Async request failed after {self.retry_count + 1} attempts"
         ) from last_exception
@@ -676,13 +692,6 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
     - 並行処理による効率化
     - async/awaitパターンの理解
     """
-
-    # def __init__(self, **kwargs):
-    #     # JSONPlaceholder APIのデフォルト設定
-    #     if "base_url" not in kwargs:
-    #         kwargs["base_url"] = "https://jsonplaceholder.typicode.com"
-
-    #     super().__init__(**kwargs)
 
     # Posts API
     async def get_posts(self, limit: int | None = None) -> list[dict[str, Any]]:
@@ -771,12 +780,10 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 
     async def bulk_create_users(self, users_data: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """複数ユーザーの非同期一括作成"""
-        import asyncio
-
         # 並行してユーザー作成
         tasks = [self.create_user(user_data) for user_data in users_data]
         results = await asyncio.gather(*tasks)
-        return list(results)
+        return results
 
     # Comments API
     async def get_comments(self, post_id: int | None = None) -> list[dict[str, Any]]:
@@ -808,8 +815,6 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
     # 並行処理の例
     async def get_user_data(self, user_id: int) -> dict[str, Any]:
         """ユーザーに関連するデータを並行取得"""
-        import asyncio
-
         # 並行してユーザー情報、投稿、TODO、アルバムを取得
         user_task = self.get_user(user_id)
         posts_task = self.get_posts()
@@ -834,9 +839,9 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 # =============================================================================
 
 
-def create_client() -> JSONPlaceholderClient:
+def create_client() -> SyncJSONPlaceholderClient:
     """設定に基づいたクライアントインスタンスの作成"""
-    return JSONPlaceholderClient()
+    return SyncJSONPlaceholderClient()
 
 
 # =============================================================================
@@ -848,8 +853,7 @@ def main() -> None:
     """デモ実行"""
     print("=== JSONPlaceholder API Client Demo ===")
 
-    with create_client() as base_client:
-        client = cast(JSONPlaceholderClient, base_client)
+    with create_client() as client:
         try:
             # 投稿一覧の取得
             print("\n1. 投稿一覧取得（5件）:")
@@ -892,12 +896,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    # ログ設定
-    logging.basicConfig(
-        level=settings.get_log_level(),
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
-
+    # Note: structlogはget_logger()初回呼び出し時に自動設定される
     main()
 
 
