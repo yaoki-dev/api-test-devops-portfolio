@@ -90,6 +90,8 @@ AUTO_APPLY_MARKERS: Final[MappingProxyType[str, str]] = MappingProxyType(
 MANUAL_MARKERS: Final[dict[str, str]] = {
     "slow": "実行時間の長いテスト",
     "external": "外部API依存テスト",
+    "smoke": "基本機能テスト”,
+    "regression":"回帰テスト"
 }
 
 # 自動適用対象のマーカー名タプル（AUTO_APPLY_MARKERSから派生）
