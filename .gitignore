@@ -100,3 +100,11 @@ docs/text.md
 
 # Environment variables
 .env
+docs/main/6週プラン/技術記事/技術記事作成.md
+
+# Snyk Security Extension - AI Rules (auto-generated)
+.github/instructions/snyk_rules.instructions.md
+
+# Coverage artifacts
+coverage.json
+docs/coverage/

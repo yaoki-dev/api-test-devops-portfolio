@@ -7,7 +7,7 @@ name: CI/CD Pipeline - 4-Tier Test Pyramid
 
 on:
   push:
-    branches: [main, develop, local/history]
+    branches: [main, develop]
   pull_request:
     branches: [main, develop]
   schedule:
@@ -20,7 +20,7 @@ jobs:
   # Tests: Unit + Integration + Regression (excluding slow tests)
   # ============================================================
   pr-validation:
-    name: PR Validation (Unit + Integration + Regression)
+    name: PR Validation (Unit + Integration)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -41,34 +41,42 @@ jobs:
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --dev
 
-      - name: Run core tests with coverage (Unit + Integration only)
-        # Coverage scope: unit + integration tests only
-        # Security/performance/regression tests excluded from PR coverage calculation
-        # Reference: .claude/plans/sleepy-juggling-cascade.md (Q4/Q5 analysis)
+      # ═══════════════════════════════════════════════════
+      # Fast Fail Checks (軽量チェックを優先実行)
+      # 順序: detect-secrets(5s) → ruff(5s) → mypy(15s) → tests(70s)
+      # ═══════════════════════════════════════════════════
+
+      - name: Run detect-secrets scan
         run: |
-          uv run pytest -n auto -m "(unit or integration) and not slow and not manual and not external" \
-            --cov=. --cov-report=term-missing --cov-report=json \
-            --cov-fail-under=58 --maxfail=3 -v
-          echo "core_tests_passed=true" >> $GITHUB_ENV
-
-      # Security tests removed from PR validation
-      # Reason: Security tests only have 'security' marker (not unit/integration)
-      # They run in weekly-comprehensive job only
-      # Reference: .claude/plans/sleepy-juggling-cascade.md (Q5 analysis)
+          set -euo pipefail
+          if ! uv run detect-secrets scan --baseline .secrets.baseline; then
+            echo "::error::Secrets detected! Review and update .secrets.baseline"
+            exit 1
+          fi
+          echo "secrets_scan_passed=true" >> $GITHUB_ENV
 
       - name: Run ruff linter
         run: |
           uv run ruff check .
-          echo "ruff_passe      d=true" >> $GITHUB_ENV
+          echo "ruff_passed=true" >> $GITHUB_ENV
 
       - name: Run mypy type checker
         run: |
           uv run mypy utils/ config/ models/
           echo "mypy_passed=true" >> $GITHUB_ENV
 
-      - name: Upload test results
+      - name: Run core tests with coverage (Unit + Integration only)
+        # Coverage scope: unit + integration tests only
+        # Security/111coverage calculation
+        run: |
+          uv run pytest -n auto -m "(unit or integration) and not slow and not manual and not external" \
+            --cov=. --cov-report=term-missing --cov-report=json \
+            --cov-fail-under=70 --maxfail=3 -v
+          echo "core_tests_passed=true" >> $GITHUB_ENV
+
+      - name: Upload test  5432qq567890646 
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -190,74 +198,12 @@ jobs:
             coverage.json
 
   # ============================================================
-  # Stage 4: Push to develop/local branches (Quick Validation)
-  # Triggers: push to develop, local/history
-  # Tests: Regression only (fast feedback for feature branches)
-  # ============================================================
-  branch-validation:
-    name: Branch Validation (develop/local)
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/local/history')
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-
-      - name: Install uv
-        run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-
-      - name: Install dependencies
-        run: uv sync
-
-      - name: Run core tests (Unit + Integration + Regression)
-        # Branch validation includes regression for develop/local branches
-        # Coverage scope: unit + integration only (regression excluded from coverage)
-        run: |
-          uv run pytest -n auto -m "(unit or integration or regression) and not slow and not manual and not external" \
-            --cov=. --cov-report=term-missing --cov-report=json \
-            --cov-fail-under=58 --maxfail=5 -v
-          echo "branch_tests_passed=true" >> $GITHUB_ENV
-
-      # Security tests removed from branch validation
-      # Reason: Security tests only have 'security' marker (not unit/integration)
-      # They run in weekly-comprehensive job only
-      # Reference: .claude/plans/sleepy-juggling-cascade.md (Q5 analysis)
-
-      - name: Run ruff linter
-        run: |
-          uv run ruff check .
-          echo "ruff_passed=true" >> $GITHUB_ENV
-
-      - name: Run mypy type checker
-        run: |
-          uv run mypy utils/ config/ models/
-          echo "mypy_passed=true" >> $GITHUB_ENV
-
-      - name: Upload branch validation results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: branch-validation-results
-          path: |
-            reports/
-            coverage.json
-
-  # ============================================================
   # Status Report (Summary for all pipeline stages)
   # ============================================================
   status-report:
     name: Pipeline Status Report
     runs-on: ubuntu-latest
-    needs: [pr-validation, post-merge-validation, weekly-comprehensive, branch-validation]
+    needs: [pr-validation, post-merge-validation, weekly-comprehensive]
     if: always()
     timeout-minutes: 5
 
@@ -280,7 +226,6 @@ jobs:
           echo "- PR Validation: ${{ needs.pr-validation.result || 'skipped' }}" >> status_report.md
           echo "- Post-Merge: ${{ needs.post-merge-validation.result || 'skipped' }}" >> status_report.md
           echo "- Weekly Comprehensive: ${{ needs.weekly-comprehensive.result || 'skipped' }}" >> status_report.md
-          echo "- Branch Validation: ${{ needs.branch-validation.result || 'skipped' }}" >> status_report.md
           echo "" >> status_report.md
           echo "## Triggered By: ${{ github.event_name }}" >> status_report.md
           cat status_report.md

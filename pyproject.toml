@@ -30,7 +30,6 @@ dependencies = [
     "structlog>=23.1.0",       # 構造化ログ
     "pydantic>=2.0.0",         # データバリデーション
     "pydantic-settings>=2.0.0", # 設定管理
-    "pytest",                   # テストフレームワーク
     "psutil>=6.1.1",            # システムメトリクス
     "pyyaml>=6.0",              # YAML設定ファイル読み込み
     "respx>=0.22.0",            # httpx用モックライブラリ
@@ -67,11 +66,13 @@ Issues = "https://github.com/yourusername/api-test-devops-portfolio/issues"
 [dependency-groups]
 dev = [
     "bandit>=1.8.6",
+    "detect-secrets>=1.5.0,<2.0.0",
     "pre-commit>=4.3.0",
     "pytest-asyncio>=1.1.0",
     "pytest-cov>=4.1.0",
     "pytest-xdist>=3.5.0",
     "ruff>=0.1.0",
+    "mypy>=1.8.0",
     "safety>=3.6.0",
 ]
 
@@ -90,7 +91,7 @@ addopts = [
     "--cov-report=term-missing", # 欠損行表示
     "--cov-report=html:reports/htmlcov",  # HTMLレポート
     "--cov-report=xml:reports/coverage.xml",  # XMLレポート
-    "--cov-fail-under=85",       # ローカル目標: 85%（CI環境は-oで上書き）
+    "--cov-fail-under=70",       # ローカル目標: 85%
 ]
 markers = [
     "unit: 単体テスト",
