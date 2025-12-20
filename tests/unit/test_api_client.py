@@ -40,6 +40,7 @@ def mock_settings():
 
 
 @pytest.mark.regression
+@pytest.mark.smoke
 def test_base_client_initialization():
     """クライアント初期化テスト"""
     client = BaseAPIClient(base_url="https://test.com", timeout=10.0, retry_count=1)
@@ -51,6 +52,7 @@ def test_base_client_initialization():
 
 
 @pytest.mark.regression
+@pytest.mark.smoke
 def test_context_manager_basic():
     """Context Manager基本動作テスト"""
     with BaseAPIClient(base_url="https://test.com") as client:

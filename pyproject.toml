@@ -35,28 +35,6 @@ dependencies = [
     "respx>=0.22.0",            # httpx用モックライブラリ
 ]
 
-# 開発・テスト依存関係
-[project.optional-dependencies]
-dev = [
-    # テストフレームワーク
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",   # 非同期テストサポート
-    "pytest-mock>=3.12.0",      # モック機能
-    "pytest-cov>=4.1.0",        # カバレッジ計測
-    "pytest-xdist>=3.5.0",      # 並列テスト実行
-    
-    # 品質管理ツール
-    "ruff>=0.1.0",               # 統合リンター・フォーマッター (black, isort, flake8統合)
-    "mypy>=1.8.0",               # 型チェッカー
-    "bandit>=1.7.5",             # セキュリティスキャン
-    "safety>=3.0.0",             # 脆弱性チェック
-    
-    # 開発サポート
-    "ipython>=8.10.0",           # 対話型Python
-    "jupyter>=1.0.0",            # Notebook環境
-    "pre-commit>=3.6.0",         # Git hooks
-]
-
 [project.urls]
 Homepage = "https://github.com/yourusername/api-test-devops-portfolio"
 Repository = "https://github.com/yourusername/api-test-devops-portfolio"
@@ -65,15 +43,18 @@ Issues = "https://github.com/yourusername/api-test-devops-portfolio/issues"
 
 [dependency-groups]
 dev = [
-    "bandit>=1.8.6",
-    "detect-secrets>=1.5.0,<2.0.0",
-    "pre-commit>=4.3.0",
+    # テスト
+    "pytest>=8.0.0",
     "pytest-asyncio>=1.1.0",
     "pytest-cov>=4.1.0",
     "pytest-xdist>=3.5.0",
+    # 品質管理
     "ruff>=0.1.0",
     "mypy>=1.8.0",
+    "bandit>=1.8.6",
     "safety>=3.6.0",
+    # 開発サポート
+    "pre-commit>=4.3.0",
 ]
 
 # pytest設定
@@ -95,16 +76,14 @@ addopts = [
 ]
 markers = [
     "unit: 単体テスト",
-    "integration: 統合テスト", 
+    "integration: 統合テスト",
     "e2e: E2Eテスト",
     "performance: パフォーマンステスト",
     "security: セキュリティテスト",
     "slow: 実行時間の長いテスト",
     "external: 外部API依存テスト",
-    "load: 負荷テスト",
-    "concurrency: コンカレンシーテスト",
-    "benchmark: ベンチマークテスト",
-    "resource: リソース監視テスト",
+    "smoke: スモークテスト（main PR用、基本機能の動作確認）",
+    "regression: リグレッションテスト（デグレード検出）",
 ]
 asyncio_mode = "auto"            # 非同期テスト自動検出
 
@@ -132,7 +111,7 @@ exclude_lines = [
     "raise NotImplementedError",
     "if 0:",
     "if __name__ == .__main__.:",
-    "class .*\\bProtocol\\):",
+    "class .*\\(.*Protocol.*\\):",
     "@(abc\\.)?abstractmethod",
 ]
 show_missing = true

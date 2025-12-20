@@ -58,6 +58,7 @@ class TestAPIConfigValidation:
         config = APIConfig(base_url="http://httpbin.org")
         assert config.base_url == "http://httpbin.org"
 
+    @pytest.mark.smoke
     def test_base_url_https_scheme_valid(self):
         """https://スキームが有効"""
         config = APIConfig(base_url="https://api.example.com")
