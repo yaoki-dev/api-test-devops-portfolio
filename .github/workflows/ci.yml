@@ -55,8 +55,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run bandit (Python SAST)
-        run: uv run bandit -r utils/ config/ -f json -o bandit-report.json || true
-        continue-on-error: false
+        run: uv run bandit -r utils/ config/ models/ -f json -o bandit-report.json -ll
+        # -ll: MEDIUM以上の深刻度でのみ失敗
 
       - name: Upload bandit report
         if: always()
@@ -144,7 +144,7 @@ jobs:
   # Stage 3: Weekly Comprehensive Tests (< 30 min)
   # Triggers: schedule (Sunday 00:00 UTC)
   # Tests: Performance + External API + Full Coverage
-  # Note: Security は PR 毎の静的解析（detect-secrets, ruff(S)）で代用
+  # Note: Security は PR 毎の静的解析（gitleaks, bandit, ruff(S)）で代用
   # ============================================================
   weekly-comprehensive:
     name: Weekly Comprehensive (Performance + External)
