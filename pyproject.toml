@@ -32,7 +32,6 @@ dependencies = [
     "pydantic-settings>=2.0.0", # 設定管理
     "psutil>=6.1.1",            # システムメトリクス
     "pyyaml>=6.0",              # YAML設定ファイル読み込み
-    "respx>=0.22.0",            # httpx用モックライブラリ
 ]
 
 [project.urls]
@@ -48,6 +47,7 @@ dev = [
     "pytest-asyncio>=1.1.0",
     "pytest-cov>=4.1.0",
     "pytest-xdist>=3.5.0",
+    "respx>=0.22.0",            # httpx用モックライブラリ
     # 品質管理
     "ruff>=0.1.0",
     "mypy>=1.8.0",

@@ -869,7 +869,9 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 |--------|------------|------|
 | `/git-workflow:feature`, `/git-workflow:hotfix`, `/git-workflow:finish` | ブランチ操作時 | Git Flowブランチ管理 |
 | `/commit-commands:commit`, `/commit-commands:commit-push-pr` | コミット/PR作成時 | ステージング+コミット+PR |
-| `/pr-review-toolkit:review-pr` | git push完了後、PR作成前 | 6エージェント包括レビュー |
+| `/pr-review-toolkit:review-pr` | git push完了後、PR作成前 | 6エージェント品質レビュー |
+| `/code-review:review-pr` (CEK) | 重要PR時 | 6エージェント防御レビュー（セキュリティ・バグ・API契約） |
+| `/comprehensive-pr-review` | リリース前PR | 10エージェント統合レビュー |
 | `/testing-suite:test-coverage`, `/testing-suite:generate-tests` | テスト関連時 | カバレッジ分析・テスト生成 |
 
 ### Medium（必要時）
@@ -889,10 +891,12 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 ```
 1. コード変更 → security-guidance (hook自動)
 2. 品質ゲート → pytest + ruff + mypy 全合格（※1）
-3. レビュー   → /code-review:code-review (80点閾値)
-4. コミット   → /commit-commands:commit
-5. プッシュ後 → /pr-review-toolkit:review-pr
-6. PR作成    → /commit-commands:commit-push-pr
+3. 自己改善  → /reflexion:reflect
+4. 日常レビュー → /code-review:code-review (80点閾値)
+5. コミット   → /commit-commands:commit
+6. PR時      → /pr-review-toolkit:review-pr (品質) + /code-review:review-pr (防御)
+7. 重要PR時  → /comprehensive-pr-review (10エージェント統合)
+8. PR作成    → /commit-commands:commit-push-pr
 ```
 
 **※1 品質ゲート**: `uv run pytest && uv run ruff check . && uv run mypy utils/ config/`

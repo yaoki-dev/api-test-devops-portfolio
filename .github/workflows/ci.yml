@@ -126,7 +126,7 @@ jobs:
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --dev
 
       - name: Run regression tests (Must Pass)
         run: |
@@ -168,7 +168,7 @@ jobs:
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --dev
 
       - name: Run performance tests
         run: |
