@@ -1,0 +1,69 @@
+# .github/workflows/autoupdate-precommit.yml
+name: Update pre-commit hooks
+
+on:
+  schedule:
+    - cron: '0 0 1 * *'  # 毎月1日 00:00 UTC
+  workflow_dispatch:      # 手動実行可能
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-precommit:
+    name: Update pre-commit hooks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Update pre-commit hooks
+        run: |
+          pip install pre-commit
+          pre-commit autoupdate
+
+      # Fail Fast: 壊れたフックでPR作成を防止（早期検出でデバッグ時間節約）
+      - name: Verify updated hooks
+        run: pre-commit run --all-files
+        continue-on-error: false
+
+      - name: Check for changes
+        id: git-check
+        run: |
+          if git diff --quiet .pre-commit-config.yaml; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      # NOTE: 企業環境ではSHA pinning推奨（例: @67ccf781d68cd99b580ae25a5c18a1cc84ffff1f）
+      # ポートフォリオではメジャーバージョンタグで保守性とセキュリティをバランス
+      - name: Create Pull Request
+        if: steps.git-check.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore(deps): update pre-commit hooks"
+          title: "chore(deps): update pre-commit hooks"
+          body: |
+            ## Automated pre-commit hooks update
+            
+            Updated by `pre-commit autoupdate`.
+            
+            ### Verification
+            ```bash
+            pre-commit run --all-files
+            ```
+          branch: chore/update-precommit-hooks
+          labels: |
+            dependencies
+            pre-commit
+          delete-branch: true
