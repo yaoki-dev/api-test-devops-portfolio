@@ -8,10 +8,12 @@
 - 設定管理との統合
 """
 
+import asyncio
 import logging
 import random
 import time
-from typing import Any
+from types import TracebackType
+from typing import Any, Self
 
 import httpx
 
@@ -170,21 +172,26 @@ class BaseAPIClient:
 
         self.logger.info(f"APIClient initialized: base_url={self.base_url}")
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         """コンテキストマネージャーのエントリー"""
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         """コンテキストマネージャーの終了処理"""
         self.close()
 
-    def close(self):
+    def close(self) -> None:
         """クライアントのクローズ"""
         if self._client:
             self._client.close()
             self.logger.info("APIClient closed")
 
-    def _make_request_with_retry(self, method: str, endpoint: str, **kwargs) -> httpx.Response:
+    def _make_request_with_retry(self, method: str, endpoint: str, **kwargs: Any) -> httpx.Response:
         """
         リトライ機能付きHTTPリクエスト実行
 
@@ -414,7 +421,7 @@ class JSONPlaceholderClient(BaseAPIClient):
         response = self.post("/todos", json=data)
         return _safe_parse_json(response)
 
-    def update_todo(self, todo_id: int, **kwargs) -> dict[str, Any]:
+    def update_todo(self, todo_id: int, **kwargs: Any) -> dict[str, Any]:
         """TODOの更新"""
         response = self.patch(f"/todos/{todo_id}", json=kwargs)
         return _safe_parse_json(response)
@@ -506,22 +513,27 @@ class AsyncAPIClient:
 
         self.logger.info(f"AsyncAPIClient initialized: base_url={self.base_url}")
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> Self:
         """非同期コンテキストマネージャーのエントリー"""
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         """非同期コンテキストマネージャーの終了処理"""
         await self.aclose()
 
-    async def aclose(self):
+    async def aclose(self) -> None:
         """クライアントのクローズ"""
         if self._client:
             await self._client.aclose()
             self.logger.info("AsyncAPIClient closed")
 
     async def _make_request_with_retry(
-        self, method: str, endpoint: str, **kwargs
+        self, method: str, endpoint: str, **kwargs: Any
     ) -> httpx.Response:
         """
         リトライ機能付き非同期HTTPリクエスト実行
@@ -540,7 +552,6 @@ class AsyncAPIClient:
             APIHTTPError: HTTPステータスエラー
             APIRetryError: リトライ上限エラー
         """
-        import asyncio
 
         last_exception: APIClientError | None = None
 
@@ -758,7 +769,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         response = await self.post("/todos", json=data)
         return _safe_parse_json(response)
 
-    async def update_todo(self, todo_id: int, **kwargs) -> dict[str, Any]:
+    async def update_todo(self, todo_id: int, **kwargs: Any) -> dict[str, Any]:
         """TODOの非同期更新"""
         response = await self.patch(f"/todos/{todo_id}", json=kwargs)
         return _safe_parse_json(response)
@@ -771,7 +782,6 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 
     async def bulk_create_users(self, users_data: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """複数ユーザーの非同期一括作成"""
-        import asyncio
 
         # 並行してユーザー作成
         tasks = [self.create_user(user_data) for user_data in users_data]
@@ -808,7 +818,6 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
     # 並行処理の例
     async def get_user_data(self, user_id: int) -> dict[str, Any]:
         """ユーザーに関連するデータを並行取得"""
-        import asyncio
 
         # 並行してユーザー情報、投稿、TODO、アルバムを取得
         user_task = self.get_user(user_id)
@@ -844,7 +853,7 @@ def create_client() -> JSONPlaceholderClient:
 # =============================================================================
 
 
-def main():
+def main() -> None:
     """デモ実行"""
     print("=== JSONPlaceholder API Client Demo ===")
 
