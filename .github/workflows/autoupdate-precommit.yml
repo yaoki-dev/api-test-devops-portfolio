@@ -30,6 +30,20 @@ jobs:
           pip install pre-commit
           pre-commit autoupdate
 
+      # gitleaksインストール（pre-commit language: system用）
+      # NOTE: .pre-commit-config.yamlでlanguage: systemを使用しているため
+      # CI環境では明示的にgitleaksバイナリをインストールする必要がある
+      # gh CLIで最新版を動的取得（手動更新不要、認証済みでRate Limit緩和）
+      - name: Install gitleaks (latest)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download --repo gitleaks/gitleaks --pattern "gitleaks_*_linux_x64.tar.gz" --clobber
+          tar -xzf gitleaks_*_linux_x64.tar.gz
+          sudo mv gitleaks /usr/local/bin/
+          rm -f gitleaks_*_linux_x64.tar.gz
+          gitleaks version
+
       # Fail Fast: 壊れたフックでPR作成を防止（早期検出でデバッグ時間節約）
       - name: Verify updated hooks
         run: pre-commit run --all-files
@@ -65,5 +79,7 @@ jobs:
           branch: chore/update-precommit-hooks
           labels: |
             dependencies
-            pre-commit
+            pre-com
+            
+            mit
           delete-branch: true
