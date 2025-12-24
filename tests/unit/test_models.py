@@ -5,6 +5,7 @@ XSS保護機能の検証を含む。
 """
 
 import pytest
+from pydantic import ValidationError
 
 from models.responses import (
     Album,
@@ -91,6 +92,21 @@ class TestPostModel:
         """userIdからuser_idへのエイリアスマッピング"""
         post = Post(id=1, userId=99, title="Test", body="Body")
         assert post.user_id == 99
+
+    @pytest.mark.unit
+    def test_post_invalid_id_zero_raises_validation_error(self) -> None:
+        """id=0でValidationErrorが発生する（境界値テスト: ge=1）"""
+        with pytest.raises(ValidationError) as exc_info:
+            Post(id=0, userId=1, title="Test", body="Body")
+        assert "id" in str(exc_info.value)
+
+    @pytest.mark.unit
+    def test_post_title_exceeds_max_length_raises_validation_error(self) -> None:
+        """title>200文字でValidationErrorが発生する（境界値テスト: max_length=200）"""
+        long_title = "a" * 201
+        with pytest.raises(ValidationError) as exc_info:
+            Post(id=1, userId=1, title=long_title, body="Body")
+        assert "title" in str(exc_info.value)
 
 
 class TestCommentModel:
