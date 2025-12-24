@@ -1,0 +1,20 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "description": "Docker digest auto-update configuration",
+  "enabledManagers": ["dockerfile"],
+  "schedule": ["before 9am on monday"],
+  "timezone": "Asia/Tokyo",
+  "labels": ["dependencies", "docker"],
+  "packageRules": [
+    {
+      "description": "Auto-merge Docker digest updates (SHA256 pinning)",
+      "matchManagers": ["dockerfile"],
+      "matchUpdateTypes": ["digest"],
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": true
+    }
+  ],
+  "ignorePaths": ["claude-flow-lite/**"]
+}
