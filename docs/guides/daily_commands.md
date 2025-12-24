@@ -69,7 +69,7 @@ uv run ruff format . && uv run ruff check . --fix
 make coverage
 
 # 高速カバレッジチェック (閾値確認のみ)
-uv run pytest --cov=utils --cov=config --cov-fail-under=85
+uv run pytest --cov=. --cov-fail-under=85
 
 # HTMLカバレッジレポート表示
 open reports/htmlcov/index.html
@@ -78,10 +78,10 @@ open reports/htmlcov/index.html
 #### カバレッジ詳細オプション
 ```bash
 # ブランチカバレッジ付き詳細レポート
-uv run pytest --cov=utils --cov=config --cov-branch --cov-report=html:reports/htmlcov --cov-report=term-missing
+uv run pytest --cov=. --cov-branch --cov-report=html:reports/htmlcov --cov-report=term-missing
 
 # XMLレポート生成 (CI/CD用)
-uv run pytest --cov=utils --cov=config --cov-report=xml:reports/coverage.xml
+uv run pytest --cov=. --cov-report=xml:reports/coverage.xml
 ```
 
 ## 🚀 Integrated CI/CD Commands (中頻度 - 週次使用)
@@ -526,7 +526,7 @@ git gc --aggressive                    # Gitリポジトリ最適化
 echo "=== 月次Claude Squad効果レポート ==="
 echo "セッション数: $(cs list --all | wc -l)"
 echo "品質ゲート合格率: $(make squad-quality && echo 100% || echo 要改善)"
-echo "テストカバレッジ: $(uv run pytest --cov=utils --cov=config --cov-report=term | grep TOTAL | awk '{print $4}')"
+echo "テストカバレッジ: $(uv run pytest --cov=. --cov-report=term | grep TOTAL | awk '{print $4}')"
 
 # パフォーマンス測定
 python scripts/run_effectiveness_measurement.py demo

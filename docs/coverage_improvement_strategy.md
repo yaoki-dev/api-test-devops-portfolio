@@ -184,10 +184,10 @@ class TestEffectivenessTracker:
 ### カバレッジ検証コマンド
 ```bash
 # Phase 2完了時検証（目標83%）
-uv run pytest --cov=utils --cov=config --cov-fail-under=83 --cov-report=html
+uv run pytest --cov=. --cov-fail-under=83 --cov-report=html
 
 # Phase 3完了時検証（目標85%）
-uv run pytest --cov=utils --cov=config --cov-fail-under=85 --cov-report=html
+uv run pytest --cov=. --cov-fail-under=85 --cov-report=html
 
 # 継続的品質チェック
 make coverage  # 85%閾値での自動チェック
