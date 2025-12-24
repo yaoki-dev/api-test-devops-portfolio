@@ -13,9 +13,9 @@ from datetime import datetime
 from typing import Any, cast
 
 import httpx
-import structlog
 
 from utils.api_client import exponential_backoff_with_jitter
+from utils.logger import get_logger
 
 # =============================================================================
 # 入力バリデーション（OWASP A03:2021 - Injection対策）
@@ -125,7 +125,7 @@ class AsyncGitHubClient:
         self.user_agent = user_agent
         self._client: httpx.AsyncClient | None = None
         self._etag_cache: dict[str, str] = {}  # URL -> ETag
-        self.logger = structlog.get_logger(__name__)
+        self.logger = get_logger(__name__)
 
     async def __aenter__(self) -> "AsyncGitHubClient":
         """非同期コンテキストマネージャーのエントリー"""

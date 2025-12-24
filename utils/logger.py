@@ -8,6 +8,13 @@ config/settings.pyのLogConfigと連携して動作。
 
     logger = get_logger(__name__)
     logger.info("処理開始", user_id=123, action="login")
+
+utils/logger.pyで示せるスキル:
+  1. ✅ 設定一元化パターン（DRY原則）
+  2. ✅ config.settingsとの統合（環境別設定）
+  3. ✅ シングルトンパターン（lazy initialization）
+  4. ✅ テスタビリティ設計
+  5. ✅ 型安全（FilteringBoundLogger）
 """
 
 from __future__ import annotations

@@ -9,7 +9,6 @@
 """
 
 import asyncio
-import logging
 import random
 import time
 from types import TracebackType
@@ -18,6 +17,7 @@ from typing import Any, Self
 import httpx
 
 from config.settings import settings
+from utils.logger import get_logger
 
 
 def exponential_backoff_with_jitter(
@@ -159,8 +159,8 @@ class BaseAPIClient:
         if headers:
             self.default_headers.update(headers)
 
-        # ロガーの初期化
-        self.logger = logging.getLogger(__name__)
+        # ロガーの初期化（structlog統合）
+        self.logger = get_logger(__name__)
 
         # HTTPクライアントの初期化
         self._client = httpx.Client(
@@ -170,7 +170,7 @@ class BaseAPIClient:
             limits=httpx.Limits(max_connections=settings.api.max_connections),
         )
 
-        self.logger.info(f"APIClient initialized: base_url={self.base_url}")
+        self.logger.info("api_client_initialized", base_url=self.base_url)
 
     def __enter__(self) -> Self:
         """コンテキストマネージャーのエントリー"""
@@ -189,7 +189,7 @@ class BaseAPIClient:
         """クライアントのクローズ"""
         if self._client:
             self._client.close()
-            self.logger.info("APIClient closed")
+            self.logger.info("api_client_closed")
 
     def _make_request_with_retry(self, method: str, endpoint: str, **kwargs: Any) -> httpx.Response:
         """
@@ -216,11 +216,14 @@ class BaseAPIClient:
                 # ログ出力
                 if attempt > 0:
                     self.logger.warning(
-                        f"Retrying request: attempt {attempt + 1}/{self.retry_count + 1} "
-                        f"for {method} {endpoint}"
+                        "request_retry",
+                        attempt=attempt + 1,
+                        max_attempts=self.retry_count + 1,
+                        method=method,
+                        endpoint=endpoint,
                     )
                 else:
-                    self.logger.debug(f"Making request: {method} {endpoint}")
+                    self.logger.debug("request_start", method=method, endpoint=endpoint)
 
                 # HTTPリクエスト実行
                 response = self._client.request(method, endpoint, **kwargs)
@@ -229,7 +232,10 @@ class BaseAPIClient:
                 try:
                     response.raise_for_status()
                     self.logger.debug(
-                        f"Request successful: {method} {endpoint} -> {response.status_code}"
+                        "request_success",
+                        method=method,
+                        endpoint=endpoint,
+                        status_code=response.status_code,
                     )
                     return response
 
@@ -237,7 +243,10 @@ class BaseAPIClient:
                     # 4xxエラーはリトライしない（クライアントエラー）
                     if 400 <= e.response.status_code < 500:
                         self.logger.error(
-                            f"Client error: {e.response.status_code} for {method} {endpoint}"
+                            "client_error",
+                            status_code=e.response.status_code,
+                            method=method,
+                            endpoint=endpoint,
                         )
                         raise APIHTTPError(
                             f"HTTP {e.response.status_code} Client Error",
@@ -247,7 +256,10 @@ class BaseAPIClient:
 
                     # 5xxエラーはリトライ対象
                     self.logger.warning(
-                        f"Server error: {e.response.status_code} for {method} {endpoint}"
+                        "server_error",
+                        status_code=e.response.status_code,
+                        method=method,
+                        endpoint=endpoint,
                     )
                     last_exception = APIHTTPError(
                         f"HTTP {e.response.status_code} Server Error",
@@ -256,11 +268,13 @@ class BaseAPIClient:
                     )
 
             except httpx.TimeoutException as e:
-                self.logger.warning(f"Timeout error for {method} {endpoint}: {e}")
+                self.logger.warning("timeout_error", method=method, endpoint=endpoint, error=str(e))
                 last_exception = APITimeoutError(f"Request timeout: {e}")
 
             except httpx.ConnectError as e:
-                self.logger.warning(f"Connection error for {method} {endpoint}: {e}")
+                self.logger.warning(
+                    "connection_error", method=method, endpoint=endpoint, error=str(e)
+                )
                 last_exception = APIConnectionError(f"Connection failed: {e}")
 
             except Exception as e:
@@ -269,7 +283,9 @@ class BaseAPIClient:
                 if isinstance(e, APIClientError):
                     raise
                 # Only wrap truly unexpected exceptions
-                self.logger.error(f"Unexpected error for {method} {endpoint}: {e}")
+                self.logger.error(
+                    "unexpected_error", method=method, endpoint=endpoint, error=str(e)
+                )
                 last_exception = APIClientError(f"Unexpected error: {e}")
 
             # 最後の試行でなければ指数バックオフ + 30%ジッターで待機
@@ -278,13 +294,15 @@ class BaseAPIClient:
                     attempt=attempt, base_delay=self.retry_delay, jitter_percent=0.3
                 )
                 self.logger.debug(
-                    f"Waiting {delay:.2f} seconds before retry "
-                    f"(attempt {attempt + 1}, exponential backoff with 30% jitter)..."
+                    "retry_backoff",
+                    delay_seconds=round(delay, 2),
+                    attempt=attempt + 1,
+                    strategy="exponential_backoff_with_jitter",
                 )
                 time.sleep(delay)
 
         # すべてのリトライが失敗
-        self.logger.error(f"All retry attempts failed for {method} {endpoint}")
+        self.logger.error("all_retries_failed", method=method, endpoint=endpoint)
         raise APIRetryError(
             f"Request failed after {self.retry_count + 1} attempts"
         ) from last_exception
@@ -500,8 +518,8 @@ class AsyncAPIClient:
         if headers:
             self.default_headers.update(headers)
 
-        # ロガーの初期化
-        self.logger = logging.getLogger(__name__)
+        # ロガーの初期化（structlog統合）
+        self.logger = get_logger(__name__)
 
         # HTTPクライアントの初期化（非同期）
         self._client = httpx.AsyncClient(
@@ -511,7 +529,7 @@ class AsyncAPIClient:
             limits=httpx.Limits(max_connections=settings.api.max_connections),
         )
 
-        self.logger.info(f"AsyncAPIClient initialized: base_url={self.base_url}")
+        self.logger.info("async_api_client_initialized", base_url=self.base_url)
 
     async def __aenter__(self) -> Self:
         """非同期コンテキストマネージャーのエントリー"""
@@ -560,11 +578,14 @@ class AsyncAPIClient:
                 # ログ出力
                 if attempt > 0:
                     self.logger.warning(
-                        f"Retrying async request: attempt {attempt + 1}/{self.retry_count + 1} "
-                        f"for {method} {endpoint}"
+                        "async_request_retry",
+                        attempt=attempt + 1,
+                        max_attempts=self.retry_count + 1,
+                        method=method,
+                        endpoint=endpoint,
                     )
                 else:
-                    self.logger.debug(f"Making async request: {method} {endpoint}")
+                    self.logger.debug("async_request_start", method=method, endpoint=endpoint)
 
                 # 非同期HTTPリクエスト実行
                 response = await self._client.request(method, endpoint, **kwargs)
@@ -573,7 +594,10 @@ class AsyncAPIClient:
                 try:
                     response.raise_for_status()
                     self.logger.debug(
-                        f"Async request successful: {method} {endpoint} -> {response.status_code}"
+                        "async_request_success",
+                        method=method,
+                        endpoint=endpoint,
+                        status_code=response.status_code,
                     )
                     return response
 
@@ -581,7 +605,10 @@ class AsyncAPIClient:
                     # 4xxエラーはリトライしない（クライアントエラー）
                     if 400 <= e.response.status_code < 500:
                         self.logger.error(
-                            f"Client error: {e.response.status_code} for {method} {endpoint}"
+                            "client_error",
+                            status_code=e.response.status_code,
+                            method=method,
+                            endpoint=endpoint,
                         )
                         raise APIHTTPError(
                             f"HTTP {e.response.status_code} Client Error",
@@ -591,7 +618,10 @@ class AsyncAPIClient:
 
                     # 5xxエラーはリトライ対象
                     self.logger.warning(
-                        f"Server error: {e.response.status_code} for {method} {endpoint}"
+                        "server_error",
+                        status_code=e.response.status_code,
+                        method=method,
+                        endpoint=endpoint,
                     )
                     last_exception = APIHTTPError(
                         f"HTTP {e.response.status_code} Server Error",
@@ -600,15 +630,21 @@ class AsyncAPIClient:
                     )
 
             except httpx.TimeoutException as e:
-                self.logger.warning(f"Async timeout error for {method} {endpoint}: {e}")
+                self.logger.warning(
+                    "async_timeout_error", method=method, endpoint=endpoint, error=str(e)
+                )
                 last_exception = APITimeoutError(f"Request timeout: {e}")
 
             except httpx.ConnectError as e:
-                self.logger.warning(f"Async connection error for {method} {endpoint}: {e}")
+                self.logger.warning(
+                    "async_connection_error", method=method, endpoint=endpoint, error=str(e)
+                )
                 last_exception = APIConnectionError(f"Connection failed: {e}")
 
             except Exception as e:
-                self.logger.error(f"Unexpected async error for {method} {endpoint}: {e}")
+                self.logger.error(
+                    "async_unexpected_error", method=method, endpoint=endpoint, error=str(e)
+                )
                 last_exception = APIClientError(f"Unexpected error: {e}")
 
             # 最後の試行でなければ指数バックオフ + 30%ジッターで待機
@@ -617,13 +653,15 @@ class AsyncAPIClient:
                     attempt=attempt, base_delay=self.retry_delay, jitter_percent=0.3
                 )
                 self.logger.debug(
-                    f"Waiting {delay:.2f} seconds before async retry "
-                    f"(attempt {attempt + 1}, exponential backoff with 30% jitter)..."
+                    "async_retry_backoff",
+                    delay_seconds=round(delay, 2),
+                    attempt=attempt + 1,
+                    strategy="exponential_backoff_with_jitter",
                 )
                 await asyncio.sleep(delay)
 
         # すべてのリトライが失敗
-        self.logger.error(f"All async retry attempts failed for {method} {endpoint}")
+        self.logger.error("async_all_retries_failed", method=method, endpoint=endpoint)
         raise APIRetryError(
             f"Async request failed after {self.retry_count + 1} attempts"
         ) from last_exception
@@ -900,12 +938,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    # ログ設定
-    logging.basicConfig(
-        level=settings.get_log_level(),
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
-
+    # structlogはget_logger()初回呼び出し時に自動設定されるため、手動設定不要
     main()
 
 
