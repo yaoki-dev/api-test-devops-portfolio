@@ -1,9 +1,19 @@
 # Dependabot configuration
 # Docs: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# Design Decision (Git Flow + Enterprise Best Practice):
+# - Default branch is 'develop' (changed from 'main')
+# - All Dependabot PRs (version + security) target 'develop'
+# - PRs require CI pass before auto-merge on develop
+# - main branch requires manual PR + review (release process)
+# - This prevents supply chain attacks from directly affecting production
+#
+# Reference: https://blog.somewhatabstract.com/2021/10/11/setting-up-dependabot-with-github-actions-to-approve-and-merge/
 
 version: 2
 updates:
   # Python dependencies (uv)
+  # Note: target-branch not needed since develop is default branch
   - package-ecosystem: "uv"
     directory: "/"
     schedule:
@@ -30,6 +40,7 @@ updates:
           - "bandit"
 
   # GitHub Actions
+  # Note: target-branch not needed since develop is default branch
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
