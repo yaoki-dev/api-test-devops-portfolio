@@ -79,7 +79,5 @@ jobs:
           branch: chore/update-precommit-hooks
           labels: |
             dependencies
-            pre-com
-            
-            mit
+            pre-commit
           delete-branch: true
