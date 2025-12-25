@@ -74,7 +74,6 @@ def mock_response():
 # ===============================================================================
 
 
-@pytest.mark.regression
 @pytest.mark.asyncio
 async def test_async_create_post(sample_post_data, mock_response):
     """
@@ -118,7 +117,6 @@ async def test_async_create_post(sample_post_data, mock_response):
 # ===============================================================================
 
 
-@pytest.mark.regression
 @pytest.mark.asyncio
 async def test_async_update_post(mock_response):
     """
@@ -165,7 +163,6 @@ async def test_async_update_post(mock_response):
 # ===============================================================================
 
 
-@pytest.mark.regression
 @pytest.mark.asyncio
 async def test_async_delete_post(mock_response):
     """
@@ -205,7 +202,6 @@ async def test_async_delete_post(mock_response):
 # ===============================================================================
 
 
-@pytest.mark.regression
 @pytest.mark.asyncio
 async def test_async_crud_integration(sample_post_data, mock_response):
     """
@@ -274,7 +270,6 @@ async def test_async_crud_integration(sample_post_data, mock_response):
 # ===============================================================================
 
 
-@pytest.mark.regression
 @pytest.mark.asyncio
 async def test_async_create_post_400_error(mock_response):
     """
@@ -306,7 +301,6 @@ async def test_async_create_post_400_error(mock_response):
 # ===============================================================================
 
 
-@pytest.mark.regression
 @pytest.mark.asyncio
 async def test_async_update_post_404_error(mock_response):
     """
@@ -337,7 +331,6 @@ async def test_async_update_post_404_error(mock_response):
 # ===============================================================================
 
 
-@pytest.mark.regression
 @pytest.mark.asyncio
 async def test_async_delete_post_500_error(mock_response):
     """

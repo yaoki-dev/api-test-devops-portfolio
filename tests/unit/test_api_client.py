@@ -39,7 +39,6 @@ def mock_settings():
         yield
 
 
-@pytest.mark.regression
 @pytest.mark.smoke
 def test_base_client_initialization():
     """クライアント初期化テスト"""
@@ -51,7 +50,6 @@ def test_base_client_initialization():
     # User-Agent値のチェックは削除（モック動作ではなく実際の値を使用）
 
 
-@pytest.mark.regression
 @pytest.mark.smoke
 def test_context_manager_basic():
     """Context Manager基本動作テスト"""
@@ -61,7 +59,6 @@ def test_context_manager_basic():
     # After exiting, the client should be closed (though we can't directly assert _client is None)
 
 
-@pytest.mark.regression
 def test_base_client_uses_default_settings_if_not_provided():
     """引数がない場合にデフォルト設定が使用されることを確認"""
     client = BaseAPIClient()  # Uses mock_settings_instance

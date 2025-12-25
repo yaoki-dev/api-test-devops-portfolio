@@ -106,7 +106,6 @@ def mock_response():
 # ===============================================================================
 
 
-@pytest.mark.regression
 @pytest.mark.asyncio
 async def test_async_get_user(sample_user_data, mock_response):
     """
@@ -149,7 +148,6 @@ async def test_async_get_user(sample_user_data, mock_response):
 # ===============================================================================
 
 
-@pytest.mark.regression
 @pytest.mark.asyncio
 async def test_async_concurrent_requests(sample_users_list, mock_response):
     """
@@ -319,7 +317,6 @@ async def test_async_error_handling_and_retry():
 # ===============================================================================
 
 
-@pytest.mark.regression
 @pytest.mark.asyncio
 async def test_async_post_create_user(mock_response):
     """
@@ -462,7 +459,6 @@ async def test_async_performance_and_timeout():
             assert time.time() - start_time >= 0.1  # 最低限の実行時間
 
 
-@pytest.mark.regression
 @pytest.mark.asyncio
 async def test_async_context_manager_cleanup():
     """

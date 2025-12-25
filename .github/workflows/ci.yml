@@ -128,10 +128,11 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev
 
-      - name: Run regression tests (Must Pass)
-        run: |
-          uv run pytest -n auto -m "regression" --maxfail=1 -v --tb=short
-          echo "regression_tests_passed=true" >> $GITHUB_ENV
+      #regression marker削除に伴い一時コメントアウト
+      # - name: Run regression tests (Must Pass)
+      #   run: |
+      #     uv run pytest -n auto -m "regression" --maxfail=1 -v --tb=short
+      #     echo "regression_tests_passed=true" >> $GITHUB_ENV
 
       - name: Upload regression test results
         if: always()

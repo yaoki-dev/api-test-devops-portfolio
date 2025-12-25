@@ -50,7 +50,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "slow: 実行時間の長いテスト")
     config.addinivalue_line("markers", "external: 外部API依存テスト")
     config.addinivalue_line("markers", "performance: パフォーマンステスト")
-    config.addinivalue_line("markers", "security: セキュリティテスト")
+    config.addinivalue_line("markers", "smoke: スモークテスト（main PR用、基本機能の動作確認）")
 
 
 def pytest_collection_modifyitems(config, items):

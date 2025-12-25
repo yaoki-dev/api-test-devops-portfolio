@@ -88,7 +88,6 @@ class TestBasicInputValidation:
     ]
 
     @pytest.mark.asyncio
-    @pytest.mark.security
     async def test_post_title_sql_injection(self, async_client):  # noqa: C901
         """POST リクエストのタイトルフィールドSQL インジェクション検証"""
         logger.info("SQL インジェクション テスト開始", target="title field")
@@ -195,7 +194,6 @@ class TestBasicInputValidation:
             )
 
     @pytest.mark.asyncio
-    @pytest.mark.security
     async def test_post_body_xss_injection(self, async_client):  # noqa: C901
         """POST リクエストのbodyフィールドXSS検証"""
         logger.info("XSS インジェクション テスト開始", target="body field")
@@ -279,7 +277,6 @@ class TestBasicInputValidation:
             pytest.fail(f"高リスクのXSS脆弱性が {len(high_severity)} 件発見されました")
 
     @pytest.mark.asyncio
-    @pytest.mark.security
     async def test_get_parameter_injection(self, async_client):  # noqa: C901
         """GET パラメータでの基本的なインジェクション検証"""
         logger.info("GET パラメータ インジェクション テスト開始")
@@ -387,7 +384,6 @@ class TestBasicInputValidation:
             pytest.fail(f"高リスクのGETパラメータ脆弱性が {len(high_severity)} 件発見されました")
 
     @pytest.mark.asyncio
-    @pytest.mark.security
     async def test_large_payload_dos_protection(self, async_client):  # noqa: C901
         """大きなペイロードの処理テスト（DoS対策基本検証）"""
         logger.info("大きなペイロードDoS保護テスト開始")
@@ -498,7 +494,6 @@ class TestBasicInputValidation:
             pytest.fail(f"高リスクのDoS脆弱性が {len(high_severity)} 件発見されました")
 
     @pytest.mark.asyncio
-    @pytest.mark.security
     async def test_null_and_empty_input_handling(self, async_client):
         """null値と空文字の処理テスト"""
         logger.info("null値・空文字処理テスト開始")
@@ -575,7 +570,6 @@ class TestBasicInputValidation:
             pytest.fail(f"高リスクのnull処理脆弱性が {len(high_severity)} 件発見されました")
 
     @pytest.mark.asyncio
-    @pytest.mark.security
     async def test_command_injection_basic(self, async_client):  # noqa: C901
         """基本的なコマンドインジェクション検証"""
         logger.info("コマンドインジェクション テスト開始")

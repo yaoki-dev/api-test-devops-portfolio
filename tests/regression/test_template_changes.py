@@ -19,7 +19,6 @@ from utils.api_client import AsyncAPIClient
 class TestAsyncClientBasicBehavior:
     """AsyncAPIClientの基本動作回帰テスト"""
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_async_client_initialization(self):
         """非同期クライアント初期化の一貫性確認"""
@@ -32,7 +31,6 @@ class TestAsyncClientBasicBehavior:
             assert "User-Agent" in client.default_headers
             assert client._client is not None
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_context_manager_lifecycle(self):
         """コンテキストマネージャーのライフサイクル一貫性"""
@@ -55,7 +53,6 @@ class TestAsyncClientBasicBehavior:
 class TestAsyncClientRetryBehavior:
     """リトライロジックの回帰テスト"""
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_retry_on_server_error_then_success(self, mock_httpx_client):
         """5xxサーバーエラー後の成功パターン（既知の動作確認）"""
@@ -86,7 +83,6 @@ class TestAsyncClientRetryBehavior:
             assert response.status_code == 200
             assert response.json() == {"id": 1, "title": "test"}
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_timeout_then_success(self, mock_httpx_client):
         """タイムアウト後の成功パターン（既知の動作確認）"""
@@ -115,7 +111,6 @@ class TestAsyncClientRetryBehavior:
 class TestAsyncClientHTTPMethods:
     """HTTPメソッドの回帰テスト"""
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_get_request_signature(self, mock_httpx_client):
         """GETリクエストのシグネチャ一貫性"""
@@ -141,7 +136,6 @@ class TestAsyncClientHTTPMethods:
             # paramsが正しく渡されている
             assert call_args[1]["params"] == {"filter": "active"}
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_post_request_signature(self, mock_httpx_client):
         """POSTリクエストのシグネチャ一貫性"""
@@ -167,7 +161,6 @@ class TestAsyncClientHTTPMethods:
             # jsonが正しく渡されている
             assert call_args[1]["json"] == {"title": "test", "body": "content"}
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_put_request_signature(self, mock_httpx_client):
         """PUTリクエストのシグネチャ一貫性"""
@@ -190,7 +183,6 @@ class TestAsyncClientHTTPMethods:
             assert call_args[0][0] == "PUT"
             assert call_args[0][1] == "/posts/1"
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_delete_request_signature(self, mock_httpx_client):
         """DELETEリクエストのシグネチャ一貫性"""
@@ -216,7 +208,6 @@ class TestAsyncClientHTTPMethods:
 class TestAsyncClientHeaderHandling:
     """ヘッダー処理の回帰テスト"""
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_default_headers_always_present(self):
         """デフォルトヘッダーが常に存在することを確認"""
@@ -225,7 +216,6 @@ class TestAsyncClientHeaderHandling:
             assert client.default_headers["Accept"] == "application/json"
             assert "User-Agent" in client.default_headers
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_custom_headers_preserved(self):
         """カスタムヘッダーが保持されることを確認"""

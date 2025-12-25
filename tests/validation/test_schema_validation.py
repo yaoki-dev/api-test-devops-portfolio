@@ -19,7 +19,6 @@ from utils.api_client import AsyncJSONPlaceholderClient
 class TestPostsSchema:
     """投稿APIスキーマの回帰テスト"""
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_get_posts_schema(self, mock_httpx_client):
         """投稿一覧取得のスキーマ一貫性確認"""
@@ -61,7 +60,6 @@ class TestPostsSchema:
                 assert isinstance(post["title"], str)
                 assert isinstance(post["body"], str)
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_get_post_schema(self, mock_httpx_client):
         """単一投稿取得のスキーマ一貫性確認"""
@@ -92,7 +90,6 @@ class TestPostsSchema:
             assert isinstance(post["title"], str)
             assert isinstance(post["body"], str)
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_create_post_schema(self, mock_httpx_client):
         """投稿作成レスポンスのスキーマ一貫性確認"""
@@ -125,7 +122,6 @@ class TestPostsSchema:
 class TestUsersSchema:
     """ユーザーAPIスキーマの回帰テスト"""
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_get_users_schema(self, mock_httpx_client):
         """ユーザー一覧取得のスキーマ一貫性確認"""
@@ -191,7 +187,6 @@ class TestUsersSchema:
             assert "name" in user["company"]
             assert isinstance(user["company"]["name"], str)
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_get_user_schema(self, mock_httpx_client):
         """単一ユーザー取得のスキーマ一貫性確認"""
@@ -233,7 +228,6 @@ class TestUsersSchema:
 class TestTodosSchema:
     """TODO APIスキーマの回帰テスト"""
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_get_todos_schema(self, mock_httpx_client):
         """TODO一覧取得のスキーマ一貫性確認"""
@@ -275,7 +269,6 @@ class TestTodosSchema:
                 assert isinstance(todo["title"], str)
                 assert isinstance(todo["completed"], bool)
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_get_todo_schema(self, mock_httpx_client):
         """単一TODO取得のスキーマ一貫性確認"""
@@ -306,7 +299,6 @@ class TestTodosSchema:
             assert isinstance(todo["title"], str)
             assert isinstance(todo["completed"], bool)
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_create_todo_schema(self, mock_httpx_client):
         """TODO作成レスポンスのスキーマ一貫性確認"""
@@ -339,7 +331,6 @@ class TestTodosSchema:
 class TestCommentsSchema:
     """コメントAPIスキーマの回帰テスト"""
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_get_comments_schema(self, mock_httpx_client):
         """コメント一覧取得のスキーマ一貫性確認"""
@@ -385,7 +376,6 @@ class TestCommentsSchema:
                 assert isinstance(comment["email"], str)
                 assert isinstance(comment["body"], str)
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_get_all_comments_schema(self, mock_httpx_client):
         """全コメント取得のスキーマ一貫性確認"""
@@ -422,7 +412,6 @@ class TestCommentsSchema:
 class TestAlbumsSchema:
     """アルバムAPIスキーマの回帰テスト"""
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_get_albums_schema(self, mock_httpx_client):
         """アルバム一覧取得のスキーマ一貫性確認"""
@@ -452,7 +441,6 @@ class TestAlbumsSchema:
                 assert isinstance(album["userId"], int)
                 assert isinstance(album["title"], str)
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_get_all_albums_schema(self, mock_httpx_client):
         """全アルバム取得のスキーマ一貫性確認"""
@@ -479,7 +467,6 @@ class TestAlbumsSchema:
 class TestPhotosSchema:
     """写真APIスキーマの回帰テスト"""
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_get_photos_schema(self, mock_httpx_client):
         """写真一覧取得のスキーマ一貫性確認"""
@@ -529,7 +516,6 @@ class TestPhotosSchema:
                 assert photo["url"].startswith("http")
                 assert photo["thumbnailUrl"].startswith("http")
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_get_all_photos_schema(self, mock_httpx_client):
         """全写真取得のスキーマ一貫性確認"""

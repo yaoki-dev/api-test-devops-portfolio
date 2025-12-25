@@ -71,7 +71,6 @@ class SecurityTestSuite:
     }
 
 
-@pytest.mark.security
 class TestOWASPAPISecurityTop10:
     """OWASP API Security Top 10 包括テスト"""
 
@@ -328,7 +327,6 @@ class TestOWASPAPISecurityTop10:
                 self.vulnerabilities_found.append(f"XSS vulnerability detected: {pattern}")
 
 
-@pytest.mark.security
 class TestSecurityHeaders:
     """セキュリティヘッダーテスト"""
 
@@ -376,7 +374,6 @@ class TestSecurityHeaders:
                 print("✅ すべての重要なセキュリティヘッダーが設定されています")
 
 
-@pytest.mark.security
 class TestDataProtection:
     """データ保護・プライバシーテスト"""
 
@@ -460,7 +457,6 @@ class TestDataProtection:
                     logger.info("large_payload_error", error=str(e), test_case=i + 1)
 
 
-@pytest.mark.security
 @pytest.mark.slow
 class TestSecurityIntegration:
     """セキュリティテスト統合"""

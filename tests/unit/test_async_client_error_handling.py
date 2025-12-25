@@ -57,7 +57,6 @@ class TestAsyncClientExceptions:
 class TestAsyncClientRetryLogic:
     """リトライロジックのテスト"""
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_retry_on_server_error_then_success(self, mock_httpx_client):
         """サーバーエラー後に成功するケース"""
@@ -88,7 +87,6 @@ class TestAsyncClientRetryLogic:
             # 最終的に成功レスポンスを取得
             assert response.status_code == 200
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_retry_exhausted_raises_retry_error(self, mock_httpx_client):
         """リトライ上限でAPIRetryErrorが発生することを確認"""
@@ -175,7 +173,6 @@ class TestAsyncClientTimeoutHandling:
             assert isinstance(exc_info.value.__cause__, APITimeoutError)
             assert "timeout" in str(exc_info.value.__cause__).lower()
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_timeout_then_success(self, mock_httpx_client):
         """タイムアウト後に成功するケース"""
@@ -221,7 +218,6 @@ class TestAsyncClientConnectionHandling:
             assert isinstance(exc_info.value.__cause__, APIConnectionError)
             assert "connection" in str(exc_info.value.__cause__).lower()
 
-    @pytest.mark.regression
     @pytest.mark.asyncio
     async def test_connection_error_then_success(self, mock_httpx_client):
         """接続エラー後に成功するケース"""

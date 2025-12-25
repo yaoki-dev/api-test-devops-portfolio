@@ -15,7 +15,6 @@
 #
 # ===============================================================================
 
-import pytest
 
 from utils.api_client import exponential_backoff_with_jitter
 
@@ -24,7 +23,6 @@ from utils.api_client import exponential_backoff_with_jitter
 # ===============================================================================
 
 
-@pytest.mark.regression
 def test_jitter_distribution_uniqueness():
     """
     30%ジッターが統計的に十分なユニーク遅延を生成することを検証
@@ -63,7 +61,6 @@ def test_jitter_distribution_uniqueness():
 # ===============================================================================
 
 
-@pytest.mark.regression
 def test_jitter_mean_within_bounds():
     """
     平均遅延が理論値の±10%以内に収まることを検証
@@ -106,7 +103,6 @@ def test_jitter_mean_within_bounds():
 # ===============================================================================
 
 
-@pytest.mark.regression
 def test_thundering_herd_prevention():
     """
     Thundering Herd問題（同時再試行）の防止を検証
@@ -149,7 +145,6 @@ def test_thundering_herd_prevention():
 # ===============================================================================
 
 
-@pytest.mark.regression
 def test_jitter_range_boundaries():
     """
     30%ジッターの範囲が理論値の70%~130%内に収まることを検証
@@ -203,7 +198,6 @@ def test_jitter_range_boundaries():
 # ===============================================================================
 
 
-@pytest.mark.regression
 def test_jitter_consistency_across_attempts():
     """
     異なるattempt値でジッター特性が一貫していることを検証
