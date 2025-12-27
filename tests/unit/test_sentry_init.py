@@ -28,6 +28,9 @@ from utils.sentry_init import (
     reset_sentry_state,
 )
 
+# Module-level marker: All tests in this file are unit tests
+pytestmark = pytest.mark.unit
+
 
 class TestScrubSensitiveData:
     """機密データスクラブのテスト"""

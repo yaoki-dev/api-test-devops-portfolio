@@ -80,7 +80,7 @@ jobs:
         run: |
           uv run pytest -n auto -m "(unit or integration) and not slow and not manual and not external" \
             --cov=. --cov-report=term-missing --cov-report=json \
-            --cov-fail-under=65 --maxfail=3 -v
+            --cov-fail-under=70 --maxfail=3 -v
           echo "core_tests_passed=true" >> $GITHUB_ENV
 
       - name: Run smoke tests (main PR only)
