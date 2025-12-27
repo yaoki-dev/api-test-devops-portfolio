@@ -2,6 +2,7 @@
 
 プロジェクト共通のstructlogロガーを提供。
 config/settings.pyのLogConfigと連携して動作。
+Sentry統合によりERROR以上のログを自動送信。
 
 使用例:
     from utils.logger import get_logger
@@ -15,6 +16,7 @@ utils/logger.pyで示せるスキル:
   3. ✅ シングルトンパターン（lazy initialization）
   4. ✅ テスタビリティ設計
   5. ✅ 型安全（FilteringBoundLogger）
+  6. ✅ Sentry統合（エラー監視）
 """
 
 from __future__ import annotations
@@ -22,9 +24,71 @@ from __future__ import annotations
 from typing import Any, cast
 
 import structlog
-from structlog.typing import FilteringBoundLogger
+from structlog.typing import FilteringBoundLogger, WrappedLogger
 
 from config.settings import LogFormat, get_settings
+
+
+def _sentry_processor(
+    logger: WrappedLogger,  # noqa: ARG001
+    method_name: str,  # noqa: ARG001
+    event_dict: dict[str, Any],
+) -> dict[str, Any]:
+    """Sentry連携プロセッサー
+
+    ERROR以上のログをSentryに送信。
+    sentry-sdk未インストールまたは未初期化時はスキップ。
+
+    Args:
+        logger: structlogラッパー（未使用）
+        method_name: ログメソッド名（info, error等）
+        event_dict: ログイベント辞書
+
+    Returns:
+        変更なしのevent_dict（プロセッサーチェーン継続）
+    """
+    # ERROR以上のみ対象
+    log_level = event_dict.get("level", "").upper()
+    if log_level not in ("ERROR", "CRITICAL", "EXCEPTION"):
+        return event_dict
+
+    try:
+        import sentry_sdk
+
+        # Sentry初期化済みかチェック（SDK 2.x API）
+        client = sentry_sdk.get_client()
+        if not client.is_active():
+            return event_dict
+
+        # イベント情報を取得
+        message = event_dict.get("event", "Unknown error")
+
+        # 例外情報があればcapture_exception
+        exc_info = event_dict.get("exc_info")
+        if exc_info and exc_info is not True:
+            sentry_sdk.capture_exception(exc_info)
+        else:
+            # 例外なしの場合はcapture_message
+            # 追加コンテキストをextraとして送信
+            extra = {
+                k: v
+                for k, v in event_dict.items()
+                if k not in ("event", "level", "timestamp", "exc_info", "logger")
+            }
+            with sentry_sdk.push_scope() as scope:
+                for key, value in extra.items():
+                    scope.set_extra(key, value)
+                sentry_sdk.capture_message(
+                    message,
+                    level=log_level.lower(),
+                )
+
+    except ImportError:
+        pass  # sentry-sdk未インストール（サイレントスキップ）
+    except Exception:  # noqa: BLE001, S110
+        pass  # Sentry送信失敗（サイレント失敗、ログ出力継続）
+
+    return event_dict
 
 
 def get_logger(name: str | None = None) -> FilteringBoundLogger:
@@ -58,12 +122,13 @@ def _configure_structlog(log_format: LogFormat, log_level: int) -> None:
         log_format: ログフォーマット（console/json）
         log_level: ログレベル（logging定数）
     """
-    # 共通プロセッサー
+    # 共通プロセッサー（Sentry連携を含む）
     shared_processors: list[Any] = [
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.dev.set_exc_info,
+        _sentry_processor,  # Sentry連携（ERROR以上を送信）
     ]
 
     # フォーマット別レンダラー

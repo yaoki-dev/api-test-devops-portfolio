@@ -132,7 +132,7 @@
 | **コードレビュー** | なし | `/review`<br/>Security, Performance, Quality, Architecture sub-agents | なし | ccplugins独自 |
 | **リファクタリング** | なし | `/refactor`<br/>Session継続管理<br/>Deep Validation | なし | ccplugins独自 |
 | **スキャフォールディング** | なし | `/scaffold`<br/>Pattern Discovery<br/>Session管理 | なし | ccplugins独自 |
-| **Git操作** | `/sc:git`<br/>（内容未読込） | なし | `/commit`<br/>Conventional Commits自動生成 | 目的は類似（TRUE duplicate可能性） |
+| **Git操作** | ~~削除済み~~ | なし | `/commit`<br/>Conventional Commits自動生成 | ccplugins独自 |
 | **セッション管理** | `/sc:load`, `/sc:save`<br/>Serena MCP統合 | Session Files（ローカル）<br/>`refactor/`, `implement/`, `scaffold/` | `/session-start`, `/session-end`<br/>（記述のみ） | 実装方法が異なる |
 
 ---
@@ -188,11 +188,11 @@
 | コマンド | 保持理由 | 独自機能 |
 |---------|---------|---------|
 | `/commit` | Conventional Commits自動生成 | git diff解析 → type/scope自動判定 |
-| `/undo` | セーフティネット | Git/Backup復元 |
 
 **証拠**:
 - commit.md:57-67（Conventional Commits）
-- undo.md:1-45（復元戦略）
+
+> **Note**: `/undo`は削除済み（Git標準操作で代替可能）
 
 ---
 
@@ -237,12 +237,16 @@
 **SuperClaude 独自機能（4コマンド）**:
 - `/sc:brainstorm`, `/sc:workflow`, `/sc:load`, `/sc:save`
 
-**SuperClaude その他（残り17コマンド）**:
-- `/sc:analyze`, `/sc:build`, `/sc:cleanup`, `/sc:design`, `/sc:estimate`, `/sc:explain`, `/sc:git`, `/sc:improve`, `/sc:index`, `/sc:reflect`, `/sc:select-tool`, `/sc:spawn`, `/sc:task`, `/sc:troubleshoot`
+**SuperClaude その他（残り11コマンド）**:
+- `/sc:analyze`, `/sc:build`, `/sc:cleanup`, `/sc:design`, `/sc:explain`, `/sc:improve`, `/sc:index`, `/sc:reflect`, `/sc:task`, `/sc:troubleshoot`
 - ※ `/sc:implement`, `/sc:test`, `/sc:document`は要検討
 
-**Git補完（2コマンド）**:
-- `/commit`, `/undo`
+> **Note**: 以下は削除済み: `/sc:estimate`, `/sc:git`, `/sc:select-tool`, `/sc:spawn`
+
+**Git補完（1コマンド）**:
+- `/commit`
+
+> **Note**: `/undo`は削除済み（Git標準操作で代替可能）
 
 ---
 
@@ -285,7 +289,7 @@
 - **generate-tests.md**: 行2-4（allowed-tools）、行7-9（目的）
 - **generate-api-documentation.md**: 行2（allowed-tools）、行4（目的）
 - **commit.md**: 行57-67（Conventional Commits）
-- **undo.md**: 行1-45（復元戦略）
+- ~~**undo.md**: 行1-45（復元戦略）~~ → 削除済み
 
 ---
 
@@ -315,7 +319,7 @@
 | 要件発見 | SuperClaude `/sc:brainstorm` | 7種類のPersona協働 |
 | PRD実装計画 | SuperClaude `/sc:workflow` | dependency mapping |
 | セッション管理 | SuperClaude `/sc:load`, `/sc:save` | Serena MCP統合 |
-| Git操作 | `/commit`, `/undo` | Conventional Commits、復元 |
+| Git操作 | `/commit` | Conventional Commits（`/undo`削除済み） |
 
 ---
 

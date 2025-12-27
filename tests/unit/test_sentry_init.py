@@ -1,0 +1,488 @@
+"""Sentry SDK初期化モジュールのテスト
+
+utils/sentry_init.py の単体テスト。
+機密データスクラブ、DSN検証、初期化ロジックをカバー。
+
+テストカテゴリ:
+    - 初期化系: init_sentry()の正常/異常系
+    - スクラブ系: _scrub_sensitive_data()の再帰処理
+    - 状態管理: グローバルフラグの整合性
+    - before_send: イベント前処理フック
+"""
+
+from __future__ import annotations
+
+from typing import Any
+from unittest.mock import MagicMock, patch
+
+import pytest
+from pydantic import SecretStr
+
+from utils.sentry_init import (
+    MAX_SCRUB_DEPTH,
+    SENSITIVE_KEYS,
+    _before_send,
+    _scrub_sensitive_data,
+    init_sentry,
+    is_sentry_initialized,
+    reset_sentry_state,
+)
+
+
+class TestScrubSensitiveData:
+    """機密データスクラブのテスト"""
+
+    def test_scrub_password_field(self) -> None:
+        """パスワードフィールドがREDACTEDされる"""
+        data = {"password": "secret123", "username": "user"}
+        result = _scrub_sensitive_data(data)
+        assert result["password"] == "[REDACTED]"  # noqa: S105
+        assert result["username"] == "user"
+
+    def test_scrub_nested_dict(self) -> None:
+        """ネストされた辞書内の機密データもスクラブ"""
+        data = {"user": {"api_key": "key123", "email": "user@example.com"}}
+        result = _scrub_sensitive_data(data)
+        assert result["user"]["api_key"] == "[REDACTED]"
+        assert result["user"]["email"] == "user@example.com"
+
+    def test_scrub_list_of_dicts(self) -> None:
+        """リスト内辞書の機密データもスクラブ"""
+        data = {
+            "headers": [
+                {"Authorization": "Bearer token123"},
+                {"Content-Type": "application/json"},
+            ]
+        }
+        result = _scrub_sensitive_data(data)
+        assert result["headers"][0]["Authorization"] == "[REDACTED]"
+        assert result["headers"][1]["Content-Type"] == "application/json"
+
+    def test_scrub_case_insensitive(self) -> None:
+        """キー名は大文字小文字を区別しない"""
+        data = {"PASSWORD": "secret", "Api_Key": "key", "TOKEN": "tok"}
+        result = _scrub_sensitive_data(data)
+        assert result["PASSWORD"] == "[REDACTED]"  # noqa: S105
+        assert result["Api_Key"] == "[REDACTED]"
+        assert result["TOKEN"] == "[REDACTED]"  # noqa: S105
+
+    @pytest.mark.parametrize(
+        "input_data,expected",
+        [
+            (None, None),
+            ([], []),
+            ("string", "string"),
+            (123, 123),
+            (True, True),
+        ],
+    )
+    def test_scrub_non_dict_passthrough(self, input_data: Any, expected: Any) -> None:
+        """非辞書データはそのまま返す"""
+        assert _scrub_sensitive_data(input_data) == expected
+
+    def test_scrub_empty_dict(self) -> None:
+        """空辞書は空辞書を返す"""
+        assert _scrub_sensitive_data({}) == {}
+
+    def test_scrub_deeply_nested(self) -> None:
+        """3階層ネストでもスクラブされる"""
+        data = {"level1": {"level2": {"level3": {"secret": "deep_secret", "public": "visible"}}}}
+        result = _scrub_sensitive_data(data)
+        assert result["level1"]["level2"]["level3"]["secret"] == "[REDACTED]"  # noqa: S105
+        assert result["level1"]["level2"]["level3"]["public"] == "visible"
+
+    def test_scrub_preserves_original(self) -> None:
+        """元データは変更されない（イミュータビリティ）"""
+        original = {"password": "secret123"}
+        _scrub_sensitive_data(original)
+        assert original["password"] == "secret123"  # noqa: S105
+
+    def test_scrub_max_depth_exceeded(self) -> None:
+        """再帰制限を超えると[MAX_DEPTH_EXCEEDED]を返す（循環参照対策）"""
+        # MAX_SCRUB_DEPTH階層のネストを作成
+        deep_data: dict[str, Any] = {"safe_key": "value"}
+        current = deep_data
+        for i in range(MAX_SCRUB_DEPTH + 2):
+            current["nested"] = {"level": i}
+            current = current["nested"]
+
+        result = _scrub_sensitive_data(deep_data)
+
+        # 深い階層は[MAX_DEPTH_EXCEEDED]になる
+        nested = result
+        for _ in range(MAX_SCRUB_DEPTH):
+            nested = nested.get("nested", nested)
+        assert nested == "[MAX_DEPTH_EXCEEDED]"
+
+    def test_scrub_max_depth_constant(self) -> None:
+        """MAX_SCRUB_DEPTHが適切な値に設定されている"""
+        assert MAX_SCRUB_DEPTH == 10
+        assert isinstance(MAX_SCRUB_DEPTH, int)
+
+
+class TestSensitiveKeysCompleteness:
+    """SENSITIVE_KEYSの網羅性テスト"""
+
+    def test_sensitive_keys_is_frozenset(self) -> None:
+        """SENSITIVE_KEYSはfrozenset（不変）"""
+        assert isinstance(SENSITIVE_KEYS, frozenset)
+
+    def test_sensitive_keys_count(self) -> None:
+        """29種類の機密キーが定義されている"""
+        assert len(SENSITIVE_KEYS) == 29
+
+    @pytest.mark.parametrize(
+        "key",
+        [
+            # 認証系（基本）
+            "password",
+            "token",
+            "secret",
+            "api_key",
+            "dsn",
+            "authorization",
+            "cookie",
+            "session",
+            "credential",
+            # 認証系（拡張）
+            "bearer",
+            "jwt",
+            "access_token",
+            "refresh_token",
+            "private_key",
+            "client_secret",
+            "x-api-key",
+            "auth_token",
+            "passwd",
+            # 暗号化
+            "encryption_key",
+            "cipher_key",
+            # OAuth
+            "oauth_token",
+            # 二要素認証
+            "otp",
+            "mfa",
+            "totp",
+            # 個人情報
+            "database_url",
+            "ssn",
+            "credit_card",
+            "cvv",
+            "card_number",
+        ],
+    )
+    def test_expected_keys_present(self, key: str) -> None:
+        """期待される機密キーが含まれている"""
+        assert key in SENSITIVE_KEYS
+
+
+class TestBeforeSend:
+    """Sentry送信前フックのテスト"""
+
+    def test_scrub_request_headers(self) -> None:
+        """リクエストヘッダーがスクラブされる"""
+        event: dict[str, Any] = {"request": {"headers": {"Cookie": "session=abc123"}}}
+        result = _before_send(event, {})
+        assert result is not None
+        assert result["request"]["headers"]["Cookie"] == "[REDACTED]"
+
+    def test_scrub_request_data(self) -> None:
+        """リクエストボディがスクラブされる"""
+        event: dict[str, Any] = {"request": {"data": {"password": "secret", "username": "user"}}}
+        result = _before_send(event, {})
+        assert result is not None
+        assert result["request"]["data"]["password"] == "[REDACTED]"  # noqa: S105
+        assert result["request"]["data"]["username"] == "user"
+
+    def test_scrub_extra_data(self) -> None:
+        """extraデータがスクラブされる"""
+        event: dict[str, Any] = {"extra": {"token": "secret_token"}}
+        result = _before_send(event, {})
+        assert result is not None
+        assert result["extra"]["token"] == "[REDACTED]"  # noqa: S105
+
+    def test_scrub_tags(self) -> None:
+        """タグがスクラブされる"""
+        event: dict[str, Any] = {"tags": {"api_key": "key123"}}
+        result = _before_send(event, {})
+        assert result is not None
+        assert result["tags"]["api_key"] == "[REDACTED]"
+
+    def test_returns_event(self) -> None:
+        """イベントオブジェクトを返す（Noneではない）"""
+        event: dict[str, Any] = {"message": "test"}
+        result = _before_send(event, {})
+        assert result is not None
+        assert result["message"] == "test"
+
+
+class TestInitSentry:
+    """Sentry初期化のテスト"""
+
+    def setup_method(self) -> None:
+        """各テスト前に状態リセット"""
+        reset_sentry_state()
+
+    def teardown_method(self) -> None:
+        """各テスト後に状態リセット"""
+        reset_sentry_state()
+
+    @patch("utils.sentry_init.get_settings")
+    def test_init_when_disabled(self, mock_settings: MagicMock) -> None:
+        """enabled=Falseの場合はFalseを返す"""
+        mock_settings.return_value.sentry.enabled = False
+        assert init_sentry() is False
+
+    @patch("utils.sentry_init.get_settings")
+    def test_init_with_empty_dsn(self, mock_settings: MagicMock) -> None:
+        """空DSNの場合はFalseを返す"""
+        mock_settings.return_value.sentry.enabled = True
+        mock_settings.return_value.sentry.dsn = SecretStr("")
+        assert init_sentry() is False
+
+    @patch("utils.sentry_init.get_settings")
+    def test_init_with_invalid_dsn_format(self, mock_settings: MagicMock) -> None:
+        """無効なDSN形式の場合はFalseを返す"""
+        mock_settings.return_value.sentry.enabled = True
+        mock_settings.return_value.sentry.dsn = SecretStr("invalid-dsn")
+        assert init_sentry() is False
+
+    @patch("utils.sentry_init.get_settings")
+    @patch("sentry_sdk.init")
+    def test_init_with_valid_dsn(self, mock_sdk_init: MagicMock, mock_settings: MagicMock) -> None:
+        """有効なDSNで初期化成功"""
+        mock_settings.return_value.sentry.enabled = True
+        mock_settings.return_value.sentry.dsn = SecretStr(
+            "https://abc123@o456.ingest.us.sentry.io/789"
+        )
+        mock_settings.return_value.sentry.environment = "testing"
+        mock_settings.return_value.sentry.traces_sample_rate = 0.1
+        mock_settings.return_value.sentry.profiles_sample_rate = 0.1
+        mock_settings.return_value.sentry.send_default_pii = False
+        mock_settings.return_value.environment.value = "testing"
+
+        result = init_sentry()
+
+        assert result is True
+        mock_sdk_init.assert_called_once()
+
+    @patch("utils.sentry_init.get_settings")
+    @patch("sentry_sdk.init")
+    def test_double_init_prevented(
+        self, mock_sdk_init: MagicMock, mock_settings: MagicMock
+    ) -> None:
+        """二重初期化は防止される"""
+        mock_settings.return_value.sentry.enabled = True
+        mock_settings.return_value.sentry.dsn = SecretStr(
+            "https://abc123@o456.ingest.us.sentry.io/789"
+        )
+        mock_settings.return_value.sentry.environment = "testing"
+        mock_settings.return_value.sentry.traces_sample_rate = 0.1
+        mock_settings.return_value.sentry.profiles_sample_rate = 0.1
+        mock_settings.return_value.sentry.send_default_pii = False
+        mock_settings.return_value.environment.value = "testing"
+
+        # 1回目の初期化
+        assert init_sentry() is True
+        # 2回目の初期化（既に初期化済み）
+        assert init_sentry() is True
+
+        # sentry_sdk.initは1回のみ呼ばれる
+        assert mock_sdk_init.call_count == 1
+
+
+class TestSentryState:
+    """Sentry状態管理のテスト"""
+
+    def setup_method(self) -> None:
+        """各テスト前に状態リセット"""
+        reset_sentry_state()
+
+    def teardown_method(self) -> None:
+        """各テスト後に状態リセット"""
+        reset_sentry_state()
+
+    def test_is_initialized_default_false(self) -> None:
+        """デフォルトでは未初期化"""
+        assert is_sentry_initialized() is False
+
+    def test_reset_state_works(self) -> None:
+        """状態リセットが機能する"""
+        # 状態を手動で変更（通常は非推奨だが、テスト用）
+        import utils.sentry_init as sentry_module
+
+        sentry_module._sentry_initialized = True
+        assert is_sentry_initialized() is True
+
+        reset_sentry_state()
+        assert is_sentry_initialized() is False
+
+    @patch("utils.sentry_init.get_settings")
+    @patch("sentry_sdk.init")
+    def test_state_persists_after_init(
+        self, mock_sdk_init: MagicMock, mock_settings: MagicMock
+    ) -> None:
+        """初期化後は状態が維持される"""
+        mock_settings.return_value.sentry.enabled = True
+        mock_settings.return_value.sentry.dsn = SecretStr(
+            "https://abc123@o456.ingest.us.sentry.io/789"
+        )
+        mock_settings.return_value.sentry.environment = "testing"
+        mock_settings.return_value.sentry.traces_sample_rate = 0.1
+        mock_settings.return_value.sentry.profiles_sample_rate = 0.1
+        mock_settings.return_value.sentry.send_default_pii = False
+        mock_settings.return_value.environment.value = "testing"
+
+        init_sentry()
+        assert is_sentry_initialized() is True
+
+
+class TestSentryDebugMode:
+    """デバッグモード（SENTRY_DEBUG）のテスト"""
+
+    def setup_method(self) -> None:
+        """各テスト前に状態リセット"""
+        reset_sentry_state()
+
+    def teardown_method(self) -> None:
+        """各テスト後に状態リセット"""
+        reset_sentry_state()
+
+    @patch.dict("os.environ", {"SENTRY_DEBUG": "true"})
+    @patch("utils.sentry_init.get_settings")
+    def test_invalid_dsn_warning_with_debug(self, mock_settings: MagicMock) -> None:
+        """無効なDSNでSENTRY_DEBUG=trueの場合はSDK例外の警告が出る
+
+        Note: DSN_PATTERN削除後、DSN検証はSDKに委任。
+        SDKがBadDsn例外を投げると、except節でキャッチされ警告出力。
+        """
+        # SENTRY_DEBUGを再読み込み（モジュールレベル変数）
+        import utils.sentry_init as sentry_module
+
+        sentry_module.SENTRY_DEBUG = True
+
+        mock_settings.return_value.sentry.enabled = True
+        mock_settings.return_value.sentry.dsn = SecretStr("invalid-dsn")
+
+        import warnings
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = init_sentry()
+
+            assert result is False
+            assert len(w) == 1
+            # DSN検証はSDKに委任（BadDsn例外 → 警告出力）
+            assert "Sentry initialization failed" in str(w[0].message)
+            assert w[0].category is UserWarning
+
+        # クリーンアップ
+        sentry_module.SENTRY_DEBUG = False
+
+    @patch("utils.sentry_init.get_settings")
+    def test_invalid_dsn_no_warning_without_debug(self, mock_settings: MagicMock) -> None:
+        """無効なDSNでSENTRY_DEBUG=falseの場合は警告なし"""
+        import utils.sentry_init as sentry_module
+
+        sentry_module.SENTRY_DEBUG = False
+
+        mock_settings.return_value.sentry.enabled = True
+        mock_settings.return_value.sentry.dsn = SecretStr("invalid-dsn")
+
+        import warnings
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = init_sentry()
+
+            assert result is False
+            assert len(w) == 0  # 警告なし
+
+
+class TestSdkExceptionHandling:
+    """SDK例外ハンドリングのテスト（C-04）"""
+
+    def setup_method(self) -> None:
+        """各テスト前に状態リセット"""
+        reset_sentry_state()
+
+    def teardown_method(self) -> None:
+        """各テスト後に状態リセット"""
+        reset_sentry_state()
+
+    @patch("utils.sentry_init.get_settings")
+    @patch("sentry_sdk.init", side_effect=RuntimeError("SDK init failed"))
+    def test_sdk_init_exception_returns_false(
+        self, mock_sdk_init: MagicMock, mock_settings: MagicMock
+    ) -> None:
+        """sentry_sdk.init()が例外を投げた場合はFalseを返す"""
+        mock_settings.return_value.sentry.enabled = True
+        mock_settings.return_value.sentry.dsn = SecretStr(
+            "https://abc123@o456.ingest.us.sentry.io/789"
+        )
+        mock_settings.return_value.sentry.environment = "testing"
+        mock_settings.return_value.sentry.traces_sample_rate = 0.1
+        mock_settings.return_value.sentry.profiles_sample_rate = 0.1
+        mock_settings.return_value.sentry.send_default_pii = False
+        mock_settings.return_value.environment.value = "testing"
+
+        result = init_sentry()
+
+        assert result is False
+        assert is_sentry_initialized() is False
+        mock_sdk_init.assert_called_once()
+
+    @patch("utils.sentry_init.get_settings")
+    @patch("sentry_sdk.init", side_effect=ValueError("Invalid configuration"))
+    def test_sdk_init_value_error_returns_false(
+        self, mock_sdk_init: MagicMock, mock_settings: MagicMock
+    ) -> None:
+        """sentry_sdk.init()がValueErrorを投げた場合はFalseを返す"""
+        mock_settings.return_value.sentry.enabled = True
+        mock_settings.return_value.sentry.dsn = SecretStr(
+            "https://abc123@o456.ingest.us.sentry.io/789"
+        )
+        mock_settings.return_value.sentry.environment = "testing"
+        mock_settings.return_value.sentry.traces_sample_rate = 0.1
+        mock_settings.return_value.sentry.profiles_sample_rate = 0.1
+        mock_settings.return_value.sentry.send_default_pii = False
+        mock_settings.return_value.environment.value = "testing"
+
+        result = init_sentry()
+
+        assert result is False
+        assert is_sentry_initialized() is False
+
+    @patch.dict("os.environ", {"SENTRY_DEBUG": "true"})
+    @patch("utils.sentry_init.get_settings")
+    @patch("sentry_sdk.init", side_effect=ConnectionError("Network error"))
+    def test_sdk_init_exception_warning_with_debug(
+        self, mock_sdk_init: MagicMock, mock_settings: MagicMock
+    ) -> None:
+        """SDK例外時にSENTRY_DEBUG=trueなら警告が出る"""
+        import utils.sentry_init as sentry_module
+
+        sentry_module.SENTRY_DEBUG = True
+
+        mock_settings.return_value.sentry.enabled = True
+        mock_settings.return_value.sentry.dsn = SecretStr(
+            "https://abc123@o456.ingest.us.sentry.io/789"
+        )
+        mock_settings.return_value.sentry.environment = "testing"
+        mock_settings.return_value.sentry.traces_sample_rate = 0.1
+        mock_settings.return_value.sentry.profiles_sample_rate = 0.1
+        mock_settings.return_value.sentry.send_default_pii = False
+        mock_settings.return_value.environment.value = "testing"
+
+        import warnings
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = init_sentry()
+
+            assert result is False
+            assert len(w) == 1
+            assert "Sentry initialization failed" in str(w[0].message)
+            assert "ConnectionError" in str(w[0].message)
+
+        sentry_module.SENTRY_DEBUG = False

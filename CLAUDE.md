@@ -777,6 +777,71 @@ if settings.is_development():
     pass
 ```
 
+## Sentry統合（エラー監視）
+
+### 概要
+
+Sentry SDKを統合し、ERROR以上のログを自動でSentryに送信。エラー調査→修正サイクルを加速。
+
+**コアモジュール**:
+- `utils/sentry_init.py`: SDK初期化・機密データスクラブ
+- `utils/logger.py`: structlog連携プロセッサー
+- `config/settings.py`: SentryConfig設定クラス
+
+### 環境変数
+
+```bash
+# .envファイル
+SENTRY__ENABLED=true
+SENTRY__DSN=https://xxx@xxx.ingest.us.sentry.io/xxx
+SENTRY__ENVIRONMENT=production  # 省略時: settings.environmentを使用
+SENTRY__TRACES_SAMPLE_RATE=0.1  # トレースサンプリング率
+SENTRY__PROFILES_SAMPLE_RATE=0.1  # プロファイルサンプリング率
+SENTRY__SEND_DEFAULT_PII=false  # PII送信無効（推奨）
+```
+
+### 初期化
+
+```python
+from utils.sentry_init import init_sentry
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
+
+# アプリケーション起動時に1回呼び出し
+if init_sentry():
+    logger.info("Sentry monitoring enabled")
+```
+
+### 機密データ保護
+
+`before_send`フックで以下19種類の機密キーを自動スクラブ:
+- 認証系: password, token, secret, api_key, dsn, authorization, cookie, session, credential
+- JWT/OAuth: bearer, jwt, access_token, refresh_token, client_secret
+- インフラ: private_key, x-api-key, database_url
+- PII: ssn, credit_card
+
+### MCP統合
+
+Sentry MCPサーバーでClaude Codeからエラー調査可能:
+
+```json
+// .mcp.json
+"sentry": {
+  "type": "http",
+  "url": "https://mcp.sentry.dev/mcp"
+}
+```
+
+**参照**: [Sentry MCP Docs](https://docs.sentry.io/product/sentry-mcp/)
+
+### テスト
+
+```bash
+# Sentry統合テスト（55ケース、94.57%カバレッジ）
+uv run pytest tests/unit/test_sentry_init.py -v
+```
+
 ## 重要な学習ポイント
 **CLAUDE.md 保持 654-676**
 

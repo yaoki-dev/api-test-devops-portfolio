@@ -255,6 +255,23 @@ class SecurityConfig(BaseModel):
     enable_cors: bool = Field(default=False, description="CORS有効化")
 
 
+class SentryConfig(BaseModel):
+    """Sentry関連の設定"""
+
+    dsn: SecretStr = Field(default=SecretStr(""), description="Sentry DSN")
+    enabled: bool = Field(default=False, description="Sentry有効化")
+    environment: str | None = Field(
+        default=None, description="環境名（未設定時はsettings.environmentを使用）"
+    )
+    traces_sample_rate: float = Field(
+        default=0.1, ge=0.0, le=1.0, description="トレースサンプリングレート"
+    )
+    profiles_sample_rate: float = Field(
+        default=0.1, ge=0.0, le=1.0, description="プロファイリングサンプリングレート"
+    )
+    send_default_pii: bool = Field(default=False, description="PII送信の有効化")
+
+
 # =============================================================================
 # メイン設定クラス
 # =============================================================================
@@ -284,6 +301,7 @@ class Settings(BaseSettings):
     log: LogConfig = Field(default_factory=LogConfig)
     test: TestConfig = Field(default_factory=TestConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
+    sentry: SentryConfig = Field(default_factory=SentryConfig)
 
     @field_validator("environment", mode="before")
     @classmethod
@@ -362,6 +380,12 @@ class Settings(BaseSettings):
                     security["api_key"] = "***MASKED***"
                 if security.get("jwt_secret"):
                     security["jwt_secret"] = "***MASKED***"  # noqa: S105
+
+            # Sentry DSNをマスク
+            if "sentry" in data:
+                sentry = data["sentry"]
+                if sentry.get("dsn"):
+                    sentry["dsn"] = "***MASKED***"
 
         return data
 

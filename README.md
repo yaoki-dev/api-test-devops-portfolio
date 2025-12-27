@@ -1,6 +1,6 @@
 # API Test + DevOps Portfolio
 
-*最終更新: 2025年12月11日*
+*最終更新: 2025年12月26日*
 
 ## 概要
 
@@ -91,6 +91,8 @@ uv run pytest tests/unit/test_basic.py --cov=. --cov-report=term -q --color=yes
 | **型チェック** | mypy（strict mode） |
 | **パッケージ管理** | uv（高速、Rust製） |
 | **CI/CD** | GitHub Actions（4段階パイプライン） |
+| **エラー監視** | Sentry SDK + MCP統合 |
+| **ログ** | structlog（構造化ログ） |
 
 
 ## ブランチ戦略（軽量Git Flow）
@@ -227,6 +229,39 @@ graph TB
 | **Connection Pool** | 高負荷時のリソース最適化 | `httpx.Limits(max_keepalive_connections=20)` |
 | **Distributed Tracing** | マイクロサービス間の追跡 | OpenTelemetry統合 |
 | **Rate Limit Client** | API制限への適応 | Retry-Afterヘッダー活用 |
+
+
+## エラー監視・可観測性
+
+### Sentry統合
+
+本プロジェクトでは、Sentry SDKを統合し、ERROR以上のログを自動でSentryに送信します。
+
+**主な機能**:
+- 🛡️ **機密データ保護**: 19種類の機密キーを自動スクラブ（password, token, api_key等）
+- 🔄 **structlog連携**: ERROR/CRITICAL/EXCEPTIONレベルを自動送信
+- ⚡ **サイレント失敗**: Sentry障害時もアプリケーション継続
+- 🔐 **SecretStr保護**: DSNの平文出力防止
+
+**環境変数設定**:
+```bash
+# Sentry設定（.envファイル）
+SENTRY__ENABLED=true
+SENTRY__DSN=https://xxx@xxx.ingest.us.sentry.io/xxx
+SENTRY__ENVIRONMENT=production
+SENTRY__TRACES_SAMPLE_RATE=0.1
+SENTRY__SEND_DEFAULT_PII=false
+```
+
+**初期化（アプリケーション起動時）**:
+```python
+from utils.sentry_init import init_sentry
+
+if init_sentry():
+    logger.info("Sentry monitoring enabled")
+```
+
+> 📚 詳細はCLAUDE.mdの「Sentry統合」セクションを参照
 
 
 ## テスト戦略

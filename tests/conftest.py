@@ -8,7 +8,6 @@ pytest共通設定とフィクスチャ定義
 - テスト環境分離の実現
 """
 
-import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
@@ -66,16 +65,30 @@ def pytest_collection_modifyitems(config, items):
 
 
 # =============================================================================
-# 基本フィクスチャ
+# Infrastructure Fixtures (autouse - テストコードから直接呼び出さない)
 # =============================================================================
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    """非同期テスト用のイベントループ（セッションスコープ）"""
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
+@pytest.fixture(autouse=True)
+def disable_sentry_for_tests(monkeypatch):
+    """
+    テスト実行時にSentry SDKを無効化。
+
+    Purpose:
+        テスト中のエラーがSentryに送信されるのを防止し、
+        本番ダッシュボードへの誤送信リスクを排除する。
+
+    Note:
+        - autouse=True により全テストに自動適用
+        - テストコードから明示的に呼び出す必要なし
+        - 環境変数はPydantic Settings形式（SENTRY__ENABLED）
+    """
+    monkeypatch.setenv("SENTRY__ENABLED", "false")
+
+
+# =============================================================================
+# 基本フィクスチャ
+# =============================================================================
 
 
 @pytest.fixture(scope="session")
@@ -329,7 +342,7 @@ def security_payloads():
 # =============================================================================
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def integration_test_data():
     """統合テスト用の大量データセット"""
     return {

@@ -17,6 +17,7 @@ from config.settings import (
     LogConfig,
     LogLevel,
     SecurityConfig,
+    SentryConfig,
     Settings,
     TestConfig,
     get_settings,
@@ -291,6 +292,37 @@ class TestSettingsSecretMasking:
         result = settings.to_dict(exclude_secrets=True)
 
         assert result["security"]["jwt_secret"] is None
+
+    def test_to_dict_sentry_dsn_masked(self):
+        """Sentry DSN設定時にマスクされる (lines 385-389)"""
+        from pydantic import SecretStr
+
+        settings = Settings()
+        settings.sentry = SentryConfig(
+            dsn=SecretStr("https://abc123@o456.ingest.sentry.io/789")  # noqa: S106
+        )
+
+        result = settings.to_dict(exclude_secrets=True)
+
+        assert result["sentry"]["dsn"] == "***MASKED***"
+
+    def test_to_dict_sentry_dsn_empty_also_masked(self):
+        """空DSNもマスクされる（model_dump後は文字列として扱われる）"""
+        settings = Settings()
+        # デフォルトは空SecretStr、model_dump()後は'**********'文字列
+
+        result = settings.to_dict(exclude_secrets=True)
+
+        # model_dump()後のSecretStrは文字列として扱われ、マスクされる
+        assert result["sentry"]["dsn"] == "***MASKED***"
+
+    def test_sentry_config_default_factory(self):
+        """SentryConfigがdefault_factoryで作成される"""
+        settings = Settings()
+
+        assert isinstance(settings.sentry, SentryConfig)
+        assert settings.sentry.enabled is False
+        assert settings.sentry.traces_sample_rate == 0.1
 
 
 class TestSettingsSingleton:
