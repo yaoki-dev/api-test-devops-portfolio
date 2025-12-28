@@ -300,7 +300,7 @@ def get_week_from_day_w6_plan(current_day: int) -> Union[int, float]:
    import yaml
    from pathlib import Path
 
-   state_file = Path("progress_state.yaml")
+   state_file = Path("docs/progress/progress_state.yaml")
    with open(state_file, "r", encoding="utf-8") as f:
        state = yaml.safe_load(f)
 
