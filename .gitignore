@@ -69,6 +69,9 @@ monitoring/scheduler.log
 scripts/__pycache__/
 reports/
 
+# Claude Code
+.claude/settings.local.json
+
 # MCP and AI Tools
 .mcp.json
 .serena/
@@ -80,7 +83,6 @@ claude-flow-lite/
 memory/
 .taskmaster/
 claude-flow.config.json
-
 
 # Obsidian Vault (contains personal notes and potentially sensitive data)
 obsidian-vault-local/
