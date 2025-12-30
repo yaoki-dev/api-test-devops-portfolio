@@ -14,6 +14,7 @@ from config.settings import (
     Settings,
     TestConfig,
     get_settings,
+    is_private_ip,
     reload_settings,
 )
 
@@ -100,9 +101,10 @@ class TestAPIConfigValidation:
 
     @pytest.mark.smoke
     def test_base_url_https_scheme_valid(self):
-        """https://スキームが有効"""
-        config = APIConfig(base_url="https://api.example.com")
-        assert config.base_url == "https://api.example.com"
+        """https://スキームが有効（DNS解決可能なドメインを使用）"""
+        # Note: example.com系はDNS解決失敗でFail-Closedブロック
+        config = APIConfig(base_url="https://api.github.com")
+        assert config.base_url == "https://api.github.com"
 
 
 class TestLogConfigValidation:
@@ -409,11 +411,12 @@ class TestEnvironmentVariableLoading:
 
     def test_nested_environment_variable_loading(self, monkeypatch):
         """ネスト記法（API__BASE_URL）での環境変数読み込み"""
-        monkeypatch.setenv("API__BASE_URL", "https://test-api.example.com")
+        # Note: DNS解決可能なドメインを使用（example.com系はFail-Closedでブロック）
+        monkeypatch.setenv("API__BASE_URL", "https://httpbin.org")
         monkeypatch.delattr("config.settings._settings", raising=False)
 
         settings = reload_settings()
-        assert settings.api.base_url == "https://test-api.example.com"
+        assert settings.api.base_url == "https://httpbin.org"
 
     def test_case_insensitive_environment_variables(self, monkeypatch):
         """大小文字を区別しない環境変数読み込み (case_sensitive=False)"""
@@ -430,3 +433,189 @@ class TestEnvironmentVariableLoading:
 
         settings = reload_settings()
         assert settings.debug is False
+
+
+class TestSSRFPrevention:
+    """SSRF攻撃防止のセキュリティテスト
+
+    OWASP API Security Top 10 - API7:2023 Server Side Request Forgery (SSRF)
+    - プライベートIP/ループバックアドレスのブロック
+    - 許可ドメインリストによるアクセス制御
+    - DNS解決失敗時のフェイルクローズド動作
+    """
+
+    @pytest.mark.security
+    @pytest.mark.parametrize(
+        ("malicious_url", "description"),
+        [
+            pytest.param(
+                "http://169.254.169.254/latest/meta-data/",
+                "AWS metadata endpoint",
+                id="aws_metadata",
+            ),
+            pytest.param(
+                "http://localhost:8080/admin",
+                "Loopback localhost",
+                id="localhost",
+            ),
+            pytest.param(
+                "http://127.0.0.1:8080/admin",
+                "Loopback 127.0.0.1",
+                id="loopback_ip",
+            ),
+            pytest.param(
+                "http://192.168.1.1/router",
+                "Private IP 192.168.x.x",
+                id="private_192_168",
+            ),
+            pytest.param(
+                "http://10.0.0.1/internal",
+                "Private IP 10.x.x.x",
+                id="private_10",
+            ),
+            pytest.param(
+                "http://172.16.0.1/internal",
+                "Private IP 172.16.x.x",
+                id="private_172_16",
+            ),
+        ],
+    )
+    def test_ssrf_private_ip_blocked(self, malicious_url: str, description: str) -> None:
+        """SSRF Prevention: プライベート/ループバックIPをブロック
+
+        Security Rationale:
+            内部ネットワークへのアクセスを防止し、
+            AWSメタデータ、ルーター設定、内部サービスへの
+            不正アクセスを防ぐ。
+        """
+        with pytest.raises(ValidationError) as exc_info:
+            APIConfig(base_url=malicious_url)
+
+        error_message = str(exc_info.value)
+        assert "SSRF Prevention" in error_message, (
+            f"Expected SSRF Prevention error for {description}"
+        )
+
+    @pytest.mark.security
+    @pytest.mark.parametrize(
+        ("unauthorized_url", "domain"),
+        [
+            pytest.param(
+                "https://evil-site.com/api",
+                "evil-site.com",
+                id="unauthorized_external",
+            ),
+            pytest.param(
+                "https://attacker.io/proxy",
+                "attacker.io",
+                id="attacker_domain",
+            ),
+            pytest.param(
+                "https://internal.corp.local/api",
+                "internal.corp.local",
+                id="corp_internal",
+            ),
+        ],
+    )
+    def test_ssrf_domain_allowlist_enforced(self, unauthorized_url: str, domain: str) -> None:
+        """SSRF Prevention: 許可ドメインリスト外のドメインをブロック
+
+        Security Rationale:
+            許可されたドメイン（jsonplaceholder.typicode.com、
+            api.github.com等）のみアクセス可能とし、
+            任意のURLへのアクセスを防止。
+
+        Note:
+            .local ドメインなどDNS解決に失敗するドメインは、
+            Fail-Closed動作により「Private/loopback IP」エラーとなる。
+            どちらのエラーでもSSRF攻撃は防止される。
+        """
+        with pytest.raises(ValidationError) as exc_info:
+            APIConfig(base_url=unauthorized_url)
+
+        error_message = str(exc_info.value)
+        # SSRFは以下いずれかのエラーでブロック:
+        # 1. Domain not in allowlist (resolvable but unauthorized)
+        # 2. Private/loopback IP (DNS failure → fail-closed)
+        assert "Domain not in allowlist" in error_message or "SSRF Prevention" in error_message, (
+            f"Expected SSRF Prevention error for {domain}"
+        )
+
+    @pytest.mark.security
+    @pytest.mark.parametrize(
+        ("ip_address", "expected_private"),
+        [
+            # プライベートIPレンジ（True = ブロック）
+            pytest.param("127.0.0.1", True, id="loopback"),
+            pytest.param("10.0.0.1", True, id="private_10"),
+            pytest.param("172.16.0.1", True, id="private_172_16"),
+            pytest.param("192.168.1.1", True, id="private_192_168"),
+            pytest.param("169.254.169.254", True, id="link_local_aws"),
+            # パブリックIP（False = 許可候補、ただしドメインリスト確認が必要）
+            pytest.param("8.8.8.8", False, id="google_dns"),
+            pytest.param("1.1.1.1", False, id="cloudflare_dns"),
+        ],
+    )
+    def test_is_private_ip_detection(self, ip_address: str, expected_private: bool) -> None:
+        """is_private_ip()がプライベートIPを正しく検出
+
+        Security Rationale:
+            RFC 1918（プライベートIP）、RFC 3927（リンクローカル）、
+            RFC 5735（ループバック）を正しく識別し、
+            内部ネットワークへのSSRF攻撃を防止。
+        """
+        result = is_private_ip(ip_address)
+        assert result == expected_private, (
+            f"Expected is_private_ip({ip_address}) == {expected_private}"
+        )
+
+    @pytest.mark.security
+    def test_is_private_ip_dns_failure_returns_true(self, monkeypatch) -> None:
+        """DNS解決失敗時はTrueを返す（Fail-Closed動作）
+
+        Security Rationale (CRITICAL):
+            DNS解決が失敗した場合、攻撃者が制御する
+            DNSサーバーを介したSSRF攻撃を防ぐため、
+            安全側に倒す（ブロック）。
+
+            Fail-Open（False返却）は、以下の攻撃を許容してしまう:
+            - DNS rebinding attack
+            - Malicious DNS server による内部IP解決
+        """
+        import socket
+
+        # DNS解決を常に失敗させる
+        def mock_gethostbyname(hostname: str) -> str:
+            raise OSError("DNS resolution failed")
+
+        monkeypatch.setattr(socket, "gethostbyname", mock_gethostbyname)
+
+        # 不明なホストはプライベートIPとして扱う（Fail-Closed）
+        result = is_private_ip("unknown-host.test")
+        assert result is True, "DNS failure should return True (Fail-Closed)"
+
+    @pytest.mark.security
+    @pytest.mark.parametrize(
+        "allowed_domain",
+        [
+            # 実際にDNS解決可能なドメインのみテスト
+            # example.com系は予約済みドメインで解決失敗 → Fail-Closedでブロック
+            pytest.param("https://jsonplaceholder.typicode.com", id="jsonplaceholder"),
+            pytest.param("https://api.github.com", id="github_api"),
+            pytest.param("https://httpbin.org", id="httpbin"),
+        ],
+    )
+    def test_allowed_domains_accepted(self, allowed_domain: str) -> None:
+        """許可ドメインリスト内のドメインは受け入れられる
+
+        Note:
+            これらはテスト用・デモ用に許可されたドメイン。
+            本番環境では環境変数ALLOWED_DOMAINSで制限可能。
+
+            example.com系ドメインはRFC 2606で予約済みだが、
+            DNS解決に失敗するためFail-Closed動作でブロックされる。
+            設定ファイル内でexample.comを許可していても、
+            実際のリクエスト時はDNS解決できないためブロックされる。
+        """
+        config = APIConfig(base_url=allowed_domain)
+        assert config.base_url == allowed_domain.rstrip("/")

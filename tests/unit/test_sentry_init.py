@@ -245,9 +245,10 @@ class TestInitSentry:
 
     @patch("utils.sentry_init.get_settings")
     def test_init_with_invalid_dsn_format(self, mock_settings: MagicMock) -> None:
-        """無効なDSN形式の場合はFalseを返す"""
+        """無効なDSN形式の場合、非本番環境ではFalseを返す"""
         mock_settings.return_value.sentry.enabled = True
         mock_settings.return_value.sentry.dsn = SecretStr("invalid-dsn")
+        mock_settings.return_value.is_production.return_value = False  # 非本番環境
         assert init_sentry() is False
 
     @patch("utils.sentry_init.get_settings")
@@ -358,6 +359,7 @@ class TestSentryDebugMode:
 
         Note: DSN_PATTERN削除後、DSN検証はSDKに委任。
         SDKがBadDsn例外を投げると、except節でキャッチされ警告出力。
+        非本番環境のみ（本番環境ではRuntimeError発生）。
         """
         # SENTRY_DEBUGを再読み込み（モジュールレベル変数）
         import utils.sentry_init as sentry_module
@@ -366,6 +368,7 @@ class TestSentryDebugMode:
 
         mock_settings.return_value.sentry.enabled = True
         mock_settings.return_value.sentry.dsn = SecretStr("invalid-dsn")
+        mock_settings.return_value.is_production.return_value = False  # 非本番環境
 
         import warnings
 
@@ -384,13 +387,14 @@ class TestSentryDebugMode:
 
     @patch("utils.sentry_init.get_settings")
     def test_invalid_dsn_no_warning_without_debug(self, mock_settings: MagicMock) -> None:
-        """無効なDSNでSENTRY_DEBUG=falseの場合は警告なし"""
+        """無効なDSNでSENTRY_DEBUG=falseの場合は警告なし（非本番環境）"""
         import utils.sentry_init as sentry_module
 
         sentry_module.SENTRY_DEBUG = False
 
         mock_settings.return_value.sentry.enabled = True
         mock_settings.return_value.sentry.dsn = SecretStr("invalid-dsn")
+        mock_settings.return_value.is_production.return_value = False  # 非本番環境
 
         import warnings
 
@@ -418,7 +422,7 @@ class TestSdkExceptionHandling:
     def test_sdk_init_exception_returns_false(
         self, mock_sdk_init: MagicMock, mock_settings: MagicMock
     ) -> None:
-        """sentry_sdk.init()が例外を投げた場合はFalseを返す"""
+        """sentry_sdk.init()が例外を投げた場合、非本番環境ではFalseを返す"""
         mock_settings.return_value.sentry.enabled = True
         mock_settings.return_value.sentry.dsn = SecretStr(
             "https://abc123@o456.ingest.us.sentry.io/789"
@@ -428,6 +432,7 @@ class TestSdkExceptionHandling:
         mock_settings.return_value.sentry.profiles_sample_rate = 0.1
         mock_settings.return_value.sentry.send_default_pii = False
         mock_settings.return_value.environment.value = "testing"
+        mock_settings.return_value.is_production.return_value = False  # 非本番環境
 
         result = init_sentry()
 
@@ -440,7 +445,7 @@ class TestSdkExceptionHandling:
     def test_sdk_init_value_error_returns_false(
         self, mock_sdk_init: MagicMock, mock_settings: MagicMock
     ) -> None:
-        """sentry_sdk.init()がValueErrorを投げた場合はFalseを返す"""
+        """sentry_sdk.init()がValueErrorを投げた場合、非本番環境ではFalseを返す"""
         mock_settings.return_value.sentry.enabled = True
         mock_settings.return_value.sentry.dsn = SecretStr(
             "https://abc123@o456.ingest.us.sentry.io/789"
@@ -450,6 +455,7 @@ class TestSdkExceptionHandling:
         mock_settings.return_value.sentry.profiles_sample_rate = 0.1
         mock_settings.return_value.sentry.send_default_pii = False
         mock_settings.return_value.environment.value = "testing"
+        mock_settings.return_value.is_production.return_value = False  # 非本番環境
 
         result = init_sentry()
 
@@ -462,7 +468,7 @@ class TestSdkExceptionHandling:
     def test_sdk_init_exception_warning_with_debug(
         self, mock_sdk_init: MagicMock, mock_settings: MagicMock
     ) -> None:
-        """SDK例外時にSENTRY_DEBUG=trueなら警告が出る"""
+        """SDK例外時にSENTRY_DEBUG=trueなら警告が出る（非本番環境）"""
         import utils.sentry_init as sentry_module
 
         sentry_module.SENTRY_DEBUG = True
@@ -476,6 +482,7 @@ class TestSdkExceptionHandling:
         mock_settings.return_value.sentry.profiles_sample_rate = 0.1
         mock_settings.return_value.sentry.send_default_pii = False
         mock_settings.return_value.environment.value = "testing"
+        mock_settings.return_value.is_production.return_value = False  # 非本番環境
 
         import warnings
 
@@ -489,3 +496,33 @@ class TestSdkExceptionHandling:
             assert "ConnectionError" in str(w[0].message)
 
         sentry_module.SENTRY_DEBUG = False
+
+    @patch("utils.sentry_init.get_settings")
+    @patch("sentry_sdk.init", side_effect=ValueError("Invalid configuration"))
+    def test_sdk_init_exception_raises_in_production(
+        self, mock_sdk_init: MagicMock, mock_settings: MagicMock
+    ) -> None:
+        """本番環境でSDK例外が発生した場合はRuntimeErrorを発生させる
+
+        Security Rationale:
+            本番環境でSentry初期化失敗を黙って無視すると、
+            エラー監視が機能しない状態で運用が続行される。
+            Fail-Fast原則により、明示的に失敗させる。
+        """
+        mock_settings.return_value.sentry.enabled = True
+        mock_settings.return_value.sentry.dsn = SecretStr(
+            "https://abc123@o456.ingest.us.sentry.io/789"
+        )
+        mock_settings.return_value.sentry.environment = "production"
+        mock_settings.return_value.sentry.traces_sample_rate = 0.1
+        mock_settings.return_value.sentry.profiles_sample_rate = 0.1
+        mock_settings.return_value.sentry.send_default_pii = False
+        mock_settings.return_value.environment.value = "production"
+        mock_settings.return_value.is_production.return_value = True  # 本番環境
+
+        with pytest.raises(RuntimeError) as exc_info:
+            init_sentry()
+
+        assert "Sentry initialization failed in production" in str(exc_info.value)
+        assert "ValueError" in str(exc_info.value)
+        assert is_sentry_initialized() is False

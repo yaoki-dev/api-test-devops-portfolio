@@ -209,8 +209,25 @@ def init_sentry() -> bool:
         _sentry_initialized = True
         return True
 
+    except ImportError as exc:
+        # sentry-sdk未インストール（開発環境では許容）
+        if SENTRY_DEBUG:
+            warnings.warn(
+                f"Sentry SDK not installed: {exc}",
+                UserWarning,
+                stacklevel=2,
+            )
+        return False
+
     except Exception as exc:  # noqa: BLE001
-        # 初期化失敗（警告出力、アプリケーション継続）
+        # 初期化失敗 - 本番環境では例外を発生させる（Fail-Safe）
+        settings = get_settings()
+        if settings.is_production():
+            raise RuntimeError(
+                f"Sentry initialization failed in production: {type(exc).__name__}: {exc}"
+            ) from exc
+
+        # 開発/テスト環境では警告のみ
         if SENTRY_DEBUG:
             warnings.warn(
                 f"Sentry initialization failed: {type(exc).__name__}: {exc}",

@@ -85,8 +85,9 @@ def is_private_ip(hostname: str) -> bool:
             ip = ipaddress.ip_address(resolved_ip)
             return any(ip in network for network in PRIVATE_IP_RANGES)
         except (OSError, ValueError):
-            # DNS解決失敗は安全側に倒す（許可）
-            return False
+            # DNS解決失敗は安全側に倒す（ブロック = Fail-Closed）
+            # セキュリティ: SSRF攻撃防止のため、不明なホストはプライベートIPと見なす
+            return True
 
 
 # =============================================================================
