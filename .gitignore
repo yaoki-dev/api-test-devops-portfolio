@@ -79,7 +79,6 @@ reports/
 .claude-flow/
 claude-flow-lite/
 .hive-mind/
-.swarm/
 memory/
 .taskmaster/
 claude-flow.config.json

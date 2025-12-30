@@ -9,6 +9,7 @@
 """
 
 import asyncio
+import json
 import random
 import time
 from types import TracebackType
@@ -106,11 +107,44 @@ def _safe_parse_json(response: httpx.Response) -> Any:
     """
     try:
         return response.json()
-    except Exception as e:
+    except json.JSONDecodeError as e:
         raise APIJSONDecodeError(
             f"Failed to parse JSON response: {e}",
             response=response,
         ) from e
+
+
+def _map_request_error(e: httpx.RequestError | httpx.InvalidURL) -> APIClientError:
+    """httpxネットワーク例外をカスタム例外にマッピング
+
+    Args:
+        e: httpx.RequestError または そのサブクラス
+
+    Returns:
+        適切なAPIClientErrorサブクラス
+
+    Raises:
+        APIClientError: 非リトライ可能エラー（TooManyRedirects, InvalidURL）
+
+    Note:
+        httpx.RequestError階層:
+        - TimeoutException (ConnectTimeout, ReadTimeout) → リトライ可能
+        - ConnectError → リトライ可能
+        - NetworkError → リトライ可能
+        - TooManyRedirects, InvalidURL → 非リトライ（即座にraise）
+    """
+    # Non-retryable errors - raise immediately (no point in retrying)
+    if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
+        raise APIClientError(f"Non-retryable request error: {e}") from e
+
+    # Retryable errors
+    if isinstance(e, httpx.TimeoutException):
+        return APITimeoutError(f"Request timeout: {e}")
+    elif isinstance(e, httpx.ConnectError):
+        return APIConnectionError(f"Connection failed: {e}")
+    else:
+        # NetworkError, etc. - retryable network issues
+        return APIConnectionError(f"Network error: {e}")
 
 
 # =============================================================================
@@ -118,7 +152,7 @@ def _safe_parse_json(response: httpx.Response) -> Any:
 # =============================================================================
 
 
-class BaseAPIClient:
+class SyncAPIClient:
     """
     基本的な同期HTTPクライアント
 
@@ -212,6 +246,16 @@ class BaseAPIClient:
         last_exception: APIClientError | None = None
 
         for attempt in range(self.retry_count + 1):
+            # ログ出力
+            if attempt > 0:
+                self.logger.warning(
+                    f"Retrying request: attempt {attempt + 1}/{self.retry_count + 1} "
+                    f"for {method} {endpoint}"
+                )
+            else:
+                self.logger.debug("Making request", method=method, endpoint=endpoint)
+
+            # HTTPリクエスト実行（ネットワーク層）
             try:
                 # ログ出力
                 if attempt > 0:
@@ -227,8 +271,12 @@ class BaseAPIClient:
 
                 # HTTPリクエスト実行
                 response = self._client.request(method, endpoint, **kwargs)
-
-                # HTTPステータスコードチェック
+            except httpx.RequestError as e:
+                # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
+                last_exception = _map_request_error(e)
+                self.logger.warning("Request error", method=method, endpoint=endpoint, error=str(e))
+            else:
+                # ネットワーク成功時のみHTTPステータス処理
                 try:
                     response.raise_for_status()
                     self.logger.debug(
@@ -238,10 +286,9 @@ class BaseAPIClient:
                         status_code=response.status_code,
                     )
                     return response
-
                 except httpx.HTTPStatusError as e:
                     # 4xxエラーはリトライしない（クライアントエラー）
-                    if 400 <= e.response.status_code < 500:
+                    if e.response.is_client_error:
                         self.logger.error(
                             "client_error",
                             status_code=e.response.status_code,
@@ -266,27 +313,6 @@ class BaseAPIClient:
                         e.response.status_code,
                         e.response,
                     )
-
-            except httpx.TimeoutException as e:
-                self.logger.warning("timeout_error", method=method, endpoint=endpoint, error=str(e))
-                last_exception = APITimeoutError(f"Request timeout: {e}")
-
-            except httpx.ConnectError as e:
-                self.logger.warning(
-                    "connection_error", method=method, endpoint=endpoint, error=str(e)
-                )
-                last_exception = APIConnectionError(f"Connection failed: {e}")
-
-            except Exception as e:
-                # Re-raise our custom API exceptions immediately (don't wrap them)
-                # This prevents 4xx errors from being retried incorrectly
-                if isinstance(e, APIClientError):
-                    raise
-                # Only wrap truly unexpected exceptions
-                self.logger.error(
-                    "unexpected_error", method=method, endpoint=endpoint, error=str(e)
-                )
-                last_exception = APIClientError(f"Unexpected error: {e}")
 
             # 最後の試行でなければ指数バックオフ + 30%ジッターで待機
             if attempt < self.retry_count:
@@ -360,7 +386,7 @@ class BaseAPIClient:
 # =============================================================================
 
 
-class JSONPlaceholderClient(BaseAPIClient):
+class SyncJSONPlaceholderClient(SyncAPIClient):
     """
     JSONPlaceholder API専用クライアント
 
@@ -369,13 +395,6 @@ class JSONPlaceholderClient(BaseAPIClient):
     - APIスキーマとの統合
     - 便利メソッドの実装
     """
-
-    # def __init__(self, **kwargs):
-    #     # JSONPlaceholder APIのデフォルト設定
-    #     if "base_url" not in kwargs:
-    #         kwargs["base_url"] = "https://jsonplaceholder.typicode.com"
-
-    #     super().__init__(**kwargs)
 
     # Posts API
     def get_posts(self, limit: int | None = None) -> list[dict[str, Any]]:
@@ -570,10 +589,19 @@ class AsyncAPIClient:
             APIHTTPError: HTTPステータスエラー
             APIRetryError: リトライ上限エラー
         """
-
         last_exception: APIClientError | None = None
 
         for attempt in range(self.retry_count + 1):
+            # ログ出力
+            if attempt > 0:
+                self.logger.warning(
+                    f"Retrying async request: attempt {attempt + 1}/{self.retry_count + 1} "
+                    f"for {method} {endpoint}"
+                )
+            else:
+                self.logger.debug("Making async request", method=method, endpoint=endpoint)
+
+            # 非同期HTTPリクエスト実行（ネットワーク層）
             try:
                 # ログ出力
                 if attempt > 0:
@@ -589,8 +617,14 @@ class AsyncAPIClient:
 
                 # 非同期HTTPリクエスト実行
                 response = await self._client.request(method, endpoint, **kwargs)
-
-                # HTTPステータスコードチェック
+            except httpx.RequestError as e:
+                # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
+                last_exception = _map_request_error(e)
+                self.logger.warning(
+                    "Async request error", method=method, endpoint=endpoint, error=str(e)
+                )
+            else:
+                # ネットワーク成功時のみHTTPステータス処理
                 try:
                     response.raise_for_status()
                     self.logger.debug(
@@ -600,10 +634,9 @@ class AsyncAPIClient:
                         status_code=response.status_code,
                     )
                     return response
-
                 except httpx.HTTPStatusError as e:
                     # 4xxエラーはリトライしない（クライアントエラー）
-                    if 400 <= e.response.status_code < 500:
+                    if e.response.is_client_error:
                         self.logger.error(
                             "client_error",
                             status_code=e.response.status_code,
@@ -628,24 +661,6 @@ class AsyncAPIClient:
                         e.response.status_code,
                         e.response,
                     )
-
-            except httpx.TimeoutException as e:
-                self.logger.warning(
-                    "async_timeout_error", method=method, endpoint=endpoint, error=str(e)
-                )
-                last_exception = APITimeoutError(f"Request timeout: {e}")
-
-            except httpx.ConnectError as e:
-                self.logger.warning(
-                    "async_connection_error", method=method, endpoint=endpoint, error=str(e)
-                )
-                last_exception = APIConnectionError(f"Connection failed: {e}")
-
-            except Exception as e:
-                self.logger.error(
-                    "async_unexpected_error", method=method, endpoint=endpoint, error=str(e)
-                )
-                last_exception = APIClientError(f"Unexpected error: {e}")
 
             # 最後の試行でなければ指数バックオフ + 30%ジッターで待機
             if attempt < self.retry_count:
@@ -725,13 +740,6 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
     - 並行処理による効率化
     - async/awaitパターンの理解
     """
-
-    # def __init__(self, **kwargs):
-    #     # JSONPlaceholder APIのデフォルト設定
-    #     if "base_url" not in kwargs:
-    #         kwargs["base_url"] = "https://jsonplaceholder.typicode.com"
-
-    #     super().__init__(**kwargs)
 
     # Posts API
     async def get_posts(self, limit: int | None = None) -> list[dict[str, Any]]:
@@ -820,7 +828,6 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 
     async def bulk_create_users(self, users_data: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """複数ユーザーの非同期一括作成"""
-
         # 並行してユーザー作成
         tasks = [self.create_user(user_data) for user_data in users_data]
         results = await asyncio.gather(*tasks)
@@ -856,7 +863,6 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
     # 並行処理の例
     async def get_user_data(self, user_id: int) -> dict[str, Any]:
         """ユーザーに関連するデータを並行取得"""
-
         # 並行してユーザー情報、投稿、TODO、アルバムを取得
         user_task = self.get_user(user_id)
         posts_task = self.get_posts()
@@ -881,9 +887,9 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 # =============================================================================
 
 
-def create_client() -> JSONPlaceholderClient:
+def create_client() -> SyncJSONPlaceholderClient:
     """設定に基づいたクライアントインスタンスの作成"""
-    return JSONPlaceholderClient()
+    return SyncJSONPlaceholderClient()
 
 
 # =============================================================================

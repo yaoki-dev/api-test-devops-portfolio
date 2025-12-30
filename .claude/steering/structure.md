@@ -21,10 +21,6 @@ api-test-devops-portfolio/
 │   ├── integration/          # 統合テスト
 │   ├── e2e/                  # E2Eテスト
 │   ├── performance/          # パフォーマンステスト
-│   ├── security/             # セキュリティテスト
-│   ├── concurrency/          # コンカレンシーテスト
-│   ├── regression/           # リグレッションテスト
-│   └── validation/           # バリデーションテスト
 ├── docs/                     # ドキュメント
 │   ├── progress/             # 学習進捗管理
 │   │   ├── daily_progress.md
@@ -1950,20 +1946,17 @@ class UserTodoService:
 
 ```
         /\
-       /  \  E2E (3-5%)
+       /  \  E2E (5%)
       /────\
-     /      \ System (7-12%)
+     /      \ Integration (25%)
     /────────\
-   /          \ Integration (20-30%)
+   /          \ Unit (70%)
   /────────────\
- /              \ Unit (60-70%)
-/────────────────\
 ```
 
 **各層の役割と実施環境**:
 - **単体テスト（Unit）**: 60-70%、高速・独立・モック中心（開発環境）
 - **統合テスト（Integration）**: 20-30%、実API・DB使用、複数層統合（開発環境 + CI/CD）
-- **システムテスト（System）**: 7-12%、本番相当環境での全体動作検証（**stg環境**）
 - **E2Eテスト（E2E）**: 3-5%、ユーザー視点、重要シナリオのみ（**stg/本番環境**）
 
 **System TestとE2Eの違い（実務重要ポイント）**:
@@ -2074,17 +2067,9 @@ tests/
 ├── integration/             # 統合テスト（実API使用、開発/CI環境）
 │   ├── test_api_integration.py    # 全層統合テスト
 │   └── test_repository_real_api.py # Repository + Infrastructure実API
-├── system/                  # **システムテスト（stg環境、本番相当環境検証）**
-│   ├── test_docker_environment.py  # Docker環境での動作検証
-│   ├── test_stg_api_response.py    # stg環境でのAPI応答検証
-│   ├── test_environment_config.py  # 環境変数・設定の検証
-│   └── test_performance_baseline.py # パフォーマンス基準達成検証
 ├── e2e/                     # E2Eテスト（stg/本番環境、ユーザーフロー）
 ├── performance/             # パフォーマンステスト（stg環境推奨）
-├── security/                # セキュリティテスト
-├── concurrency/             # コンカレンシーテスト
-├── regression/              # リグレッションテスト
-└── validation/              # バリデーションテスト
+
 ```
 
 #### conftest.pyフィクスチャ実装例
@@ -2171,10 +2156,8 @@ def todo_data_factory():
 markers = [
     "unit: 単体テスト（モック中心、開発環境）",
     "integration: 統合テスト（実API使用、開発/CI環境）",
-    "system: システムテスト（stg環境、本番相当環境での全体検証）",
     "e2e: E2Eテスト（stg/本番環境、ユーザーフロー検証）",
     "performance: パフォーマンステスト（stg環境推奨）",
-    "security: セキュリティテスト（stg環境推奨）",
     "external: 外部API依存テスト（環境変数で制御）",
 ]
 ```

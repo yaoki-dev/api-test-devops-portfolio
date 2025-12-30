@@ -279,11 +279,6 @@ def get_week_from_day_w6_plan(current_day: int) -> Union[int, float]:
 # Read(W6_PLAN_FILE, offset=day_config["start"], limit=day_config["end"]-day_config["start"])
 ```
 
-**パフォーマンス改善効果**:
-- 旧10週プラン: 2ファイル参照（学習+ポートフォリオ）
-- 新6週プラン: 1ファイル統合参照（トークン効率向上）
-- 週次/日次マップで必要なセクションのみ部分読み込み
-
 ## 🚀 学習・実装記録自動化トリガー（v2.1）
 **CLAUDE.md保持 281-547行**
 
@@ -375,7 +370,6 @@ def get_week_from_day_w6_plan(current_day: int) -> Union[int, float]:
 | Phase 1 | **Trigger 1** | 2段階検証（自己確認 + AI確認） | スクリーニング + 誤解早期修正 |
 | Phase 3 | Trigger 6 | AI出題採点 | 正式評価 |
 
----
 
 ### トリガー2: 実装開始
 
@@ -403,7 +397,6 @@ def get_week_from_day_w6_plan(current_day: int) -> Union[int, float]:
 
 **所要時間**: 10秒
 
----
 
 ### トリガー3: 学習記録 🆕 v2.1改善版
 
@@ -448,7 +441,6 @@ def get_week_from_day_w6_plan(current_day: int) -> Union[int, float]:
 学習記録: 5h、課題: volume設定エラー
 ```
 
----
 
 ### トリガー4: 実装記録（完全自動化版）
 
@@ -495,7 +487,6 @@ def get_week_from_day_w6_plan(current_day: int) -> Union[int, float]:
 実装記録
 ```
 
----
 
 ### トリガー5: 週次振り返り
 
@@ -537,7 +528,6 @@ def get_week_from_day_w6_plan(current_day: int) -> Union[int, float]:
 週次振り返り
 ```
 
----
 
 ### トリガー6: 理解度確認（毎日実施）
 
@@ -573,7 +563,7 @@ TRIGGER_SECTION_MAP = {
 # → 約7k chars読み込み（Obsidianファイル統合版）
 ```
 
-**Obsidian統合戦略** (ADR-007)
+<!-- **Obsidian統合戦略** (ADR-007)
 
 **ステータス**: 承認済み (2025-12-05)
 
@@ -609,7 +599,57 @@ Trigger 6（理解度確認）仕様をObsidian計画書へ移行
 **コマンド例**:
 ```
 理解度確認
+``` -->
+
+---
+
+### トリガー7: エラー記録
+
+**検出キーワード**: `エラー記録:` または `エラー:`
+
+**実行フロー**:
+1. エラーID抽出（形式: snake_case、1-64文字、例: `volume_mount`、`pytest_fixture`）
+2. `progress_state.yaml`更新:
+   - `error_occurrences[error_id].count++`（**kb_promoted=true後も継続増加**）
+   - `first_seen/last_seen`更新
+   - `occurrences[]`に日付追加（同日重複は1エントリ）
+   - `description`: **マージ方式**（既存 + ` | [{date}] ` + 新規、256文字制限）
+3. `daily_progress.md`更新:
+   - ★マーク自動生成（count数に応じて★/★★/★★★）
+   - 表示ルール: `description.split(' | ')[0]`（初回descriptionのみ表示）
+4. 3回目到達時: KB昇格検討フラグ表示
+
+**コマンド例**:
 ```
+エラー記録: volume_mount
+エラー: pytest_fixture, scope設定ミス
+```
+
+**progress_state.yaml更新例**:
+```yaml
+error_occurrences:
+  volume_mount:                    # snake_case命名規則
+    description: "Docker volume設定エラー | [2025-12-05] パス設定ミス"
+    count: 3
+    first_seen: "2025-12-01"
+    last_seen: "2025-12-05"
+    occurrences:                   # 発生日リスト
+      - "2025-12-01"
+      - "2025-12-03"
+      - "2025-12-05"
+    kb_promoted: false
+```
+
+**daily_progress.md表示例**:
+```markdown
+## エラー参照履歴
+- ★★★ [volume_mount] Docker volume設定エラー → KB昇格検討
+- ★★ [pytest_fixture] pytest fixture scope不一致
+```
+
+**統合度**: ★★☆（progress_state.yaml + daily_progress.md更新）
+
+> **Note**: count_30d計算はv2.0将来拡張（occurrences配列から動的計算可能）
 
 ---
 
@@ -789,6 +829,7 @@ if settings.is_development():
 **開発時無効化推奨**: 学習・開発段階では`SENTRY__ENABLED=false`（demo/prod環境のみ有効化）
 
 ## 重要な学習ポイント
+**CLAUDE.md 保持 654-676**
 
 ### 1. 非同期プログラミング
 - `async/await`パターンの実装（`utils/api_client.py:399-762`）

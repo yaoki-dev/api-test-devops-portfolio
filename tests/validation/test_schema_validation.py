@@ -20,7 +20,7 @@ class TestPostsSchema:
     """投稿APIスキーマの回帰テスト"""
 
     @pytest.mark.asyncio
-    async def test_get_posts_schema(self, mock_httpx_client):
+    async def test_get_posts_schema(self, mock_httpx_async_client):
         """投稿一覧取得のスキーマ一貫性確認"""
         mock_response = Mock(spec=httpx.Response)
         mock_response.status_code = 200
@@ -40,10 +40,10 @@ class TestPostsSchema:
         ]
         mock_response.raise_for_status.return_value = None
 
-        mock_httpx_client.request = AsyncMock(return_value=mock_response)
+        mock_httpx_async_client.request = AsyncMock(return_value=mock_response)
 
         async with AsyncJSONPlaceholderClient() as client:
-            client._client = mock_httpx_client
+            client._client = mock_httpx_async_client
             posts = await client.get_posts(limit=2)
 
             # スキーマ検証: 必須フィールドの存在確認
@@ -61,7 +61,7 @@ class TestPostsSchema:
                 assert isinstance(post["body"], str)
 
     @pytest.mark.asyncio
-    async def test_get_post_schema(self, mock_httpx_client):
+    async def test_get_post_schema(self, mock_httpx_async_client):
         """単一投稿取得のスキーマ一貫性確認"""
         mock_response = Mock(spec=httpx.Response)
         mock_response.status_code = 200
@@ -73,10 +73,10 @@ class TestPostsSchema:
         }
         mock_response.raise_for_status.return_value = None
 
-        mock_httpx_client.request = AsyncMock(return_value=mock_response)
+        mock_httpx_async_client.request = AsyncMock(return_value=mock_response)
 
         async with AsyncJSONPlaceholderClient() as client:
-            client._client = mock_httpx_client
+            client._client = mock_httpx_async_client
             post = await client.get_post(1)
 
             # 必須フィールドとデータ型の検証
@@ -91,7 +91,7 @@ class TestPostsSchema:
             assert isinstance(post["body"], str)
 
     @pytest.mark.asyncio
-    async def test_create_post_schema(self, mock_httpx_client):
+    async def test_create_post_schema(self, mock_httpx_async_client):
         """投稿作成レスポンスのスキーマ一貫性確認"""
         mock_response = Mock(spec=httpx.Response)
         mock_response.status_code = 201
@@ -103,10 +103,10 @@ class TestPostsSchema:
         }
         mock_response.raise_for_status.return_value = None
 
-        mock_httpx_client.request = AsyncMock(return_value=mock_response)
+        mock_httpx_async_client.request = AsyncMock(return_value=mock_response)
 
         async with AsyncJSONPlaceholderClient() as client:
-            client._client = mock_httpx_client
+            client._client = mock_httpx_async_client
             post = await client.create_post(title="Test Post", body="Test content", user_id=1)
 
             # 作成レスポンスのスキーマ検証
@@ -123,7 +123,7 @@ class TestUsersSchema:
     """ユーザーAPIスキーマの回帰テスト"""
 
     @pytest.mark.asyncio
-    async def test_get_users_schema(self, mock_httpx_client):
+    async def test_get_users_schema(self, mock_httpx_async_client):
         """ユーザー一覧取得のスキーマ一貫性確認"""
         mock_response = Mock(spec=httpx.Response)
         mock_response.status_code = 200
@@ -151,10 +151,10 @@ class TestUsersSchema:
         ]
         mock_response.raise_for_status.return_value = None
 
-        mock_httpx_client.request = AsyncMock(return_value=mock_response)
+        mock_httpx_async_client.request = AsyncMock(return_value=mock_response)
 
         async with AsyncJSONPlaceholderClient() as client:
-            client._client = mock_httpx_client
+            client._client = mock_httpx_async_client
             users = await client.get_users()
 
             # スキーマ検証: 必須フィールドの存在確認
@@ -188,7 +188,7 @@ class TestUsersSchema:
             assert isinstance(user["company"]["name"], str)
 
     @pytest.mark.asyncio
-    async def test_get_user_schema(self, mock_httpx_client):
+    async def test_get_user_schema(self, mock_httpx_async_client):
         """単一ユーザー取得のスキーマ一貫性確認"""
         mock_response = Mock(spec=httpx.Response)
         mock_response.status_code = 200
@@ -206,10 +206,10 @@ class TestUsersSchema:
         }
         mock_response.raise_for_status.return_value = None
 
-        mock_httpx_client.request = AsyncMock(return_value=mock_response)
+        mock_httpx_async_client.request = AsyncMock(return_value=mock_response)
 
         async with AsyncJSONPlaceholderClient() as client:
-            client._client = mock_httpx_client
+            client._client = mock_httpx_async_client
             user = await client.get_user(1)
 
             # 必須フィールド検証
@@ -229,7 +229,7 @@ class TestTodosSchema:
     """TODO APIスキーマの回帰テスト"""
 
     @pytest.mark.asyncio
-    async def test_get_todos_schema(self, mock_httpx_client):
+    async def test_get_todos_schema(self, mock_httpx_async_client):
         """TODO一覧取得のスキーマ一貫性確認"""
         mock_response = Mock(spec=httpx.Response)
         mock_response.status_code = 200
@@ -249,10 +249,10 @@ class TestTodosSchema:
         ]
         mock_response.raise_for_status.return_value = None
 
-        mock_httpx_client.request = AsyncMock(return_value=mock_response)
+        mock_httpx_async_client.request = AsyncMock(return_value=mock_response)
 
         async with AsyncJSONPlaceholderClient() as client:
-            client._client = mock_httpx_client
+            client._client = mock_httpx_async_client
             todos = await client.get_todos(user_id=1, limit=2)
 
             # スキーマ検証: 必須フィールドの存在確認
@@ -270,7 +270,7 @@ class TestTodosSchema:
                 assert isinstance(todo["completed"], bool)
 
     @pytest.mark.asyncio
-    async def test_get_todo_schema(self, mock_httpx_client):
+    async def test_get_todo_schema(self, mock_httpx_async_client):
         """単一TODO取得のスキーマ一貫性確認"""
         mock_response = Mock(spec=httpx.Response)
         mock_response.status_code = 200
@@ -282,10 +282,10 @@ class TestTodosSchema:
         }
         mock_response.raise_for_status.return_value = None
 
-        mock_httpx_client.request = AsyncMock(return_value=mock_response)
+        mock_httpx_async_client.request = AsyncMock(return_value=mock_response)
 
         async with AsyncJSONPlaceholderClient() as client:
-            client._client = mock_httpx_client
+            client._client = mock_httpx_async_client
             todo = await client.get_todo(1)
 
             # 必須フィールドとデータ型の検証
@@ -300,7 +300,7 @@ class TestTodosSchema:
             assert isinstance(todo["completed"], bool)
 
     @pytest.mark.asyncio
-    async def test_create_todo_schema(self, mock_httpx_client):
+    async def test_create_todo_schema(self, mock_httpx_async_client):
         """TODO作成レスポンスのスキーマ一貫性確認"""
         mock_response = Mock(spec=httpx.Response)
         mock_response.status_code = 201
@@ -312,10 +312,10 @@ class TestTodosSchema:
         }
         mock_response.raise_for_status.return_value = None
 
-        mock_httpx_client.request = AsyncMock(return_value=mock_response)
+        mock_httpx_async_client.request = AsyncMock(return_value=mock_response)
 
         async with AsyncJSONPlaceholderClient() as client:
-            client._client = mock_httpx_client
+            client._client = mock_httpx_async_client
             todo = await client.create_todo(title="New Todo", user_id=1)
 
             # 作成レスポンスのスキーマ検証
@@ -332,7 +332,7 @@ class TestCommentsSchema:
     """コメントAPIスキーマの回帰テスト"""
 
     @pytest.mark.asyncio
-    async def test_get_comments_schema(self, mock_httpx_client):
+    async def test_get_comments_schema(self, mock_httpx_async_client):
         """コメント一覧取得のスキーマ一貫性確認"""
         mock_response = Mock(spec=httpx.Response)
         mock_response.status_code = 200
@@ -354,10 +354,10 @@ class TestCommentsSchema:
         ]
         mock_response.raise_for_status.return_value = None
 
-        mock_httpx_client.request = AsyncMock(return_value=mock_response)
+        mock_httpx_async_client.request = AsyncMock(return_value=mock_response)
 
         async with AsyncJSONPlaceholderClient() as client:
-            client._client = mock_httpx_client
+            client._client = mock_httpx_async_client
             comments = await client.get_comments(post_id=1)
 
             # スキーマ検証: 必須フィールドの存在確認
@@ -377,7 +377,7 @@ class TestCommentsSchema:
                 assert isinstance(comment["body"], str)
 
     @pytest.mark.asyncio
-    async def test_get_all_comments_schema(self, mock_httpx_client):
+    async def test_get_all_comments_schema(self, mock_httpx_async_client):
         """全コメント取得のスキーマ一貫性確認"""
         mock_response = Mock(spec=httpx.Response)
         mock_response.status_code = 200
@@ -392,10 +392,10 @@ class TestCommentsSchema:
         ]
         mock_response.raise_for_status.return_value = None
 
-        mock_httpx_client.request = AsyncMock(return_value=mock_response)
+        mock_httpx_async_client.request = AsyncMock(return_value=mock_response)
 
         async with AsyncJSONPlaceholderClient() as client:
-            client._client = mock_httpx_client
+            client._client = mock_httpx_async_client
             comments = await client.get_comments()
 
             # スキーマ検証
@@ -413,7 +413,7 @@ class TestAlbumsSchema:
     """アルバムAPIスキーマの回帰テスト"""
 
     @pytest.mark.asyncio
-    async def test_get_albums_schema(self, mock_httpx_client):
+    async def test_get_albums_schema(self, mock_httpx_async_client):
         """アルバム一覧取得のスキーマ一貫性確認"""
         mock_response = Mock(spec=httpx.Response)
         mock_response.status_code = 200
@@ -423,10 +423,10 @@ class TestAlbumsSchema:
         ]
         mock_response.raise_for_status.return_value = None
 
-        mock_httpx_client.request = AsyncMock(return_value=mock_response)
+        mock_httpx_async_client.request = AsyncMock(return_value=mock_response)
 
         async with AsyncJSONPlaceholderClient() as client:
-            client._client = mock_httpx_client
+            client._client = mock_httpx_async_client
             albums = await client.get_albums(user_id=1)
 
             # スキーマ検証: 必須フィールドの存在確認
@@ -442,17 +442,17 @@ class TestAlbumsSchema:
                 assert isinstance(album["title"], str)
 
     @pytest.mark.asyncio
-    async def test_get_all_albums_schema(self, mock_httpx_client):
+    async def test_get_all_albums_schema(self, mock_httpx_async_client):
         """全アルバム取得のスキーマ一貫性確認"""
         mock_response = Mock(spec=httpx.Response)
         mock_response.status_code = 200
         mock_response.json.return_value = [{"id": 1, "userId": 1, "title": "album title"}]
         mock_response.raise_for_status.return_value = None
 
-        mock_httpx_client.request = AsyncMock(return_value=mock_response)
+        mock_httpx_async_client.request = AsyncMock(return_value=mock_response)
 
         async with AsyncJSONPlaceholderClient() as client:
-            client._client = mock_httpx_client
+            client._client = mock_httpx_async_client
             albums = await client.get_albums()
 
             # スキーマ検証
@@ -468,7 +468,7 @@ class TestPhotosSchema:
     """写真APIスキーマの回帰テスト"""
 
     @pytest.mark.asyncio
-    async def test_get_photos_schema(self, mock_httpx_client):
+    async def test_get_photos_schema(self, mock_httpx_async_client):
         """写真一覧取得のスキーマ一貫性確認"""
         mock_response = Mock(spec=httpx.Response)
         mock_response.status_code = 200
@@ -490,10 +490,10 @@ class TestPhotosSchema:
         ]
         mock_response.raise_for_status.return_value = None
 
-        mock_httpx_client.request = AsyncMock(return_value=mock_response)
+        mock_httpx_async_client.request = AsyncMock(return_value=mock_response)
 
         async with AsyncJSONPlaceholderClient() as client:
-            client._client = mock_httpx_client
+            client._client = mock_httpx_async_client
             photos = await client.get_photos(album_id=1)
 
             # スキーマ検証: 必須フィールドの存在確認
@@ -517,7 +517,7 @@ class TestPhotosSchema:
                 assert photo["thumbnailUrl"].startswith("http")
 
     @pytest.mark.asyncio
-    async def test_get_all_photos_schema(self, mock_httpx_client):
+    async def test_get_all_photos_schema(self, mock_httpx_async_client):
         """全写真取得のスキーマ一貫性確認"""
         mock_response = Mock(spec=httpx.Response)
         mock_response.status_code = 200
@@ -532,10 +532,10 @@ class TestPhotosSchema:
         ]
         mock_response.raise_for_status.return_value = None
 
-        mock_httpx_client.request = AsyncMock(return_value=mock_response)
+        mock_httpx_async_client.request = AsyncMock(return_value=mock_response)
 
         async with AsyncJSONPlaceholderClient() as client:
-            client._client = mock_httpx_client
+            client._client = mock_httpx_async_client
             photos = await client.get_photos()
 
             # スキーマ検証

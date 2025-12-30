@@ -4,14 +4,14 @@ import httpx
 import pytest
 
 from utils.api_client import (
-    BaseAPIClient,
+    SyncAPIClient,
 )
 
 # Module-level marker: All tests in this file are unit tests
 pytestmark = pytest.mark.unit
 
 
-# Mock settings for testing purposes, as the actual BaseAPIClient uses config.settings
+# Mock settings for testing purposes, as the actual SyncAPIClient uses config.settings
 class MockAPISettings:
     def __init__(self):
         self.base_url = "https://jsonplaceholder.typicode.com"
@@ -42,7 +42,7 @@ def mock_settings():
 @pytest.mark.smoke
 def test_base_client_initialization():
     """クライアント初期化テスト"""
-    client = BaseAPIClient(base_url="https://test.com", timeout=10.0, retry_count=1)
+    client = SyncAPIClient(base_url="https://test.com", timeout=10.0, retry_count=1)
     assert client.base_url == "https://test.com"
     assert client.timeout == 10.0
     assert client.retry_count == 1
@@ -53,7 +53,7 @@ def test_base_client_initialization():
 @pytest.mark.smoke
 def test_context_manager_basic():
     """Context Manager基本動作テスト"""
-    with BaseAPIClient(base_url="https://test.com") as client:
+    with SyncAPIClient(base_url="https://test.com") as client:
         assert client._client is not None
         assert isinstance(client._client, httpx.Client)
     # After exiting, the client should be closed (though we can't directly assert _client is None)
@@ -61,7 +61,7 @@ def test_context_manager_basic():
 
 def test_base_client_uses_default_settings_if_not_provided():
     """引数がない場合にデフォルト設定が使用されることを確認"""
-    client = BaseAPIClient()  # Uses mock_settings_instance
+    client = SyncAPIClient()  # Uses mock_settings_instance
     assert client.base_url == "https://jsonplaceholder.typicode.com"
     assert client.timeout == 30.0
     assert client.retry_count == 3
@@ -71,7 +71,7 @@ def test_base_client_uses_default_settings_if_not_provided():
 def test_base_client_headers_are_set_correctly():
     """ヘッダーが正しく設定されることを確認"""
     custom_headers = {"X-Custom-Header": "Value"}
-    client = BaseAPIClient(base_url="https://test.com", headers=custom_headers)
+    client = SyncAPIClient(base_url="https://test.com", headers=custom_headers)
     assert client.default_headers["X-Custom-Header"] == "Value"
     assert client.default_headers["Accept"] == "application/json"
 
@@ -79,7 +79,7 @@ def test_base_client_headers_are_set_correctly():
 @pytest.mark.unit
 def test_base_client_close_method():
     """closeメソッドがクライアントを閉じることを確認"""
-    client = BaseAPIClient(base_url="https://test.com")
+    client = SyncAPIClient(base_url="https://test.com")
     client.__enter__()  # Manually enter context to ensure _client is initialized
     assert client._client is not None
     client.close()

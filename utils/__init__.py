@@ -1,9 +1,9 @@
 """Utilities module for API Test DevOps Portfolio.
 
 Exports:
-    BaseAPIClient: Base synchronous API client
+    SyncAPIClient: Base synchronous API client
     AsyncAPIClient: Asynchronous API client
-    JSONPlaceholderClient: JSONPlaceholder API client (sync)
+    SyncJSONPlaceholderClient: JSONPlaceholder API client (sync)
     AsyncJSONPlaceholderClient: JSONPlaceholder API client (async)
 """
 
@@ -12,14 +12,14 @@ from .api_client import (
     APIJSONDecodeError,
     AsyncAPIClient,
     AsyncJSONPlaceholderClient,
-    BaseAPIClient,
-    JSONPlaceholderClient,
+    SyncAPIClient,
+    SyncJSONPlaceholderClient,
 )
 
 __all__ = [
-    "BaseAPIClient",
+    "SyncAPIClient",
     "AsyncAPIClient",
-    "JSONPlaceholderClient",
+    "SyncJSONPlaceholderClient",
     "AsyncJSONPlaceholderClient",
     "APIClientError",
     "APIJSONDecodeError",

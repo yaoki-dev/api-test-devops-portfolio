@@ -8,9 +8,11 @@ import pytest
 from pydantic import ValidationError
 
 from models.responses import (
+    Address,
     Album,
     Comment,
     Company,
+    Geo,
     Photo,
     Post,
     Todo,
@@ -152,6 +154,14 @@ class TestUserModel:
             name="John Doe",
             username="johndoe",
             email="john@example.com",
+            address=Address(
+                street="123 Main St",
+                suite="Apt 1",
+                city="New York",
+                zipcode="10001",
+                geo=Geo(lat="40.7128", lng="-74.0060"),
+            ),
+            phone="1-234-567-8901",
             website="example.com",
             company=Company(
                 name="ACME Corp",
@@ -171,6 +181,14 @@ class TestUserModel:
             name="<script>alert('name')</script>",
             username="<img src=x>",
             email="<a>email</a>",
+            address=Address(
+                street="<script>street</script>",
+                suite="<img>suite",
+                city="<a>city</a>",
+                zipcode="12345",
+                geo=Geo(lat="0.0", lng="0.0"),
+            ),
+            phone="<script>phone</script>",
             website="<script>site</script>",
             company=Company(
                 name="<b>Company</b>",

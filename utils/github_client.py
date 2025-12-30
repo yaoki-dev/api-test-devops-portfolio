@@ -14,7 +14,7 @@ from typing import Any, cast
 
 import httpx
 
-from utils.api_client import exponential_backoff_with_jitter
+from utils.api_client import APIClientError, exponential_backoff_with_jitter
 from utils.logger import get_logger
 
 # =============================================================================
@@ -64,8 +64,8 @@ def validate_github_repo(repo: str) -> None:
 # =============================================================================
 
 
-class GitHubAPIError(Exception):
-    """GitHub API基底例外"""
+class GitHubAPIError(APIClientError):
+    """GitHub API基底例外（APIClientErrorを継承し統一的なエラーハンドリングを実現）"""
 
 
 class RateLimitError(GitHubAPIError):
@@ -305,7 +305,7 @@ class AsyncGitHubClient:
                     try:
                         error_message = response.json().get("message", error_message)
                     except Exception as parse_err:
-                        self.logger.debug("failed_to_parse_403_message", error=str(parse_err))
+                        self.logger.warning("failed_to_parse_403_message", error=str(parse_err))
                     raise GitHubAPIError(f"Access forbidden: {error_message}")
 
                 if response.status_code >= 500:
@@ -356,6 +356,10 @@ class AsyncGitHubClient:
             except httpx.TimeoutException as e:
                 self.logger.warning("request_timeout", endpoint=endpoint, method=method)
                 raise GitHubAPIError(f"Request timeout: {e}") from e
+
+            except (KeyboardInterrupt, asyncio.CancelledError):
+                # システム例外は再発生（非同期キャンセル・ユーザー中断を適切に伝播）
+                raise
 
             except Exception as e:
                 self.logger.error(

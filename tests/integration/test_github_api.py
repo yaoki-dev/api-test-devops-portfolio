@@ -16,7 +16,6 @@ from utils.github_client import AsyncGitHubClient, NotFoundError
 # =============================================================================
 
 
-@pytest.mark.manual
 @pytest.mark.external
 @pytest.mark.integration
 @pytest.mark.asyncio
@@ -43,7 +42,6 @@ async def test_get_user_real_api():
         assert isinstance(user["public_repos"], int)
 
 
-@pytest.mark.manual
 @pytest.mark.external
 @pytest.mark.integration
 @pytest.mark.asyncio
@@ -71,7 +69,6 @@ async def test_get_repos_real_api():
             assert isinstance(repo["stargazers_count"], int)
 
 
-@pytest.mark.manual
 @pytest.mark.external
 @pytest.mark.integration
 @pytest.mark.asyncio
@@ -98,7 +95,6 @@ async def test_get_repo_real_api():
         assert isinstance(repo["forks_count"], int)
 
 
-@pytest.mark.manual
 @pytest.mark.external
 @pytest.mark.integration
 @pytest.mark.asyncio
@@ -121,7 +117,6 @@ async def test_not_found_error_real_api():
 # =============================================================================
 
 
-@pytest.mark.manual
 @pytest.mark.external
 @pytest.mark.integration
 @pytest.mark.asyncio
@@ -133,7 +128,7 @@ async def test_integration_checklist():
     2. 404エラーハンドリング
     3. Rate Limit警告ログ出力（手動確認: Remaining < 10の場合）
 
-    Note: @pytest.mark.manualは手動実行時のみ（CI/CD除外）
+    Note: @pytest.mark.externalで週次CI自動実行
     """
     async with AsyncGitHubClient() as client:
         # ✅ 実API呼び出し成功
