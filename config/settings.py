@@ -381,10 +381,10 @@ class Settings(BaseSettings):
                 if security.get("jwt_secret"):
                     security["jwt_secret"] = "***MASKED***"  # noqa: S105
 
-            # Sentry DSNをマスク
+            # Sentry DSNをマスク（空文字列も含めてマスク）
             if "sentry" in data:
                 sentry = data["sentry"]
-                if sentry.get("dsn"):
+                if "dsn" in sentry:
                     sentry["dsn"] = "***MASKED***"
 
         return data
