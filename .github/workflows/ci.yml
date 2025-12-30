@@ -38,6 +38,33 @@ jobs:
       - name: Install uv
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Set test markers based on target branch
+        id: markers
+        run: |
+          if [ "${{ github.base_ref }}" = "main" ]; then
+            echo "value=unit or integration or smoke" >> $GITHUB_OUTPUT
+            echo "🎯 Target: main - Will run Unit + Integration + Smoke tests"
+          elif [ "${{ github.base_ref }}" = "develop" ]; then
+            echo "value=unit or integration" >> $GITHUB_OUTPUT
+            echo "🎯 Target: develop - Will run Unit + Integration tests"
+          else
+            echo "::warning::Unknown base_ref: ${{ github.base_ref }}, using develop default"
+            echo "value=unit or integration" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run tests
+        run: |
+          mkdir -p reports
+          uv run pytest -n auto -m "${{ steps.markers.outputs.value }}" \
+            --cov=utils --cov=config --cov=models \
+            --cov-report=json:coverage.json \
+            --cov-report=term-missing \
+            -v --tb=short
 
       - name: Upload test results
         if: always()
@@ -47,6 +74,7 @@ jobs:
           path: |
             reports/
             coverage.json
+          if-no-files-found: warn
 
   # ============================================================
   # Stage 2: Post-Merge Validation (Regression Protection < 3 min)
