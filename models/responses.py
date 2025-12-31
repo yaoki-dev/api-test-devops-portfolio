@@ -402,6 +402,28 @@ class Photo(BaseModel):
         """
         return sanitize_user_content(v)
 
+    @field_validator("url", "thumbnail_url")
+    @classmethod
+    def validate_url_scheme(cls, v: str) -> str:
+        """URLスキームがhttp/httpsであることを検証
+
+        セキュリティのため、javascript:やdata:などの
+        潜在的に危険なスキームを拒否。
+
+        Args:
+            v: 検証対象のURL文字列
+
+        Returns:
+            検証済みURL文字列
+
+        Raises:
+            ValueError: URLがhttp/httpsで始まらない場合
+        """
+        # case-insensitive check (JAVASCRIPT: などのバイパス防止)
+        if not v.lower().startswith(("http://", "https://")):
+            raise ValueError(f"URL must start with http:// or https://, got: {v[:50]}...")
+        return v
+
 
 # =============================================================================
 # 学習ポイント:

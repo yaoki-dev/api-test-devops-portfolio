@@ -85,8 +85,11 @@ def _sentry_processor(
 
     except ImportError:
         pass  # sentry-sdk未インストール（サイレントスキップ）
-    except Exception:  # noqa: BLE001, S110
-        pass  # Sentry送信失敗（サイレント失敗、ログ出力継続）
+    except Exception as e:  # noqa: BLE001
+        # Sentry送信失敗時はstderrへ出力（循環参照回避のためstructlog不使用）
+        import sys
+
+        print(f"[SENTRY_ERROR] Failed to send to Sentry: {e}", file=sys.stderr)
 
     return event_dict
 

@@ -246,18 +246,9 @@ class SyncAPIClient:
         last_exception: APIClientError | None = None
 
         for attempt in range(self.retry_count + 1):
-            # ログ出力
-            if attempt > 0:
-                self.logger.warning(
-                    f"Retrying request: attempt {attempt + 1}/{self.retry_count + 1} "
-                    f"for {method} {endpoint}"
-                )
-            else:
-                self.logger.debug("Making request", method=method, endpoint=endpoint)
-
             # HTTPリクエスト実行（ネットワーク層）
             try:
-                # ログ出力
+                # structlogでログ出力（DRY原則: 重複ログ削除）
                 if attempt > 0:
                     self.logger.warning(
                         "request_retry",
@@ -490,6 +481,32 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
             response = self.get("/photos")
         return _safe_parse_json(response)
 
+    # ヘルスチェック（DevOps/K8s readiness対応）
+    def health_check(self) -> bool:
+        """API接続の健全性チェック（同期版）
+
+        Docker/Kubernetes readiness probeとして使用可能。
+        軽量なリクエスト（/users?_limit=1）でAPI到達性を確認。
+
+        Returns:
+            bool: API到達可能ならTrue、エラー時はFalse
+
+        Note:
+            Async版と同一インターフェースで統一。
+            CLI、スクリプト、レガシーシステム統合時に使用。
+
+        Example:
+            >>> with SyncJSONPlaceholderClient() as client:
+            ...     if client.health_check():
+            ...         print("API is healthy")
+        """
+        try:
+            response = self.get("/users", params={"_limit": 1})
+            return response.status_code == 200
+        except Exception as e:
+            self.logger.warning("health_check_failed", error=str(e))
+            return False
+
 
 # =============================================================================
 # 非同期APIクライアント
@@ -592,18 +609,9 @@ class AsyncAPIClient:
         last_exception: APIClientError | None = None
 
         for attempt in range(self.retry_count + 1):
-            # ログ出力
-            if attempt > 0:
-                self.logger.warning(
-                    f"Retrying async request: attempt {attempt + 1}/{self.retry_count + 1} "
-                    f"for {method} {endpoint}"
-                )
-            else:
-                self.logger.debug("Making async request", method=method, endpoint=endpoint)
-
             # 非同期HTTPリクエスト実行（ネットワーク層）
             try:
-                # ログ出力
+                # structlogでログ出力（DRY原則: 重複ログ削除）
                 if attempt > 0:
                     self.logger.warning(
                         "async_request_retry",
@@ -827,11 +835,29 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         return _safe_parse_json(response)
 
     async def bulk_create_users(self, users_data: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """複数ユーザーの非同期一括作成"""
-        # 並行してユーザー作成
+        """複数ユーザーの非同期一括作成
+
+        個別失敗を許容し、成功したユーザーのみ返却。
+        失敗時はwarningログを出力（最初の5件まで詳細表示）。
+        """
+        # 並行してユーザー作成（個別失敗許容）
         tasks = [self.create_user(user_data) for user_data in users_data]
-        results = await asyncio.gather(*tasks)
-        return results
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # 成功・失敗を分離（型安全なフィルタリング）
+        successful: list[dict[str, Any]] = [r for r in results if isinstance(r, dict)]
+        failed: list[BaseException] = [r for r in results if isinstance(r, BaseException)]
+
+        # 失敗時はログ出力（A1: デバッグ改善）
+        if failed:
+            self.logger.warning(
+                "bulk_create_partial_failure",
+                failed_count=len(failed),
+                success_count=len(successful),
+                errors=[str(e) for e in failed[:5]],  # 最初の5件のみ
+            )
+
+        return successful
 
     # Comments API
     async def get_comments(self, post_id: int | None = None) -> list[dict[str, Any]]:
@@ -880,6 +906,81 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             "todos": todos,
             "albums": albums,
         }
+
+    # ヘルスチェック（DevOps/K8s readiness対応）
+    async def health_check(self) -> bool:
+        """API接続の健全性チェック
+
+        Docker/Kubernetes readiness probeとして使用可能。
+        軽量なリクエスト（/users?_limit=1）でAPI到達性を確認。
+
+        Returns:
+            bool: API到達可能ならTrue、エラー時はFalse
+
+        学習ポイント:
+        - Readiness Probe: コンテナがトラフィックを受け入れ可能か確認
+        - Liveness Probe: コンテナが正常に動作しているか確認
+        - 軽量クエリ（_limit=1）でサーバー負荷を最小化
+
+        Example:
+            >>> async with AsyncJSONPlaceholderClient() as client:
+            ...     if await client.health_check():
+            ...         print("API is healthy")
+        """
+        try:
+            response = await self.get("/users", params={"_limit": 1})
+            return response.status_code == 200
+        except Exception as e:
+            self.logger.warning("health_check_failed", error=str(e))
+            return False
+
+    # 複数ユーザー取得（Semaphore制御）
+    async def get_multiple_users(
+        self, user_ids: list[int], max_concurrent: int = 5
+    ) -> list[dict[str, Any]]:
+        """複数ユーザーを並行取得（Semaphore制御付き）
+
+        asyncio.Semaphoreを使用してRate Limit対策。
+        GitHub APIなど制限のあるAPIでも安全に並行リクエスト可能。
+
+        Args:
+            user_ids: 取得対象のユーザーIDリスト
+            max_concurrent: 同時実行数の上限（デフォルト5）
+
+        Returns:
+            list[dict]: 取得成功したユーザー情報リスト
+                       （取得失敗したIDはスキップ、warningログ出力）
+
+        学習ポイント:
+        - asyncio.Semaphore: 同時実行数を制限するロック機構
+        - Rate Limit対策: 外部APIへの過剰リクエスト防止
+        - Graceful degradation: 一部失敗しても残りの結果を返す
+
+        Example:
+            >>> async with AsyncJSONPlaceholderClient() as client:
+            ...     users = await client.get_multiple_users([1, 2, 3], max_concurrent=2)
+            ...     print(f"Fetched {len(users)} users")
+        """
+        semaphore = asyncio.Semaphore(max_concurrent)
+
+        async def fetch_with_semaphore(user_id: int) -> dict[str, Any] | None:
+            """Semaphore制御付きでユーザー取得"""
+            async with semaphore:
+                try:
+                    return await self.get_user(user_id)
+                except Exception as e:
+                    self.logger.warning(
+                        "get_user_failed",
+                        user_id=user_id,
+                        error=str(e),
+                    )
+                    return None
+
+        # 並行実行（return_exceptions不要：内部でtry-catch済み）
+        results = await asyncio.gather(*[fetch_with_semaphore(uid) for uid in user_ids])
+
+        # None除外（失敗分）
+        return [r for r in results if r is not None]
 
 
 # =============================================================================

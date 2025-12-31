@@ -256,9 +256,9 @@ async def test_etag_cache_hit():
     """ETagキャッシュヒット時304 Not Modified処理
 
     検証項目:
-    - 1回目: 200 + ETag保存
+    - 1回目: 200 + ETag保存 + データキャッシュ保存
     - 2回目: If-None-Matchヘッダー送信 + 304レスポンス
-    - 304時は空辞書返却
+    - 304時はキャッシュデータを返却
     """
     async with AsyncGitHubClient() as client:
         with patch.object(client._client, "request", new_callable=AsyncMock) as mock_request:
@@ -275,9 +275,11 @@ async def test_etag_cache_hit():
             result1 = await client.get_user("octocat")
             assert result1["login"] == "octocat"
 
-            # ETagキャッシュ確認
+            # ETag/データキャッシュ確認
             assert "/users/octocat" in client._etag_cache
             assert client._etag_cache["/users/octocat"] == '"abc123"'
+            assert "/users/octocat" in client._data_cache
+            assert client._data_cache["/users/octocat"] == {"login": "octocat"}
 
             # 2回目: 304 Not Modified
             mock_response_2 = MagicMock(spec=httpx.Response)
@@ -286,7 +288,7 @@ async def test_etag_cache_hit():
             mock_request.return_value = mock_response_2
 
             result2 = await client.get_user("octocat")
-            assert result2 == {}  # 304は空辞書返却
+            assert result2 == {"login": "octocat"}  # 304時はキャッシュデータ返却
 
 
 # =============================================================================
