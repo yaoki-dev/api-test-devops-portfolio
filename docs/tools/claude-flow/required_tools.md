@@ -399,6 +399,7 @@ github_release_coord(
 - **提案書**: `docs/claude_flow/claude_flow活用.md`
 - **グローバル設定**: `~/.claude.json:377-385`
 - **プロジェクト設定**: `.mcp.json`
+- **Week別学習計画**: `docs/プロジェクト再編/10週ハイブリッドプラン_日次詳細学習スケジュール.md`
 
 ---
 

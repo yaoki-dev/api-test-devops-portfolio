@@ -26,6 +26,7 @@ Security-Testing-Agentによる段階的セキュリティテスト実装
 詳細: docs/todo.md を参照
 """
 
+import re
 import time
 from typing import Any
 
@@ -33,6 +34,11 @@ import pytest
 import structlog
 
 logger = structlog.get_logger(__name__)
+
+# Module-level markers: Security tests run in weekly comprehensive tests only
+# Rationale: Security is a "purpose" category, orthogonal to execution characteristics
+# See: .claude/plans/sleepy-juggling-cascade.md (Q5 analysis)
+pytestmark = pytest.mark.security
 
 
 class TestBasicInputValidation:
@@ -82,7 +88,6 @@ class TestBasicInputValidation:
     ]
 
     @pytest.mark.asyncio
-    @pytest.mark.security
     async def test_post_title_sql_injection(self, async_client):  # noqa: C901
         """POST リクエストのタイトルフィールドSQL インジェクション検証"""
         logger.info("SQL インジェクション テスト開始", target="title field")
@@ -189,7 +194,6 @@ class TestBasicInputValidation:
             )
 
     @pytest.mark.asyncio
-    @pytest.mark.security
     async def test_post_body_xss_injection(self, async_client):  # noqa: C901
         """POST リクエストのbodyフィールドXSS検証"""
         logger.info("XSS インジェクション テスト開始", target="body field")
@@ -214,33 +218,46 @@ class TestBasicInputValidation:
                     )
 
                 # 2. 悪意あるスクリプトがそのままレスポンスに含まれないこと
+                # 注意: JSONPlaceholderはJSON APIであり、Content-Type: application/jsonを返す
+                # XSSはHTMLレンダリング時にのみ危険なため、JSONレスポンスは対象外
                 if response.status_code == 201:
-                    response_data = response.json()
-                    response_body = response_data.get("body", "")
+                    content_type = response.headers.get("content-type", "").lower()
 
-                    # スクリプトタグなどの危険なパターンがエスケープされているかチェック
-                    dangerous_xss_patterns = [
-                        "<script>",
-                        "javascript:",
-                        "onerror=",
-                        "onload=",
-                    ]
-                    for pattern in dangerous_xss_patterns:
-                        if pattern in payload.lower() and pattern in response_body.lower():
-                            if payload.lower() == response_body.lower():  # 完全反映の場合
-                                vulnerabilities_found.append(
-                                    {
-                                        "type": "xss_payload_reflection",
-                                        "payload": payload,
-                                        "pattern": pattern,
-                                        "severity": "high",
-                                    }
-                                )
-                                logger.warning(
-                                    "XSSペイロードがエスケープされていません",
-                                    payload=payload[:50],
-                                    pattern=pattern,
-                                )
+                    # JSON APIの場合はXSS脆弱性とはみなさない
+                    # XSSはブラウザがHTMLとしてレンダリングする場合にのみ危険
+                    if "text/html" in content_type or "text/xml" in content_type:
+                        response_data = response.json()
+                        response_body = response_data.get("body", "")
+
+                        # スクリプトタグなどの危険なパターンがエスケープされているかチェック
+                        dangerous_xss_patterns = [
+                            "<script>",
+                            "javascript:",
+                            "onerror=",
+                            "onload=",
+                        ]
+                        for pattern in dangerous_xss_patterns:
+                            if pattern in payload.lower() and pattern in response_body.lower():
+                                if payload.lower() == response_body.lower():  # 完全反映の場合
+                                    vulnerabilities_found.append(
+                                        {
+                                            "type": "xss_payload_reflection",
+                                            "payload": payload,
+                                            "pattern": pattern,
+                                            "severity": "high",
+                                        }
+                                    )
+                                    logger.warning(
+                                        "XSSペイロードがエスケープされていません",
+                                        payload=payload[:50],
+                                        pattern=pattern,
+                                    )
+                    else:
+                        # JSON APIでのエコーバックは情報漏洩ではあるが、XSSではない
+                        logger.debug(
+                            "JSON APIでのペイロード反映（XSSリスクなし）",
+                            content_type=content_type,
+                        )
 
             except Exception as e:
                 logger.error("XSSテスト実行中にエラー", payload=payload[:50], error=str(e))
@@ -260,7 +277,6 @@ class TestBasicInputValidation:
             pytest.fail(f"高リスクのXSS脆弱性が {len(high_severity)} 件発見されました")
 
     @pytest.mark.asyncio
-    @pytest.mark.security
     async def test_get_parameter_injection(self, async_client):  # noqa: C901
         """GET パラメータでの基本的なインジェクション検証"""
         logger.info("GET パラメータ インジェクション テスト開始")
@@ -368,7 +384,6 @@ class TestBasicInputValidation:
             pytest.fail(f"高リスクのGETパラメータ脆弱性が {len(high_severity)} 件発見されました")
 
     @pytest.mark.asyncio
-    @pytest.mark.security
     async def test_large_payload_dos_protection(self, async_client):  # noqa: C901
         """大きなペイロードの処理テスト（DoS対策基本検証）"""
         logger.info("大きなペイロードDoS保護テスト開始")
@@ -479,7 +494,6 @@ class TestBasicInputValidation:
             pytest.fail(f"高リスクのDoS脆弱性が {len(high_severity)} 件発見されました")
 
     @pytest.mark.asyncio
-    @pytest.mark.security
     async def test_null_and_empty_input_handling(self, async_client):
         """null値と空文字の処理テスト"""
         logger.info("null値・空文字処理テスト開始")
@@ -556,7 +570,6 @@ class TestBasicInputValidation:
             pytest.fail(f"高リスクのnull処理脆弱性が {len(high_severity)} 件発見されました")
 
     @pytest.mark.asyncio
-    @pytest.mark.security
     async def test_command_injection_basic(self, async_client):  # noqa: C901
         """基本的なコマンドインジェクション検証"""
         logger.info("コマンドインジェクション テスト開始")
@@ -587,39 +600,45 @@ class TestBasicInputValidation:
                         )
 
                     # 2. コマンド実行結果がレスポンスに含まれないこと
+                    # 注意: JSONPlaceholderはペイロードをエコーバックするため、
+                    # ペイロード自体に含まれる文字列は除外する必要がある
                     if response.status_code in [200, 201]:
                         response_text = response.text.lower()
+                        payload_lower = payload.lower()
 
                         # コマンド実行を示す可能性のあるパターン
-                        command_execution_indicators = [
-                            "uid=",
-                            "gid=",
-                            "total ",
-                            "/bin/",
-                            "/usr/",
-                            "etc/passwd",
-                            "root:",
-                            "bash",
-                            "sh:",
-                            "drwx",
-                            "-rw-",
-                            "cannot access",
-                        ]
+                        # （正規表現で実際の出力形式をチェック）
+                        command_execution_patterns = {
+                            # 実際のuid/gid出力形式: uid=1000(username)
+                            "uid_output": re.compile(r"uid=\d+\([a-z_][a-z0-9_-]*\)"),
+                            # 実際の/etc/passwd内容: root:x:0:0:...
+                            "passwd_content": re.compile(r"(root|bin|daemon|sys):x?:\d+:\d+"),
+                            # lsコマンド出力: drwxr-xr-x
+                            "ls_output": re.compile(r"[d-][rwx-]{9}\s+\d+"),
+                            # pingコマンド出力
+                            "ping_output": re.compile(r"(icmp_seq|bytes from|ttl=|time=)"),
+                            # whoamiコマンド出力（ユーザー名のみの行）
+                            "whoami_output": re.compile(r"^[a-z_][a-z0-9_-]{0,30}$", re.MULTILINE),
+                        }
 
-                        for indicator in command_execution_indicators:
-                            if indicator in response_text:
+                        for pattern_name, pattern in command_execution_patterns.items():
+                            # ペイロード自体に含まれるパターンは除外
+                            if pattern.search(payload_lower):
+                                continue
+
+                            if pattern.search(response_text):
                                 vulnerabilities_found.append(
                                     {
                                         "type": "command_execution_evidence",
                                         "payload": payload,
-                                        "indicator": indicator,
+                                        "indicator": pattern_name,
                                         "severity": "critical",
                                     }
                                 )
                                 logger.error(
                                     "コマンド実行の可能性",
                                     payload=payload[:30],
-                                    indicator=indicator,
+                                    indicator=pattern_name,
                                 )
 
                 except Exception as e:

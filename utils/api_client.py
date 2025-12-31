@@ -13,7 +13,7 @@ import json
 import random
 import time
 from types import TracebackType
-from typing import Any, Self, cast
+from typing import Any, Self
 
 import httpx
 
@@ -44,7 +44,7 @@ def exponential_backoff_with_jitter(
     jitter = delay * jitter_percent
     delay = delay + random.uniform(-jitter, jitter)  # noqa: S311
     # 最小値保証
-    return cast(float, max(0.1, delay))
+    return max(0.1, delay)
 
 
 # =============================================================================
@@ -193,7 +193,7 @@ class SyncAPIClient:
         if headers:
             self.default_headers.update(headers)
 
-        # ロガーの初期化
+        # ロガーの初期化（structlog統合）
         self.logger = get_logger(__name__)
 
         # HTTPクライアントの初期化
@@ -204,7 +204,7 @@ class SyncAPIClient:
             limits=httpx.Limits(max_connections=settings.api.max_connections),
         )
 
-        self.logger.info("APIClient initialized", base_url=self.base_url)
+        self.logger.info("api_client_initialized", base_url=self.base_url)
 
     def __enter__(self) -> Self:
         """コンテキストマネージャーのエントリー"""
@@ -223,7 +223,7 @@ class SyncAPIClient:
         """クライアントのクローズ"""
         if self._client:
             self._client.close()
-            self.logger.info("APIClient closed")
+            self.logger.info("api_client_closed")
 
     def _make_request_with_retry(self, method: str, endpoint: str, **kwargs: Any) -> httpx.Response:
         """
@@ -246,17 +246,21 @@ class SyncAPIClient:
         last_exception: APIClientError | None = None
 
         for attempt in range(self.retry_count + 1):
-            # ログ出力
-            if attempt > 0:
-                self.logger.warning(
-                    f"Retrying request: attempt {attempt + 1}/{self.retry_count + 1} "
-                    f"for {method} {endpoint}"
-                )
-            else:
-                self.logger.debug("Making request", method=method, endpoint=endpoint)
-
             # HTTPリクエスト実行（ネットワーク層）
             try:
+                # structlogでログ出力（DRY原則: 重複ログ削除）
+                if attempt > 0:
+                    self.logger.warning(
+                        "request_retry",
+                        attempt=attempt + 1,
+                        max_attempts=self.retry_count + 1,
+                        method=method,
+                        endpoint=endpoint,
+                    )
+                else:
+                    self.logger.debug("request_start", method=method, endpoint=endpoint)
+
+                # HTTPリクエスト実行
                 response = self._client.request(method, endpoint, **kwargs)
             except httpx.RequestError as e:
                 # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
@@ -267,14 +271,20 @@ class SyncAPIClient:
                 try:
                     response.raise_for_status()
                     self.logger.debug(
-                        f"Request successful: {method} {endpoint} -> {response.status_code}"
+                        "request_success",
+                        method=method,
+                        endpoint=endpoint,
+                        status_code=response.status_code,
                     )
                     return response
                 except httpx.HTTPStatusError as e:
                     # 4xxエラーはリトライしない（クライアントエラー）
                     if e.response.is_client_error:
                         self.logger.error(
-                            f"Client error: {e.response.status_code} for {method} {endpoint}"
+                            "client_error",
+                            status_code=e.response.status_code,
+                            method=method,
+                            endpoint=endpoint,
                         )
                         raise APIHTTPError(
                             f"HTTP {e.response.status_code} Client Error",
@@ -284,7 +294,10 @@ class SyncAPIClient:
 
                     # 5xxエラーはリトライ対象
                     self.logger.warning(
-                        f"Server error: {e.response.status_code} for {method} {endpoint}"
+                        "server_error",
+                        status_code=e.response.status_code,
+                        method=method,
+                        endpoint=endpoint,
                     )
                     last_exception = APIHTTPError(
                         f"HTTP {e.response.status_code} Server Error",
@@ -298,13 +311,15 @@ class SyncAPIClient:
                     attempt=attempt, base_delay=self.retry_delay, jitter_percent=0.3
                 )
                 self.logger.debug(
-                    f"Waiting {delay:.2f} seconds before retry "
-                    f"(attempt {attempt + 1}, exponential backoff with 30% jitter)..."
+                    "retry_backoff",
+                    delay_seconds=round(delay, 2),
+                    attempt=attempt + 1,
+                    strategy="exponential_backoff_with_jitter",
                 )
                 time.sleep(delay)
 
         # すべてのリトライが失敗
-        self.logger.error("All retry attempts failed", method=method, endpoint=endpoint)
+        self.logger.error("all_retries_failed", method=method, endpoint=endpoint)
         raise APIRetryError(
             f"Request failed after {self.retry_count + 1} attempts"
         ) from last_exception
@@ -380,29 +395,29 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
             params["_limit"] = limit
 
         response = self.get("/posts", params=params)
-        return cast(list[dict[str, Any]], _safe_parse_json(response))
+        return _safe_parse_json(response)
 
     def get_post(self, post_id: int) -> dict[str, Any]:
         """特定投稿の取得"""
         response = self.get(f"/posts/{post_id}")
-        return cast(dict[str, Any], _safe_parse_json(response))
+        return _safe_parse_json(response)
 
     def create_post(self, title: str, body: str, user_id: int) -> dict[str, Any]:
         """新規投稿の作成"""
         data = {"title": title, "body": body, "userId": user_id}
         response = self.post("/posts", json=data)
-        return cast(dict[str, Any], _safe_parse_json(response))
+        return _safe_parse_json(response)
 
     # Users API
     def get_users(self) -> list[dict[str, Any]]:
         """ユーザー一覧の取得"""
         response = self.get("/users")
-        return cast(list[dict[str, Any]], _safe_parse_json(response))
+        return _safe_parse_json(response)
 
     def get_user(self, user_id: int) -> dict[str, Any]:
         """特定ユーザーの取得"""
         response = self.get(f"/users/{user_id}")
-        return cast(dict[str, Any], _safe_parse_json(response))
+        return _safe_parse_json(response)
 
     # Todos API
     def get_todos(
@@ -421,23 +436,23 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
             params["_limit"] = limit
 
         response = self.get("/todos", params=params)
-        return cast(list[dict[str, Any]], _safe_parse_json(response))
+        return _safe_parse_json(response)
 
     def get_todo(self, todo_id: int) -> dict[str, Any]:
         """特定TODOの取得"""
         response = self.get(f"/todos/{todo_id}")
-        return cast(dict[str, Any], _safe_parse_json(response))
+        return _safe_parse_json(response)
 
     def create_todo(self, title: str, user_id: int, completed: bool = False) -> dict[str, Any]:
         """新規TODOの作成"""
         data = {"title": title, "userId": user_id, "completed": completed}
         response = self.post("/todos", json=data)
-        return cast(dict[str, Any], _safe_parse_json(response))
+        return _safe_parse_json(response)
 
     def update_todo(self, todo_id: int, **kwargs: Any) -> dict[str, Any]:
         """TODOの更新"""
         response = self.patch(f"/todos/{todo_id}", json=kwargs)
-        return cast(dict[str, Any], _safe_parse_json(response))
+        return _safe_parse_json(response)
 
     # Comments API
     def get_comments(self, post_id: int | None = None) -> list[dict[str, Any]]:
@@ -446,7 +461,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
             response = self.get(f"/posts/{post_id}/comments")
         else:
             response = self.get("/comments")
-        return cast(list[dict[str, Any]], _safe_parse_json(response))
+        return _safe_parse_json(response)
 
     # Albums & Photos API
     def get_albums(self, user_id: int | None = None) -> list[dict[str, Any]]:
@@ -456,7 +471,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
             params["userId"] = user_id
 
         response = self.get("/albums", params=params)
-        return cast(list[dict[str, Any]], _safe_parse_json(response))
+        return _safe_parse_json(response)
 
     def get_photos(self, album_id: int | None = None) -> list[dict[str, Any]]:
         """写真一覧の取得"""
@@ -464,7 +479,33 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
             response = self.get(f"/albums/{album_id}/photos")
         else:
             response = self.get("/photos")
-        return cast(list[dict[str, Any]], _safe_parse_json(response))
+        return _safe_parse_json(response)
+
+    # ヘルスチェック（DevOps/K8s readiness対応）
+    def health_check(self) -> bool:
+        """API接続の健全性チェック（同期版）
+
+        Docker/Kubernetes readiness probeとして使用可能。
+        軽量なリクエスト（/users?_limit=1）でAPI到達性を確認。
+
+        Returns:
+            bool: API到達可能ならTrue、エラー時はFalse
+
+        Note:
+            Async版と同一インターフェースで統一。
+            CLI、スクリプト、レガシーシステム統合時に使用。
+
+        Example:
+            >>> with SyncJSONPlaceholderClient() as client:
+            ...     if client.health_check():
+            ...         print("API is healthy")
+        """
+        try:
+            response = self.get("/users", params={"_limit": 1})
+            return response.status_code == 200
+        except Exception as e:
+            self.logger.warning("health_check_failed", error=str(e))
+            return False
 
 
 # =============================================================================
@@ -513,7 +554,7 @@ class AsyncAPIClient:
         if headers:
             self.default_headers.update(headers)
 
-        # ロガーの初期化
+        # ロガーの初期化（structlog統合）
         self.logger = get_logger(__name__)
 
         # HTTPクライアントの初期化（非同期）
@@ -524,7 +565,7 @@ class AsyncAPIClient:
             limits=httpx.Limits(max_connections=settings.api.max_connections),
         )
 
-        self.logger.info("AsyncAPIClient initialized", base_url=self.base_url)
+        self.logger.info("async_api_client_initialized", base_url=self.base_url)
 
     async def __aenter__(self) -> Self:
         """非同期コンテキストマネージャーのエントリー"""
@@ -568,17 +609,21 @@ class AsyncAPIClient:
         last_exception: APIClientError | None = None
 
         for attempt in range(self.retry_count + 1):
-            # ログ出力
-            if attempt > 0:
-                self.logger.warning(
-                    f"Retrying async request: attempt {attempt + 1}/{self.retry_count + 1} "
-                    f"for {method} {endpoint}"
-                )
-            else:
-                self.logger.debug("Making async request", method=method, endpoint=endpoint)
-
             # 非同期HTTPリクエスト実行（ネットワーク層）
             try:
+                # structlogでログ出力（DRY原則: 重複ログ削除）
+                if attempt > 0:
+                    self.logger.warning(
+                        "async_request_retry",
+                        attempt=attempt + 1,
+                        max_attempts=self.retry_count + 1,
+                        method=method,
+                        endpoint=endpoint,
+                    )
+                else:
+                    self.logger.debug("async_request_start", method=method, endpoint=endpoint)
+
+                # 非同期HTTPリクエスト実行
                 response = await self._client.request(method, endpoint, **kwargs)
             except httpx.RequestError as e:
                 # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
@@ -591,14 +636,20 @@ class AsyncAPIClient:
                 try:
                     response.raise_for_status()
                     self.logger.debug(
-                        f"Async request successful: {method} {endpoint} -> {response.status_code}"
+                        "async_request_success",
+                        method=method,
+                        endpoint=endpoint,
+                        status_code=response.status_code,
                     )
                     return response
                 except httpx.HTTPStatusError as e:
                     # 4xxエラーはリトライしない（クライアントエラー）
                     if e.response.is_client_error:
                         self.logger.error(
-                            f"Client error: {e.response.status_code} for {method} {endpoint}"
+                            "client_error",
+                            status_code=e.response.status_code,
+                            method=method,
+                            endpoint=endpoint,
                         )
                         raise APIHTTPError(
                             f"HTTP {e.response.status_code} Client Error",
@@ -608,7 +659,10 @@ class AsyncAPIClient:
 
                     # 5xxエラーはリトライ対象
                     self.logger.warning(
-                        f"Server error: {e.response.status_code} for {method} {endpoint}"
+                        "server_error",
+                        status_code=e.response.status_code,
+                        method=method,
+                        endpoint=endpoint,
                     )
                     last_exception = APIHTTPError(
                         f"HTTP {e.response.status_code} Server Error",
@@ -622,13 +676,15 @@ class AsyncAPIClient:
                     attempt=attempt, base_delay=self.retry_delay, jitter_percent=0.3
                 )
                 self.logger.debug(
-                    f"Waiting {delay:.2f} seconds before async retry "
-                    f"(attempt {attempt + 1}, exponential backoff with 30% jitter)..."
+                    "async_retry_backoff",
+                    delay_seconds=round(delay, 2),
+                    attempt=attempt + 1,
+                    strategy="exponential_backoff_with_jitter",
                 )
                 await asyncio.sleep(delay)
 
         # すべてのリトライが失敗
-        self.logger.error("All async retry attempts failed", method=method, endpoint=endpoint)
+        self.logger.error("async_all_retries_failed", method=method, endpoint=endpoint)
         raise APIRetryError(
             f"Async request failed after {self.retry_count + 1} attempts"
         ) from last_exception
@@ -701,24 +757,24 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             params["_limit"] = limit
 
         response = await self.get("/posts", params=params)
-        return cast(list[dict[str, Any]], _safe_parse_json(response))
+        return _safe_parse_json(response)
 
     async def get_post(self, post_id: int) -> dict[str, Any]:
         """特定投稿の非同期取得"""
         response = await self.get(f"/posts/{post_id}")
-        return cast(dict[str, Any], _safe_parse_json(response))
+        return _safe_parse_json(response)
 
     async def create_post(self, title: str, body: str, user_id: int) -> dict[str, Any]:
         """新規投稿の非同期作成"""
         data = {"title": title, "body": body, "userId": user_id}
         response = await self.post("/posts", json=data)
-        return cast(dict[str, Any], _safe_parse_json(response))
+        return _safe_parse_json(response)
 
     async def update_post(self, post_id: int, title: str, body: str) -> dict[str, Any]:
         """投稿更新の非同期実行"""
         data = {"title": title, "body": body}
         response = await self.put(f"/posts/{post_id}", json=data)
-        return cast(dict[str, Any], _safe_parse_json(response))
+        return _safe_parse_json(response)
 
     async def delete_post(self, post_id: int) -> None:
         """投稿削除の非同期実行"""
@@ -728,12 +784,12 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
     async def get_users(self) -> list[dict[str, Any]]:
         """ユーザー一覧の非同期取得"""
         response = await self.get("/users")
-        return cast(list[dict[str, Any]], _safe_parse_json(response))
+        return _safe_parse_json(response)
 
     async def get_user(self, user_id: int) -> dict[str, Any]:
         """特定ユーザーの非同期取得"""
         response = await self.get(f"/users/{user_id}")
-        return cast(dict[str, Any], _safe_parse_json(response))
+        return _safe_parse_json(response)
 
     # Todos API
     async def get_todos(
@@ -752,12 +808,12 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             params["_limit"] = limit
 
         response = await self.get("/todos", params=params)
-        return cast(list[dict[str, Any]], _safe_parse_json(response))
+        return _safe_parse_json(response)
 
     async def get_todo(self, todo_id: int) -> dict[str, Any]:
         """特定TODOの非同期取得"""
         response = await self.get(f"/todos/{todo_id}")
-        return cast(dict[str, Any], _safe_parse_json(response))
+        return _safe_parse_json(response)
 
     async def create_todo(
         self, title: str, user_id: int, completed: bool = False
@@ -765,25 +821,43 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         """新規TODOの非同期作成"""
         data = {"title": title, "userId": user_id, "completed": completed}
         response = await self.post("/todos", json=data)
-        return cast(dict[str, Any], _safe_parse_json(response))
+        return _safe_parse_json(response)
 
     async def update_todo(self, todo_id: int, **kwargs: Any) -> dict[str, Any]:
         """TODOの非同期更新"""
         response = await self.patch(f"/todos/{todo_id}", json=kwargs)
-        return cast(dict[str, Any], _safe_parse_json(response))
+        return _safe_parse_json(response)
 
     # Users API 追加メソッド
     async def create_user(self, user_data: dict[str, Any]) -> dict[str, Any]:
         """新規ユーザーの非同期作成"""
         response = await self.post("/users", json=user_data)
-        return cast(dict[str, Any], _safe_parse_json(response))
+        return _safe_parse_json(response)
 
     async def bulk_create_users(self, users_data: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """複数ユーザーの非同期一括作成"""
-        # 並行してユーザー作成
+        """複数ユーザーの非同期一括作成
+
+        個別失敗を許容し、成功したユーザーのみ返却。
+        失敗時はwarningログを出力（最初の5件まで詳細表示）。
+        """
+        # 並行してユーザー作成（個別失敗許容）
         tasks = [self.create_user(user_data) for user_data in users_data]
-        results = await asyncio.gather(*tasks)
-        return results
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # 成功・失敗を分離（型安全なフィルタリング）
+        successful: list[dict[str, Any]] = [r for r in results if isinstance(r, dict)]
+        failed: list[BaseException] = [r for r in results if isinstance(r, BaseException)]
+
+        # 失敗時はログ出力（A1: デバッグ改善）
+        if failed:
+            self.logger.warning(
+                "bulk_create_partial_failure",
+                failed_count=len(failed),
+                success_count=len(successful),
+                errors=[str(e) for e in failed[:5]],  # 最初の5件のみ
+            )
+
+        return successful
 
     # Comments API
     async def get_comments(self, post_id: int | None = None) -> list[dict[str, Any]]:
@@ -792,7 +866,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             response = await self.get(f"/posts/{post_id}/comments")
         else:
             response = await self.get("/comments")
-        return cast(list[dict[str, Any]], _safe_parse_json(response))
+        return _safe_parse_json(response)
 
     # Albums & Photos API
     async def get_albums(self, user_id: int | None = None) -> list[dict[str, Any]]:
@@ -802,7 +876,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             params["userId"] = user_id
 
         response = await self.get("/albums", params=params)
-        return cast(list[dict[str, Any]], _safe_parse_json(response))
+        return _safe_parse_json(response)
 
     async def get_photos(self, album_id: int | None = None) -> list[dict[str, Any]]:
         """写真一覧の非同期取得"""
@@ -810,7 +884,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             response = await self.get(f"/albums/{album_id}/photos")
         else:
             response = await self.get("/photos")
-        return cast(list[dict[str, Any]], _safe_parse_json(response))
+        return _safe_parse_json(response)
 
     # 並行処理の例
     async def get_user_data(self, user_id: int) -> dict[str, Any]:
@@ -832,6 +906,81 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             "todos": todos,
             "albums": albums,
         }
+
+    # ヘルスチェック（DevOps/K8s readiness対応）
+    async def health_check(self) -> bool:
+        """API接続の健全性チェック
+
+        Docker/Kubernetes readiness probeとして使用可能。
+        軽量なリクエスト（/users?_limit=1）でAPI到達性を確認。
+
+        Returns:
+            bool: API到達可能ならTrue、エラー時はFalse
+
+        学習ポイント:
+        - Readiness Probe: コンテナがトラフィックを受け入れ可能か確認
+        - Liveness Probe: コンテナが正常に動作しているか確認
+        - 軽量クエリ（_limit=1）でサーバー負荷を最小化
+
+        Example:
+            >>> async with AsyncJSONPlaceholderClient() as client:
+            ...     if await client.health_check():
+            ...         print("API is healthy")
+        """
+        try:
+            response = await self.get("/users", params={"_limit": 1})
+            return response.status_code == 200
+        except Exception as e:
+            self.logger.warning("health_check_failed", error=str(e))
+            return False
+
+    # 複数ユーザー取得（Semaphore制御）
+    async def get_multiple_users(
+        self, user_ids: list[int], max_concurrent: int = 5
+    ) -> list[dict[str, Any]]:
+        """複数ユーザーを並行取得（Semaphore制御付き）
+
+        asyncio.Semaphoreを使用してRate Limit対策。
+        GitHub APIなど制限のあるAPIでも安全に並行リクエスト可能。
+
+        Args:
+            user_ids: 取得対象のユーザーIDリスト
+            max_concurrent: 同時実行数の上限（デフォルト5）
+
+        Returns:
+            list[dict]: 取得成功したユーザー情報リスト
+                       （取得失敗したIDはスキップ、warningログ出力）
+
+        学習ポイント:
+        - asyncio.Semaphore: 同時実行数を制限するロック機構
+        - Rate Limit対策: 外部APIへの過剰リクエスト防止
+        - Graceful degradation: 一部失敗しても残りの結果を返す
+
+        Example:
+            >>> async with AsyncJSONPlaceholderClient() as client:
+            ...     users = await client.get_multiple_users([1, 2, 3], max_concurrent=2)
+            ...     print(f"Fetched {len(users)} users")
+        """
+        semaphore = asyncio.Semaphore(max_concurrent)
+
+        async def fetch_with_semaphore(user_id: int) -> dict[str, Any] | None:
+            """Semaphore制御付きでユーザー取得"""
+            async with semaphore:
+                try:
+                    return await self.get_user(user_id)
+                except Exception as e:
+                    self.logger.warning(
+                        "get_user_failed",
+                        user_id=user_id,
+                        error=str(e),
+                    )
+                    return None
+
+        # 並行実行（return_exceptions不要：内部でtry-catch済み）
+        results = await asyncio.gather(*[fetch_with_semaphore(uid) for uid in user_ids])
+
+        # None除外（失敗分）
+        return [r for r in results if r is not None]
 
 
 # =============================================================================
@@ -896,7 +1045,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    # Note: structlogはget_logger()初回呼び出し時に自動設定される
+    # structlogはget_logger()初回呼び出し時に自動設定されるため、手動設定不要
     main()
 
 

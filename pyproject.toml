@@ -30,32 +30,9 @@ dependencies = [
     "structlog>=23.1.0",       # 構造化ログ
     "pydantic>=2.0.0",         # データバリデーション
     "pydantic-settings>=2.0.0", # 設定管理
-    "pytest",                   # テストフレームワーク
     "psutil>=6.1.1",            # システムメトリクス
     "pyyaml>=6.0",              # YAML設定ファイル読み込み
-    "respx>=0.22.0",            # httpx用モックライブラリ
-]
-
-# 開発・テスト依存関係
-[project.optional-dependencies]
-dev = [
-    # テストフレームワーク
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",   # 非同期テストサポート
-    "pytest-mock>=3.12.0",      # モック機能
-    "pytest-cov>=4.1.0",        # カバレッジ計測
-    "pytest-xdist>=3.5.0",      # 並列テスト実行
-    
-    # 品質管理ツール
-    "ruff>=0.1.0",               # 統合リンター・フォーマッター (black, isort, flake8統合)
-    "mypy>=1.8.0",               # 型チェッカー
-    "bandit>=1.7.5",             # セキュリティスキャン
-    "safety>=3.0.0",             # 脆弱性チェック
-    
-    # 開発サポート
-    "ipython>=8.10.0",           # 対話型Python
-    "jupyter>=1.0.0",            # Notebook環境
-    "pre-commit>=3.6.0",         # Git hooks
+    "sentry-sdk[httpx]>=2.48.0,<3.0.0",  # エラー監視（httpx統合）
 ]
 
 [project.urls]
@@ -66,15 +43,19 @@ Issues = "https://github.com/yourusername/api-test-devops-portfolio/issues"
 
 [dependency-groups]
 dev = [
-    "bandit>=1.8.6",
-    "detect-secrets>=1.5.0",
-    "pre-commit>=4.3.0",
+    # テスト
+    "pytest>=8.0.0",
     "pytest-asyncio>=1.1.0",
     "pytest-cov>=4.1.0",
     "pytest-xdist>=3.5.0",
-    "mypy>=1.8.0", 
+    "respx>=0.22.0",            # httpx用モックライブラリ
+    # 品質管理
     "ruff>=0.1.0",
+    "mypy>=1.8.0",
+    "bandit>=1.8.6",
     "safety>=3.6.0",
+    # 開発サポート
+    "pre-commit>=4.3.0",
 ]
 # pytest設定
 [tool.pytest.ini_options]
@@ -92,20 +73,16 @@ addopts = [
     "--cov-report=term-missing", # 欠損行表示
     "--cov-report=html:reports/htmlcov",  # HTMLレポート
     "--cov-report=xml:reports/coverage.xml",  # XMLレポート
-    "--cov-report=json",
-    "-v",
-    "--cov-fail-under=65",       # ローカル目標: 85%（CI: 65%→85%段階的上昇）
+    "--cov-fail-under=70",       # ローカル目標: 85%
 ]
 markers = [
     "unit: 単体テスト",
     "integration: 統合テスト",
     "e2e: E2Eテスト",
     "performance: パフォーマンステスト",
-    "security: セキュリティテスト",
     "slow: 実行時間の長いテスト",
-    "external: 外部API依存テスト（週次CI実行、Rate Limit考慮）",
-    "smoke: スモークテスト（6週プランで実装予定）",
-    "regression: 回帰テスト（クリティカルパス検証）",
+    "external: 外部API依存テスト",
+    "smoke: スモークテスト（main PR用、基本機能の動作確認）"
 ]
 asyncio_mode = "auto"            # 非同期テスト自動検出
 
@@ -119,7 +96,7 @@ omit = [
     ".tox/*",
     "build/*",
     "docs/*",
-    "*/__init__.py"
+    "*/__init__.py",
 ]
 branch = true                    # ブランチカバレッジも計測
 
@@ -133,7 +110,7 @@ exclude_lines = [
     "raise NotImplementedError",
     "if 0:",
     "if __name__ == .__main__.:",
-    "class .*\\bProtocol\\:",
+    "class .*\\(.*Protocol.*\\):",
     "@(abc\\.)?abstractmethod",
 ]
 show_missing = true
@@ -198,6 +175,10 @@ strict_equality = true
 [[tool.mypy.overrides]]
 module = "tests.*"
 disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "utils.api_client"
+warn_return_any = false  # _safe_parse_json()がAnyを返すのは設計上妥当（JSONパースは実行時まで型不明）
 
 # bandit設定（セキュリティスキャン）
 [tool.bandit]

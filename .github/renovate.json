@@ -1,0 +1,21 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "description": "Docker digest auto-update (Git Flow + CI-gated automerge)",
+  "enabledManagers": ["dockerfile"],
+  "baseBranches": ["develop"],
+  "schedule": ["before 9am on monday"],
+  "timezone": "Asia/Tokyo",
+  "labels": ["dependencies", "docker"],
+  "packageRules": [
+    {
+      "description": "Docker digest - automerge after CI passes (defense-in-depth: CI + develop isolation + main manual review)",
+      "matchManagers": ["dockerfile"],
+      "matchUpdateTypes": ["digest"],
+      "automerge": true,
+      "platformAutomerge": true
+    }
+  ],
+  "ignorePaths": ["claude-flow-lite/**"]
+}
+

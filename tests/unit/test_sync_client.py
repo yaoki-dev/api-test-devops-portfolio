@@ -3,11 +3,12 @@ SyncAPIClient 基本機能テスト
 
 Note:
     test_async_client.py と対称構造で設計。
-    責務: 基本CRUD操作 + Edge Cases
+    責務: 基本CRUD操作 + Edge Cases + DevOps
 
-テストケース一覧（8件）:
+テストケース一覧（9件）:
     - Basic Operations (4件): GET, POST, PUT, DELETE
     - Edge Cases (4件): context_manager, empty_response, malformed_json, boundary
+    - DevOps (1件): health_check
 """
 
 import sys
@@ -16,7 +17,7 @@ from unittest.mock import Mock
 import pytest
 
 from tests.conftest import create_mock_response
-from utils.api_client import SyncAPIClient
+from utils.api_client import SyncAPIClient, SyncJSONPlaceholderClient
 
 # =============================================================================
 # Basic Operations (4件)
@@ -141,6 +142,51 @@ def test_sync_boundary_user_id(mock_httpx_sync_client: Mock, user_id: int) -> No
         response = client.get(f"/users/{user_id}")
 
         assert response.json()["id"] == user_id
+
+
+# =============================================================================
+# DevOps (1件)
+# =============================================================================
+
+
+def test_sync_health_check(mock_httpx_sync_client: Mock) -> None:
+    """
+    API ヘルスチェック機能のテスト（同期版）
+
+    検証項目：
+    - health_check()メソッドの動作
+    - 正常時: True返却
+    - エラー時: False返却（graceful degradation）
+
+    学習ポイント:
+    - Docker/Kubernetes readiness probe対応
+    - Sync/Async両対応の統一インターフェース設計
+    """
+    # Test 1: 正常時 → True
+    healthy_response = create_mock_response(200, json_data=[{"id": 1, "name": "User 1"}])
+    healthy_response.raise_for_status.return_value = None
+    mock_httpx_sync_client.request.return_value = healthy_response
+
+    with SyncJSONPlaceholderClient() as client:
+        client._client = mock_httpx_sync_client
+        result = client.health_check()
+
+        assert result is True
+
+        # _limit=1パラメータで軽量クエリ確認
+        call_args = mock_httpx_sync_client.request.call_args
+        assert "params" in call_args[1]
+        assert call_args[1]["params"]["_limit"] == 1
+
+    # Test 2: エラー時 → False（graceful degradation）
+    mock_httpx_sync_client.reset_mock()
+    mock_httpx_sync_client.request.side_effect = Exception("Connection refused")
+
+    with SyncJSONPlaceholderClient() as client:
+        client._client = mock_httpx_sync_client
+        result = client.health_check()
+
+        assert result is False
 
 
 # =============================================================================

@@ -3,8 +3,8 @@ GitHub API Integration Tests（実API呼び出し）
 
 注意:
 - Rate Limit制約: 認証なし60 req/h
-- @pytest.mark.externalで分離
-- 実行: 週次CI (weekly-comprehensive) で自動実行
+- @pytest.mark.externalで分離（CI/CD時は除外推奨）
+- 実行コマンド: pytest -m external（手動実行時のみ）
 """
 
 import pytest

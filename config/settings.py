@@ -8,13 +8,106 @@
 - セキュリティベストプラクティス
 """
 
+import ipaddress
 import logging
+import os
+import socket
 from enum import Enum
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# =============================================================================
+# SSRF Prevention Configuration
+# =============================================================================
+
+
+def _get_allowed_domains() -> set[str]:
+    """環境変数またはデフォルト値から許可ドメインリストを取得
+
+    環境変数 ALLOWED_DOMAINS: カンマ区切りのドメインリスト
+    例: ALLOWED_DOMAINS=api.example.com,api.test.com
+    """
+    env_domains = os.environ.get("ALLOWED_DOMAINS", "")
+    if env_domains:
+        return set(d.strip() for d in env_domains.split(",") if d.strip())
+
+    # デフォルト: 本番用 + テスト用ドメイン
+    return {
+        # 本番用
+        "jsonplaceholder.typicode.com",
+        "api.github.com",
+        "httpbin.org",
+        # テスト用（example.com は RFC 2606 で予約済み）
+        "example.com",
+        "api.example.com",
+        "test.example.com",
+        "test-api.example.com",
+    }
+
+
+# 許可されたドメインリスト（環境変数で上書き可能）
+ALLOWED_DOMAINS: set[str] = _get_allowed_domains()
+
+# 危険なプライベートIPレンジ
+PRIVATE_IP_RANGES: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),  # loopback
+    ipaddress.ip_network("169.254.0.0/16"),  # link-local (AWS metadata)
+    ipaddress.ip_network("::1/128"),  # IPv6 loopback
+    ipaddress.ip_network("fc00::/7"),  # IPv6 private
+    ipaddress.ip_network("fe80::/10"),  # IPv6 link-local
+]
+
+
+def _check_ip_private(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """IPアドレスがプライベートかチェック（IPv4-mapped IPv6対応）
+
+    Security:
+        IPv4-mapped IPv6（::ffff:x.x.x.x）を使ったSSRFバイパス攻撃を防止。
+        例: ::ffff:192.168.1.1 は実質的に192.168.1.1と同じ。
+    """
+    # IPv4-mapped IPv6アドレスの検出と変換
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+        # ::ffff:192.168.1.1 → 192.168.1.1 として評価
+        ip = ip.ipv4_mapped
+
+    return any(ip in network for network in PRIVATE_IP_RANGES)
+
+
+def is_private_ip(hostname: str) -> bool:
+    """ホスト名がプライベートIPまたはローカルアドレスかチェック
+
+    Args:
+        hostname: チェック対象のホスト名またはIPアドレス
+
+    Returns:
+        True: プライベート/ローカルIP, False: パブリックIP
+
+    Security:
+        - IPv4-mapped IPv6（::ffff:x.x.x.x）もプライベートIPとして検出
+        - DNS解決失敗時はFail-Closed（ブロック）
+    """
+    try:
+        # IPアドレス形式の場合
+        ip = ipaddress.ip_address(hostname)
+        return _check_ip_private(ip)
+    except ValueError:
+        # ホスト名の場合、DNS解決を試みる
+        try:
+            resolved_ip = socket.gethostbyname(hostname)
+            ip = ipaddress.ip_address(resolved_ip)
+            return _check_ip_private(ip)
+        except (OSError, ValueError):
+            # DNS解決失敗は安全側に倒す（ブロック = Fail-Closed）
+            # セキュリティ: SSRF攻撃防止のため、不明なホストはプライベートIPと見なす
+            return True
+
 
 # =============================================================================
 # 環境定義
@@ -69,9 +162,36 @@ class APIConfig(BaseModel):
     @field_validator("base_url")
     @classmethod
     def validate_base_url(cls, v: str) -> str:
-        """ベースURLのバリデーション"""
+        """ベースURLのバリデーション（SSRF Prevention対応）
+
+        Security:
+            - プライベートIP/ループバックアドレスをブロック
+            - 許可されたドメインのみ許可（ALLOWED_DOMAINS）
+            - AWS metadata endpoint (169.254.169.254) をブロック
+        """
         if not v.startswith(("http://", "https://")):
             raise ValueError("Base URL must start with http:// or https://")
+
+        # URLパース
+        parsed = urlparse(v)
+        hostname = parsed.hostname
+
+        if not hostname:
+            raise ValueError("Invalid URL: hostname not found")
+
+        # SSRF Prevention: プライベートIPチェック
+        if is_private_ip(hostname):
+            raise ValueError(
+                f"SSRF Prevention: Private/loopback IP addresses are not allowed: {hostname}"
+            )
+
+        # SSRF Prevention: 許可ドメインチェック
+        if hostname not in ALLOWED_DOMAINS:
+            raise ValueError(
+                f"SSRF Prevention: Domain not in allowlist: {hostname}. "
+                f"Allowed: {', '.join(sorted(ALLOWED_DOMAINS))}"
+            )
+
         if v.endswith("/"):
             v = v.rstrip("/")
         return v
@@ -155,6 +275,23 @@ class SecurityConfig(BaseModel):
     enable_cors: bool = Field(default=False, description="CORS有効化")
 
 
+class SentryConfig(BaseModel):
+    """Sentry関連の設定"""
+
+    dsn: SecretStr = Field(default=SecretStr(""), description="Sentry DSN")
+    enabled: bool = Field(default=False, description="Sentry有効化")
+    environment: str | None = Field(
+        default=None, description="環境名（未設定時はsettings.environmentを使用）"
+    )
+    traces_sample_rate: float = Field(
+        default=0.1, ge=0.0, le=1.0, description="トレースサンプリングレート"
+    )
+    profiles_sample_rate: float = Field(
+        default=0.1, ge=0.0, le=1.0, description="プロファイリングサンプリングレート"
+    )
+    send_default_pii: bool = Field(default=False, description="PII送信の有効化")
+
+
 # =============================================================================
 # メイン設定クラス
 # =============================================================================
@@ -184,6 +321,7 @@ class Settings(BaseSettings):
     log: LogConfig = Field(default_factory=LogConfig)
     test: TestConfig = Field(default_factory=TestConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
+    sentry: SentryConfig = Field(default_factory=SentryConfig)
 
     @field_validator("environment", mode="before")
     @classmethod
@@ -262,6 +400,12 @@ class Settings(BaseSettings):
                     security["api_key"] = "***MASKED***"
                 if security.get("jwt_secret"):
                     security["jwt_secret"] = "***MASKED***"  # noqa: S105
+
+            # Sentry DSNをマスク（空文字列も含めてマスク）
+            if "sentry" in data:
+                sentry = data["sentry"]
+                if "dsn" in sentry:
+                    sentry["dsn"] = "***MASKED***"
 
         return data
 

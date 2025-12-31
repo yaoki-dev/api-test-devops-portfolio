@@ -9,7 +9,7 @@
 import asyncio
 import json
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, cast
 
 import httpx
@@ -125,6 +125,8 @@ class AsyncGitHubClient:
         self.user_agent = user_agent
         self._client: httpx.AsyncClient | None = None
         self._etag_cache: dict[str, str] = {}  # URL -> ETag
+        # URL -> response data（304レスポンス時のキャッシュ返却用）
+        self._data_cache: dict[str, dict[str, Any] | list[dict[str, Any]]] = {}
         self.logger = get_logger(__name__)
 
     async def __aenter__(self) -> "AsyncGitHubClient":
@@ -278,7 +280,7 @@ class AsyncGitHubClient:
                 remaining = int(response.headers.get("X-RateLimit-Remaining", 999))
                 if remaining < 10:
                     reset_time = int(response.headers.get("X-RateLimit-Reset", 0))
-                    reset_dt = datetime.fromtimestamp(reset_time)
+                    reset_dt = datetime.fromtimestamp(reset_time, tz=UTC)
                     self.logger.warning(
                         "rate_limit_low",
                         remaining=remaining,
@@ -287,8 +289,10 @@ class AsyncGitHubClient:
 
                 # ステータスコード処理
                 if response.status_code == 304:
-                    # 304 Not Modified: キャッシュ有効
-                    return {}
+                    # 304 Not Modified: キャッシュデータを返却
+                    if endpoint in self._data_cache:
+                        return self._data_cache[endpoint]
+                    return {}  # キャッシュミス時は空辞書（理論上発生しない）
 
                 if response.status_code == 404:
                     raise NotFoundError(f"Resource not found: {endpoint}")
@@ -327,10 +331,6 @@ class AsyncGitHubClient:
 
                 response.raise_for_status()
 
-                # ETagキャッシュ更新
-                if "ETag" in response.headers:
-                    self._etag_cache[endpoint] = response.headers["ETag"]
-
                 # JSONパース（破損JSON対応）
                 try:
                     result_json: dict[str, Any] | list[dict[str, Any]] = cast(
@@ -340,6 +340,12 @@ class AsyncGitHubClient:
                 except json.JSONDecodeError as e:
                     self.logger.error("json_decode_error", endpoint=endpoint, error=str(e))
                     raise GitHubAPIError(f"Invalid JSON response: {e}") from e
+
+                # ETag/データキャッシュ同時更新（304レスポンス対応）
+                if "ETag" in response.headers:
+                    self._etag_cache[endpoint] = response.headers["ETag"]
+                    self._data_cache[endpoint] = result_json
+
                 return result_json
 
             except GitHubAPIError:
