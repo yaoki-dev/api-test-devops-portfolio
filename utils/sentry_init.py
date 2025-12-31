@@ -210,7 +210,15 @@ def init_sentry() -> bool:
         return True
 
     except ImportError as exc:
-        # sentry-sdk未インストール（開発環境では許容）
+        # sentry-sdk未インストール
+        # 本番環境では必須 → Fail-Fast（依存関係漏れを即座に検出）
+        settings = get_settings()
+        if settings.is_production():
+            raise RuntimeError(
+                f"Sentry SDK not installed in production: {exc}. Add 'sentry-sdk' to dependencies."
+            ) from exc
+
+        # 開発/テスト環境では許容（警告のみ）
         if SENTRY_DEBUG:
             warnings.warn(
                 f"Sentry SDK not installed: {exc}",
@@ -220,7 +228,7 @@ def init_sentry() -> bool:
         return False
 
     except Exception as exc:  # noqa: BLE001
-        # 初期化失敗 - 本番環境では例外を発生させる（Fail-Safe）
+        # その他の初期化失敗 - 本番環境では例外を発生させる（Fail-Fast）
         settings = get_settings()
         if settings.is_production():
             raise RuntimeError(

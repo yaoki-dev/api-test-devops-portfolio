@@ -619,3 +619,72 @@ class TestSSRFPrevention:
         """
         config = APIConfig(base_url=allowed_domain)
         assert config.base_url == allowed_domain.rstrip("/")
+
+    @pytest.mark.security
+    @pytest.mark.parametrize(
+        ("ipv6_address", "expected_private"),
+        [
+            # IPv6ループバック
+            pytest.param("::1", True, id="ipv6_loopback"),
+            # IPv6ユニークローカル（RFC 4193）
+            pytest.param("fc00::1", True, id="ipv6_unique_local_fc00"),
+            pytest.param("fd00::1", True, id="ipv6_unique_local_fd00"),
+            # IPv6リンクローカル（RFC 4291）
+            pytest.param("fe80::1", True, id="ipv6_link_local"),
+            # IPv4-mapped IPv6（バイパス攻撃対策）
+            pytest.param("::ffff:192.168.1.1", True, id="ipv4_mapped_private"),
+            pytest.param("::ffff:127.0.0.1", True, id="ipv4_mapped_loopback"),
+            # パブリックIPv6（False = 許可候補）
+            pytest.param("2001:4860:4860::8888", False, id="google_dns_ipv6"),
+        ],
+    )
+    def test_is_private_ip_ipv6_detection(self, ipv6_address: str, expected_private: bool) -> None:
+        """IPv6プライベートIPの検出
+
+        Security Rationale:
+            IPv4-mapped IPv6（::ffff:x.x.x.x）を使ったSSRFバイパス攻撃を防止。
+            例: ::ffff:192.168.1.1 は実質的に192.168.1.1と同じ。
+        """
+        result = is_private_ip(ipv6_address)
+        assert result == expected_private, (
+            f"Expected is_private_ip({ipv6_address}) == {expected_private}"
+        )
+
+    @pytest.mark.security
+    @pytest.mark.parametrize(
+        ("boundary_ip", "expected_private", "description"),
+        [
+            # 10.0.0.0/8 境界
+            pytest.param("10.0.0.0", True, "10.x.x.x range start", id="private_10_start"),
+            pytest.param("10.255.255.255", True, "10.x.x.x range end", id="private_10_end"),
+            pytest.param("9.255.255.255", False, "just below 10.x.x.x", id="below_private_10"),
+            pytest.param("11.0.0.0", False, "just above 10.x.x.x", id="above_private_10"),
+            # 172.16.0.0/12 境界
+            pytest.param("172.16.0.0", True, "172.16-31 start", id="private_172_start"),
+            pytest.param("172.31.255.255", True, "172.16-31 end", id="private_172_end"),
+            pytest.param("172.15.255.255", False, "just below 172.16", id="below_private_172"),
+            pytest.param("172.32.0.0", False, "just above 172.31", id="above_private_172"),
+            # 192.168.0.0/16 境界
+            pytest.param("192.168.0.0", True, "192.168 start", id="private_192_start"),
+            pytest.param("192.168.255.255", True, "192.168 end", id="private_192_end"),
+            pytest.param("192.167.255.255", False, "just below 192.168", id="below_private_192"),
+            pytest.param("192.169.0.0", False, "just above 192.168", id="above_private_192"),
+            # 127.0.0.0/8 境界（ループバック）
+            pytest.param("127.0.0.1", True, "standard loopback", id="loopback_standard"),
+            pytest.param("127.255.255.255", True, "loopback end", id="loopback_end"),
+        ],
+    )
+    def test_is_private_ip_boundary_values(
+        self, boundary_ip: str, expected_private: bool, description: str
+    ) -> None:
+        """プライベートIP範囲の境界値テスト
+
+        Security Rationale:
+            境界付近のIPアドレスで正しくプライベート/パブリックを
+            判定できることを確認し、Off-by-oneエラーを防止。
+        """
+        result = is_private_ip(boundary_ip)
+        assert result == expected_private, (
+            f"Boundary test failed for {description}: "
+            f"is_private_ip({boundary_ip}) should be {expected_private}"
+        )

@@ -65,6 +65,21 @@ PRIVATE_IP_RANGES: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = [
 ]
 
 
+def _check_ip_private(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """IPアドレスがプライベートかチェック（IPv4-mapped IPv6対応）
+
+    Security:
+        IPv4-mapped IPv6（::ffff:x.x.x.x）を使ったSSRFバイパス攻撃を防止。
+        例: ::ffff:192.168.1.1 は実質的に192.168.1.1と同じ。
+    """
+    # IPv4-mapped IPv6アドレスの検出と変換
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+        # ::ffff:192.168.1.1 → 192.168.1.1 として評価
+        ip = ip.ipv4_mapped
+
+    return any(ip in network for network in PRIVATE_IP_RANGES)
+
+
 def is_private_ip(hostname: str) -> bool:
     """ホスト名がプライベートIPまたはローカルアドレスかチェック
 
@@ -73,17 +88,21 @@ def is_private_ip(hostname: str) -> bool:
 
     Returns:
         True: プライベート/ローカルIP, False: パブリックIP
+
+    Security:
+        - IPv4-mapped IPv6（::ffff:x.x.x.x）もプライベートIPとして検出
+        - DNS解決失敗時はFail-Closed（ブロック）
     """
     try:
         # IPアドレス形式の場合
         ip = ipaddress.ip_address(hostname)
-        return any(ip in network for network in PRIVATE_IP_RANGES)
+        return _check_ip_private(ip)
     except ValueError:
         # ホスト名の場合、DNS解決を試みる
         try:
             resolved_ip = socket.gethostbyname(hostname)
             ip = ipaddress.ip_address(resolved_ip)
-            return any(ip in network for network in PRIVATE_IP_RANGES)
+            return _check_ip_private(ip)
         except (OSError, ValueError):
             # DNS解決失敗は安全側に倒す（ブロック = Fail-Closed）
             # セキュリティ: SSRF攻撃防止のため、不明なホストはプライベートIPと見なす

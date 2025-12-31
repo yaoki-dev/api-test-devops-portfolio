@@ -526,3 +526,63 @@ class TestSdkExceptionHandling:
         assert "Sentry initialization failed in production" in str(exc_info.value)
         assert "ValueError" in str(exc_info.value)
         assert is_sentry_initialized() is False
+
+    @patch("utils.sentry_init.get_settings")
+    def test_import_error_raises_in_production(self, mock_settings: MagicMock) -> None:
+        """本番環境でsentry-sdk未インストールの場合はRuntimeErrorを発生させる
+
+        Security Rationale:
+            本番環境でSentry SDKがインストールされていないと、
+            エラー監視が完全に無効化される。依存関係漏れの早期検出のため、
+            Fail-Fast原則により明示的に失敗させる。
+        """
+        mock_settings.return_value.sentry.enabled = True
+        mock_settings.return_value.sentry.dsn = SecretStr(
+            "https://abc123@o456.ingest.us.sentry.io/789"
+        )
+        mock_settings.return_value.sentry.environment = "production"
+        mock_settings.return_value.is_production.return_value = True  # 本番環境
+
+        # sentry_sdkのimportをモックしてImportErrorを発生させる
+        import builtins
+
+        original_import = builtins.__import__
+
+        def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+            if name == "sentry_sdk":
+                raise ImportError("No module named 'sentry_sdk'")
+            return original_import(name, *args, **kwargs)
+
+        with patch.object(builtins, "__import__", side_effect=mock_import):
+            with pytest.raises(RuntimeError) as exc_info:
+                init_sentry()
+
+        assert "Sentry SDK not installed in production" in str(exc_info.value)
+        assert "Add 'sentry-sdk' to dependencies" in str(exc_info.value)
+        assert is_sentry_initialized() is False
+
+    @patch("utils.sentry_init.get_settings")
+    def test_import_error_returns_false_in_dev(self, mock_settings: MagicMock) -> None:
+        """開発環境でsentry-sdk未インストールの場合はFalseを返す"""
+        mock_settings.return_value.sentry.enabled = True
+        mock_settings.return_value.sentry.dsn = SecretStr(
+            "https://abc123@o456.ingest.us.sentry.io/789"
+        )
+        mock_settings.return_value.sentry.environment = "development"
+        mock_settings.return_value.is_production.return_value = False  # 開発環境
+
+        # sentry_sdkのimportをモックしてImportErrorを発生させる
+        import builtins
+
+        original_import = builtins.__import__
+
+        def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+            if name == "sentry_sdk":
+                raise ImportError("No module named 'sentry_sdk'")
+            return original_import(name, *args, **kwargs)
+
+        with patch.object(builtins, "__import__", side_effect=mock_import):
+            result = init_sentry()
+
+        assert result is False
+        assert is_sentry_initialized() is False
