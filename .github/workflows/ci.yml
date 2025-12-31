@@ -70,7 +70,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: pr-validation-results
           path: |
@@ -150,7 +150,7 @@ jobs:
 
       - name: Upload regression test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: post-merge-results
           path: reports/
@@ -210,7 +210,7 @@ jobs:
 
       - name: Upload weekly test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: weekly-comprehensive-results
           path: |
@@ -251,7 +251,7 @@ jobs:
           cat status_report.md
 
       - name: Upload status report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: pipeline-status-report
           path: status_report.md
