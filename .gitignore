@@ -82,6 +82,7 @@ claude-flow-lite/
 memory/
 .taskmaster/
 claude-flow.config.json
+.spec-workflow/templates/
 
 # Obsidian Vault (contains personal notes and potentially sensitive data)
 obsidian-vault-local/
