@@ -15,13 +15,15 @@ on:
 
 jobs:
   # ============================================================
-  # Stage 1: PR Validation (Fast Feedback < 5 min)
+  # Stage 1: PR Validation
   # Triggers: pull_request
-  # Tests: develop → Unit + Integration
-  #        main → Unit + Integration + Smoke（厳格化）
+  # Tests: 
+  # - develop: Unit + Integration(標準)
+  # - main: Unit + Integration + Smoke（厳格化）
+  # - other:Unit + Integration (標準)
   # ============================================================
   pr-validation:
-    name: PR Validation (Unit + Integration + Smoke for main)
+    name: PR Validation
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15  # main PR時のDocker Build + Trivy追加（初回キャッシュミス時の安全マージン確保）
@@ -77,9 +79,9 @@ jobs:
           if-no-files-found: warn
 
   # ============================================================
-  # Stage 2: Post-Merge Validation (Regression Protection < 3 min)
+  # Stage 2: Post-Merge Validation 
   # Triggers: push to main
-  # Tests: Regression only (fast degrade detection)
+  # Tests: e2e only
   # ============================================================
   post-merge-validation:
     name: Post-Merge Validation (Regression)
@@ -103,17 +105,6 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --dev
-
-      #regression marker削除に伴い一時コメントアウト
-      # - name: Run regression tests (Must Pass)
-      #   run: |
-      #     uv run pytest -n auto -m "regression" --maxfail=1 -v --tb=short
-      #     echo "regression_tests_passed=true" >> $GITHUB_ENV
-
-      # ═══════════════════════════════════════════════════
-      # Docker Build + Trivy Scan (Defense-in-Depth Layer 5)
-      # Purpose: 本番前最終防御線 - DockerイメージCVE検出
-      # ═══════════════════════════════════════════════════
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
