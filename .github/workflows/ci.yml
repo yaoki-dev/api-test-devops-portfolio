@@ -84,7 +84,7 @@ jobs:
   # Tests: e2e only
   # ============================================================
   post-merge-validation:
-    name: Post-Merge Validation (Regression)
+    name: Post-Merge Validation (Trivy + e2e)
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 8  # Docker Build + Trivy追加のため5→8分に変更
