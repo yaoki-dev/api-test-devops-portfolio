@@ -8,7 +8,6 @@ pytest共通設定とフィクスチャ定義
 - テスト環境分離の実現
 """
 
-import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
@@ -21,7 +20,50 @@ import pytest
 import pytest_asyncio
 from httpx import Response
 
+from config.settings import reload_settings
 from utils.api_client import AsyncAPIClient
+
+# =============================================================================
+# ヘルパー関数
+# =============================================================================
+
+
+def create_mock_response(
+    status_code: int,
+    json_data: dict[str, Any] | list[Any] | None = None,
+) -> Mock:
+    """HTTPレスポンスのモックを作成
+
+    テスト用にhttpx.Responseをシミュレートするモックを生成。
+    APIクライアントのエラーハンドリングやリトライロジックのテストに使用。
+
+    Args:
+        status_code: HTTPステータスコード（200, 404, 500など）
+        json_data: レスポンスボディのJSONデータ（オプション）
+
+    Returns:
+        Mock: status_code, json(), raise_for_status()を持つモックオブジェクト
+
+    Example:
+        >>> response = create_mock_response(200, {"id": 1, "name": "test"})
+        >>> response.status_code
+        200
+        >>> response.json()
+        {"id": 1, "name": "test"}
+    """
+    mock_response = Mock(spec=httpx.Response)
+    mock_response.status_code = status_code
+    mock_response.json.return_value = json_data if json_data is not None else {}
+    mock_response.text = json.dumps(json_data) if json_data else ""
+    mock_response.content = mock_response.text.encode("utf-8")
+
+    # HTTPステータスコード判定プロパティ（httpx.Response互換）
+    mock_response.is_client_error = 400 <= status_code < 500
+    mock_response.is_server_error = 500 <= status_code < 600
+    mock_response.is_success = 200 <= status_code < 300
+
+    return mock_response
+
 
 # =============================================================================
 # Pytest設定
@@ -49,7 +91,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "slow: 実行時間の長いテスト")
     config.addinivalue_line("markers", "external: 外部API依存テスト")
     config.addinivalue_line("markers", "performance: パフォーマンステスト")
-    config.addinivalue_line("markers", "security: セキュリティテスト")
+    config.addinivalue_line("markers", "smoke: スモークテスト（main PR用、基本機能の動作確認）")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -65,16 +107,30 @@ def pytest_collection_modifyitems(config, items):
 
 
 # =============================================================================
-# 基本フィクスチャ
+# Infrastructure Fixtures (autouse - テストコードから直接呼び出さない)
 # =============================================================================
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    """非同期テスト用のイベントループ（セッションスコープ）"""
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
+@pytest.fixture(autouse=True)
+def disable_sentry_for_tests(monkeypatch):
+    """
+    テスト実行時にSentry SDKを無効化。
+
+    Purpose:
+        テスト中のエラーがSentryに送信されるのを防止し、
+        本番ダッシュボードへの誤送信リスクを排除する。
+
+    Note:
+        - autouse=True により全テストに自動適用
+        - テストコードから明示的に呼び出す必要なし
+        - 環境変数はPydantic Settings形式（SENTRY__ENABLED）
+    """
+    monkeypatch.setenv("SENTRY__ENABLED", "false")
+
+
+# =============================================================================
+# 基本フィクスチャ
+# =============================================================================
 
 
 @pytest.fixture(scope="session")
@@ -121,14 +177,89 @@ async def async_client(
 
 @pytest.fixture
 def mock_httpx_client() -> Mock:
-    """モック化されたHTTPXクライアント"""
+    """モック化されたHTTPXクライアント（後方互換性用）
+
+    regression/test_template_changes.pyで使用。
+    """
     mock_client = Mock(spec=httpx.AsyncClient)
+    mock_client.request = AsyncMock()
     mock_client.get = AsyncMock()
     mock_client.post = AsyncMock()
     mock_client.put = AsyncMock()
     mock_client.delete = AsyncMock()
     mock_client.patch = AsyncMock()
     return mock_client
+
+
+@pytest.fixture
+def mock_httpx_async_client() -> Mock:
+    """モック化された非同期HTTPXクライアント
+
+    test_async_client_error_handling.pyで使用。
+    mock_httpx_clientと同一実装、明示的なasync命名。
+    """
+    mock_client = Mock(spec=httpx.AsyncClient)
+    mock_client.request = AsyncMock()
+    mock_client.get = AsyncMock()
+    mock_client.post = AsyncMock()
+    mock_client.put = AsyncMock()
+    mock_client.delete = AsyncMock()
+    mock_client.patch = AsyncMock()
+    return mock_client
+
+
+@pytest.fixture
+def mock_httpx_sync_client() -> Mock:
+    """モック化された同期HTTPXクライアント"""
+    mock_client = Mock(spec=httpx.Client)
+    mock_client.request = Mock()
+    mock_client.get = Mock()
+    mock_client.post = Mock()
+    mock_client.put = Mock()
+    mock_client.delete = Mock()
+    mock_client.patch = Mock()
+    return mock_client
+
+
+@pytest.fixture
+def mock_response_factory():
+    """モックレスポンスを生成するファクトリーフィクスチャ
+
+    Usage:
+        mock_resp = mock_response_factory(200, json_data={"id": 1})
+        mock_resp = mock_response_factory(404)
+    """
+
+    def _factory(
+        status_code: int,
+        json_data: dict[str, Any] | list[Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> Mock:
+        mock_response = Mock(spec=httpx.Response)
+        mock_response.status_code = status_code
+        mock_response.json.return_value = json_data if json_data is not None else {}
+        mock_response.text = json.dumps(json_data) if json_data else ""
+        mock_response.content = mock_response.text.encode("utf-8")
+        mock_response.headers = headers or {"content-type": "application/json"}
+
+        # HTTPステータスコード判定プロパティ（httpx.Response互換）
+        mock_response.is_client_error = 400 <= status_code < 500
+        mock_response.is_server_error = 500 <= status_code < 600
+        mock_response.is_success = 200 <= status_code < 300
+
+        # raise_for_status behavior
+        if status_code >= 400:
+            mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+                f"{status_code} Error",
+                request=Mock(spec=httpx.Request),
+                response=mock_response,
+            )
+        else:
+            mock_response.raise_for_status.return_value = None
+
+        return mock_response
+
+    return _factory
 
 
 @pytest.fixture
@@ -249,8 +380,8 @@ def performance_timer():
 
     class Timer:
         def __init__(self):
-            self.start_time = None
-            self.end_time = None
+            self.start_time: float | None = None
+            self.end_time: float | None = None
 
         def start(self):
             self.start_time = time.perf_counter()
@@ -264,7 +395,7 @@ def performance_timer():
                 raise ValueError("Timer not properly started/stopped")
             return self.end_time - self.start_time
 
-        def assert_faster_than(self, threshold: float, message: str = ""):
+        def assert_faster_than(self, threshold: float, message: str = "") -> None:
             if self.elapsed > threshold:
                 pytest.fail(
                     f"Performance test failed: {self.elapsed:.3f}s > {threshold:.3f}s. {message}"
@@ -328,7 +459,7 @@ def security_payloads():
 # =============================================================================
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def integration_test_data():
     """統合テスト用の大量データセット"""
     return {
@@ -363,6 +494,19 @@ def cleanup_test_files():
     temp_files = Path().glob("test_*.tmp")
     for temp_file in temp_files:
         temp_file.unlink(missing_ok=True)
+
+
+@pytest.fixture(scope="function", autouse=True)
+def reset_settings():
+    """
+    各テスト実行前に設定をリロードしてテスト独立性を保証
+
+    将来的な並列実行（pytest -n auto）導入時に、
+    グローバルシングルトンsettingsのテスト間汚染を防止
+    """
+    reload_settings()
+    yield
+    reload_settings()
 
 
 # =============================================================================

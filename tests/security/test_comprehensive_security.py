@@ -19,6 +19,11 @@ from utils.api_client import AsyncAPIClient
 
 logger = structlog.get_logger()
 
+# Module-level markers: Security tests run in weekly comprehensive tests only
+# Rationale: Security is a "purpose" category, orthogonal to execution characteristics
+# See: .claude/plans/sleepy-juggling-cascade.md (Q5 analysis)
+pytestmark = pytest.mark.security
+
 
 class SecurityTestSuite:
     """セキュリティテストスイート"""
@@ -66,7 +71,6 @@ class SecurityTestSuite:
     }
 
 
-@pytest.mark.security
 class TestOWASPAPISecurityTop10:
     """OWASP API Security Top 10 包括テスト"""
 
@@ -323,7 +327,6 @@ class TestOWASPAPISecurityTop10:
                 self.vulnerabilities_found.append(f"XSS vulnerability detected: {pattern}")
 
 
-@pytest.mark.security
 class TestSecurityHeaders:
     """セキュリティヘッダーテスト"""
 
@@ -371,7 +374,6 @@ class TestSecurityHeaders:
                 print("✅ すべての重要なセキュリティヘッダーが設定されています")
 
 
-@pytest.mark.security
 class TestDataProtection:
     """データ保護・プライバシーテスト"""
 
@@ -455,7 +457,6 @@ class TestDataProtection:
                     logger.info("large_payload_error", error=str(e), test_case=i + 1)
 
 
-@pytest.mark.security
 @pytest.mark.slow
 class TestSecurityIntegration:
     """セキュリティテスト統合"""
@@ -475,7 +476,9 @@ class TestSecurityIntegration:
         total_vulnerabilities = 0
 
         for suite in test_suites:
-            suite.setup_method()
+            # setup_methodが存在する場合のみ呼び出す
+            if hasattr(suite, "setup_method"):
+                suite.setup_method()
 
             # テストスイートの各テストメソッドを実行
             for method_name in dir(suite):

@@ -1,0 +1,43 @@
+# Dependabot auto-merge workflow
+# Docs: https://docs.github.com/en/code-security/dependabot/working-with-dependabot/automating-dependabot-with-github-actions
+#
+# Design Decision (Git Flow + Enterprise Best Practice):
+# - Auto-merge ONLY on develop branch (not main)
+# - patch/minor updates only (low risk)
+# - Major updates require manual review (breaking changes)
+# - main branch requires manual PR + human review (release process)
+# - This prevents supply chain attacks from directly affecting production
+#
+# Reference: https://blog.somewhatabstract.com/2021/10/11/setting-up-dependabot-with-github-actions-to-approve-and-merge/
+
+name: Dependabot auto-merge
+
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    runs-on: ubuntu-latest
+    # Only auto-merge on develop branch (Git Flow compliance)
+    # main branch PRs require manual review for security
+    if: |
+      github.actor == 'dependabot[bot]' &&
+      github.event.pull_request.base.ref == 'develop'
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Auto-merge (patch/minor only)
+        if: |
+          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

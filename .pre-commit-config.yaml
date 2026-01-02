@@ -9,7 +9,19 @@ repos:
       - id: ruff-format       # フォーマット自動適用
         exclude: ^tests/Q&A/    # 学習ファイル除外
 
+  # シークレット検出: gitleaks (system binary方式)
+  # Go互換性問題回避のためソースビルドではなくシステムバイナリを使用
+  # 前提: brew install gitleaks (macOS) または apt install gitleaks (Linux)
+  - repo: local
+    hooks:
+      - id: gitleaks
+        name: gitleaks (detect secrets)
+        entry: gitleaks detect --source . --verbose --redact
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
 # 重いチェックはCI/CDで実行 (コミット時は除外)
 # - mypy: 型チェック → GitHub Actions
-# - bandit: セキュリティ → GitHub Actions  
+# - bandit: セキュリティ → GitHub Actions
 # - pytest: テスト → GitHub Actions
