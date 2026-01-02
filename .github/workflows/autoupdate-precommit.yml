@@ -38,11 +38,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          TEMP_DIR=$(mktemp -d)
+          cd "$TEMP_DIR"
           gh release download --repo gitleaks/gitleaks --pattern "gitleaks_*_linux_x64.tar.gz" --clobber
           tar -xzf gitleaks_*_linux_x64.tar.gz
           sudo mv gitleaks /usr/local/bin/
-          rm -f gitleaks_*_linux_x64.tar.gz
           gitleaks version
+          rm -rf "$TEMP_DIR"
 
       # Fail Fast: 壊れたフックでPR作成を防止（早期検出でデバッグ時間節約）
       - name: Verify updated hooks
