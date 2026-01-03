@@ -5,6 +5,11 @@ name: CI/CD Pipeline - 4-Tier Test Pyramid
 # Coverage Target: 85% (baseline protection, dynamic targets in local dev)
 # Reference: .serena/memories/test_strategy_part1_overview.md
 
+# Permissions for SARIF upload (Trivy security scan)
+permissions:
+  contents: read
+  security-events: write
+
 on:
   push:
     branches: [main, develop]
