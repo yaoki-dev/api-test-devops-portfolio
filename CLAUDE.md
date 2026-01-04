@@ -903,6 +903,25 @@ if settings.is_development():
 
 > **発見日**: 2025-12-09（58ファイルクリーンアップ実施時）
 
+**Git Flow + Protected Branch での Squash Merge 注意点**:
+- ⚠️ **同期 PR に Squash Merge を使用してはいけない**
+  - 履歴が分断され、次回の逆方向 PR でコンフリクトが発生する
+- ✅ **同期 PR は必ず Regular Merge を使用**
+  - 履歴統合が維持され、双方向の PR が円滑に実行できる
+
+| シナリオ | 推奨マージ方式 |
+|---------|--------------|
+| feature → develop | Squash Merge ✅ |
+| develop → main (リリース) | Regular Merge ✅ |
+| main → develop (同期) | Regular Merge ✅ |
+| hotfix → main | Regular Merge ✅ |
+
+**Protected Branch 環境でのベストプラクティス**:
+- `git pull` の代わりに `git fetch` + 新ブランチ作成を推奨
+- 理由: Protected branch には直接 push できないため、ローカル更新は不要
+
+> **発見日**: 2026-01-04（PR #21-#25 コンフリクト解決作業時）
+
 **品質基準**:
 - カバレッジ目標: Week 7-10でPhase別に設定（最終目標85%）
 
