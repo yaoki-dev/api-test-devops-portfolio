@@ -1,36 +1,44 @@
 # Project Structure Steering Document
 
-*最終更新: 2025年10月07日*
+*最終更新: 2026年01月02日*
 
 ## ディレクトリ構成
 
 ```
 api-test-devops-portfolio/
-├── .claude/steering/         # Steering documents
-│   ├── product.md            # プロダクトビジョン
-│   ├── tech.md               # 技術スタック
-│   └── structure.md          # 本ファイル
+├── .spec-workflow/           # Spec Workflow MCP
+│   ├── steering/             # Steering documents
+│   │   ├── product.md        # プロダクトビジョン
+│   │   ├── tech.md           # 技術スタック
+│   │   └── structure.md      # 本ファイル
+│   ├── templates/            # Specテンプレート
+│   └── user-templates/       # カスタムテンプレート
 ├── config/                   # 設定管理
 │   └── settings.py           # Pydantic Settings
 ├── utils/                    # ユーティリティ
-│   ├── api_client.py         # HTTPクライアント
+│   ├── api_client.py         # HTTPクライアント（Sync/Async）
+│   ├── logger.py             # structlog設定
+│   ├── sentry_init.py        # Sentry統合
 │   └── core/                 # コアモジュール
-├── tests/                    # テストスイート
+├── models/                   # Pydanticモデル（新規）
+├── monitoring/               # 監視・メトリクス（新規）
+├── tests/                    # テストスイート（442テスト）
 │   ├── conftest.py           # pytest共通設定
 │   ├── unit/                 # 単体テスト
 │   ├── integration/          # 統合テスト
 │   ├── e2e/                  # E2Eテスト
-│   ├── performance/          # パフォーマンステスト
+│   └── performance/          # パフォーマンステスト
 ├── docs/                     # ドキュメント
 │   ├── progress/             # 学習進捗管理
 │   │   ├── daily_progress.md
-│   │   └── learning_state.yaml
-│   ├── プロジェクト再編/      # 学習計画
-│   └── learning/             # 理解度確認問題
+│   │   └── progress_state.yaml
+│   └── main/                 # メインドキュメント
+│       └── 6週プラン/         # 6週プラン（38日間、260H）
 ├── reports/                  # レポート
 │   ├── htmlcov/              # カバレッジHTML
 │   └── coverage.xml          # カバレッジXML
-├── .github/workflows/        # CI/CD（Week 8実装予定）
+├── .github/workflows/        # CI/CD（実装済み）
+│   └── ci.yml                # 4-Tier Test Pyramid
 ├── pyproject.toml            # プロジェクト設定
 ├── uv.lock                   # 依存関係ロック
 ├── CLAUDE.md                 # Claude Code指示
@@ -1879,9 +1887,9 @@ user = await user_service.get_user_by_id(1)  # ドメインエンティティを
 
 ### 新規実装時の適用ルール
 
-#### Week 7以降の新規実装ルール
+#### 新規実装ルール
 
-**今後の新規実装（Week 7以降）**:
+**今後の新規実装**:
 1. Domain層のエンティティを定義
 2. Repositoryインターフェースを定義
 3. Repository実装を作成
@@ -1906,35 +1914,6 @@ user = await user_service.get_user_by_id(1)  # ドメインエンティティを
 **Service層不要の場合**:
 - ❌ 単純なCRUD操作のみ（Repository直接使用）
 - ❌ 一時的なスクリプト・テストコード
-
----
-
-### プロジェクト規模別の適用戦略
-
-#### 現在のプロジェクト（Week 7-8時点）: 段階的導入
-
-**Phase 1（Week 7-8）**: 基本的なService層導入
-
-```
-utils/services/
-├── __init__.py
-├── user_service.py     # ユーザー取得 + メール検証
-└── todo_service.py     # Todo取得 + ユーザー存在確認
-```
-
-**Phase 2（Week 9以降 or DB統合時）**: 高度なService層
-
-```python
-# 複雑なビジネスロジック例
-class UserTodoService:
-    """ユーザーとTodoの複合操作。"""
-
-    async def delete_user_with_todos(self, user_id: int) -> None:
-        """ユーザーとその全Todoを削除（トランザクション）。"""
-        async with self._transaction_manager.begin():
-            await self._todo_repository.delete_by_user_id(user_id)
-            await self._user_repository.delete(user_id)
-```
 
 ---
 
@@ -2399,8 +2378,8 @@ if settings.is_development():
 | 種別 | 配置場所 | 用途 |
 |------|---------|------|
 | プロジェクト指示 | CLAUDE.md | Claude Code用 |
-| Steering Docs | .claude/steering/ | Spec開発用 |
-| 学習計画 | docs/プロジェクト再編/ | 10週計画 |
+| Steering Docs | .spec-workflow/steering/ | Spec開発用 |
+| 学習計画 | docs/main/6週プラン/ | 6週プラン |
 | 進捗記録 | docs/progress/ | 日次・週次 |
 | 理解度確認 | docs/learning/ | 日次問題 |
 
@@ -2418,7 +2397,7 @@ repos:
       - id: ruff-format
 ```
 
-### CI/CD品質ゲート（Week 8実装予定）
+### CI/CD品質ゲート（実装済み）
 ```yaml
 jobs:
   quality-gate:
@@ -2473,7 +2452,7 @@ htmlcov/
 .DS_Store
 ```
 
-### .dockerignore（Week 7実装予定）
+### .dockerignore（Week 3実装予定）
 ```
 .git/
 __pycache__/

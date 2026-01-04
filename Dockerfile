@@ -39,7 +39,8 @@ RUN pip install --no-cache-dir uv
 COPY pyproject.toml uv.lock ./
 
 # 依存関係インストール（本番用、devパッケージ除外）
-RUN uv sync --frozen --no-dev
+# --no-install-project: ローカルパッケージビルドをスキップ（ソース未コピー状態で hatchling エラー回避）
+RUN uv sync --frozen --no-dev --no-install-project
 
 # ============================================================
 # Stage 3: Runtime - 本番実行環境
@@ -80,7 +81,8 @@ RUN pip install --no-cache-dir uv
 COPY pyproject.toml uv.lock ./
 
 # 全依存関係インストール（devパッケージ含む）
-RUN uv sync --frozen
+# --no-install-project: ソース未コピー状態でhatchlingエラー回避（dependencies stageと同様）
+RUN uv sync --frozen --no-install-project
 
 # PATH設定
 ENV PATH="/app/.venv/bin:$PATH"
