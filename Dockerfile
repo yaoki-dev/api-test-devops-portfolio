@@ -1,5 +1,5 @@
 # Dockerfile - 4-stage Multi-stage builds
-# 最終更新: 2025年11月28日
+# 最終更新: 2026年01月04日
 # 品質基準: イメージサイズ < 200MB, ビルド時間 < 3分
 
 # ============================================================
@@ -7,7 +7,7 @@
 # ============================================================
 # セキュリティ: SHA256ダイジェスト固定（サプライチェーン攻撃防止）
 # 更新時: docker pull python:3.12-slim && docker inspect --format='{{index .RepoDigests 0}}' python:3.12-slim
-FROM python:3.12-slim@sha256:b43ff04d5df04ad5cabb80890b7ef74e8410e3395b19af970dcd52d7a4bff921 AS base
+FROM python:3.12-slim@sha256:a75662dfec8d90bd7161c91050be2e0a9b21d284f3b7a7253d5db25f7d583fb3 AS base
 
 WORKDIR /app
 
