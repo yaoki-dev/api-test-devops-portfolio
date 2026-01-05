@@ -38,7 +38,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -52,16 +52,18 @@ jobs:
 
       - name: Set test markers based on target branch
         id: markers
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          if [ "${{ github.base_ref }}" = "main" ]; then
-            echo "value=unit or integration or smoke" >> $GITHUB_OUTPUT
-            echo "🎯 Target: main - Will run Unit + Integration + Smoke tests"
-          elif [ "${{ github.base_ref }}" = "develop" ]; then
-            echo "value=unit or integration" >> $GITHUB_OUTPUT
-            echo "🎯 Target: develop - Will run Unit + Integration tests"
+          if [ "$BASE_REF" = "main" ]; then
+            echo "value=(unit or integration or smoke) and not external" >> $GITHUB_OUTPUT
+            echo "🎯 Target: main - Will run Unit + Integration + Smoke tests (excluding external)"
+          elif [ "$BASE_REF" = "develop" ]; then
+            echo "value=(unit or integration) and not external" >> $GITHUB_OUTPUT
+            echo "🎯 Target: develop - Will run Unit + Integration tests (excluding external)"
           else
-            echo "::warning::Unknown base_ref: ${{ github.base_ref }}, using develop default"
-            echo "value=unit or integration" >> $GITHUB_OUTPUT
+            echo "::warning::Unknown base_ref: $BASE_REF, using develop default"
+            echo "value=(unit or integration) and not external" >> $GITHUB_OUTPUT
           fi
 
       - name: Run tests
@@ -99,7 +101,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -177,7 +179,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
