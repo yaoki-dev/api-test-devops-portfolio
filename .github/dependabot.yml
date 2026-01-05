@@ -13,9 +13,9 @@
 version: 2
 updates:
   # Python dependencies (uv)
-  # Note: target-branch not needed since develop is default branch
   - package-ecosystem: "uv"
     directory: "/"
+    target-branch: "develop"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -40,9 +40,9 @@ updates:
           - "bandit"
 
   # GitHub Actions
-  # Note: target-branch not needed since develop is default branch
   - package-ecosystem: "github-actions"
     directory: "/"
+    target-branch: "develop"
     schedule:
       interval: "weekly"
       day: "monday"
