@@ -28,7 +28,7 @@ jobs:
   # - other:Unit + Integration (標準)
   # ============================================================
   pr-validation:
-    name: PR Validation (Python ${{ matrix.python-version }})
+    name: PR Validation
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15  # main PR時のDocker Build + Trivy追加（初回キャッシュミス時の安全マージン確保）
@@ -174,7 +174,7 @@ jobs:
   # Note: Security は PR 毎の静的解析（gitleaks, bandit, ruff(S)）で代用
   # ============================================================
   weekly-comprehensive:
-    name: Weekly Comprehensive (Python ${{ matrix.python-version }})
+    name: Weekly Comprehensive
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 30
