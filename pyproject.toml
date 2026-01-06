@@ -118,7 +118,7 @@ precision = 2
 
 # Ruff設定（統合リンター・フォーマッター）
 [tool.ruff]
-target-version = "py312"
+target-version = "py310"
 line-length = 100  # DevOps軽量化: コミット時の厳密度緩和
 fix = true
 
@@ -157,7 +157,7 @@ section-order = ["future", "standard-library", "third-party", "first-party", "lo
 
 # mypy設定（型チェック）
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.10"
 explicit_package_bases = true
 warn_return_any = true
 warn_unused_configs = true

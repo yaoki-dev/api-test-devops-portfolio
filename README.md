@@ -8,7 +8,7 @@
 
 [![CI/CD Pipeline](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml/badge.svg)](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/badge/coverage-66%25-green)](https://yuta158.github.io/api-test-portfolio/htmlcov/)
-[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
+![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-blue)
 [![Docker](https://img.shields.io/badge/docker-multi--stage-blue)](./Dockerfile)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
