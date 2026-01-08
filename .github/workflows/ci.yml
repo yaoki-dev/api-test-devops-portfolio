@@ -90,7 +90,11 @@ jobs:
       - name: Build Docker image for Trivy scan
         id: docker-build
         if: matrix.python-version == '3.12'
-        run: docker build -t test-image:${{ github.sha }} --target runtime .
+        run: |
+          if ! docker build -t test-image:${{ github.sha }} --target runtime .; then
+            echo "::error::Docker build failed - check Dockerfile syntax or base image availability"
+            exit 1
+          fi
 
       - name: Trivy vulnerability scan
         if: matrix.python-version == '3.12' && steps.docker-build.outcome == 'success'
