@@ -1,5 +1,5 @@
 # Dockerfile - 4-stage Multi-stage builds
-# 最終更新: 2026年01月04日
+# 最終更新: 2026年01月08日
 # 品質基準: イメージサイズ < 200MB, ビルド時間 < 3分
 
 # ============================================================
@@ -32,8 +32,9 @@ RUN groupadd --gid 1000 appgroup && \
 # ============================================================
 FROM base AS dependencies
 
-# uv インストール（高速パッケージマネージャ）
-RUN pip install --no-cache-dir uv
+# pip最新化（CVE-2025-8869対応）+ uv インストール
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir uv
 
 # 依存関係ファイルのみコピー（キャッシュ効率化）
 COPY pyproject.toml uv.lock ./
@@ -74,8 +75,9 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # ============================================================
 FROM base AS test
 
-# uv インストール
-RUN pip install --no-cache-dir uv
+# pip最新化（CVE-2025-8869対応）+ uv インストール
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir uv
 
 # 依存関係ファイルコピー
 COPY pyproject.toml uv.lock ./
