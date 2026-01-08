@@ -54,3 +54,12 @@ updates:
       - "github-actions"
     commit-message:
       prefix: "chore(ci)"
+    groups:
+      # minor/patch更新を1PRにグループ化（auto-merge対象）
+      # major更新は個別PR（手動確認必須）
+      minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"

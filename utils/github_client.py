@@ -9,7 +9,7 @@
 import asyncio
 import json
 import re
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any, cast
 
 import httpx
@@ -280,7 +280,7 @@ class AsyncGitHubClient:
                 remaining = int(response.headers.get("X-RateLimit-Remaining", 999))
                 if remaining < 10:
                     reset_time = int(response.headers.get("X-RateLimit-Reset", 0))
-                    reset_dt = datetime.fromtimestamp(reset_time, tz=UTC)
+                    reset_dt = datetime.fromtimestamp(reset_time, tz=timezone.utc)
                     self.logger.warning(
                         "rate_limit_low",
                         remaining=remaining,
