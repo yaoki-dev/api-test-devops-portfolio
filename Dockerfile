@@ -32,9 +32,8 @@ RUN groupadd --gid 1000 appgroup && \
 # ============================================================
 FROM base AS dependencies
 
-# pip最新化（CVE-2025-8869対応）+ uv インストール
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir uv
+# uv インストール
+RUN pip install --no-cache-dir uv
 
 # 依存関係ファイルのみコピー（キャッシュ効率化）
 COPY pyproject.toml uv.lock ./
@@ -75,9 +74,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # ============================================================
 FROM base AS test
 
-# pip最新化（CVE-2025-8869対応）+ uv インストール
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir uv
+# uv インストール
+RUN pip install --no-cache-dir uv
 
 # 依存関係ファイルコピー
 COPY pyproject.toml uv.lock ./
