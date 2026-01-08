@@ -22,10 +22,9 @@ jobs:
   # ============================================================
   # Stage 1: PR Validation
   # Triggers: pull_request
-  # Tests: 
+  # Tests:
   # - develop: Unit + Integration(標準)
   # - main: Unit + Integration + Smoke（厳格化）
-  # - other:Unit + Integration (標準)
   # ============================================================
   pr-validation:
     name: PR Validation
@@ -62,12 +61,10 @@ jobs:
           if [ "$BASE_REF" = "main" ]; then
             echo "value=(unit or integration or smoke) and not external" >> $GITHUB_OUTPUT
             echo "🎯 Target: main - Will run Unit + Integration + Smoke tests (excluding external)"
-          elif [ "$BASE_REF" = "develop" ]; then
+          else
+            # develop (デフォルト)
             echo "value=(unit or integration) and not external" >> $GITHUB_OUTPUT
             echo "🎯 Target: develop - Will run Unit + Integration tests (excluding external)"
-          else
-            echo "::warning::Unknown base_ref: $BASE_REF, using develop default"
-            echo "value=(unit or integration) and not external" >> $GITHUB_OUTPUT
           fi
 
       - name: Run tests
@@ -88,6 +85,26 @@ jobs:
             reports/
             coverage.json
           if-no-files-found: warn
+
+      # Trivy セキュリティスキャン（Python 3.12 のみ、他バージョンでの重複実行を回避）
+      - name: Build Docker image for Trivy scan
+        id: docker-build
+        if: matrix.python-version == '3.12'
+        run: |
+          if ! docker build -t test-image:${{ github.sha }} --target runtime .; then
+            echo "::error::Docker build failed - check Dockerfile syntax or base image availability"
+            exit 1
+          fi
+
+      - name: Trivy vulnerability scan
+        if: matrix.python-version == '3.12' && steps.docker-build.outcome == 'success'
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: 'test-image:${{ github.sha }}'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          ignore-unfixed: true
+          trivyignores: '.trivyignore'
 
   # NOTE: post-merge-validation uses Python 3.12 only (matches Dockerfile)
   # ============================================================
@@ -145,7 +162,18 @@ jobs:
           format: 'sarif'
           output: 'trivy-results.sarif'
           ignore-unfixed: true
+          trivyignores: '.trivyignore'
         continue-on-error: true
+
+      - name: Verify Trivy scan execution
+        if: always()
+        run: |
+          if [ ! -f "trivy-results.sarif" ]; then
+            echo "::error::Trivy scan did not produce SARIF output (crash/timeout/disk issue)"
+            echo "Check 'Trivy image scan' step logs for details"
+            exit 1
+          fi
+          echo "✅ Trivy SARIF output verified"
 
       - name: Upload Trivy results to Security tab
         uses: github/codeql-action/upload-sarif@v4
