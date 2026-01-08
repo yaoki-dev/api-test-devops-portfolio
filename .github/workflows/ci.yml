@@ -165,6 +165,16 @@ jobs:
           trivyignores: '.trivyignore'
         continue-on-error: true
 
+      - name: Verify Trivy scan execution
+        if: always()
+        run: |
+          if [ ! -f "trivy-results.sarif" ]; then
+            echo "::error::Trivy scan did not produce SARIF output (crash/timeout/disk issue)"
+            echo "Check 'Trivy image scan' step logs for details"
+            exit 1
+          fi
+          echo "✅ Trivy SARIF output verified"
+
       - name: Upload Trivy results to Security tab
         uses: github/codeql-action/upload-sarif@v4
         if: always()
