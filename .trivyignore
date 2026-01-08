@@ -1,9 +1,12 @@
 # .trivyignore
 # 最終更新: 2026-01-08
-# 期限: 2026-02-08（30日後）
+# 期限: 2026-02-08（30日後にレビュー）
 #
-# CVE-2025-8869: pip symbolic link vulnerability
-# 原因: python:3.12-slim ベースイメージ内の pip
-# 状態: アップストリーム未修正（最新ダイジェスト使用中）
-# 対応: 新ダイジェストリリース時に削除
+# CVE-2025-8869: pip tar extraction path traversal vulnerability
+# 深刻度: MEDIUM (CVSS v4.0: 5.9)
+# 検出理由: python:3.12-slim内のpip (<25.3) がTrivyで検出される
+# 実際のリスク: 低（Python 3.12はPEP 706実装済み、脆弱コードパス未使用）
+# 修正状況: pip 25.3で修正済み、base image更新待ち
+# 参照: https://github.com/advisories/GHSA-4xh5-x5gv-qwph
+# 対応: base image更新時に削除検討
 CVE-2025-8869

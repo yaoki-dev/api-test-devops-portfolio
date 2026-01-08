@@ -88,17 +88,19 @@ jobs:
 
       # Trivy セキュリティスキャン（Python 3.12 のみ、他バージョンでの重複実行を回避）
       - name: Build Docker image for Trivy scan
+        id: docker-build
         if: matrix.python-version == '3.12'
         run: docker build -t test-image:${{ github.sha }} --target runtime .
 
       - name: Trivy vulnerability scan
-        if: matrix.python-version == '3.12'
+        if: matrix.python-version == '3.12' && steps.docker-build.outcome == 'success'
         uses: aquasecurity/trivy-action@0.33.1
         with:
           image-ref: 'test-image:${{ github.sha }}'
           severity: 'CRITICAL,HIGH'
           exit-code: '1'
           ignore-unfixed: true
+          trivyignores: '.trivyignore'
 
   # NOTE: post-merge-validation uses Python 3.12 only (matches Dockerfile)
   # ============================================================
@@ -156,6 +158,7 @@ jobs:
           format: 'sarif'
           output: 'trivy-results.sarif'
           ignore-unfixed: true
+          trivyignores: '.trivyignore'
         continue-on-error: true
 
       - name: Upload Trivy results to Security tab
