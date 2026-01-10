@@ -963,14 +963,18 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 1. コード変更 → security-guidance (hook自動)
 2. 品質ゲート → pytest + ruff + mypy 全合格（※1）
 3. 自己改善  → /reflexion:reflect
-4. 日常レビュー → /code-review:code-review (80点閾値)
-5. コミット   → /commit-commands:commit
-6. PR時      → /pr-review-toolkit:review-pr (品質) + /code-review:review-pr (防御)
-7. 重要PR時  → /comprehensive-pr-review (10エージェント統合)
-8. PR作成    → /commit-commands:commit-push-pr
+4. コード簡素化 → /pr-review-toolkit:review-pr simplify 【条件付き※2】
+5. 多角的レビュー → /reflexion:critique 【条件付き※3】
+6. 日常レビュー → /code-review:code-review (80点閾値)
+7. コミット   → /commit-commands:commit
+8. PR時      → /pr-review-toolkit:review-pr (品質) + /code-review:review-pr (防御)
+9. 重要PR時  → /comprehensive-pr-review (10エージェント統合)
+10. PR作成   → /commit-commands:commit-push-pr
 ```
 
 **※1 品質ゲート**: `uv run pytest && uv run ruff check . && uv run mypy utils/ config/`
+**※2 simplify条件**: 長時間セッション(2h+)または複雑ロジック実装時のみ
+**※3 critique条件**: 追加行≥200 OR ファイル変更≥3 OR セキュリティ関連ファイル変更
 
 ## 🦸 superpowers使い分けルール
 
