@@ -937,7 +937,7 @@ git checkout develop
 git pull origin develop  # ← Protected Branchで不要
 ```
 
-**理由**: ローカルdevelopは追跡用のみ。作業は常に新ブランチで開始。
+**理由**: ローカルdevelopへのpushは禁止（上記参照）。`origin/develop`から直接分岐が効率的。
 
 > **発見日**: 2026-01-11（PR #57 マージ作業時）
 
