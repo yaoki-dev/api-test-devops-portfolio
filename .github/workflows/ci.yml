@@ -86,27 +86,67 @@ jobs:
             coverage.json
           if-no-files-found: warn
 
-      # Trivy セキュリティスキャン（Python 3.12 のみ、他バージョンでの重複実行を回避）
-      - name: Build Docker image for Trivy scan
+  # NOTE: post-merge-validation uses Python 3.12 only (matches Dockerfile)
+
+  # ============================================================
+  # Stage 1.5: PR Security Scan
+  # Triggers: pull_request (develop, main)
+  # Strategy:
+  #   - develop: trivy fs only (fast, no Docker build)
+  #   - main: trivy fs + trivy image (comprehensive)
+  # ============================================================
+  pr-security-scan:
+    name: PR Security Scan
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Explicit permissions (security hardening)
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      # Step 1: Filesystem scan (both develop and main)
+      - name: Trivy filesystem scan (dependencies)
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+          trivyignores: '.trivyignore'
+
+      # Step 2: Docker image scan (main PRs only)
+      - name: Build Docker image for scanning
         id: docker-build
-        if: matrix.python-version == '3.12'
+        if: github.base_ref == 'main'
         run: |
-          if ! docker build -t test-image:${{ github.sha }} --target runtime .; then
-            echo "::error::Docker build failed - check Dockerfile syntax or base image availability"
+          if ! docker build -t security-scan:${{ github.sha }} --target runtime .; then
+            echo "::error::Docker build failed"
             exit 1
           fi
 
-      - name: Trivy vulnerability scan
-        if: matrix.python-version == '3.12' && steps.docker-build.outcome == 'success'
+      # Step 3: Docker image scan (main PRs only - comprehensive security)
+      - name: Trivy image scan (main PRs only)
+        if: github.base_ref == 'main' && steps.docker-build.outcome == 'success'
         uses: aquasecurity/trivy-action@0.33.1
         with:
-          image-ref: 'test-image:${{ github.sha }}'
-          severity: 'CRITICAL,HIGH'
+          image-ref: 'security-scan:${{ github.sha }}'
+          format: 'table'
           exit-code: '1'
           ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
           trivyignores: '.trivyignore'
 
-  # NOTE: post-merge-validation uses Python 3.12 only (matches Dockerfile)
+      # Step 4: Cleanup Docker image (resource hygiene)
+      - name: Clean up Docker image
+        if: always() && github.base_ref == 'main'
+        run: docker rmi security-scan:${{ github.sha }} || true
   # ============================================================
   # Stage 2: Post-Merge Validation 
   # Triggers: push to main
