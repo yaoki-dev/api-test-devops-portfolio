@@ -65,6 +65,7 @@ python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = [
+    "-v",                        # verbose出力（CI/CD向け）
     "-ra",                       # すべての結果を表示
     "--strict-markers",          # 未定義マーカーでエラー
     "--strict-config",           # 設定エラーで停止
@@ -76,13 +77,13 @@ addopts = [
     "--cov-fail-under=70",       # ローカル目標: 85%
 ]
 markers = [
-    "unit: 単体テスト",
-    "integration: 統合テスト",
-    "e2e: E2Eテスト",
-    "performance: パフォーマンステスト",
-    "slow: 実行時間の長いテスト",
-    "external: 外部API依存テスト",
-    "smoke: スモークテスト（main PR用、基本機能の動作確認）"
+    "unit: Unit tests (fast, isolated)",
+    "integration: Integration tests (external dependencies)",
+    "e2e: End-to-end tests (full user scenarios)",
+    "performance: Performance tests (latency/throughput)",
+    "slow: Slow tests (>3s, excluded from local dev)",
+    "external: External API tests (CI/CD only)",
+    "smoke: Smoke tests (basic functionality)",
 ]
 asyncio_mode = "auto"            # 非同期テスト自動検出
 
