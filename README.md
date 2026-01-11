@@ -1,14 +1,14 @@
 # API Test + DevOps Portfolio
 
-*最終更新: 2025年12月26日*
+*最終更新: 2026年01月11日*
 
 ## 概要
 
 このプロジェクトは、APIテストとDevOps技術を統合した実践的なポートフォリオです。
 
 [![CI/CD Pipeline](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml/badge.svg)](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/badge/coverage-66%25-green)](https://yuta158.github.io/api-test-portfolio/htmlcov/)
-![Python](https://img.shields.io/badge/Python-3.12-blue)
+[![Coverage](https://img.shields.io/badge/coverage-81%25-brightgreen)](https://yuta158.github.io/api-test-portfolio/htmlcov/)
+![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-blue)
 [![Docker](https://img.shields.io/badge/docker-multi--stage-blue)](./Dockerfile)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
@@ -21,7 +21,7 @@
 ## 概要
 
 - **（現）219件のテストスイート**: Unit / Integration / Security / Performance
-- **カバレッジ 66%**: 継続的な品質向上
+- **カバレッジ 81%**: 継続的な品質向上
 - **CI/CD自動化**: GitHub Actions による4段階パイプライン
 - **セキュリティテスト**: OWASP API Security Top 10 対応
 - **GitHub API統合**: 実務的なAPI統合スキルを証明（Rate Limit管理、ETag活用、非同期処理）
