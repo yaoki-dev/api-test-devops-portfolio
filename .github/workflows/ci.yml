@@ -30,11 +30,10 @@ jobs:
     name: PR Validation
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 15  # main PR時のDocker Build + Trivy追加（初回キャッシュミス時の安全マージン確保）
+    timeout-minutes: 10  # 単一Python版（3.12固定、Dockerfile一致）
     strategy:
       matrix:
-        python-version: ['3.10', '3.11', '3.12']
-      fail-fast: false
+        python-version: ['3.12']
 
     steps:
       - name: Checkout code
@@ -248,8 +247,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        python-version: ['3.10', '3.11', '3.12']
-      fail-fast: false
+        python-version: ['3.12']
 
     steps:
       - name: Checkout code
