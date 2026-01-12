@@ -180,11 +180,8 @@ api-test-devops-portfolio/
 ├── utils/               # ユーティリティ（APIクライアント等）
 ├── models/              # データモデル
 ├── tests/               # テストスイート（374件）
-│   ├── unit/            # 単体テスト (124件)
-│   ├── integration/     # 統合テスト (12件)
-│   ├── security/        # セキュリティテスト (54件)
-│   ├── validation/      # バリデーションテスト (14件)
-│   ├── regression/      # 回帰テスト (10件)
+│   ├── unit/            # 単体テスト (338件)
+│   ├── integration/     # 統合テスト (31件)
 │   ├── performance/     # パフォーマンステスト (5件)
 │   └── e2e/             # E2Eテスト（Playwright導入予定）
 ├── assets/              # デモGIF・画像
@@ -270,22 +267,21 @@ if init_sentry():
 
 ```mermaid
 graph TB
-    subgraph "Test Pyramid - 374件（3層 + マーカー）"
+    subgraph "Test Pyramid - 374件（3層）"
         E2E["🔝 E2E<br/>0件（Playwright導入予定）"]
-        Integration["🔗 Integration<br/>12件 (5.5%)"]
-        Unit["🧱 Unit<br/>124件 (56.6%)"]
-        Markers["🏷️ Security: 54件 | Performance: 5件 | Validation: 14件 | Regression: 10件"]
+        Integration["🔗 Integration<br/>31件 (8.3%)"]
+        Unit["🧱 Unit<br/>338件 (90.4%)"]
+        Performance["⚡ Performance<br/>5件 (1.3%)"]
     end
 
     E2E --> Integration
     Integration --> Unit
-    Markers -.-> Unit
-    Markers -.-> Integration
+    Performance -.-> Unit
 
     style E2E fill:#ff6b6b,color:#fff
     style Integration fill:#1e90ff,color:#fff
     style Unit fill:#2ed573,color:#fff
-    style Markers fill:#9b59b6,color:#fff
+    style Performance fill:#f39c12,color:#fff
 ```
 
 > **Note**: pytestパラメータ化テストにより、実テスト関数251件 → pytest収集374件
@@ -294,10 +290,10 @@ graph TB
 
 | Stage | トリガー | テスト内容 | 目標時間 |
 |-------|---------|-----------|---------|
-| PR Validation | Pull Request | Unit + Integration + Security | < 5分 |
-| Post-Merge | Push to main | Regression | < 3分 |
+| PR Validation | Pull Request | Unit + Integration | < 5分 |
+| Post-Merge | Push to main | Core tests | < 3分 |
 | Branch Validation | Push to develop | Core tests | < 10分 |
-| Weekly Comprehensive | 週次スケジュール | Security + Performance | < 30分 |
+| Weekly Comprehensive | 週次スケジュール | Performance | < 30分 |
 
 ---
 
