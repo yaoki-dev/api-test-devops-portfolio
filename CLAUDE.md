@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-*最終更新: 2025年12月10日*
+*最終更新: 2026年01月11日*
 
 ## プロジェクト概要
 
@@ -921,6 +921,25 @@ if settings.is_development():
 - 理由: Protected branch には直接 push できないため、ローカル更新は不要
 
 > **発見日**: 2026-01-04（PR #21-#25 コンフリクト解決作業時）
+
+**PRマージ後の推奨ワークフロー**:
+
+```bash
+# ✅ 推奨（3ステップ・コンフリクトゼロ）
+gh pr merge <PR番号> --squash --delete-branch && \
+git fetch --prune origin && \
+git checkout -b feature/<次のタスク> origin/develop
+```
+
+```bash
+# ❌ 非推奨（コンフリクトリスク）
+git checkout develop
+git pull origin develop  # ← Protected Branchで不要
+```
+
+**理由**: ローカルdevelopへのpushは禁止（上記参照）。`origin/develop`から直接分岐が効率的。
+
+> **発見日**: 2026-01-11（PR #57 マージ作業時）
 
 **品質基準**:
 - カバレッジ目標: Week 7-10でPhase別に設定（最終目標85%）

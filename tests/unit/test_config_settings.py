@@ -444,7 +444,6 @@ class TestSSRFPrevention:
     - DNS解決失敗時のフェイルクローズド動作
     """
 
-    @pytest.mark.security
     @pytest.mark.parametrize(
         ("malicious_url", "description"),
         [
@@ -496,7 +495,6 @@ class TestSSRFPrevention:
             f"Expected SSRF Prevention error for {description}"
         )
 
-    @pytest.mark.security
     @pytest.mark.parametrize(
         ("unauthorized_url", "domain"),
         [
@@ -541,7 +539,6 @@ class TestSSRFPrevention:
             f"Expected SSRF Prevention error for {domain}"
         )
 
-    @pytest.mark.security
     @pytest.mark.parametrize(
         ("ip_address", "expected_private"),
         [
@@ -569,7 +566,6 @@ class TestSSRFPrevention:
             f"Expected is_private_ip({ip_address}) == {expected_private}"
         )
 
-    @pytest.mark.security
     def test_is_private_ip_dns_failure_returns_true(self, monkeypatch) -> None:
         """DNS解決失敗時はTrueを返す（Fail-Closed動作）
 
@@ -594,7 +590,6 @@ class TestSSRFPrevention:
         result = is_private_ip("unknown-host.test")
         assert result is True, "DNS failure should return True (Fail-Closed)"
 
-    @pytest.mark.security
     @pytest.mark.parametrize(
         "allowed_domain",
         [
@@ -620,7 +615,6 @@ class TestSSRFPrevention:
         config = APIConfig(base_url=allowed_domain)
         assert config.base_url == allowed_domain.rstrip("/")
 
-    @pytest.mark.security
     @pytest.mark.parametrize(
         ("ipv6_address", "expected_private"),
         [
@@ -650,7 +644,6 @@ class TestSSRFPrevention:
             f"Expected is_private_ip({ipv6_address}) == {expected_private}"
         )
 
-    @pytest.mark.security
     @pytest.mark.parametrize(
         ("boundary_ip", "expected_private", "description"),
         [
