@@ -5,10 +5,10 @@ name: CI/CD Pipeline - 4-Tier Test Pyramid
 # Coverage Target: 85% (baseline protection, dynamic targets in local dev)
 # Reference: .serena/memories/test_strategy_part1_overview.md
 
-# Permissions for SARIF upload (Trivy security scan)
+# Default permissions (least privilege principle)
+# security-events: write is granted at job level where needed
 permissions:
   contents: read
-  security-events: write
 
 on:
   push:
@@ -156,6 +156,10 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 8  # Docker Build + Trivy追加のため5→8分に変更
+    # Explicit permissions for Trivy SARIF upload (security hardening)
+    permissions:
+      contents: read
+      security-events: write
 
     steps:
       - name: Checkout code
