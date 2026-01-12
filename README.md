@@ -284,7 +284,7 @@ graph TB
     style Performance fill:#f39c12,color:#fff
 ```
 
-> **Note**: pytestパラメータ化テストにより、実テスト関数251件 → pytest収集374件
+> **Note**: pytestパラメータ化テストにより、実テスト関数108件 → pytest収集374件
 
 ### CI/CD 4段階パイプライン
 
