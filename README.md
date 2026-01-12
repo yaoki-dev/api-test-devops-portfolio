@@ -288,12 +288,12 @@ graph TB
 
 ### CI/CD 4段階パイプライン
 
-| Stage | トリガー | テスト内容 | 目標時間 |
+| Stage | トリガー | テスト内容 | timeout |
 |-------|---------|-----------|---------|
-| PR Validation | Pull Request | Unit + Integration | < 5分 |
-| Post-Merge | Push to main | Core tests | < 3分 |
-| Branch Validation | Push to develop | Core tests | < 10分 |
-| Weekly Comprehensive | 週次スケジュール | Performance | < 30分 |
+| PR Validation | Pull Request | Unit + Integration | 10分 |
+| PR Security Scan | Pull Request | Trivy脆弱性スキャン | 10分 |
+| Post-Merge | Push to main | Docker Build + Trivy | 8分 |
+| Weekly Comprehensive | 週次スケジュール | Performance + External API | 30分 |
 
 ---
 
