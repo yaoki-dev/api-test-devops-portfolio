@@ -958,7 +958,8 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 | Plugin | 発動トリガー | 用途 |
 |--------|------------|------|
 | `/git-workflow:feature`, `/git-workflow:hotfix`, `/git-workflow:finish` | ブランチ操作時 | Git Flowブランチ管理 |
-| `/commit-commands:commit`, `/commit-commands:commit-push-pr` | コミット/PR作成時 | ステージング+コミット+PR |
+| `/commit`, `/commit-push-pr` | コミット/PR作成時 | 品質チェック付きコミット+日本語PR |
+| `/commit-commands:commit`, `/commit-commands:commit-push-pr` | 上記カスタム版が優先 | プラグイン版（最小限） |
 | `/pr-review-toolkit:review-pr` | git push完了後、PR作成前 | 6エージェント品質レビュー |
 | `/code-review:review-pr` (CEK) | 重要PR時 | 6エージェント防御レビュー（セキュリティ・バグ・API契約） |
 | `/comprehensive-pr-review` | リリース前PR | 10エージェント統合レビュー |
@@ -985,10 +986,10 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 4. コード簡素化 → /pr-review-toolkit:review-pr simplify 【条件付き※2】
 5. 多角的レビュー → /reflexion:critique 【条件付き※3】
 6. 日常レビュー → /code-review:code-review (80点閾値)
-7. コミット   → /commit-commands:commit
+7. コミット   → /commit (90点閾値、日本語)
 8. PR時      → /pr-review-toolkit:review-pr (品質) + /code-review:review-pr (防御)
 9. 重要PR時  → /comprehensive-pr-review (10エージェント統合)
-10. PR作成   → /commit-commands:commit-push-pr
+10. PR作成   → /commit-push-pr (品質チェック+日本語PR)
 ```
 
 **※1 品質ゲート**: `uv run pytest && uv run ruff check . && uv run mypy utils/ config/`
