@@ -8,7 +8,7 @@
 
 [![CI/CD Pipeline](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml/badge.svg)](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/badge/coverage-81%25-brightgreen)](https://yuta158.github.io/api-test-portfolio/htmlcov/)
-![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-blue)
+![Python](https://img.shields.io/badge/Python-3.12-blue)
 [![Docker](https://img.shields.io/badge/docker-multi--stage-blue)](./Dockerfile)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
@@ -16,11 +16,11 @@
 [![Security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 [![Dependencies: safety](https://img.shields.io/badge/dependencies-safety--checked-green.svg)](https://safetycli.com/)
 
-> **Python/Docker/CI/CDを統合したAPIテスト自動化ポートフォリオ。（現）219件のテストで品質を保証。**
+> **Python/Docker/CI/CDを統合したAPIテスト自動化ポートフォリオ。（現）374件のテストで品質を保証。**
 
 ## 概要
 
-- **（現）219件のテストスイート**: Unit / Integration / Security / Performance
+- **（現）374件のテストスイート**: Unit / Integration / Security / Performance
 - **カバレッジ 81%**: 継続的な品質向上
 - **CI/CD自動化**: GitHub Actions による4段階パイプライン
 - **セキュリティテスト**: OWASP API Security Top 10 対応
@@ -35,19 +35,19 @@
 
 ![Test Demo - pytest実行で19件テスト合格、カバレッジ64%を5秒で確認。テスト自動化スキルを実証](assets/demo-test.gif)
 
-> **📝 デモ内容**: クイック実行例（基本テスト19件、デモ時間短縮のため抽出。全219件は約60秒）
-> **🔍 全219件を今すぐ確認**: [GitHub Actions CI/CD](https://github.com/yuta158/api-test-portfolio/actions) でフルテスト結果＋カバレッジレポートを閲覧
+> **📝 デモ内容**: クイック実行例（基本テスト19件、デモ時間短縮のため抽出。全374件は約60秒）
+> **🔍 全374件を今すぐ確認**: [GitHub Actions CI/CD](https://github.com/yuta158/api-test-portfolio/actions) でフルテスト結果＋カバレッジレポートを閲覧
 
 **何がわかるか**:
 - pytest + pytest-covによる自動テスト実行
 - カバレッジレポートによる品質可視化
-- テスト実行: 基本19件 ~5秒、全219件 ~60秒
+- テスト実行: 基本19件 ~5秒、全374件 ~60秒
 
 <details>
-<summary>全テスト実行コマンド（219件、約60秒）</summary>
+<summary>全テスト実行コマンド（374件、約60秒）</summary>
 
 ```bash
-# 全テスト実行（219件）
+# 全テスト実行（374件）
 uv run pytest --cov=. --cov-report=term -q --color=yes
 
 # クイック実行（デモと同じ、19件）
@@ -179,7 +179,7 @@ api-test-devops-portfolio/
 ├── config/              # 設定管理（Pydantic Settings）
 ├── utils/               # ユーティリティ（APIクライアント等）
 ├── models/              # データモデル
-├── tests/               # テストスイート（219件）
+├── tests/               # テストスイート（374件）
 │   ├── unit/            # 単体テスト (124件)
 │   ├── integration/     # 統合テスト (12件)
 │   ├── security/        # セキュリティテスト (54件)
@@ -270,7 +270,7 @@ if init_sentry():
 
 ```mermaid
 graph TB
-    subgraph "Test Pyramid - 219件（3層 + マーカー）"
+    subgraph "Test Pyramid - 374件（3層 + マーカー）"
         E2E["🔝 E2E<br/>0件（Playwright導入予定）"]
         Integration["🔗 Integration<br/>12件 (5.5%)"]
         Unit["🧱 Unit<br/>124件 (56.6%)"]
@@ -288,7 +288,7 @@ graph TB
     style Markers fill:#9b59b6,color:#fff
 ```
 
-> **Note**: pytestパラメータ化テストにより、実テスト関数182件 → pytest収集219件
+> **Note**: pytestパラメータ化テストにより、実テスト関数251件 → pytest収集374件
 
 ### CI/CD 4段階パイプライン
 
