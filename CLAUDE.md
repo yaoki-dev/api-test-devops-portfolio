@@ -884,11 +884,17 @@ if settings.is_development():
 
   **Issue参照**: Footer: `Closes #123` / `Refs #456`
 
-**Git Flowコマンド**:
+**Git Flowコマンド（Serena MCP統合版）**:
 - `/git-workflow:feature <name>`: feature作成（developから分岐）
 - `/git-workflow:hotfix <name>`: hotfix作成（mainから分岐）
 - `/git-workflow:finish`: ブランチ完了・マージ
 - `/git-workflow:flow-status`: 状態確認
+- `/clean-gone`: [gone]ブランチクリーンアップ（worktree対応）
+
+**Serena MCP統合の利点**:
+- リアルタイムガイダンス: 14個のメモリ（coding_standards、test_strategy等）に即アクセス
+- 品質保証: implementation_quality_gatesを参照しながらcommit実行
+- 効率性: 必要なメモリのみ読込（CLAUDE.md全体読込より効率的）
 
 **Git削除の伝播（重要な学び）**:
 - ⚠️ `git rm`による削除は**削除diff**として扱われる
@@ -977,7 +983,9 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 |--------|------------|------|
 | `ai-ml-toolkit` | AI/ML機能実装時のみ | LLM/RAG/MLパイプライン支援 |
 
-### 標準フロー（自動発動順序）
+### 🔄 開発ワークフロー（標準コマンド実行順序）
+
+**CRITICAL**: 以下のコマンドを**この順序で**実行すること。`git commit`や`gh pr create`等の生コマンドは使用禁止。
 
 ```
 1. コード変更 → security-guidance (hook自動)
@@ -986,10 +994,10 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 4. コード簡素化 → /pr-review-toolkit:review-pr simplify 【条件付き※2】
 5. 多角的レビュー → /reflexion:critique 【条件付き※3】
 6. 日常レビュー → /code-review:code-review (80点閾値)
-7. コミット   → /commit (90点閾値、日本語)
+7. コミット   → /commit (90点閾値、日本語)【git commit禁止】
 8. PR時      → /pr-review-toolkit:review-pr (品質) + /code-review:review-pr (防御)
 9. 重要PR時  → /comprehensive-pr-review (10エージェント統合)
-10. PR作成   → /commit-push-pr (品質チェック+日本語PR)
+10. PR作成   → /commit-push-pr (品質チェック+日本語PR)【gh pr create禁止】
 ```
 
 **※1 品質ゲート**: `uv run pytest && uv run ruff check . && uv run mypy utils/ config/`
@@ -1009,6 +1017,40 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 **スキル発動**: 1%でも適用可能性があればAIが自動で呼び出します
 
 詳細（コマンド・スキル一覧）: @memory:command_usage_guide Section 6
+
+## 🔄 reflexion使用時の必須チェック
+
+**CRITICAL**: reflexion実行時（/reflexion:reflect, /reflexion:critique）は以下を必ず確認:
+
+### 1. CLAUDE.md標準ルール参照
+
+- [ ] **開発ワークフロー**（Line 986-1003）
+  - プロジェクト固有コマンド使用（/commit, /commit-push-pr）
+  - 生コマンド（git commit, gh pr create）使用禁止
+
+- [ ] **Plugin発動ルール**（Line 957-985）
+  - Critical/High/Mediumの優先度確認
+  - 発動条件の確認
+
+- [ ] **コーディング規約**（@memory:coding_standards）
+  - 命名規則、型ヒント、テスト規約の確認
+
+- [ ] **品質ゲート**（@memory:implementation_quality_gates）
+  - 4段階品質チェック（pytest/ruff/mypy/git）の確認
+
+### 2. コンテキスト再確認（長時間セッション時）
+
+- [ ] セッション時間2h+の場合、CLAUDE.md主要セクション再読込
+- [ ] プロジェクト固有ルール > 一般的ベストプラクティス
+- [ ] 「知っている ≠ 思い出す」を意識
+
+### 3. 提案前の確認
+
+- [ ] ワークフロー提案時: 標準フロー（Line 986-1003）確認
+- [ ] コマンド提案時: Plugin発動ルール（Line 957-985）確認
+- [ ] コード提案時: coding_standards参照
+
+**目的**: CLAUDE.md記載内容の「適用漏れ」防止
 
 ## トラブルシューティング
 
