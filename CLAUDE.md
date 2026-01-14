@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-*最終更新: 2026年01月13日*
+*最終更新: 2026年01月14日*
 
 ## プロジェクト概要
 
@@ -767,7 +767,7 @@ uv run safety check             # 依存関係チェック
 **概要**: コアモジュール構成と設計パターン
 - **コアモジュール**: `utils/api_client.py`、`config/settings.py`
 - **設計パターン**: エラーハンドリング階層、リトライロジック（4xx即失敗/5xxリトライ）、非同期処理（async/await）
-- **テスト構成**: pytest共通フィクスチャ（conftest.py）、3種類のテスト（unit/integration/performance）
+- **テスト構成**: pytest共通フィクスチャ（conftest.py）、7種類のテストマーカー（unit/integration/smoke/e2e/performance/slow/external）
 
 **関連**: project_architecture.md（全体設計）、coding_standards.md（実装規約）
 
@@ -927,6 +927,14 @@ if settings.is_development():
 - 理由: Protected branch には直接 push できないため、ローカル更新は不要
 
 > **発見日**: 2026-01-04（PR #21-#25 コンフリクト解決作業時）
+
+**同期PR（main↔develop）のCIスキップロジック**:
+- **スキップ対象**: `pr-validation`、`pr-security-scan` ジョブ
+- **理由**: 同期PRのコードは元ブランチへのマージ時に既にテスト済み
+- **セキュリティ担保**: Trivy/CodeQL/Dependabotが週次で実行され、マージ前に脆弱性チェック済み
+- **実行されるチェック**: コンフリクト検出、依存関係チェックのみ（PRページで確認可能）
+
+> **発見日**: 2026-01-14（PR #78 CI改善時）
 
 **PRマージ後の推奨ワークフロー**:
 
