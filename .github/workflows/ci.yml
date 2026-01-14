@@ -1,7 +1,7 @@
 name: CI/CD Pipeline - 4-Tier Test Pyramid
 
 # Test Pyramid Strategy (Google Testing Blog):
-#   Unit 70% / Integration 15% / System 10% / E2E 5%
+#   Unit 70% / Integration 25% / E2E 5%
 # Coverage Target: 85% (baseline protection, dynamic targets in local dev)
 # Reference: .serena/memories/test_strategy_part1_overview.md
 
@@ -28,7 +28,13 @@ jobs:
   # ============================================================
   pr-validation:
     name: PR Validation
-    if: github.event_name == 'pull_request'
+    # Skip sync PRs (main↔develop): already tested code
+    if: |
+      github.event_name == 'pull_request' &&
+      !(
+        (github.head_ref == 'main' && github.base_ref == 'develop') ||
+        (github.head_ref == 'develop' && github.base_ref == 'main')
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 10  # 単一Python版（3.12固定、Dockerfile一致）
     strategy:
@@ -96,7 +102,13 @@ jobs:
   # ============================================================
   pr-security-scan:
     name: PR Security Scan
-    if: github.event_name == 'pull_request'
+    # Skip sync PRs (main↔develop): already scanned code
+    if: |
+      github.event_name == 'pull_request' &&
+      !(
+        (github.head_ref == 'main' && github.base_ref == 'develop') ||
+        (github.head_ref == 'develop' && github.base_ref == 'main')
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # Explicit permissions (security hardening)
@@ -230,6 +242,12 @@ jobs:
         run: |
           echo "::error::Dockerイメージに脆弱性（CRITICAL/HIGH）が検出されました"
           exit 1
+
+      - name: Run smoke tests (post-merge validation)
+        run: |
+          uv run pytest -m "smoke" -v --tb=short
+        env:
+          ENVIRONMENT: testing
 
       - name: Upload regression test results
         if: always()

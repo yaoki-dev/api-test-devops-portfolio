@@ -767,7 +767,7 @@ uv run safety check             # 依存関係チェック
 **概要**: コアモジュール構成と設計パターン
 - **コアモジュール**: `utils/api_client.py`、`config/settings.py`
 - **設計パターン**: エラーハンドリング階層、リトライロジック（4xx即失敗/5xxリトライ）、非同期処理（async/await）
-- **テスト構成**: pytest共通フィクスチャ（conftest.py）、4種類のテスト（unit/integration/performance/security）
+- **テスト構成**: pytest共通フィクスチャ（conftest.py）、3種類のテスト（unit/integration/performance）
 
 **関連**: project_architecture.md（全体設計）、coding_standards.md（実装規約）
 
