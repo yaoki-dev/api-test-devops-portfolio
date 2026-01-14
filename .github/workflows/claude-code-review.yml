@@ -32,8 +32,24 @@ jobs:
           prompt: |
             /pr-review-toolkit:review-pr ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
 
-            重要: レビュー結果は必ず日本語で出力してください。
-            - 問題点の説明は日本語
-            - 推奨修正も日本語
-            - コード例のコメントも日本語
+            重要指示:
+            1. レビュー結果は必ず日本語で出力してください
+               - 問題点の説明は日本語
+               - 推奨修正も日本語
+               - コード例のコメントも日本語
+
+            2. レビュー完了後、以下のコマンドでPRにコメントを投稿してください:
+               gh pr comment ${{ github.event.pull_request.number }} --body "レビュー結果のMarkdown"
+
+               コメント形式:
+               ## Claude Code Review 結果
+
+               ### サマリー
+               [全体評価と主要な発見事項]
+
+               ### 問題点（あれば）
+               [具体的な問題と修正提案]
+
+               ### 良い点
+               [コードの良い点]
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
