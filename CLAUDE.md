@@ -928,13 +928,14 @@ if settings.is_development():
 
 > **発見日**: 2026-01-04（PR #21-#25 コンフリクト解決作業時）
 
-**同期PR（main↔develop）のCIスキップロジック**:
-- **スキップ対象**: `pr-validation`、`pr-security-scan` ジョブ
-- **理由**: 同期PRのコードは元ブランチへのマージ時に既にテスト済み
-- **セキュリティ担保**: Trivy/CodeQL/Dependabotが週次で実行され、マージ前に脆弱性チェック済み
-- **実行されるチェック**: コンフリクト検出、依存関係チェックのみ（PRページで確認可能）
+**同期PR（main↔develop）のCI動作**:
+- **`pr-validation`**: ステップレベル条件分岐で軽量SUCCESS（テスト実行スキップ）
+  - 理由: 同期PRのコードは元ブランチへのマージ時に既にテスト済み
+- **`pr-security-scan`**: 完全実行（Defense in Depth）
+  - 理由: 新規CVEがマージ後に発見される可能性があるため
+- **Branch Protection**: 両ジョブがSUCCESS返却（SKIPPEDではない）
 
-> **発見日**: 2026-01-14（PR #78 CI改善時）
+> **発見日**: 2026-01-14（PR #79 Branch Protection対応時）
 
 **PRマージ後の推奨ワークフロー**:
 
