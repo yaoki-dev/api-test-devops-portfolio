@@ -267,24 +267,38 @@ if init_sentry():
 
 ```mermaid
 graph TB
-    subgraph "Test Pyramid - 374件（3層）"
-        E2E["🔝 E2E<br/>0件（Playwright導入予定）"]
-        Integration["🔗 Integration<br/>31件 (8.3%)"]
-        Unit["🧱 Unit<br/>338件 (90.4%)"]
-        Performance["⚡ Performance<br/>5件 (1.3%)"]
+    subgraph "Test Pyramid - 374件"
+        E2E["🔝 E2E<br/>0件 → 5%目標"]
+        Integration["🔗 Integration<br/>31件 (8%) → 25%目標"]
+        Unit["🧱 Unit<br/>338件 (92%) → 70%目標"]
     end
-
-    E2E --> Integration
-    Integration --> Unit
-    Performance -.-> Unit
+    E2E --> Integration --> Unit
 
     style E2E fill:#ff6b6b,color:#fff
     style Integration fill:#1e90ff,color:#fff
     style Unit fill:#2ed573,color:#fff
-    style Performance fill:#f39c12,color:#fff
 ```
 
+**戦略根拠**: テストピラミッド原則に基づき、CI速度と信頼性のバランスを考慮
+- **Unit (70%)**: ビジネスロジックの品質担保（高速・安定）
+- **Integration (25%)**: API・DB接続の検証（中速・実環境近似）
+- **E2E (5%)**: クリティカルパスのみ（低速・高信頼）
+
 > **Note**: pytestパラメータ化テストにより、実テスト関数251件 → pytest収集374件
+
+### テスト実行特性（CI最適化）
+
+| マーカー | 用途 | CI実行タイミング |
+|---------|------|-----------------|
+| `unit` | 単体テスト | 全PR |
+| `integration` | 統合テスト | 全PR |
+| `smoke` | 基本機能確認 | 全PR |
+| `slow` | 実行時間 >3秒 | 週次のみ |
+| `external` | 外部API依存 | 週次のみ |
+| `performance` | 性能測定 | 週次のみ |
+| `e2e` | E2Eテスト | Playwright導入後 |
+
+> **CI最適化戦略**: `slow`/`external`/`performance`マーカーを週次実行に分離し、PRバリデーションを高速化（目標: 10分以内）
 
 ### CI/CD 4段階パイプライン
 
