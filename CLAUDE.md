@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-*最終更新: 2026年01月11日*
+*最終更新: 2026年01月14日*
 
 ## プロジェクト概要
 
@@ -767,7 +767,7 @@ uv run safety check             # 依存関係チェック
 **概要**: コアモジュール構成と設計パターン
 - **コアモジュール**: `utils/api_client.py`、`config/settings.py`
 - **設計パターン**: エラーハンドリング階層、リトライロジック（4xx即失敗/5xxリトライ）、非同期処理（async/await）
-- **テスト構成**: pytest共通フィクスチャ（conftest.py）、4種類のテスト（unit/integration/performance/security）
+- **テスト構成**: pytest共通フィクスチャ（conftest.py）、7種類のテストマーカー（unit/integration/smoke/e2e/performance/slow/external）
 
 **関連**: project_architecture.md（全体設計）、coding_standards.md（実装規約）
 
@@ -928,6 +928,15 @@ if settings.is_development():
 
 > **発見日**: 2026-01-04（PR #21-#25 コンフリクト解決作業時）
 
+**同期PR（main↔develop）のCI動作**:
+- **`pr-validation`**: ステップレベル条件分岐で軽量SUCCESS（テスト実行スキップ）
+  - 理由: 同期PRのコードは元ブランチへのマージ時に既にテスト済み
+- **`pr-security-scan`**: 完全実行（Defense in Depth）
+  - 理由: 新規CVEがマージ後に発見される可能性があるため
+- **Branch Protection**: 両ジョブがSUCCESS返却（SKIPPEDではない）
+
+> **発見日**: 2026-01-14（PR #79 Branch Protection対応時）
+
 **PRマージ後の推奨ワークフロー**:
 
 ```bash
@@ -963,6 +972,7 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 ### High（開発標準）
 | Plugin | 発動トリガー | 用途 |
 |--------|------------|------|
+| `/create-issue`, `/issue` | Issue作成/参照時 | Issue駆動開発支援 |
 | `/git-workflow:feature`, `/git-workflow:hotfix`, `/git-workflow:finish` | ブランチ操作時 | Git Flowブランチ管理 |
 | `/commit`, `/commit-push-pr` | コミット/PR作成時 | 品質チェック付きコミット+日本語PR |
 | `/commit-commands:commit`, `/commit-commands:commit-push-pr` | 上記カスタム版が優先 | プラグイン版（最小限） |
@@ -988,16 +998,25 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 **CRITICAL**: 以下のコマンドを**この順序で**実行すること。`git commit`や`gh pr create`等の生コマンドは使用禁止。
 
 ```
-1. コード変更 → security-guidance (hook自動)
-2. 品質ゲート → pytest + ruff + mypy 全合格（※1）
-3. 自己改善  → /reflexion:reflect
-4. コード簡素化 → /pr-review-toolkit:review-pr simplify 【条件付き※2】
-5. 多角的レビュー → /reflexion:critique 【条件付き※3】
-6. 日常レビュー → /code-review:code-review (80点閾値)
-7. コミット   → /commit (90点閾値、日本語)【git commit禁止】
-8. PR時      → /pr-review-toolkit:review-pr (品質) + /code-review:review-pr (防御)
-9. 重要PR時  → /comprehensive-pr-review (10エージェント統合)
-10. PR作成   → /commit-push-pr (品質チェック+日本語PR)【gh pr create禁止】
+【Issue駆動フェーズ】
+0. Issue作成   → /create-issue【新規タスク時】
+1. Issue参照   → /issue <番号>（要件整理・実装戦略）
+2. ブランチ作成 → /feature issue-<番号>-xxx
+
+【実装フェーズ】
+3. コード変更 → security-guidance (hook自動)
+4. 品質ゲート → pytest + ruff + mypy 全合格（※1）
+5. 自己改善  → /reflexion:reflect
+6. コード簡素化 → /pr-review-toolkit:review-pr simplify 【条件付き※2】
+7. 多角的レビュー → /reflexion:critique 【条件付き※3】
+8. 日常レビュー → /code-review:code-review (80点閾値)
+9. コミット   → /commit (90点閾値、日本語)【git commit禁止】
+
+【PR/マージフェーズ】
+10. PR時      → /pr-review-toolkit:review-pr (品質) + /code-review:review-pr (防御)
+11. 重要PR時  → /comprehensive-pr-review (10エージェント統合)
+12. PR作成   → /commit-push-pr (品質チェック+日本語PR)【gh pr create禁止】
+    → PR本文に「Closes #<番号>」自動挿入
 ```
 
 **※1 品質ゲート**: `uv run pytest && uv run ruff check . && uv run mypy utils/ config/`
@@ -1024,7 +1043,8 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 
 ### 1. CLAUDE.md標準ルール参照
 
-- [ ] **開発ワークフロー**（Line 986-1003）
+- [ ] **開発ワークフロー**（Line 989-1007）
+  - Issue駆動フロー: /create-issue → /issue → /feature の順序確認
   - プロジェクト固有コマンド使用（/commit, /commit-push-pr）
   - 生コマンド（git commit, gh pr create）使用禁止
 
