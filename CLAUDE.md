@@ -1001,27 +1001,60 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 【Issue駆動フェーズ】
 0. Issue作成   → /create-issue【新規タスク時】
 1. Issue参照   → /issue <番号>（要件整理・実装戦略）
-2. ブランチ作成 → /feature issue-<番号>-xxx
+2. Worktree作成 → /superpowers:using-git-worktrees（常時※4）
+   → ブランチ作成も含む
 
 【実装フェーズ】
 3. コード変更 → security-guidance (hook自動)
 4. 品質ゲート → pytest + ruff + mypy 全合格（※1）
 5. 自己改善  → /reflexion:reflect
-6. コード簡素化 → /pr-review-toolkit:review-pr simplify 【条件付き※2】
-7. 多角的レビュー → /reflexion:critique 【条件付き※3】
-8. 日常レビュー → /code-review:code-review (80点閾値)
-9. コミット   → /commit (90点閾値、日本語)【git commit禁止】
+6. コード簡素化 → /pr-review-toolkit:review-pr simplify【条件付き※2】
+7. レビュー実行 → 規模判定ルール適用【※5参照】
 
 【PR/マージフェーズ】
-10. PR時      → /pr-review-toolkit:review-pr (品質) + /code-review:review-pr (防御)
-11. 重要PR時  → /comprehensive-pr-review (10エージェント統合)
-12. PR作成   → /commit-push-pr (品質チェック+日本語PR)【gh pr create禁止】
-    → PR本文に「Closes #<番号>」自動挿入
+8. コミット   → /commit (90点閾値、日本語)【git commit禁止】
+9. PR作成         → /commit-push-pr【gh pr create禁止】
+10. レビュー対応   → 【ループ: 修正要求あれば】
+    - 修正 → 品質ゲート → /commit → push
+11. マージ実行     → マージ戦略【※6参照】
+12. マージ完了
+13. クリーンアップ → /superpowers:finishing-a-development-branch
 ```
 
 **※1 品質ゲート**: `uv run pytest && uv run ruff check . && uv run mypy utils/ config/`
 **※2 simplify条件**: 長時間セッション(2h+)または複雑ロジック実装時のみ
-**※3 critique条件**: 追加行≥200 OR ファイル変更≥3 OR セキュリティ関連ファイル変更
+**※4 worktree**: 並列Claude Code作業のため常時使用
+**※5 レビュー規模判定ルール（導入日: 2026-01-15）:**
+
+**判定順序（優先度順）:**
+
+1. **セキュリティ優先チェック（行数無視）**
+   セキュリティ関連ファイル変更あり → `/reflexion:critique` 必須
+
+   セキュリティ関連: `**/auth/**`, `**/security/**`, `config/settings.py`, `*.env*`
+
+2. **行数ベース判定（非セキュリティ）**
+   ```bash
+   LINES=$(git diff --stat | tail -1 | grep -oE '[0-9]+' | head -1)
+   ```
+
+   | 変更行数 | レビュースキル |
+   |---------|--------------|
+   | <100行 | `/superpowers:requesting-code-review` |
+   | 100-200行 | `/code-review:code-review` |
+   | ≥200行 | `/code-review:code-review` → `/reflexion:critique` |
+
+3. **ファイル数チェック**
+   ファイル変更≥3 → `/reflexion:critique` 追加
+
+**※6 マージ戦略（Protected Branch対応）:**
+
+| マージ種別 | コマンド |
+|-----------|---------|
+| feature → develop | `gh pr merge --squash --delete-branch` |
+| develop → main | `gh pr merge --merge` |
+| main → develop | `gh pr merge --merge` |
+| hotfix → main/develop | `gh pr merge --merge` |
 
 ## 🦸 superpowers使い分けルール
 
