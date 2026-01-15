@@ -43,12 +43,19 @@ jobs:
           HEAD_REF: ${{ github.head_ref }}
           BASE_REF: ${{ github.base_ref }}
         run: |
+          # Validate required environment variables
+          if [[ -z "$HEAD_REF" ]] || [[ -z "$BASE_REF" ]]; then
+            echo "::error::HEAD_REF or BASE_REF is not set"
+            exit 1
+          fi
+
           if [[ "$HEAD_REF" == "main" && "$BASE_REF" == "develop" ]] || \
              [[ "$HEAD_REF" == "develop" && "$BASE_REF" == "main" ]]; then
             echo "is_sync=true" >> $GITHUB_OUTPUT
-            echo "✅ Sync PR detected - skipping validation (already tested code)"
+            echo "✅ Sync PR detected: ${HEAD_REF} → ${BASE_REF} (skipping validation)"
           else
             echo "is_sync=false" >> $GITHUB_OUTPUT
+            echo "📋 Regular PR: ${HEAD_REF} → ${BASE_REF} (full validation)"
           fi
 
       - name: Checkout code
