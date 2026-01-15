@@ -2,22 +2,20 @@ name: Claude Code Review
 
 on:
   pull_request:
-    types: [opened, synchronize, ready_for_review, reopened]
-    # All PRs (Max 200 plan - no cost concern)
+    types: [opened]
 
 jobs:
   claude-review:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
       pull-requests: write
-      issues: write
       id-token: write
-      actions: read # Required for Claude to read CI results on PRs
+      actions: read
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 1
 
@@ -26,14 +24,12 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
-          plugins: 'pr-review-toolkit@claude-code-plugins'
-          claude_args: '--allowed-tools Bash(gh pr comment:*),mcp__github_inline_comment__create_inline_comment'
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment"
           prompt: |
-            /pr-review-toolkit:review-pr ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
+            /review-pr ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
 
             重要: レビュー結果は必ず日本語で出力してください。
             - 問題点の説明は日本語
             - 推奨修正も日本語
             - コード例のコメントも日本語
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
