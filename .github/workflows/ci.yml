@@ -1,7 +1,7 @@
 name: CI/CD Pipeline - 4-Tier Test Pyramid
 
 # Test Pyramid Strategy (Google Testing Blog):
-#   Unit 70% / Integration 15% / System 10% / E2E 5%
+#   Unit 70% / Integration 25% / E2E 5%
 # Coverage Target: 85% (baseline protection, dynamic targets in local dev)
 # Reference: .serena/memories/test_strategy_part1_overview.md
 
@@ -36,23 +36,43 @@ jobs:
         python-version: ['3.12']
 
     steps:
+      # Sync PR detection - return early success for branch protection
+      - name: Check if sync PR
+        id: sync-check
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [[ "$HEAD_REF" == "main" && "$BASE_REF" == "develop" ]] || \
+             [[ "$HEAD_REF" == "develop" && "$BASE_REF" == "main" ]]; then
+            echo "is_sync=true" >> $GITHUB_OUTPUT
+            echo "✅ Sync PR detected - skipping validation (already tested code)"
+          else
+            echo "is_sync=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Checkout code
+        if: steps.sync-check.outputs.is_sync != 'true'
         uses: actions/checkout@v6
 
       - name: Set up Python
+        if: steps.sync-check.outputs.is_sync != 'true'
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: Install uv
+        if: steps.sync-check.outputs.is_sync != 'true'
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Install dependencies
+        if: steps.sync-check.outputs.is_sync != 'true'
         run: uv sync --dev
 
       - name: Set test markers based on target branch
+        if: steps.sync-check.outputs.is_sync != 'true'
         id: markers
         env:
           BASE_REF: ${{ github.base_ref }}
@@ -67,6 +87,7 @@ jobs:
           fi
 
       - name: Run tests
+        if: steps.sync-check.outputs.is_sync != 'true'
         run: |
           mkdir -p reports
           uv run pytest -n auto -m "${{ steps.markers.outputs.value }}" \
@@ -76,7 +97,7 @@ jobs:
             -v --tb=short
 
       - name: Upload test results
-        if: always()
+        if: always() && steps.sync-check.outputs.is_sync != 'true'
         uses: actions/upload-artifact@v6
         with:
           name: pr-validation-results-py${{ matrix.python-version }}
@@ -96,6 +117,7 @@ jobs:
   # ============================================================
   pr-security-scan:
     name: PR Security Scan
+    # Note: Sync PRs also run security scan (Defense in Depth - new CVEs may emerge)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -231,6 +253,12 @@ jobs:
           echo "::error::Dockerイメージに脆弱性（CRITICAL/HIGH）が検出されました"
           exit 1
 
+      - name: Run smoke tests (post-merge validation)
+        run: |
+          uv run pytest -m "smoke" -v --tb=short
+        env:
+          ENVIRONMENT: testing
+
       - name: Upload regression test results
         if: always()
         uses: actions/upload-artifact@v6
@@ -325,7 +353,7 @@ jobs:
           echo "# CI/CD Pipeline Status Report (4-Tier Test Pyramid)" > status_report.md
           echo "" >> status_report.md
           echo "## Test Pyramid Strategy" >> status_report.md
-          echo "- Unit 70% / Integration 15% / System 10% / E2E 5%" >> status_report.md
+          echo "- Unit 70% / Integration 25% / E2E 5%" >> status_report.md
           echo "- Coverage Target: 58% (baseline protection)" >> status_report.md
           echo "" >> status_report.md
           echo "## Stage Results" >> status_report.md
