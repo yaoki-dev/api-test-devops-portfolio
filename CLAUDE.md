@@ -993,7 +993,7 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 |--------|------------|------|
 | `ai-ml-toolkit` | AI/ML機能実装時のみ | LLM/RAG/MLパイプライン支援 |
 
-### 🔄 開発ワークフロー（標準コマンド実行順序）
+## 🔄 開発ワークフロー（標準コマンド実行順序）
 
 **CRITICAL**: 以下のコマンドを**この順序で**実行すること。`git commit`や`gh pr create`等の生コマンドは使用禁止。
 
@@ -1023,7 +1023,7 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 
 **※1 品質ゲート**: `uv run pytest && uv run ruff check . && uv run mypy utils/ config/`
 **※2 simplify条件**: 長時間セッション(2h+)または複雑ロジック実装時のみ
-**※4 worktree**: 並列Claude Code作業のため常時使用
+**※4 worktree**: 並列Claude Code作業のため常時使用（worktreeディレクトリ作成→新ブランチチェックアウト→cd移動。元リポジトリのHEADは不変）
 **※5 レビュー規模判定ルール（導入日: 2026-01-15）:**
 
 **判定順序（優先度順）:**
@@ -1046,6 +1046,13 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 
 3. **ファイル数チェック**
    ファイル変更≥3 → `/reflexion:critique` 追加
+
+   **組み合わせ例**:
+   | 行数 | 1-2ファイル | ≥3ファイル |
+   |------|------------|-----------|
+   | <100行 | `requesting-code-review` | + `critique` |
+   | 100-200行 | `code-review:code-review` | + `critique` |
+   | ≥200行 | `code-review` + `critique` | `code-review` + `critique` |
 
 **※6 マージ戦略（Protected Branch対応）:**
 
@@ -1076,12 +1083,12 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 
 ### 1. CLAUDE.md標準ルール参照
 
-- [ ] **開発ワークフロー**（Line 989-1007）
+- [ ] **開発ワークフロー**（Line 996-1065）
   - Issue駆動フロー: /create-issue → /issue → /feature の順序確認
   - プロジェクト固有コマンド使用（/commit, /commit-push-pr）
   - 生コマンド（git commit, gh pr create）使用禁止
 
-- [ ] **Plugin発動ルール**（Line 957-985）
+- [ ] **Plugin自動発動ルール**（Line 962-995）
   - Critical/High/Mediumの優先度確認
   - 発動条件の確認
 
@@ -1099,11 +1106,13 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 
 ### 3. 提案前の確認
 
-- [ ] ワークフロー提案時: 標準フロー（Line 986-1003）確認
-- [ ] コマンド提案時: Plugin発動ルール（Line 957-985）確認
+- [ ] ワークフロー提案時: 標準フロー（Line 996-1022）確認
+- [ ] コマンド提案時: Plugin発動ルール（Line 962-995）確認
 - [ ] コード提案時: coding_standards参照
 
 **目的**: CLAUDE.md記載内容の「適用漏れ」防止
+
+> **⚠️ 行番号参照の注意**: Line番号は編集で陳腐化するリスクあり。大規模編集後は`grep -n "セクション名" CLAUDE.md`で再確認推奨。
 
 ## トラブルシューティング
 
