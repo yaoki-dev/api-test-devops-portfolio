@@ -858,10 +858,10 @@ if settings.is_development():
 **基本規約**: @memory:coding_standards, @memory:implementation_quality_gates
 
 **作業前の自動セットアップ**: `/superpowers:using-git-worktrees` スキルが自動発動
-- 発動条件: 設計承認後（git repo内）
-- 自動処理: worktree作成 + 新規ブランチ作成
-- develop, mainでは変更作業禁止（Protected Branch設定）
-- ユーザー操作不要
+- 発動条件: 機能実装開始時（Issue作成後、設計承認後、実装フェーズ移行時）
+- 自動処理: `origin/develop`から新ブランチ作成　+ worktree設定（../worktrees）
+- develop/mainへの直接作業: 禁止（Protected Branch設定）
+- ユーザー操作: 不要（自動実行）
 
 **Git運用** (Git Flow):
 - `main`: 本番リリース用（タグ付きリリースのみ）
