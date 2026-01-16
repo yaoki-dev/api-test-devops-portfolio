@@ -857,6 +857,10 @@ if settings.is_development():
 
 **基本規約**: @memory:coding_standards, @memory:implementation_quality_gates
 
+**作業前**: `/superpowers:using-git-worktrees`: worktree + 作業branch作成する（必須）
+- develop, mainでは変更作業禁止
+- worktree作成フォルダパス:/Users/yuta/projects/python/worktrees
+
 **Git運用** (Git Flow):
 - `main`: 本番リリース用（タグ付きリリースのみ）
 - `develop`: 開発統合ブランチ（次期リリース準備）main へマージ
