@@ -866,6 +866,8 @@ if settings.is_development():
 **Git運用** (Git Flow):
 - `main`: 本番リリース用（タグ付きリリースのみ）
 - `develop`: 開発統合ブランチ（次期リリース準備）main へマージ
+   - 理由: Protected branchには直接pushできないため、ローカル更新は不要
+   - `git fetch` + 新ブランチ作成により、常に最新のリモート状態から作業開始
 - `feature/*`: 機能開発 → develop へPR・Squash Merge
 - `hotfix/*`: 緊急修正 → main + develop へマージ
 - **コミットメッセージ** (Conventional Commits準拠):
