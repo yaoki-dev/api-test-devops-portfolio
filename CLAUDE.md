@@ -857,9 +857,11 @@ if settings.is_development():
 
 **基本規約**: @memory:coding_standards, @memory:implementation_quality_gates
 
-**作業前**: `/superpowers:using-git-worktrees`: worktree + 作業branch作成する（必須）
-- develop, mainでは変更作業禁止
-- worktree作成フォルダパス:/Users/yuta/projects/python/worktrees
+**作業前の自動セットアップ**: `/superpowers:using-git-worktrees` スキルが自動発動
+- 発動条件: 設計承認後（git repo内）
+- 自動処理: worktree作成 + 新規ブランチ作成
+- develop, mainでは変更作業禁止（Protected Branch設定）
+- ユーザー操作不要
 
 **Git運用** (Git Flow):
 - `main`: 本番リリース用（タグ付きリリースのみ）
@@ -925,12 +927,6 @@ if settings.is_development():
 | develop → main (リリース) | Regular Merge ✅ |
 | main → develop (同期) | Regular Merge ✅ |
 | hotfix → main | Regular Merge ✅ |
-
-**Protected Branch 環境でのベストプラクティス**:
-- `git pull` の代わりに `git fetch` + 新ブランチ作成を推奨
-- 理由: Protected branch には直接 push できないため、ローカル更新は不要
-
-> **発見日**: 2026-01-04（PR #21-#25 コンフリクト解決作業時）
 
 **同期PR（main↔develop）のCI動作**:
 - **`pr-validation`**: ステップレベル条件分岐で軽量SUCCESS（テスト実行スキップ）
