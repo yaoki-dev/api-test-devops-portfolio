@@ -1083,12 +1083,12 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 
 ### 1. CLAUDE.md標準ルール参照
 
-- [ ] **開発ワークフロー**（Line 996-1065）
+- [ ] **開発ワークフロー**（Section「🔄 開発ワークフロー」）
   - Issue駆動フロー: /create-issue → /issue → /feature の順序確認
   - プロジェクト固有コマンド使用（/commit, /commit-push-pr）
   - 生コマンド（git commit, gh pr create）使用禁止
 
-- [ ] **Plugin自動発動ルール**（Line 962-995）
+- [ ] **Plugin自動発動ルール**（Section「🔌 Plugin自動発動ルール」）
   - Critical/High/Mediumの優先度確認
   - 発動条件の確認
 
@@ -1106,13 +1106,11 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 
 ### 3. 提案前の確認
 
-- [ ] ワークフロー提案時: 標準フロー（Line 996-1022）確認
-- [ ] コマンド提案時: Plugin発動ルール（Line 962-995）確認
+- [ ] ワークフロー提案時: Section「🔄 開発ワークフロー」参照
+- [ ] コマンド提案時: Section「🔌 Plugin自動発動ルール」参照
 - [ ] コード提案時: coding_standards参照
 
 **目的**: CLAUDE.md記載内容の「適用漏れ」防止
-
-> **⚠️ 行番号参照の注意**: Line番号は編集で陳腐化するリスクあり。大規模編集後は`grep -n "セクション名" CLAUDE.md`で再確認推奨。
 
 ## トラブルシューティング
 
