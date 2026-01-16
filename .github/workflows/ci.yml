@@ -176,12 +176,12 @@ jobs:
         if: always() && github.base_ref == 'main'
         run: docker rmi security-scan:${{ github.sha }} || true
   # ============================================================
-  # Stage 2: Post-Merge Validation 
+  # Stage 2: Post-Merge Validation
   # Triggers: push to main
-  # Tests: e2e only
+  # Tests: Smoke + e2e
   # ============================================================
   post-merge-validation:
-    name: Post-Merge Validation (Trivy + e2e)
+    name: Post-Merge Validation (Trivy + Smoke + e2e)
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 8  # Docker Build + Trivy追加のため5→8分に変更
@@ -313,7 +313,7 @@ jobs:
       - name: Run external API tests (Weekly validation)
         id: external-tests  # Used for outcome-based error handling
         run: |
-          uv run pytest -m "external and not manual" -v --maxfail=5
+          uv run pytest -m "external" -v --maxfail=5
         continue-on-error: true
 
       - name: Report external test status (Failure)
@@ -325,6 +325,7 @@ jobs:
         run: echo "::notice::External API tests passed - all integrations healthy"
 
       - name: Full coverage report
+        # Runs ALL tests (unit/integration/smoke/e2e/performance/slow/external) - no -m filter
         run: |
           uv run pytest --cov=. --cov-report=html:reports/htmlcov --cov-report=json -v
           echo "coverage_report_generated=true" >> $GITHUB_ENV
