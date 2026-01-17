@@ -1087,7 +1087,7 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 ### 1. CLAUDE.md標準ルール参照
 
 - [ ] **開発ワークフロー**（Section「🔄 開発ワークフロー」）
-  - Issue駆動フロー: /create-issue → /issue → /feature の順序確認
+  - Issue駆動フロー: /create-issue → /issue →  /superpowers:using-git-worktrees の順序確認
   - プロジェクト固有コマンド使用（/commit, /commit-push-pr）
   - 生コマンド（git commit, gh pr create）使用禁止
 
