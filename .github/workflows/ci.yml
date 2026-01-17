@@ -262,7 +262,7 @@ jobs:
 
       - name: Run smoke tests (post-merge validation)
         run: |
-          uv run pytest -m "smoke" -v --tb=short
+          uv run pytest -m "smoke" -v --tb=short --no-cov
         env:
           ENVIRONMENT: testing
 
