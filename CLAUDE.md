@@ -460,7 +460,7 @@ def get_week_from_day_w6_plan(current_day: int) -> Union[int, float]:
    ```bash
    uv run pytest --cov=. --cov-fail-under=[Phase別目標]
    uv run ruff check .
-   uv run mypy utils/ config/
+   uv run mypy utils/ config/ models/
    ```
 
 3. **実装活動判定（完全自動）**:
@@ -743,7 +743,7 @@ error_occurrences:
 # 基本チェック（開発時）
 uv run ruff check --fix .      # スタイル + 自動修正
 uv run ruff format .            # フォーマット適用
-uv run mypy utils/ config/      # 型チェック
+uv run mypy utils/ config/ models/  # 型チェック
 
 # セキュリティ（週次）
 uv run bandit -r utils/ config/ # 脆弱性スキャン
@@ -1023,7 +1023,7 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 13. クリーンアップ → /superpowers:finishing-a-development-branch
 ```
 
-**※1 品質ゲート**: `uv run pytest && uv run ruff check . && uv run mypy utils/ config/`
+**※1 品質ゲート**: `uv run pytest && uv run ruff check . && uv run mypy utils/ config/ models/`
 **※2 simplify条件**: 長時間セッション(2h+)または複雑ロジック実装時のみ
 **※3 worktree**: 並列Claude Code作業のため常時使用（worktreeディレクトリ作成→新ブランチチェックアウト→cd移動。元リポジトリのHEADは不変）
 **※4 レビュー規模判定ルール（導入日: 2026-01-15）:**
