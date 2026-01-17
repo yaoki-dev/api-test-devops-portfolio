@@ -857,9 +857,17 @@ if settings.is_development():
 
 **基本規約**: @memory:coding_standards, @memory:implementation_quality_gates
 
+**作業前の自動セットアップ**: `/superpowers:using-git-worktrees` スキルが自動発動
+- 発動条件: 機能実装開始時（Issue作成後、設計承認後、実装フェーズ移行時）
+- 自動処理: `origin/develop`から新ブランチ作成　+ worktree設定（../worktrees）
+- develop/mainへの直接作業: 禁止（Protected Branch設定）
+- ユーザー操作: 不要（自動実行）
+
 **Git運用** (Git Flow):
 - `main`: 本番リリース用（タグ付きリリースのみ）
 - `develop`: 開発統合ブランチ（次期リリース準備）main へマージ
+   - 理由: Protected branchには直接pushできないため、ローカル更新は不要
+   - `git fetch` + 新ブランチ作成により、常に最新のリモート状態から作業開始
 - `feature/*`: 機能開発 → develop へPR・Squash Merge
 - `hotfix/*`: 緊急修正 → main + develop へマージ
 - **コミットメッセージ** (Conventional Commits準拠):
@@ -921,12 +929,6 @@ if settings.is_development():
 | develop → main (リリース) | Regular Merge ✅ |
 | main → develop (同期) | Regular Merge ✅ |
 | hotfix → main | Regular Merge ✅ |
-
-**Protected Branch 環境でのベストプラクティス**:
-- `git pull` の代わりに `git fetch` + 新ブランチ作成を推奨
-- 理由: Protected branch には直接 push できないため、ローカル更新は不要
-
-> **発見日**: 2026-01-04（PR #21-#25 コンフリクト解決作業時）
 
 **同期PR（main↔develop）のCI動作**:
 - **`pr-validation`**: ステップレベル条件分岐で軽量SUCCESS（テスト実行スキップ）
