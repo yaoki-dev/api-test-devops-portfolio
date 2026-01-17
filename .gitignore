@@ -113,3 +113,4 @@ docs/main/6週プラン/技術記事/技術記事作成.md
 coverage.json
 *.py,cover
 docs/coverage/
+.worktrees/
