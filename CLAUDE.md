@@ -1033,11 +1033,12 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 1. **セキュリティ優先チェック（行数無視）**
    セキュリティ関連ファイル変更あり → `/reflexion:critique` 必須
 
-   セキュリティ関連: `**/auth/**`, `**/security/**`, `config/settings.py`, `*.env*`
+   セキュリティ関連: `utils/sentry_init.py`, `utils/logger.py`, `config/settings.py`, `*.env*`
 
 2. **行数ベース判定（非セキュリティ）**
    ```bash
-   LINES=$(git diff --stat | tail -1 | grep -oE '[0-9]+' | head -1)
+   DIFF_STAT=$(git diff --stat)
+   LINES=$(echo "$DIFF_STAT" | tail -1 | awk '{gsub(/[^0-9]/, " "); print $2+$3}')
    ```
 
    | 変更行数 | レビュースキル |
