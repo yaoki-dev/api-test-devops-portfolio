@@ -4,6 +4,7 @@
 # Design Decision (Git Flow + Enterprise Best Practice):
 # - Auto-merge ONLY on develop branch (not main)
 # - patch/minor updates only (low risk)
+# - Indirect dependencies in groups also auto-merged (uv lockfile updates)
 # - Major updates require manual review (breaking changes)
 # - main branch requires manual PR + human review (release process)
 # - This prevents supply chain attacks from directly affecting production
@@ -34,9 +35,16 @@ jobs:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
       - name: Auto-merge (patch/minor only)
+        # NOTE: fetch-metadata returns null update-type for uv group updates (upstream limitation)
+        # See: https://github.com/dependabot/fetch-metadata/issues/499
+        # Workaround: Allow indirect dependencies in groups, but explicitly block major updates
+        # Risk assessment: Low (develop-only, CI gates, squash merge for easy revert)
         if: |
           steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
-          steps.metadata.outputs.update-type == 'version-update:semver-minor'
+          steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
+          (steps.metadata.outputs.dependency-type == 'indirect' &&
+           steps.metadata.outputs.dependency-group != '' &&
+           steps.metadata.outputs.update-type != 'version-update:semver-major')
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
