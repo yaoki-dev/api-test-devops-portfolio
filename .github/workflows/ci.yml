@@ -325,7 +325,7 @@ jobs:
         run: echo "::notice::External API tests passed - all integrations healthy"
 
       - name: Full coverage report
-        # Runs ALL tests (unit/integration/smoke/e2e/performance/slow/external) - no -m filter
+        # ALL 7 markers: unit/integration/smoke/e2e/performance/slow/external (no -m filter)
         run: |
           uv run pytest --cov=. --cov-report=html:reports/htmlcov --cov-report=json -v
           echo "coverage_report_generated=true" >> $GITHUB_ENV
