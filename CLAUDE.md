@@ -995,7 +995,7 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 |--------|------------|------|
 | `ai-ml-toolkit` | AI/ML機能実装時のみ | LLM/RAG/MLパイプライン支援 |
 
-### 🔄 開発ワークフロー（標準コマンド実行順序）
+## 🔄 開発ワークフロー（標準コマンド実行順序）
 
 **CRITICAL**: 以下のコマンドを**この順序で**実行すること。`git commit`や`gh pr create`等の生コマンドは使用禁止。
 
@@ -1003,27 +1003,68 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 【Issue駆動フェーズ】
 0. Issue作成   → /create-issue【新規タスク時】
 1. Issue参照   → /issue <番号>（要件整理・実装戦略）
-2. ブランチ作成 → /feature issue-<番号>-xxx
+2. Worktree作成 → /superpowers:using-git-worktrees（常時※3）
+   → ブランチ作成も含む
 
 【実装フェーズ】
 3. コード変更 → security-guidance (hook自動)
 4. 品質ゲート → pytest + ruff + mypy 全合格（※1）
 5. 自己改善  → /reflexion:reflect
-6. コード簡素化 → /pr-review-toolkit:review-pr simplify 【条件付き※2】
-7. 多角的レビュー → /reflexion:critique 【条件付き※3】
-8. 日常レビュー → /code-review:code-review (80点閾値)
-9. コミット   → /commit (90点閾値、日本語)【git commit禁止】
+6. コード簡素化 → /pr-review-toolkit:review-pr simplify【条件付き※2】
+7. レビュー実行 → 規模判定ルール適用【※4参照】
 
 【PR/マージフェーズ】
-10. PR時      → /pr-review-toolkit:review-pr (品質) + /code-review:review-pr (防御)
-11. 重要PR時  → /comprehensive-pr-review (10エージェント統合)
-12. PR作成   → /commit-push-pr (品質チェック+日本語PR)【gh pr create禁止】
-    → PR本文に「Closes #<番号>」自動挿入
+8. コミット   → /commit (90点閾値、日本語)【git commit禁止】
+9. PR作成         → /commit-push-pr【gh pr create禁止】
+10. レビュー対応   → 【ループ: 修正要求あれば】
+    - 修正 → 品質ゲート → /commit → push
+11. マージ実行     → マージ戦略【※5参照】
+12. マージ完了
+13. クリーンアップ → /superpowers:finishing-a-development-branch
 ```
 
 **※1 品質ゲート**: `uv run pytest && uv run ruff check . && uv run mypy utils/ config/`
 **※2 simplify条件**: 長時間セッション(2h+)または複雑ロジック実装時のみ
-**※3 critique条件**: 追加行≥200 OR ファイル変更≥3 OR セキュリティ関連ファイル変更
+**※3 worktree**: 並列Claude Code作業のため常時使用（worktreeディレクトリ作成→新ブランチチェックアウト→cd移動。元リポジトリのHEADは不変）
+**※4 レビュー規模判定ルール（導入日: 2026-01-15）:**
+
+**判定順序（優先度順）:**
+
+1. **セキュリティ優先チェック（行数無視）**
+   セキュリティ関連ファイル変更あり → `/reflexion:critique` 必須
+
+   セキュリティ関連: `utils/sentry_init.py`, `utils/logger.py`, `config/settings.py`, `*.env*`
+
+2. **行数ベース判定（非セキュリティ）**
+   ```bash
+   DIFF_STAT=$(git diff --stat)
+   LINES=$(echo "$DIFF_STAT" | tail -1 | awk '{gsub(/[^0-9]/, " "); print $2+$3}')
+   ```
+
+   | 変更行数 | レビュースキル |
+   |---------|--------------|
+   | <100行 | `/superpowers:requesting-code-review` |
+   | 100-200行 | `/code-review:code-review (80点閾値)` |
+   | ≥200行 | `/code-review:code-review (80点閾値)` → `/reflexion:critique` |
+
+3. **ファイル数チェック**
+   ファイル変更≥3 → `/reflexion:critique` 追加
+
+   **組み合わせ例**:
+   | 行数 | 1-2ファイル | ≥3ファイル |
+   |------|------------|-----------|
+   | <100行 | `requesting-code-review` | + `critique` |
+   | 100-200行 | `code-review:code-review` | + `critique` |
+   | ≥200行 | `code-review` + `critique` | `code-review` + `critique` |
+
+**※5 マージ戦略（Protected Branch対応）:**
+
+| マージ種別 | コマンド |
+|-----------|---------|
+| feature → develop | `gh pr merge --squash --delete-branch` |
+| develop → main | `gh pr merge --merge` |
+| main → develop | `gh pr merge --merge` |
+| hotfix → main/develop | `gh pr merge --merge` |
 
 ## 🦸 superpowers使い分けルール
 
@@ -1045,12 +1086,12 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 
 ### 1. CLAUDE.md標準ルール参照
 
-- [ ] **開発ワークフロー**（Line 989-1007）
-  - Issue駆動フロー: /create-issue → /issue → /feature の順序確認
+- [ ] **開発ワークフロー**（Section「🔄 開発ワークフロー」）
+  - Issue駆動フロー: /create-issue → /issue →  /superpowers:using-git-worktrees の順序確認
   - プロジェクト固有コマンド使用（/commit, /commit-push-pr）
   - 生コマンド（git commit, gh pr create）使用禁止
 
-- [ ] **Plugin発動ルール**（Line 957-985）
+- [ ] **Plugin自動発動ルール**（Section「🔌 Plugin自動発動ルール」）
   - Critical/High/Mediumの優先度確認
   - 発動条件の確認
 
@@ -1068,8 +1109,8 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 
 ### 3. 提案前の確認
 
-- [ ] ワークフロー提案時: 標準フロー（Line 986-1003）確認
-- [ ] コマンド提案時: Plugin発動ルール（Line 957-985）確認
+- [ ] ワークフロー提案時: Section「🔄 開発ワークフロー」参照
+- [ ] コマンド提案時: Section「🔌 Plugin自動発動ルール」参照
 - [ ] コード提案時: coding_standards参照
 
 **目的**: CLAUDE.md記載内容の「適用漏れ」防止
