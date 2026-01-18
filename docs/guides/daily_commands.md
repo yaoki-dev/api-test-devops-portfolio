@@ -55,7 +55,7 @@ make security   # セキュリティスキャン (bandit)
 #### 並列品質チェック (15秒 - 200%高速化)
 ```bash
 # エージェント最適化並列実行
-uv run ruff check . --fix & uv run mypy utils/ config/ & uv run bandit -r . -ll
+uv run ruff check . --fix & uv run mypy utils/ config/ models/ & uv run bandit -r . -ll
 
 # コードフォーマット + リント並列
 uv run ruff format . && uv run ruff check . --fix
@@ -634,7 +634,7 @@ make docker-down && make clean-all && make docker-build
 uv run ruff check . --fix
 
 # 型エラー確認
-uv run mypy utils/ config/ --show-error-codes
+uv run mypy utils/ config/ models/ --show-error-codes
 
 # セキュリティ警告詳細
 uv run bandit -r . -ll -v
