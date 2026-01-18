@@ -1145,6 +1145,6 @@ open reports/htmlcov/index.html
 ### 型チェックエラー時
 ```bash
 # mypy詳細出力
-uv run mypy --show-error-codes --pretty utils/ config/
+uv run mypy --show-error-codes --pretty utils/ config/ models/
 ```
 
