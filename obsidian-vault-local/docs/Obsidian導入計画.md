@@ -1287,7 +1287,7 @@ learning_history:
 2. 品質ゲート実行（完全自動）
    - Gate 1: uv run pytest --cov=. --cov-fail-under=[Phase別目標]
    - Gate 2: uv run ruff check .
-   - Gate 3: uv run mypy utils/ config/
+   - Gate 3: uv run mypy utils/ config/ models/
    - Gate 4: git status（未追跡ファイルチェック）
 
 3. 品質ゲート判定（完全自動）
@@ -1353,7 +1353,7 @@ uv run ruff check .
 **Gate 3: Type Check Pass**
 ```bash
 # 実行コマンド
-uv run mypy utils/ config/
+uv run mypy utils/ config/ models/
 
 # 合格基準
 - 型エラー0件
@@ -2764,7 +2764,7 @@ def aggregate_mastery_stats(
 **Phase 2: 品質ゲート実行**
 - [ ] Gate 1: `uv run pytest --cov=. --cov-fail-under=[Phase別目標]` 実行
 - [ ] Gate 2: `uv run ruff check .` 実行
-- [ ] Gate 3: `uv run mypy utils/ config/` 実行
+- [ ] Gate 3: `uv run mypy utils/ config/ models/` 実行
 - [ ] Gate 4: `git status` 実行（未追跡ファイルチェック）
 
 **Phase 3: 実装活動判定**

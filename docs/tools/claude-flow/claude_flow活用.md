@@ -253,7 +253,7 @@ hooks:
   pre_commit:
     - uv run pytest --cov=. --cov-fail-under=85
     - uv run ruff check --fix .
-    - uv run mypy utils/ config/
+    - uv run mypy utils/ config/ models/
     - uv run bandit -r utils/ config/
   post_commit:
     - docker build -t api-test .
@@ -387,7 +387,7 @@ hooks:
 │  ┌──────────────────────────────┐  │
 │  │ pytest --cov=. --cov-fail... │  │
 │  │ ruff check --fix .           │  │
-│  │ mypy utils/ config/          │  │
+│  │ mypy utils/ config/ models/  │  │
 │  └──────────────────────────────┘  │
 └────────────────────────────────────┘
 ```
@@ -478,7 +478,7 @@ hooks:
   pre_commit:
     - uv run pytest --cov=. --cov-fail-under=85
     - uv run ruff check --fix .
-    - uv run mypy utils/ config/
+    - uv run mypy utils/ config/ models/
     - uv run bandit -r utils/ config/
     - uv run safety check
 
@@ -517,7 +517,7 @@ hooks:
 # 1. git pull（手動）
 # 2. uv run pytest --cov=. --cov-fail-under=85（手動、5分）
 # 3. uv run ruff check --fix .（手動、1分）
-# 4. uv run mypy utils/ config/（手動、3分）
+# 4. uv run mypy utils/ config/ models/（手動、3分）
 # 5. uv run bandit -r .（手動、2分）
 # 合計: 11分/日
 
@@ -808,7 +808,7 @@ hooks:
   pre_docker_build:
     - uv run ruff check --fix .
     - uv run pytest --cov=. --cov-fail-under=60
-    - uv run mypy utils/ config/
+    - uv run mypy utils/ config/ models/
 
   post_docker_build:
     - docker images --format "table {{.Repository}}\t{{.Size}}"
@@ -1050,7 +1050,7 @@ hooks:
     # 品質ゲート
     - uv run pytest --cov=. --cov-fail-under=85 -v
     - uv run ruff check .
-    - uv run mypy utils/ config/
+    - uv run mypy utils/ config/ models/
     - uv run bandit -r utils/ config/ -ll
     - uv run safety check
 
@@ -1196,7 +1196,7 @@ hooks:
   pre_docker_build:
     - uv run ruff check --fix .
     - uv run pytest --cov=. --cov-fail-under=60
-    - uv run mypy utils/ config/
+    - uv run mypy utils/ config/ models/
 
   post_docker_build:
     - docker images --format "table {{.Repository}}\t{{.Size}}"
@@ -1208,7 +1208,7 @@ hooks:
   pre_commit:
     - uv run ruff check --fix .
     - uv run pytest --cov=. --cov-fail-under=60 -q
-    - uv run mypy utils/ config/ --no-error-summary
+    - uv run mypy utils/ config/ models/ --no-error-summary
 
   # 共通: Push前統合テスト
   pre_push:
@@ -1413,7 +1413,7 @@ jobs:
       - name: Run ruff
         run: uv run ruff check .
       - name: Run mypy
-        run: uv run mypy utils/ config/
+        run: uv run mypy utils/ config/ models/
 ```
 
 **成功基準**:
@@ -1553,7 +1553,7 @@ git commit -m "chore: prepare release v1.0.0"
 # 期待動作:
 # ✓ pytest --cov=. --cov-fail-under=85
 # ✓ ruff check .
-# ✓ mypy utils/ config/
+# ✓ mypy utils/ config/ models/
 # ✓ bandit -r . -ll
 # ✓ safety check
 # ✓ docker build -t api-test:prod

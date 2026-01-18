@@ -461,7 +461,7 @@ jobs:
     - name: Quality Gates
       run: |
         uv run ruff check .
-        uv run mypy utils/ config/
+        uv run mypy utils/ config/ models/
         uv run pytest --cov=utils --cov-fail-under=85
 ```
 
