@@ -2332,7 +2332,7 @@ chore: ruff設定最新化
 ### コミット前チェックリスト
 - [ ] uv run pytest: 全テスト合格
 - [ ] uv run ruff check --fix .: ruffエラーゼロ
-- [ ] uv run mypy utils/ config/: 型チェックエラーゼロ
+- [ ] uv run mypy utils/ config/ models/: 型チェックエラーゼロ
 - [ ] pre-commit hooks実行完了（自動）
 
 ---
@@ -2405,7 +2405,7 @@ jobs:
       - name: Lint
         run: uv run ruff check .
       - name: Type Check
-        run: uv run mypy utils/ config/
+        run: uv run mypy utils/ config/ models/
       - name: Test
         run: uv run pytest --cov-fail-under=85
       - name: Security

@@ -258,7 +258,7 @@ uv run pytest
 
 # 品質チェック
 uv run ruff check --fix .
-uv run mypy utils/ config/
+uv run mypy utils/ config/ models/
 uv run bandit -r utils/ config/
 ```
 

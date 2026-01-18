@@ -859,7 +859,7 @@ if settings.is_development():
 
 **作業前の自動セットアップ**: `/superpowers:using-git-worktrees` スキルが自動発動
 - 発動条件: 機能実装開始時（Issue作成後、設計承認後、実装フェーズ移行時）
-- 自動処理: `origin/develop`から新ブランチ作成　+ worktree設定（../worktrees）
+- 自動処理: `origin/develop`から新ブランチ作成　+ worktree設定（.worktrees/）
 - develop/mainへの直接作業: 禁止（Protected Branch設定）
 - ユーザー操作: 不要（自動実行）
 
