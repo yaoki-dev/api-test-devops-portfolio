@@ -36,75 +36,62 @@ jobs:
         python-version: ['3.12']
 
     steps:
-      # Sync PR detection - return early success for branch protection
-      - name: Check if sync PR
-        id: sync-check
-        env:
-          HEAD_REF: ${{ github.head_ref }}
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          # Validate required environment variables
-          if [[ -z "$HEAD_REF" ]] || [[ -z "$BASE_REF" ]]; then
-            echo "::error::HEAD_REF or BASE_REF is not set"
-            exit 1
-          fi
-
-          if [[ "$HEAD_REF" == "main" && "$BASE_REF" == "develop" ]] || \
-             [[ "$HEAD_REF" == "develop" && "$BASE_REF" == "main" ]]; then
-            echo "is_sync=true" >> $GITHUB_OUTPUT
-            echo "✅ Sync PR detected: ${HEAD_REF} → ${BASE_REF} (skipping validation)"
-          else
-            echo "is_sync=false" >> $GITHUB_OUTPUT
-            echo "📋 Regular PR: ${HEAD_REF} → ${BASE_REF} (full validation)"
-          fi
-
       - name: Checkout code
-        if: steps.sync-check.outputs.is_sync != 'true'
         uses: actions/checkout@v6
 
       - name: Set up Python
-        if: steps.sync-check.outputs.is_sync != 'true'
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: Install uv
-        if: steps.sync-check.outputs.is_sync != 'true'
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Install dependencies
-        if: steps.sync-check.outputs.is_sync != 'true'
         run: uv sync --dev
 
       - name: Set test markers based on target branch
-        if: steps.sync-check.outputs.is_sync != 'true'
         id: markers
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
+          # Single Source of Truth for smoke marker
+          SMOKE_MARKER="smoke and not external"
+          echo "smoke_marker=$SMOKE_MARKER" >> $GITHUB_OUTPUT
+
           if [ "$BASE_REF" = "main" ]; then
-            echo "value=(unit or integration or smoke) and not external" >> $GITHUB_OUTPUT
-            echo "🎯 Target: main - Will run Unit + Integration + Smoke tests (excluding external)"
+            echo "value=$SMOKE_MARKER" >> $GITHUB_OUTPUT
+            echo "cov_enabled=false" >> $GITHUB_OUTPUT
+            echo "🎯 Target: main - Will run Smoke tests only (no coverage)"
           else
-            # develop (デフォルト)
             echo "value=(unit or integration) and not external" >> $GITHUB_OUTPUT
-            echo "🎯 Target: develop - Will run Unit + Integration tests (excluding external)"
+            echo "cov_enabled=true" >> $GITHUB_OUTPUT
+            echo "🎯 Target: develop - Will run Unit + Integration tests (with coverage)"
           fi
 
-      - name: Run tests
-        if: steps.sync-check.outputs.is_sync != 'true'
+      - name: Run tests (with coverage for develop)
+        if: steps.markers.outputs.cov_enabled == 'true'
         run: |
           mkdir -p reports
+          # Step 1: unit + integration with coverage
           uv run pytest -n auto -m "${{ steps.markers.outputs.value }}" \
             --cov=utils --cov=config --cov=models \
             --cov-report=json:coverage.json \
             --cov-report=term-missing \
             -v --tb=short
+          # Step 2: smoke without coverage (using output variable)
+          uv run pytest -m "${{ steps.markers.outputs.smoke_marker }}" -v --tb=short --no-cov
+
+      - name: Run tests (smoke only for main)
+        if: steps.markers.outputs.cov_enabled == 'false'
+        run: |
+          mkdir -p reports
+          uv run pytest -m "${{ steps.markers.outputs.smoke_marker }}" -v --tb=short --no-cov
 
       - name: Upload test results
-        if: always() && steps.sync-check.outputs.is_sync != 'true'
+        if: always()
         uses: actions/upload-artifact@v6
         with:
           name: pr-validation-results-py${{ matrix.python-version }}
@@ -124,7 +111,6 @@ jobs:
   # ============================================================
   pr-security-scan:
     name: PR Security Scan
-    # Note: Sync PRs also run security scan (Defense in Depth - new CVEs may emerge)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
