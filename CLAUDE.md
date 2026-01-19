@@ -1062,7 +1062,7 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 |-----------|---------|
 | feature → develop | `gh pr merge --squash --delete-branch` |
 | develop → main | `gh pr merge --merge` |
-| hotfix → main/develop | `gh pr merge --merge` |
+| hotfix → main | `gh pr merge --merge` |
 
 ## 🦸 superpowers使い分けルール
 
