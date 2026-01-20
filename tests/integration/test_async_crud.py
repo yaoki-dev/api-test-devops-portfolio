@@ -118,11 +118,8 @@ async def test_real_async_delete_post():
     - JSONPlaceholder API の仕様: 実際には削除されないが200/204を返す
     """
     async with AsyncJSONPlaceholderClient() as client:
-        # delete_post() は None を返すので、例外が発生しないことを確認
-        result = await client.delete_post(post_id=1)
-
-        # 結果検証（Noneが返ることを確認）
-        assert result is None
+        # delete_post() returns None, so just verify no exception raised
+        await client.delete_post(post_id=1)
 
 
 # ===============================================================================
@@ -174,8 +171,8 @@ async def test_real_async_crud_integration():
         assert updated["title"] == "Updated in Integration Test"
 
         # Step 4: Delete - 投稿削除（id=1）
-        result = await client.delete_post(post_id=1)
-        assert result is None
+        # delete_post() returns None, so just verify no exception raised
+        await client.delete_post(post_id=1)
 
 
 # ===============================================================================
