@@ -927,17 +927,16 @@ if settings.is_development():
 |---------|--------------|
 | feature → develop | Squash Merge ✅ |
 | develop → main (リリース) | Regular Merge ✅ |
-| main → develop (同期) | Regular Merge ✅ |
 | hotfix → main | Regular Merge ✅ |
+| hotfix → develop | Regular Merge ✅ |
 
-**同期PR（main↔develop）のCI動作**:
-- **`pr-validation`**: ステップレベル条件分岐で軽量SUCCESS（テスト実行スキップ）
-  - 理由: 同期PRのコードは元ブランチへのマージ時に既にテスト済み
-- **`pr-security-scan`**: 完全実行（Defense in Depth）
-  - 理由: 新規CVEがマージ後に発見される可能性があるため
-- **Branch Protection**: 両ジョブがSUCCESS返却（SKIPPEDではない）
+**単方向フロー（2026-01-19 変更）**:
+- main→develop の自動同期は廃止（ping-pong 問題回避のため）
+- hotfix 適用後は手動で develop への cherry-pick を検討
 
-> **発見日**: 2026-01-14（PR #79 Branch Protection対応時）
+**PR Validation テスト戦略**:
+- develop PR: unit + integration（カバレッジ計測）→ smoke（カバレッジなし）
+- main PR: unit + integration（カバレッジ計測）→ smoke（カバレッジなし）
 
 **PRマージ後の推奨ワークフロー**:
 
@@ -1063,8 +1062,7 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 |-----------|---------|
 | feature → develop | `gh pr merge --squash --delete-branch` |
 | develop → main | `gh pr merge --merge` |
-| main → develop | `gh pr merge --merge` |
-| hotfix → main/develop | `gh pr merge --merge` |
+| hotfix → main | `gh pr merge --merge` |
 
 ## 🦸 superpowers使い分けルール
 
