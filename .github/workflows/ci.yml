@@ -23,8 +23,8 @@ jobs:
   # Stage 1: PR Validation
   # Triggers: pull_request
   # Tests:
-  # - develop: Unit + Integration(標準)
-  # - main: Unit + Integration + Smoke（厳格化）
+  # - develop: Unit + Integration (with coverage) → Smoke (no coverage)
+  # - main: Unit + Integration (with coverage) → Smoke (no coverage)
   # ============================================================
   pr-validation:
     name: PR Validation
@@ -62,9 +62,9 @@ jobs:
           echo "smoke_marker=$SMOKE_MARKER" >> $GITHUB_OUTPUT
 
           if [ "$BASE_REF" = "main" ]; then
-            echo "value=$SMOKE_MARKER" >> $GITHUB_OUTPUT
-            echo "cov_enabled=false" >> $GITHUB_OUTPUT
-            echo "🎯 Target: main - Will run Smoke tests only (no coverage)"
+            echo "value=(unit or integration) and not external" >> $GITHUB_OUTPUT
+            echo "cov_enabled=true" >> $GITHUB_OUTPUT
+            echo "🎯 Target: main - Will run Unit + Integration + Smoke tests (with coverage for unit/integration)"
           else
             echo "value=(unit or integration) and not external" >> $GITHUB_OUTPUT
             echo "cov_enabled=true" >> $GITHUB_OUTPUT
@@ -84,7 +84,7 @@ jobs:
           # Step 2: smoke without coverage (using output variable)
           uv run pytest -m "${{ steps.markers.outputs.smoke_marker }}" -v --tb=short --no-cov
 
-      - name: Run tests (smoke only for main)
+      - name: Run tests (smoke only, fallback)
         if: steps.markers.outputs.cov_enabled == 'false'
         run: |
           mkdir -p reports
