@@ -99,7 +99,6 @@ class TestAPIConfigValidation:
         config = APIConfig(base_url="http://httpbin.org")
         assert config.base_url == "http://httpbin.org"
 
-    @pytest.mark.smoke
     def test_base_url_https_scheme_valid(self):
         """https://スキームが有効（DNS解決可能なドメインを使用）"""
         # Note: example.com系はDNS解決失敗でFail-Closedブロック

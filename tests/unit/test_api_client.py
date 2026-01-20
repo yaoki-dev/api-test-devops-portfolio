@@ -39,7 +39,6 @@ def mock_settings():
         yield
 
 
-@pytest.mark.smoke
 def test_base_client_initialization():
     """クライアント初期化テスト"""
     client = SyncAPIClient(base_url="https://test.com", timeout=10.0, retry_count=1)
@@ -50,7 +49,6 @@ def test_base_client_initialization():
     # User-Agent値のチェックは削除（モック動作ではなく実際の値を使用）
 
 
-@pytest.mark.smoke
 def test_context_manager_basic():
     """Context Manager基本動作テスト"""
     with SyncAPIClient(base_url="https://test.com") as client:
