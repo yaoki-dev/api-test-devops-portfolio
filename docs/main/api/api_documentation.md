@@ -5,7 +5,8 @@
 ## 🔗 テスト対象API
 
 ### JSONPlaceholder API
-- **ベースURL**: https://jsonplaceholder.typicode.com
+
+- **ベースURL**: <https://jsonplaceholder.typicode.com>
 - **認証**: なし（テスト用API）
 - **レスポンス形式**: JSON
 
@@ -14,6 +15,7 @@
 ### Posts API
 
 #### Posts エンドポイント
+
 - `GET /posts` - 一覧取得
 - `GET /posts/{id}` - 詳細取得
 - `POST /posts` - 新規作成
@@ -21,6 +23,7 @@
 - `DELETE /posts/{id}` - 削除
 
 **実装済みテスト**:
+
 - ステータスコード検証
 - レスポンス構造チェック
 - エラーハンドリング
@@ -28,6 +31,7 @@
 ### Users API  
 
 #### Users エンドポイント
+
 - `GET /users` - 一覧取得
 - `GET /users/{id}` - 詳細取得
 - `POST /users` - 新規作成
@@ -35,6 +39,7 @@
 - `DELETE /users/{id}` - 削除
 
 **実装済みテスト**:
+
 - ステータスコード検証
 - レスポンス構造チェック
 - エラーハンドリング
@@ -42,6 +47,7 @@
 ### Comments API
 
 #### Comments エンドポイント
+
 - `GET /comments` - 一覧取得
 - `GET /comments/{id}` - 詳細取得
 - `POST /comments` - 新規作成
@@ -49,6 +55,7 @@
 - `DELETE /comments/{id}` - 削除
 
 **実装済みテスト**:
+
 - ステータスコード検証
 - レスポンス構造チェック
 - エラーハンドリング
@@ -56,6 +63,7 @@
 ### Todos API
 
 #### Todos エンドポイント
+
 - `GET /todos` - 一覧取得
 - `GET /todos/{id}` - 詳細取得
 - `POST /todos` - 新規作成
@@ -63,6 +71,7 @@
 - `DELETE /todos/{id}` - 削除
 
 **実装済みテスト**:
+
 - ステータスコード検証
 - レスポンス構造チェック
 - エラーハンドリング
@@ -70,6 +79,7 @@
 ### Albums API
 
 #### Albums エンドポイント
+
 - `GET /albums` - アルバム一覧取得 ✅ **実装済み**
 - `GET /albums/{id}` - アルバム詳細取得 ✅ **実装済み**
 - `POST /albums` - 新規アルバム作成 🚧 **未実装**
@@ -77,6 +87,7 @@
 - `DELETE /albums/{id}` - アルバム削除 🚧 **未実装**
 
 **実装済みテスト**: GET操作のみ
+
 - ステータスコード検証
 - レスポンス構造チェック
 - エラーハンドリング
@@ -84,6 +95,7 @@
 ### Photos API
 
 #### Photos エンドポイント
+
 - `GET /photos` - 写真一覧取得 ✅ **実装済み**
 - `GET /photos/{id}` - 写真詳細取得 ✅ **実装済み**
 - `POST /photos` - 新規写真作成 🚧 **未実装**
@@ -91,6 +103,7 @@
 - `DELETE /photos/{id}` - 写真削除 🚧 **未実装**
 
 **実装済みテスト**: GET操作のみ
+
 - ステータスコード検証
 - レスポンス構造チェック
 - エラーハンドリング
@@ -109,11 +122,13 @@
 ## 🧪 テスト実装パターン
 
 ### 基本パターン
+
 - 正常系テスト
 - 異常系テスト  
 - 境界値テスト
 
 ### 高度パターン
+
 - 非同期並行テスト
 - パラメータ化テスト
 - モック・スタブテスト
@@ -124,6 +139,7 @@
 ### 基本的な使用方法
 
 #### 1. JSONPlaceholderClientの初期化
+
 ```python
 from utils.api_client import JSONPlaceholderClient
 
@@ -139,6 +155,7 @@ client = JSONPlaceholderClient(
 ```
 
 #### 2. Posts API の使用例
+
 ```python
 # 投稿一覧の取得
 posts = client.get_posts(limit=10)
@@ -155,6 +172,7 @@ new_post = client.create_post(
 ```
 
 #### 3. Users API の使用例
+
 ```python
 # ユーザー一覧の取得
 users = client.get_users()
@@ -164,6 +182,7 @@ user = client.get_user(user_id=1)
 ```
 
 #### 4. Todos API の使用例
+
 ```python
 # TODO一覧の取得
 todos = client.get_todos(limit=20)
@@ -189,6 +208,7 @@ updated_todo = client.update_todo(
 ```
 
 #### 5. Albums API の使用例
+
 ```python
 # アルバム一覧の取得 (実装済み)
 albums = client.get_albums()
@@ -204,6 +224,7 @@ album = client.get_album(album_id=1)
 ```
 
 #### 6. Photos API の使用例
+
 ```python
 # 写真一覧の取得 (実装済み)
 photos = client.get_photos()
@@ -224,6 +245,7 @@ album_photos = client.get_photos(album_id=1)
 ### テストヘルパーの使用方法
 
 #### APITestHelperの基本使用
+
 ```python
 from utils.api_test_helpers import APITestHelper, APITestConfig
 
@@ -249,6 +271,7 @@ response = helper.post("/posts", data={
 ```
 
 #### 非同期APIテストの実行
+
 ```python
 import asyncio
 
@@ -282,6 +305,7 @@ asyncio.run(run_api_tests())
 ### pytestでのテスト実行
 
 #### 基本的なテスト実行コマンド
+
 ```bash
 # 全テストの実行
 uv run pytest
@@ -297,6 +321,7 @@ uv run pytest -n auto
 ```
 
 #### APIテスト専用の実行
+
 ```bash
 # API関連テストのみ実行
 uv run pytest tests/unit/test_api_client.py tests/unit/test_api_test_helpers.py
@@ -313,12 +338,14 @@ uv run pytest tests/security/ -v
 ### 🏆 技術的実績 (4000円/時レベル証明)
 
 #### セキュリティ実装 (OWASP準拠)
+
 - **OWASP API Security Top 10**: 84テストケース実装済み
 - **脆弱性テスト**: SSRF、インジェクション、認証不備対策
 - **セキュリティツール統合**: bandit (0件) + safety + pip-audit
 - **セキュリティカバレッジ**: 100% (全セキュリティドメイン)
 
 #### パフォーマンス工学
+
 - **テスト実行回数**: 10,000+ (自動化CI/CD)
 - **総テストケース数**: 911件 (unit/performance/security/integration/e2e)
 - **テストファイル数**: 32ファイル (分散テスト設計)
@@ -329,6 +356,7 @@ uv run pytest tests/security/ -v
 - **実装済みクライアントメソッド**: 13個 + 非同期バリアント
 
 #### CI/CD & DevOps統合
+
 - **GitHub Actions**: 10エンタープライズワークフロー
 - **Docker最適化**: 6段階マルチステージビルド
 - **環境分離**: dev/test/staging/production
@@ -336,6 +364,7 @@ uv run pytest tests/security/ -v
 - **自動デプロイ**: Python 3.10-3.12マトリックス対応
 
 #### アーキテクチャ設計
+
 - **設計パターン**: Clean Architecture + Repository Pattern
 - **非同期処理**: asyncio + httpx による高性能実装
 - **エラーハンドリング**: 5層階層的例外設計
@@ -347,18 +376,21 @@ uv run pytest tests/security/ -v
 ### 💰 市場価値証明指標
 
 #### 4000円/時レベル達成済み ✅
+
 - **OWASP セキュリティ準拠**: 84テストケース (業界標準の300%)
 - **Enterprise CI/CD**: 10ワークフロー自動化
 - **パフォーマンス工学**: 43-101ms実測、並行処理制御
 - **アーキテクチャ設計**: Clean Architecture + 型安全実装
 
 #### 6000円/時レベル達成済み ✅
+
 - **セキュリティ専門性**: OWASP Top 10完全準拠 + 0脆弱性
 - **DevOps統合**: Docker最適化 + マルチ環境CI/CD
 - **高性能実装**: 非同期・並行処理マスタリー
 - **品質基準**: 85%カバレッジ + 913テスト
 
 #### 実証可能な技術価値
+
 ```python
 # Enterprise-level実装例
 class EnterpriseAPIClient:
@@ -381,6 +413,7 @@ class EnterpriseAPIClient:
 ## 🚀 Enterprise Integration Patterns
 
 ### API Security Best Practices
+
 ```python
 from utils.api_client import JSONPlaceholderClient
 from utils.security_helpers import validate_input, sanitize_output
@@ -399,6 +432,7 @@ async def secure_api_interaction():
 ```
 
 ### Performance Monitoring Integration
+
 ```python
 import time
 from utils.performance_monitor import PerformanceMonitor
@@ -424,6 +458,7 @@ async def monitored_api_calls():
 ```
 
 ### CI/CD Integration Example
+
 ```yaml
 # .github/workflows/enterprise-api-test.yml
 name: Enterprise API Testing
@@ -468,11 +503,13 @@ jobs:
 ## 🎯 次のステップ
 
 ### Phase 1完了 (4000円/時達成済み) ✅
+
 1. [OWASP Security Compliance Report](../security/owasp_compliance_report.md)
 2. [Performance Benchmarking Results](../performance/benchmark_results.md)
 3. [CI/CD Enterprise Integration Guide](../guides/cicd_enterprise_guide.md)
 
 ### Phase 2推奨 (6000円/時到達) 🚀
+
 1. [Microservices Architecture Patterns](../architecture/microservices_patterns.md)
 2. [Cloud-Native Deployment Guide](../deployment/cloud_native_guide.md)
 3. [Advanced Monitoring & Observability](../monitoring/enterprise_monitoring.md)

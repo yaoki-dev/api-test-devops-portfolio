@@ -504,6 +504,7 @@ claude /install-plugin <plugin-name>
 ### セキュリティフックが誤検出する場合
 
 security-guidanceは以下のカテゴリのパターンを検出します：
+
 - サブプロセス実行系（Node.js）
 - 動的コード実行系（JavaScript）
 - XSS関連（React/DOM操作）

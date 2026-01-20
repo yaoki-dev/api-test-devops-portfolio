@@ -93,6 +93,7 @@ AsyncAPIClient._make_request_with_retry (行573-649: 76行)
 ```
 
 **ビジネスインパクト**:
+
 - 新機能追加時の工数増加: +30-50%
 - バグ修正の二重作業リスク
 - オンボーディングコスト増加
@@ -100,6 +101,7 @@ AsyncAPIClient._make_request_with_retry (行573-649: 76行)
 #### 推奨改善案
 
 **Option A: Mixin抽出パターン** (推奨)
+
 ```python
 # 改善後の構造
 class RetryMixin:
@@ -118,6 +120,7 @@ class AsyncAPIClient(RetryMixin):
 ```
 
 **Option B: ファイル分割**
+
 ```
 utils/
 ├── api_client/

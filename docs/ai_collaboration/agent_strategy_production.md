@@ -7,21 +7,25 @@
 ### 必須Agent（常時活用）
 
 #### タスク管理層
+
 - **Context Manager**: プロジェクト全体の文脈管理、マイルストーン管理
 - **Task Decomposition Expert**: 実装タスクの最適粒度分解、成功基準設定
 - **Prompt Engineer**: AI協働の品質向上、効率化
 
 #### 開発実装層
+
 - **python-expert**: 本番品質コード生成、SOLID原則適用
 - **docker-devops**: コンテナ最適化、本番デプロイ
 - **ci-cd-pipeline**: GitHub Actions自動化、品質ゲート
 
 #### 品質保証層
+
 - **Code Reviewer**: コードレビュー自動化、品質基準維持
 - **api-testing**: テスト戦略、カバレッジ維持
 - **security-testing**: セキュリティ診断、脆弱性対策
 
 #### ドキュメント層
+
 - **technical-writer**: 技術文書作成、設計書
 - **API Documenter**: OpenAPI仕様書、顧客向けドキュメント
 
@@ -32,6 +36,7 @@
 #### パターン1: 新規API開発案件（3週間）
 
 **Phase 1: 要件定義・設計（Week 1）**
+
 ```yaml
 Day 1-2（タスク分解）:
   - Context Manager: プロジェクト全体をマイルストーンに分解
@@ -45,6 +50,7 @@ Day 3-5（設計）:
 ```
 
 **Phase 2: 実装（Week 2）**
+
 ```yaml
 Daily Pattern:
   Morning:
@@ -61,6 +67,7 @@ Daily Pattern:
 ```
 
 **Phase 3: テスト・デプロイ（Week 3）**
+
 ```yaml
 Day 1-3（品質保証）:
   - security-testing: セキュリティ診断
@@ -78,6 +85,7 @@ Day 4-5（ドキュメント・デプロイ）:
 #### パターン2: レガシーシステムリファクタリング案件
 
 **Phase 1: 調査・分析**
+
 ```yaml
 Week 1:
   - Search Specialist: レガシーコードの構造解析
@@ -86,6 +94,7 @@ Week 1:
 ```
 
 **Phase 2: 段階的リファクタリング**
+
 ```yaml
 Week 2-4:
   - Context Manager: リファクタリングロードマップ管理
@@ -99,6 +108,7 @@ Week 2-4:
 #### パターン3: LLM統合案件
 
 **Phase 1: MCP統合設計**
+
 ```yaml
 Week 1:
   - MCP Expert: MCP統合アーキテクチャ設計
@@ -107,6 +117,7 @@ Week 1:
 ```
 
 **Phase 2: 実装・統合**
+
 ```yaml
 Week 2-3:
   - python-expert: MCP Server実装
@@ -151,11 +162,13 @@ Week 2-3:
 ### ROI（投資対効果）分析
 
 **空いた時間の活用**:
+
 - 残り36h → 別案件（時給7,000円） = 252,000円
 - **実質総収入**: 398,000円 + 252,000円 = **650,000円**
 - **収入増加**: 520,000円 → 650,000円（**+25%**）
 
 **月間換算**:
+
 - ベースライン: 520,000円/月（88h）
 - 最適化後: 650,000円/月（52h + 36h別案件）
 - **年間収入差**: +1,560,000円
@@ -181,6 +194,7 @@ Week 2-3:
 | 品質向上 | バグ修正時間50%削減 | 顧客満足度向上 |
 
 **ROI（投資対効果）**:
+
 - **7.65倍**（1,560,000円 / 204,000円）
 - **投資回収期間**: 1.5ヶ月
 
@@ -193,11 +207,13 @@ Week 2-3:
 **目標**: Agent基本操作習得、依頼品質Level 2達成
 
 **重点Agent**:
+
 - Context Manager: タスク分解
 - Task Decomposition: 粒度最適化
 - Prompt Engineer: AI依頼改善
 
 **習得基準**:
+
 - [ ] Agent選択が適切（正答率80%以上）
 - [ ] AI依頼にコンテキスト・制約・成功基準を含む
 - [ ] レビュー指摘を次回に活かせる
@@ -209,11 +225,13 @@ Week 2-3:
 **目標**: Agent連携パターン習得、依頼品質Level 3達成
 
 **重点Agent**:
+
 - Code Reviewer: 品質基準内在化
 - python-expert: 本番品質コード
 - api-testing: テスト戦略
 
 **習得基準**:
+
 - [ ] Agent連携パターン5つ以上実践
 - [ ] AI依頼にSOLID原則・セキュリティ考慮を含む
 - [ ] レビュー指摘率が50%以下に減少
@@ -225,11 +243,13 @@ Week 2-3:
 **目標**: Agent活用自動化、依頼品質Level 4達成
 
 **重点Agent**:
+
 - Architect Review: 設計判断
 - MCP Expert: 新技術統合
 - Search Specialist: 効率的調査
 
 **習得基準**:
+
 - [ ] Agent活用パターンのテンプレート化
 - [ ] AI依頼にパフォーマンス・スケーラビリティ考慮を含む
 - [ ] 時給8,000円達成
@@ -243,11 +263,13 @@ Week 2-3:
 #### 1. Agent依存症（AI代理実装）
 
 **症状**:
+
 - AI生成コードを理解せずにコピー
 - エラーが出るたびにAIに質問
 - 基礎知識の欠如
 
 **対策**:
+
 ```yaml
 実装品質判定（必須）:
   - pytest合格
@@ -266,11 +288,13 @@ Week 2-3:
 #### 2. Agent選択ミス
 
 **症状**:
+
 - タスクに不適切なAgent使用
 - 複数Agent連携の失敗
 - 期待する出力が得られない
 
 **対策**:
+
 ```yaml
 Agent選択チェックリスト:
   - [ ] タスクの目的明確化
@@ -284,11 +308,13 @@ Agent選択チェックリスト:
 #### 3. プロンプト品質の停滞
 
 **症状**:
+
 - Level 2依頼から成長しない
 - レビュー指摘が減らない
 - 時給が頭打ち
 
 **対策**:
+
 ```yaml
 月次プロンプトレビュー（Prompt Engineer活用）:
   - 過去1ヶ月のAI依頼を分析
@@ -328,11 +354,13 @@ Agent選択チェックリスト:
 ### Week 7-8: Agent基礎習得
 
 **Day 1-3: 必須Agent習得**
+
 - Context Manager: タスク分解実践（Docker 4-stage実装）
 - Task Decomposition: 粒度最適化演習（CI/CD統合）
 - Prompt Engineer: 依頼品質向上（Level 2→3）
 
 **Day 4-7: Agent連携習得**
+
 - docker-devops + Code Reviewer: 実装→レビューサイクル
 - ci-cd-pipeline + quality-engineer: パイプライン品質保証
 - python-expert + api-testing: TDDサイクル
@@ -342,11 +370,13 @@ Agent選択チェックリスト:
 ### Week 9-10: Agent活用最適化
 
 **Day 1-3: 高度なAgent活用**
+
 - MCP Expert: 新技術統合（発展学習）
 - Architect Review: 設計レビュー（ポートフォリオ最適化）
 - Search Specialist: 効率的調査（既存コード分析）
 
 **Day 4-7: 実務パターン習得**
+
 - portfolio-documentation: 成果文書化
 - technical-writer: 技術ストーリー作成
 - API Documenter: OpenAPI仕様書生成

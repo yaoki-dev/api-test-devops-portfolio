@@ -10,6 +10,7 @@ Python・httpx・structlog・pydantic、Docker、GitHub Actions、OWASP準拠セ
 ## 🛠️ 技術スタック詳細説明
 
 | 領域 | 技術 | 習得レベル | 選択理由 |\n|------|------|------------|----------|\n| Container | Docker | 90% | 6環境統合・スケーラビリティ |\n| Testing | pytest | 95% | 非同期テスト・並行処理 |\n| CI/CD | GitHub Actions | 85% | Matrix対応・統合パイプライン |\n| Security | OWASP準拠 | 80% | API Security Top10対応 |
+
 - 段階的実行による早期フィードバック
 - 並列実行による時間短縮
 - アーティファクト管理による品質追跡
@@ -17,16 +18,19 @@ Python・httpx・structlog・pydantic、Docker、GitHub Actions、OWASP準拠セ
 ## 🏗️ アーキテクチャ設計の考え方
 
 ### 1. 拡張性重視設計
+
 - マイクロサービス対応のコンテナ化
 - 設定の外部化 (Pydantic Settings)
 - プラグイン型テスト構造
 
 ### 2. 保守性重視設計
+
 - 構造化ログによる問題追跡
 - 自動テストによる回帰防止
 - ドキュメント自動生成
 
 ### 3. セキュリティファースト
+
 - OWASP準拠のセキュリティテスト
 - 依存関係脆弱性の継続監視
 - 機密情報の適切な管理
@@ -34,16 +38,19 @@ Python・httpx・structlog・pydantic、Docker、GitHub Actions、OWASP準拠セ
 ## 💡 技術選択の判断基準
 
 ### httpx vs requests
+
 - **選択**: httpx
 - **理由**: 同期・非同期両対応、HTTP/2サポート、モダンAPI
 - **判断基準**: 将来性、パフォーマンス、学習価値
 
 ### pytest vs unittest
+
 - **選択**: pytest
 - **理由**: 簡潔な記述、豊富なプラグイン、フィクスチャ機能
 - **判断基準**: 生産性、保守性、コミュニティサポート
 
 ### Docker Multi-stage vs Single-stage
+
 - **選択**: Multi-stage
 - **理由**: イメージサイズ最適化、セキュリティ向上、環境分離
 - **判断基準**: 本番運用適性、セキュリティ、リソース効率
@@ -61,16 +68,19 @@ Python・httpx・structlog・pydantic、Docker、GitHub Actions、OWASP準拠セ
 ## 🚀 実務適用シナリオ
 
 ### チーム開発での活用
+
 - 新人のオンボーディング時間短縮
 - 環境構築の標準化
 - 品質担保の自動化
 
 ### 運用改善への貢献
+
 - CI/CD による作業効率化
 - セキュリティリスクの削減
 - 監視・アラートによる可用性向上
 
 ### スケーラビリティ対応
+
 - コンテナベースの水平スケーリング
 - マイクロサービス移行への対応
 - クラウドネイティブ展開

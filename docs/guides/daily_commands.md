@@ -9,6 +9,7 @@
 ### 🧪 テスト実行コマンド
 
 #### Unit Testing (10-20秒) - 最頻繁実行
+
 ```bash
 # 単体テストのみ実行 - 開発中の高速フィードバックループ
 make test-unit
@@ -21,6 +22,7 @@ uv run pytest tests/unit/test_basic.py -v
 ```
 
 #### Integration Testing (30-45秒)
+
 ```bash
 # 統合テストのみ実行
 make test-integration
@@ -30,6 +32,7 @@ uv run pytest tests/integration/ -v -m integration
 ```
 
 #### All Tests (45-60秒)
+
 ```bash
 # 全テスト実行 - push前の最終確認
 make test
@@ -41,6 +44,7 @@ uv run pytest tests/ -v --tb=short
 ### 🔍 品質チェックコマンド
 
 #### Quality Checks (30秒) - 並列実行最適化
+
 ```bash
 # 統合品質チェック - ruff + mypy + bandit並列実行
 make quality
@@ -53,6 +57,7 @@ make security   # セキュリティスキャン (bandit)
 ```
 
 #### 並列品質チェック (15秒 - 200%高速化)
+
 ```bash
 # エージェント最適化並列実行
 uv run ruff check . --fix & uv run mypy utils/ config/ models/ & uv run bandit -r . -ll
@@ -64,6 +69,7 @@ uv run ruff format . && uv run ruff check . --fix
 ### 📊 カバレッジ・レポートコマンド
 
 #### Coverage Analysis (45秒) - HTMLレポート付き
+
 ```bash
 # カバレッジレポート生成 - 85%閾値検証
 make coverage
@@ -76,6 +82,7 @@ open reports/htmlcov/index.html
 ```
 
 #### カバレッジ詳細オプション
+
 ```bash
 # ブランチカバレッジ付き詳細レポート
 uv run pytest --cov=. --cov-branch --cov-report=html:reports/htmlcov --cov-report=term-missing
@@ -89,6 +96,7 @@ uv run pytest --cov=. --cov-report=xml:reports/coverage.xml
 ### ⚡ パフォーマンス測定コマンド
 
 #### Performance Testing (2-3分)
+
 ```bash
 # 高速パフォーマンステスト
 make performance-quick
@@ -101,6 +109,7 @@ make test-performance
 ```
 
 #### パフォーマンステスト詳細
+
 ```bash
 # ベンチマーク付きパフォーマンステスト
 uv run pytest tests/performance/ --benchmark-only --benchmark-sort=mean
@@ -112,6 +121,7 @@ uv run pytest tests/performance/ -v --benchmark-warmup=3
 ### 🔒 セキュリティスキャンコマンド
 
 #### Security Validation (25秒 - 260%高速化)
+
 ```bash
 # 高速セキュリティスキャン
 make security-quick
@@ -124,6 +134,7 @@ make security-quick & make performance-quick
 ```
 
 #### セキュリティスキャン詳細
+
 ```bash
 # OWASP セキュリティテスト実行
 uv run pytest tests/security/ -v
@@ -141,6 +152,7 @@ uv run pip-audit --format=json --output=reports/audit-report.json
 ### 🔄 Local CI Pipeline (5-8分)
 
 #### Complete CI/CD Simulation
+
 ```bash
 # ローカルCI/CDパイプライン - push前の完全検証
 make ci-local
@@ -153,6 +165,7 @@ make ci-comprehensive
 ```
 
 #### 最適化開発サイクル
+
 ```bash
 # 開発サイクル最適化実行
 make setup && make test-unit && make quality && make coverage
@@ -166,6 +179,7 @@ make test && make coverage && make quality && make security-quick
 ### 📦 Project Setup
 
 #### 初期セットアップ
+
 ```bash
 # プロジェクト初期セットアップ
 make setup
@@ -178,6 +192,7 @@ make dev
 ```
 
 #### 環境詳細設定
+
 ```bash
 # uv環境同期 (開発依存含む)
 uv sync --dev
@@ -192,6 +207,7 @@ make status
 ### 🐳 Docker Operations
 
 #### Docker環境管理
+
 ```bash
 # 開発環境起動
 make docker-up
@@ -207,6 +223,7 @@ make docker-build
 ```
 
 #### Docker詳細操作
+
 ```bash
 # コンテナログ表示
 make docker-logs
@@ -221,6 +238,7 @@ make docker-down && make docker-build && make docker-up
 ### 🧹 Maintenance
 
 #### クリーンアップ
+
 ```bash
 # キャッシュとレポートクリア
 make clean
@@ -237,6 +255,7 @@ find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 ### 🤖 MCP最適化・監視
 
 #### MCP統合実行
+
 ```bash
 # MCP最適化実行
 make mcp-optimize
@@ -254,6 +273,7 @@ make dashboard-update
 ### 📊 効果測定・レポート
 
 #### Effectiveness Measurement
+
 ```bash
 # 効果測定デモ実行
 python scripts/run_effectiveness_measurement.py demo
@@ -266,6 +286,7 @@ python scripts/run_effectiveness_measurement.py status
 ```
 
 #### パフォーマンス追跡
+
 ```bash
 # ROI追跡・品質メトリクス取得
 from monitoring.effectiveness_tracker import start_task, complete_task
@@ -279,6 +300,7 @@ open monitoring/reports/dashboard_latest.html
 ### 🌅 朝の開発開始パターン
 
 #### ステップ1: 環境状態確認 (30秒)
+
 ```bash
 # プロジェクトルートに移動
 cd /Users/yuta/Yuta/python/api-test-devops-portfolio
@@ -294,6 +316,7 @@ make squad-status
 ```
 
 #### ステップ2: 本日の作業計画立案 (10秒)
+
 ```bash
 # セッション計画表示
 echo "=== 本日のClaude Squad作業計画 ==="
@@ -305,6 +328,7 @@ echo "セッション E（ドキュメント）: 技術文書更新"
 ```
 
 #### ステップ3: 並列セッション起動 (45秒)
+
 ```bash
 # メイン開発セッション起動
 cs spawn --agent=claude-code --task="API機能強化開発" --workspace=../claude-squad-workspaces/squad-core-dev
@@ -322,6 +346,7 @@ cs list
 ### 🔄 日中の並列開発パターン
 
 #### パターン1: 機能追加開発（高頻度 - 5-15分サイクル）
+
 ```bash
 # API機能開発（セッション A）
 cs switch core-dev-001
@@ -342,6 +367,7 @@ cs switch security-003
 ```
 
 #### パターン2: バグ修正・品質改善（中頻度 - 30-60分サイクル）
+
 ```bash
 # 問題調査・修正（セッション A + D）
 cs spawn --agent=claude-code --task="性能問題調査修正" --workspace=../claude-squad-workspaces/squad-performance
@@ -359,6 +385,7 @@ cs status testing-002
 ```
 
 #### パターン3: 大規模リファクタリング（低頻度 - 2-4時間サイクル）
+
 ```bash
 # 全セッション並列リファクタリング
 cs spawn --agent=claude-code --task="アーキテクチャ改善" --workspace=../claude-squad-workspaces/squad-core-dev
@@ -374,6 +401,7 @@ watch -n 10 'cs list'
 ### 🔍 Squad統合品質チェックワークフロー
 
 #### リアルタイム品質確認 (各セッション15-30秒)
+
 ```bash
 # 開発中の継続的品質チェック
 # セッション A作業後
@@ -394,6 +422,7 @@ make performance-quick
 ```
 
 #### 日次品質ゲートチェック (2-3分)
+
 ```bash
 # 1日の終わりの包括品質チェック
 make squad-quality
@@ -411,6 +440,7 @@ fi
 ### 🌆 夕方の統合・マージパターン
 
 #### ステップ1: セッション作業完了確認 (1-2分)
+
 ```bash
 # 各セッション作業状況確認
 cs review core-dev-001      # コア開発変更確認
@@ -423,6 +453,7 @@ make squad-quality
 ```
 
 #### ステップ2: セッション統合準備 (2-3分)
+
 ```bash
 # 統合前のコミット・プッシュ
 cs switch core-dev-001
@@ -437,6 +468,7 @@ git push origin feature/testing-qa
 ```
 
 #### ステップ3: 統合実行 (3-5分)
+
 ```bash
 # セッション統合実行
 make squad-integrate
@@ -451,6 +483,7 @@ git log --oneline integration/squad-merge -10
 ### 🌙 バンコク時間最適化パターン
 
 #### 深夜作業設定（JST 22:00-02:00 / BKK 20:00-24:00）
+
 ```bash
 # 夜間長時間作業セッション設定
 cs spawn --agent=optimizer --task="夜間パフォーマンス最適化" --schedule=later --workspace=../claude-squad-workspaces/squad-performance
@@ -465,6 +498,7 @@ cs switch performance-night-001
 ```
 
 #### 朝の夜間作業確認（JST 07:00 / BKK 05:00）
+
 ```bash
 # 夜間セッション結果確認
 cs list --all
@@ -482,6 +516,7 @@ fi
 ### 🚨 緊急対応ワークフロー
 
 #### 本番障害対応（CRITICAL - 即時実行）
+
 ```bash
 # 緊急調査・修正セッション並列起動
 cs spawn --agent=debugger --task="本番障害原因調査" --priority=critical --workspace=../claude-squad-workspaces/squad-core-dev
@@ -495,6 +530,7 @@ watch -n 5 'cs list | grep critical'
 ```
 
 #### セキュリティ脆弱性対応（HIGH - 2時間以内）
+
 ```bash
 # セキュリティ専用緊急セッション
 cs spawn --agent=security --task="脆弱性対応緊急修正" --priority=critical --workspace=../claude-squad-workspaces/squad-security
@@ -509,6 +545,7 @@ uv run pytest tests/security/ -v --tb=short
 ### 📊 Squad効率化・生産性向上パターン
 
 #### 定期メンテナンス（週1回 - 15分）
+
 ```bash
 # 週次Claude Squadメンテナンス
 cs cleanup --days=7                    # 古いセッション削除
@@ -521,6 +558,7 @@ git gc --aggressive                    # Gitリポジトリ最適化
 ```
 
 #### 月次効果測定（月1回 - 30分）
+
 ```bash
 # 月次Claude Squad効果測定
 echo "=== 月次Claude Squad効果レポート ==="
@@ -535,6 +573,7 @@ python scripts/run_effectiveness_measurement.py demo
 ### 🎯 Squad専用コマンド実行例集
 
 #### よく使用するセッション管理コマンド
+
 ```bash
 # 基本セッション管理
 cs list                               # アクティブセッション確認
@@ -555,6 +594,7 @@ make squad-cleanup                    # クリーンアップ
 ```
 
 #### デバッグ・トラブルシューティング
+
 ```bash
 # セッション問題対応
 cs logs session-id                    # セッションログ確認
@@ -569,6 +609,7 @@ cs spawn --verbose --task="テスト"    # 詳細ログ付きセッション
 ### 📈 Claude Squad統合効果指標
 
 #### 定量的効果指標
+
 - **並列開発速度**: 280-440%向上（セッション並列処理効果）
 - **品質保証**: 85%テストカバレッジ継続維持
 - **セキュリティ**: OWASP API Security Top 10準拠継続
@@ -576,6 +617,7 @@ cs spawn --verbose --task="テスト"    # 詳細ログ付きセッション
 - **24時間開発**: バンコク時差（JST+7）活用パターン
 
 #### Squad運用ベストプラクティス
+
 1. **朝の状態確認**: 必ず`cs list --all`と`make squad-status`実行
 2. **セッション命名**: 一貫した命名規則維持（機能-用途-番号）
 3. **定期統合**: 機能完了毎の`make squad-integrate`実行
@@ -594,6 +636,7 @@ cs spawn --verbose --task="テスト"    # 詳細ログ付きセッション
 ## 🎯 Quick Reference
 
 ### 最頻繁使用 (日次)
+
 ```bash
 make test-unit      # 10-20秒 - 開発フィードバック
 make quality        # 30秒 - 品質チェック
@@ -601,6 +644,7 @@ make coverage       # 45秒 - カバレッジ確認
 ```
 
 ### 重要検証 (週次)
+
 ```bash
 make ci-local              # 5-8分 - push前完全検証
 make performance-quick     # 2-3分 - パフォーマンス確認
@@ -608,6 +652,7 @@ make security-comprehensive # 5分 - セキュリティ包括確認
 ```
 
 ### 環境管理 (月次)
+
 ```bash
 make setup         # 初期設定
 make docker-up     # Docker環境
@@ -617,6 +662,7 @@ make clean-all     # 完全クリーンアップ
 ## 🔧 エラー対応・トラブルシューティング
 
 ### 一般的な問題解決
+
 ```bash
 # 依存関係エラー
 uv sync --dev && make install
@@ -629,6 +675,7 @@ make docker-down && make clean-all && make docker-build
 ```
 
 ### 品質チェック問題
+
 ```bash
 # ruff警告修正
 uv run ruff check . --fix
