@@ -760,6 +760,27 @@ uv run safety check             # 依存関係チェック
 
 **理由**: 開発体験優先（個人開発最適化）。詳細なトレードオフ分析は@memory参照
 
+### Markdown品質チェック
+
+**ツール**: markdownlint + textlint（日本語対応）
+
+**ローカル実行**:
+```bash
+# 依存インストール（初回のみ）
+npm install
+
+# Markdownリント実行
+npx markdownlint '**/*.md' --ignore node_modules
+
+# textlint実行（日本語品質チェック）
+npx textlint '**/*.md'
+
+# 自動修正（可能な場合）
+npx markdownlint '**/*.md' --fix --ignore node_modules
+```
+
+**CI**: PRごとに`md-quality`ジョブで自動実行
+
 ## アーキテクチャ概要
 
 **詳細**: @memory:project_file_structure

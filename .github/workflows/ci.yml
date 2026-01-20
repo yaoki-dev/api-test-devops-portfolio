@@ -80,6 +80,34 @@ jobs:
             coverage.json
           if-no-files-found: warn
 
+  # ============================================================
+  # Stage 1.1: Markdown Quality Check
+  # Triggers: pull_request
+  # Checks: markdownlint, textlint (日本語対応)
+  # ============================================================
+  md-quality:
+    name: Markdown Quality Check
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Actual lint steps will be added in Phase 1-2
+      - name: Placeholder for Markdown quality checks
+        run: echo "Markdown quality checks (markdownlint, textlint) will be added in Phase 1-2"
+
   # NOTE: post-merge-validation uses Python 3.12 only (matches Dockerfile)
 
   # ============================================================
