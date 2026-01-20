@@ -227,6 +227,7 @@ jobs:
           exit 1
 
       - name: Run smoke tests (post-merge validation)
+        if: always()
         run: |
           uv run pytest -m "smoke" -v --tb=short --no-cov
         env:
