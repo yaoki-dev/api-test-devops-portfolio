@@ -22,9 +22,8 @@ jobs:
   # ============================================================
   # Stage 1: PR Validation
   # Triggers: pull_request
-  # Tests:
-  # - develop: Unit + Integration (with coverage) → Smoke (no coverage)
-  # - main: Unit + Integration (with coverage) → Smoke (no coverage)
+  # Tests: Unit + Integration (with coverage) → Smoke (no coverage)
+  # Scope: develop/main PRs use identical strategy (PR #116)
   # ============================================================
   pr-validation:
     name: PR Validation
