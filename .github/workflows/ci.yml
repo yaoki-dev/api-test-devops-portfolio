@@ -105,7 +105,7 @@ jobs:
         run: npm ci
 
       - name: Run markdownlint
-        run: npx markdownlint '**/*.md' --ignore node_modules
+        run: npx markdownlint '**/*.md' --ignore node_modules --ignore .venv --ignore .worktrees
 
       - name: Run textlint
         run: npx textlint '**/*.md' --ignore-path .textlintignore
@@ -376,9 +376,12 @@ jobs:
       - name: Run markdown-link-check
         run: |
           # Check links in batches to avoid rate limiting
+          echo "# Link Check Results - $(date -u +%Y-%m-%dT%H:%M:%SZ)" > link-check-results.log
           while IFS= read -r file; do
             echo "Checking: $file"
-            npx markdown-link-check "$file" --config .markdown-link-check.json || true
+            echo "## $file" >> link-check-results.log
+            npx markdown-link-check "$file" --config .markdown-link-check.json 2>&1 | tee -a link-check-results.log || true
+            echo "" >> link-check-results.log
           done < md_files.txt
         continue-on-error: true
 
@@ -387,7 +390,9 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: link-check-results
-          path: md_files.txt
+          path: |
+            md_files.txt
+            link-check-results.log
 
   # ============================================================
   # Status Report (Summary for all pipeline stages)
