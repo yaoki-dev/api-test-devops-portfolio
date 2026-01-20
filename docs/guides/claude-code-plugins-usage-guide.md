@@ -117,7 +117,7 @@ lead to command injection. Consider using explicit arguments instead.
 
 #### 概要
 
-4つの専門エージェントが並列でコードレビューを実行し、信頼度スコアに基づいて結果を統合します。
+4つの専門エージェントが並列でコードレビューし、信頼度スコアに基づいて結果を統合する。
 
 #### エージェント構成
 

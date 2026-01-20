@@ -6,7 +6,7 @@
 
 - **[interview_preparation.py](./interview_preparation.py)** - **面接資料自動生成システム（1563行）**
   - CLAUDE.mdから技術スタック自動抽出・解析
-  - 6種類の面接資料自動生成（technical_overview, demo_script, qa_collection, project_presentation, salary_negotiation, README更新）
+  - 6種類の面接資料自動生成（technical_overview / demo_script / qa_collection / project_presentation / salary_negotiation / README更新）
   - 市場価値分析・技術レポート作成
   - プロジェクト構成解析・統計情報生成
 

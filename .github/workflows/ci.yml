@@ -107,6 +107,9 @@ jobs:
       - name: Run markdownlint
         run: npx markdownlint '**/*.md' --ignore node_modules
 
+      - name: Run textlint
+        run: npx textlint '**/*.md' --ignore-path .textlintignore
+
   # NOTE: post-merge-validation uses Python 3.12 only (matches Dockerfile)
 
   # ============================================================

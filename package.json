@@ -2,6 +2,8 @@
   "name": "api-test-devops-portfolio",
   "private": true,
   "devDependencies": {
-    "markdownlint-cli": "^0.47.0"
+    "markdownlint-cli": "^0.47.0",
+    "textlint": "^15.5.1",
+    "textlint-rule-preset-ja-technical-writing": "^12.0.2"
   }
 }

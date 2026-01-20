@@ -350,7 +350,7 @@ def get_week_from_day_w6_plan(current_day: int) -> Union[int, float]:
    ```
    🎓 理解内容の確認:
    チェックした項目について、自分の言葉で説明してください。
-   AIが理解の正確さを確認し、誤りがあれば指摘・補正します。
+   AIが理解の正確さを確認し、誤りがあれば指摘・補正する。
 
    💬 説明してください:
    ```
@@ -669,7 +669,7 @@ error_occurrences:
 - ★★ [pytest_fixture] pytest fixture scope不一致
 ```
 
-**統合度**: ★★☆（progress_state.yaml + daily_progress.md更新）
+**統合度**: 中（progress_state.yaml + daily_progress.md更新）
 
 > **Note**: count_30d計算はv2.0将来拡張（occurrences配列から動的計算可能）
 
@@ -724,7 +724,7 @@ error_occurrences:
 ```
 
 **所要時間**: 5秒（自動化率95%）
-**統合度**: ★★☆（progress_state.yaml + daily_progress.md更新）
+**統合度**: 中（progress_state.yaml + daily_progress.md更新）
 
 > **Note**: count_30d計算はv2.0将来拡張（occurrences配列から動的計算可能）
 
@@ -944,7 +944,7 @@ if settings.is_development():
 
   **推奨形式**: `type(scope): subject`（例: `feat(auth): JWT認証実装`）
 
-  **スコープ例**: api, client, config, docker, ci, test, docs, utils
+  **スコープ例**: api / client / config / docker / ci / test / docs / utils
 
   **破壊的変更**: `feat(api)!: レスポンス形式変更` + Footer: `BREAKING CHANGE: 詳細`
 
