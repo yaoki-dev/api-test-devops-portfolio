@@ -52,27 +52,14 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev
 
-      - name: Set test markers based on target branch
+      - name: Set test markers
         id: markers
-        env:
-          BASE_REF: ${{ github.base_ref }}
         run: |
-          # Single Source of Truth for smoke marker
-          SMOKE_MARKER="smoke and not external"
-          echo "smoke_marker=$SMOKE_MARKER" >> $GITHUB_OUTPUT
+          echo "smoke_marker=smoke and not external" >> $GITHUB_OUTPUT
+          echo "value=(unit or integration) and not external" >> $GITHUB_OUTPUT
+          echo "🎯 PR Validation: Unit + Integration (with coverage) → Smoke (no coverage)"
 
-          if [ "$BASE_REF" = "main" ]; then
-            echo "value=(unit or integration) and not external" >> $GITHUB_OUTPUT
-            echo "cov_enabled=true" >> $GITHUB_OUTPUT
-            echo "🎯 Target: main - Will run Unit + Integration + Smoke tests (with coverage for unit/integration)"
-          else
-            echo "value=(unit or integration) and not external" >> $GITHUB_OUTPUT
-            echo "cov_enabled=true" >> $GITHUB_OUTPUT
-            echo "🎯 Target: develop - Will run Unit + Integration tests (with coverage)"
-          fi
-
-      - name: Run tests (with coverage for develop)
-        if: steps.markers.outputs.cov_enabled == 'true'
+      - name: Run tests (unit + integration + smoke)
         run: |
           mkdir -p reports
           # Step 1: unit + integration with coverage
@@ -82,12 +69,6 @@ jobs:
             --cov-report=term-missing \
             -v --tb=short
           # Step 2: smoke without coverage (using output variable)
-          uv run pytest -m "${{ steps.markers.outputs.smoke_marker }}" -v --tb=short --no-cov
-
-      - name: Run tests (smoke only, fallback)
-        if: steps.markers.outputs.cov_enabled == 'false'
-        run: |
-          mkdir -p reports
           uv run pytest -m "${{ steps.markers.outputs.smoke_marker }}" -v --tb=short --no-cov
 
       - name: Upload test results

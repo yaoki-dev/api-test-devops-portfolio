@@ -936,7 +936,7 @@ if settings.is_development():
 
 **PR Validation テスト戦略**:
 - develop PR: unit + integration（カバレッジ計測）→ smoke（カバレッジなし）
-- main PR: smoke のみ（カバレッジなし）
+- main PR: unit + integration（カバレッジ計測）→ smoke（カバレッジなし）
 
 **PRマージ後の推奨ワークフロー**:
 
