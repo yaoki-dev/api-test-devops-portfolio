@@ -790,26 +790,42 @@ uv run safety check             # 依存関係チェック
 
 ### Markdown品質チェック
 
-**ツール**: markdownlint + textlint（日本語対応）
+**ツール**: markdownlint + textlint（日本語対応）+ markdown-link-check（週次）
+
+**設定ファイル**:
+
+- `.markdownlint.json`: 23ルール無効化+1ルール部分許可（既存ドキュメント互換）
+- `.textlintrc`: preset-ja-technical-writing設定
+- `.textlintignore`: archive/, obsidian-vault等除外
+- `.markdown-link-check.json`: Rate limit対応、@memory:パターン除外
+
+**ルール無効化の理由**:
+
+| カテゴリ | 無効化ルール | 理由 |
+|---------|-------------|------|
+| **日本語互換** | MD013（行長） | 日本語は文字密度が高く80文字制限が厳しすぎる |
+| **プロジェクト慣習** | MD024（重複見出し）, MD025（複数H1） | 進捗ログで同名セクションを許容 |
+| **コード例** | MD040（言語指定なしコードブロック） | 出力例・ログで言語不要なケースあり |
+| **HTML許容** | MD033（インラインHTML） | details/summary/kbd等を許容 |
+| **textlint** | no-unmatched-pair, ja-no-weak-phrase等 | コード例との競合、学習教材での表現許容 |
 
 **ローカル実行**:
 
 ```bash
 # 依存インストール（初回のみ）
-# Note: Dependencies will be added in Phase 1-3
-npm install
+npm ci
 
 # Markdownリント実行
-npx markdownlint '**/*.md' --ignore node_modules
+npx markdownlint '**/*.md' --ignore node_modules --ignore .venv --ignore .worktrees
 
 # textlint実行（日本語品質チェック）
-npx textlint '**/*.md'
+npx textlint '**/*.md' --ignore-path .textlintignore
 
 # 自動修正（可能な場合）
-npx markdownlint '**/*.md' --fix --ignore node_modules
+npx markdownlint '**/*.md' --fix --ignore node_modules --ignore .venv --ignore .worktrees
 ```
 
-**CI**: PRごとに`md-quality`ジョブで自動実行
+**CI**: PRごとに`md-quality`ジョブで自動実行（5分以内）、週次で`weekly-link-check`実行
 
 ## アーキテクチャ概要
 
