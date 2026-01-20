@@ -337,12 +337,65 @@ jobs:
             coverage.json
 
   # ============================================================
+  # Stage 3.5: Weekly Link Check
+  # Triggers: schedule (Sunday 00:00 UTC)
+  # Checks: markdown-link-check (external/internal links)
+  # ============================================================
+  weekly-link-check:
+    name: Weekly Link Check
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Find Markdown files
+        id: find-md
+        run: |
+          # Find MD files, excluding ignored directories
+          find . -name '*.md' \
+            -not -path './node_modules/*' \
+            -not -path './.venv/*' \
+            -not -path './.worktrees/*' \
+            -not -path './docs/archive/*' \
+            -not -path './obsidian-vault-local/*' \
+            -type f > md_files.txt
+          echo "Found $(wc -l < md_files.txt) Markdown files"
+
+      - name: Run markdown-link-check
+        run: |
+          # Check links in batches to avoid rate limiting
+          while IFS= read -r file; do
+            echo "Checking: $file"
+            npx markdown-link-check "$file" --config .markdown-link-check.json || true
+          done < md_files.txt
+        continue-on-error: true
+
+      - name: Upload link check results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: link-check-results
+          path: md_files.txt
+
+  # ============================================================
   # Status Report (Summary for all pipeline stages)
   # ============================================================
   status-report:
     name: Pipeline Status Report
     runs-on: ubuntu-latest
-    needs: [pr-validation, md-quality, post-merge-validation, weekly-comprehensive]
+    needs: [pr-validation, md-quality, post-merge-validation, weekly-comprehensive, weekly-link-check]
     if: always()
     timeout-minutes: 5
 
@@ -366,6 +419,7 @@ jobs:
           echo "- MD Quality: ${{ needs.md-quality.result || 'skipped' }}" >> status_report.md
           echo "- Post-Merge: ${{ needs.post-merge-validation.result || 'skipped' }}" >> status_report.md
           echo "- Weekly Comprehensive: ${{ needs.weekly-comprehensive.result || 'skipped' }}" >> status_report.md
+          echo "- Weekly Link Check: ${{ needs.weekly-link-check.result || 'skipped' }}" >> status_report.md
           echo "" >> status_report.md
           echo "## Triggered By: ${{ github.event_name }}" >> status_report.md
           cat status_report.md
