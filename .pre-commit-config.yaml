@@ -21,6 +21,13 @@ repos:
         pass_filenames: false
         stages: [pre-commit]
 
+  # Markdown品質チェック: markdownlint (Issue #98)
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.47.0
+    hooks:
+      - id: markdownlint
+        args: ['--ignore', 'node_modules']
+
 # 重いチェックはCI/CDで実行 (コミット時は除外)
 # - mypy: 型チェック → GitHub Actions
 # - bandit: セキュリティ → GitHub Actions

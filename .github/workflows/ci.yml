@@ -104,9 +104,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Actual lint steps will be added in Phase 1-2
-      - name: Placeholder for Markdown quality checks
-        run: echo "Markdown quality checks (markdownlint, textlint) will be added in Phase 1-2"
+      - name: Run markdownlint
+        run: npx markdownlint '**/*.md' --ignore node_modules
 
   # NOTE: post-merge-validation uses Python 3.12 only (matches Dockerfile)
 

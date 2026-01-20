@@ -1,5 +1,7 @@
 {
   "name": "api-test-devops-portfolio",
   "private": true,
-  "devDependencies": {}
+  "devDependencies": {
+    "markdownlint-cli": "^0.47.0"
+  }
 }
