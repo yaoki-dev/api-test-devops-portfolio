@@ -767,6 +767,7 @@ uv run safety check             # 依存関係チェック
 **ローカル実行**:
 ```bash
 # 依存インストール（初回のみ）
+# Note: Dependencies will be added in Phase 1-3
 npm install
 
 # Markdownリント実行
