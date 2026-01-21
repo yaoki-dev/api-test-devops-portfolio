@@ -16,7 +16,7 @@
 
 ## 現状確認
 
-### ✅ すでに導入済み！
+### ✅ すでに導入済み
 
 あなたの環境では、ccstatuslineはすでに設定されています：
 
@@ -46,6 +46,7 @@
 ```
 
 **表示内容**:
+
 - 🔵 モデル名 (cyan)
 - ⚫ コンテキスト長 (brightBlack)
 - 🟣 Gitブランチ (magenta)
@@ -60,17 +61,21 @@
 ccstatuslineは**すでにグローバルに使用可能**です。以下の理由により：
 
 1. **npx による自動実行**
+
    ```bash
    npx ccstatusline@latest
    ```
+
    - npmがパッケージを自動ダウンロード
    - 任意のディレクトリから実行可能
    - `/Users/yuta/` でも `/Users/yuta/Yuta/python/api-test-devops-portfolio/` でも同じ
 
 2. **共通設定ファイル**
+
    ```
    ~/.config/ccstatusline/settings.json
    ```
+
    - ユーザーホームディレクトリに保存
    - すべてのプロジェクトで共通の設定を使用
    - プロジェクト固有の設定も可能（後述）
@@ -105,6 +110,7 @@ npx ccstatusline@latest
 ```
 
 **期待される動作**:
+
 - モデル名、コンテキスト長が表示される
 - Gitブランチ（例: `local/history`）が表示される
 - Git変更数が表示される
@@ -117,6 +123,7 @@ npx ccstatusline@latest
 ```
 
 **期待される動作**:
+
 - 同じ設定で動作する
 - Gitリポジトリがない場合、Git関連ウィジェットは非表示
 - モデル名とコンテキスト長は表示される
@@ -128,6 +135,7 @@ cat ~/.config/claude/config.yaml | grep statusline
 ```
 
 **期待される出力**:
+
 ```yaml
 statuslineCommand: npx ccstatusline@latest
 ```
@@ -217,6 +225,7 @@ npx ccstatusline@latest
 ```
 
 **操作手順**:
+
 1. ターミナルでコマンド実行
 2. TUI（テキストユーザーインターフェース）が起動
 3. 矢印キーで操作、Enterで選択
@@ -233,6 +242,7 @@ nano ~/.config/ccstatusline/settings.json
 ```
 
 **注意点**:
+
 - JSON形式を正確に保つ
 - 保存後、次回起動時に反映
 - バックアップ推奨: `cp ~/.config/ccstatusline/settings.json ~/.config/ccstatusline/settings.json.bak`
@@ -364,6 +374,7 @@ nano ~/.config/ccstatusline/settings.json
 | **cwd** | brightCyan | 🔵 | プロジェクトルート確認 |
 
 **設定のポイント**:
+
 - トークン効率化モードとの連携（context-percentage）
 - 学習時間記録の可視化（session-clock）
 - Git運用との整合性（git-branch/changes）
@@ -380,6 +391,7 @@ export CLAUDE_CONFIG_DIR=/Users/yuta/Yuta/python/api-test-devops-portfolio/.clau
 ```
 
 **手順**:
+
 1. プロジェクトルートに `.claude-config` ディレクトリ作成
 2. 環境変数設定（`~/.zshrc` または `~/.bashrc` に追加）
 3. Claude Code再起動
@@ -391,6 +403,7 @@ export CLAUDE_CONFIG_DIR=/Users/yuta/Yuta/python/api-test-devops-portfolio/.clau
 ### 問題1: ステータスラインが表示されない
 
 **確認事項**:
+
 ```bash
 # Claude Config確認
 cat ~/.config/claude/config.yaml | grep statusline
@@ -403,6 +416,7 @@ npx ccstatusline@latest
 ```
 
 **解決策**:
+
 ```yaml
 # ~/.config/claude/config.yaml に追加
 statuslineCommand: npx ccstatusline@latest
@@ -413,12 +427,14 @@ statuslineCommand: npx ccstatusline@latest
 **原因**: Gitリポジトリ外で実行している
 
 **確認**:
+
 ```bash
 git status
 # → fatal: not a git repository の場合、Git外
 ```
 
 **解決策**:
+
 - Gitリポジトリ内で実行
 - または Git関連ウィジェットを削除
 
@@ -427,22 +443,26 @@ git status
 **原因**: Claude Codeのバージョンが古い
 
 **確認**:
+
 ```bash
 claude --version
 ```
 
 **解決策**:
+
 - Claude Codeを最新版にアップデート（1.0.85+推奨）
 
 ### 問題4: 設定が反映されない
 
 **確認事項**:
+
 ```bash
 # 設定ファイルのJSON検証
 cat ~/.config/ccstatusline/settings.json | python -m json.tool
 ```
 
 **解決策**:
+
 - JSON形式エラーを修正
 - バックアップから復元: `cp ~/.config/ccstatusline/settings.json.bak ~/.config/ccstatusline/settings.json`
 - またはTUIで再設定: `npx ccstatusline@latest`
@@ -452,6 +472,7 @@ cat ~/.config/ccstatusline/settings.json | python -m json.tool
 **原因**: ウィジェットが多すぎる、またはカスタムコマンドが重い
 
 **解決策**:
+
 - 不要なウィジェットを削除
 - カスタムコマンドを最適化
 - `compactThreshold` を調整
@@ -460,8 +481,8 @@ cat ~/.config/ccstatusline/settings.json | python -m json.tool
 
 ## 📚 参考リンク
 
-- **公式リポジトリ**: https://github.com/sirmalloc/ccstatusline
-- **Claude Code公式ドキュメント**: https://docs.claude.com/en/docs/claude-code
+- **公式リポジトリ**: <https://github.com/sirmalloc/ccstatusline>
+- **Claude Code公式ドキュメント**: <https://docs.claude.com/en/docs/claude-code>
 - **プロジェクトCLAUDE.md**: `/Users/yuta/Yuta/python/api-test-devops-portfolio/CLAUDE.md`
 
 ---
@@ -494,17 +515,20 @@ cat ~/.config/ccstatusline/settings.json | python -m json.tool
 ## ✅ 次のステップ
 
 1. **現在の設定を確認**:
+
    ```bash
    cat ~/.config/ccstatusline/settings.json
    ```
 
 2. **推奨設定を適用**（任意）:
+
    ```bash
    npx ccstatusline@latest
    # TUIで推奨ウィジェットを追加
    ```
 
 3. **プロジェクトで動作確認**:
+
    ```bash
    cd /Users/yuta/Yuta/python/api-test-devops-portfolio
    # Claude Code起動 → ステータスライン表示確認
