@@ -126,7 +126,7 @@ uv run pytest tests/performance/ -v --benchmark-warmup=3
 # 高速セキュリティスキャン
 make security-quick
 
-# 包括的セキュリティ分析 - OWASP API Security Top 10準拠
+# 包括的セキュリティ分析 - CI/CD品質ゲート準拠
 make security-comprehensive
 
 # セキュリティ並列実行
@@ -136,11 +136,11 @@ make security-quick & make performance-quick
 #### セキュリティスキャン詳細
 
 ```bash
-# OWASP セキュリティテスト実行
-uv run pytest tests/security/ -v
+# セキュリティ静的解析（bandit）
+uv run bandit -r utils/ config/ models/ -q
 
 # bandit セキュリティスキャン (JSON出力)
-uv run bandit -r utils/ config/ -f json -o reports/security-report.json
+uv run bandit -r utils/ config/ models/ -f json -o reports/security-report.json
 
 # safety 脆弱性チェック
 uv run safety check --json --output reports/safety-report.json
@@ -322,7 +322,7 @@ make squad-status
 echo "=== 本日のClaude Squad作業計画 ==="
 echo "セッション A（コア開発）: API機能強化"
 echo "セッション B（テスト）: カバレッジ85%維持"
-echo "セッション C（セキュリティ）: OWASP準拠確認"
+echo "セッション C（セキュリティ）: CI/CD品質ゲート確認"
 echo "セッション D（パフォーマンス）: 性能最適化"
 echo "セッション E（ドキュメント）: 技術文書更新"
 ```
@@ -363,7 +363,7 @@ cs switch testing-002
 # セキュリティ検証（セッション C）
 cs switch security-003
 # → 新機能のセキュリティテスト追加
-# → OWASP準拠確認
+# → CI/CD品質ゲート確認
 ```
 
 #### パターン2: バグ修正・品質改善（中頻度 - 30-60分サイクル）
@@ -538,8 +538,8 @@ cs spawn --agent=security --task="脆弱性対応緊急修正" --priority=critic
 # 包括セキュリティチェック
 make security-comprehensive
 
-# OWASP準拠確認
-uv run pytest tests/security/ -v --tb=short
+# CI/CD品質ゲート確認（bandit + Trivy）
+uv run bandit -r utils/ config/ models/ -q
 ```
 
 ### 📊 Squad効率化・生産性向上パターン
@@ -612,7 +612,7 @@ cs spawn --verbose --task="テスト"    # 詳細ログ付きセッション
 
 - **並列開発速度**: 280-440%向上（セッション並列処理効果）
 - **品質保証**: 85%テストカバレッジ継続維持
-- **セキュリティ**: OWASP API Security Top 10準拠継続
+- **セキュリティ**: CI/CD品質ゲート（pytest + ruff + mypy + Trivy）
 - **CI/CD効率**: 10ワークフロー最適化活用
 - **24時間開発**: バンコク時差（JST+7）活用パターン
 
@@ -689,4 +689,4 @@ uv run bandit -r . -ll -v
 
 ---
 
-**備考**: このリファレンスは913テスト、85%カバレッジ閾値、OWASP API Security Top 10準拠のエンタープライズ品質基準に基づいています。
+**備考**: このリファレンスは377テスト、85%カバレッジ閾値、CI/CD品質ゲート（pytest + ruff + mypy + Trivy）による品質基準に基づいています。

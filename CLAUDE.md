@@ -720,7 +720,7 @@ uv run ruff format .            # フォーマット適用
 uv run mypy utils/ config/ models/  # 型チェック
 
 # セキュリティ（週次）
-uv run bandit -r utils/ config/ # 脆弱性スキャン
+uv run bandit -r utils/ config/ models/ # 脆弱性スキャン
 uv run safety check             # 依存関係チェック
 ```
 

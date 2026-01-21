@@ -23,7 +23,7 @@
 - **（現）374件のテストスイート**: Unit / Integration / Security / Performance
 - **カバレッジ 81%**: 継続的な品質向上
 - **CI/CD自動化**: GitHub Actions による4段階パイプライン
-- **セキュリティテスト**: OWASP API Security Top 10 対応
+- **セキュリティ**: CI/CD品質ゲート（pytest + ruff + mypy + Trivy）
 - **GitHub API統合**: 実務的なAPI統合スキルを証明（Rate Limit管理、ETag活用、非同期処理）
 
 ## デモ
@@ -149,7 +149,7 @@ pip install uv
 ```bash
 # 1. リポジトリクローン
 git clone https://github.com/yuta158/api-test-portfolio.git
-cd api-test-devops-portfolio
+cd api-test-portfolio
 
 # 2. 依存関係インストール（uv使用、約10秒）
 uv sync
