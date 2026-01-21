@@ -400,8 +400,10 @@ jobs:
   status-report:
     name: Pipeline Status Report
     runs-on: ubuntu-latest
+    # Note: Skipped jobs are treated as 'success' by GitHub Actions
+    # !cancelled() overrides implicit success() check, allowing execution after success/failure/skipped
     needs: [pr-validation, md-quality, post-merge-validation, weekly-comprehensive, weekly-link-check]
-    if: always()
+    if: "!cancelled()"
     timeout-minutes: 5
 
     steps:

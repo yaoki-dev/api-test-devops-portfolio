@@ -669,60 +669,6 @@ error_occurrences:
 - ★★ [pytest_fixture] pytest fixture scope不一致
 ```
 
-**統合度**: 中（progress_state.yaml + daily_progress.md更新）
-
-> **Note**: count_30d計算はv2.0将来拡張（occurrences配列から動的計算可能）
-
----
-
-### トリガー7: エラー記録
-
-**検出キーワード**: `エラー記録:` または `エラー:`
-
-**実行フロー**:
-
-1. エラーID抽出（形式: snake_case、1-64文字、例: `volume_mount`、`pytest_fixture`）
-2. `progress_state.yaml`更新:
-   - `error_occurrences[error_id].count++`（**kb_promoted=true後も継続増加**）
-   - `first_seen/last_seen`更新
-   - `occurrences[]`に日付追加（同日重複は1エントリ）
-   - `description`: **マージ方式**（既存 + ` | [{date}] ` + 新規、256文字制限）
-3. `daily_progress.md`更新:
-   - ★マーク自動生成（count数に応じて★/★★/★★★）
-   - 表示ルール: `description.split(' | ')[0]`（初回descriptionのみ表示）
-4. 3回目到達時: KB昇格検討フラグ表示
-
-**コマンド例**:
-
-```
-エラー記録: volume_mount
-エラー: pytest_fixture, scope設定ミス
-```
-
-**progress_state.yaml更新例**:
-
-```yaml
-error_occurrences:
-  volume_mount:                    # snake_case命名規則
-    description: "Docker volume設定エラー | [2025-12-05] パス設定ミス"
-    count: 3
-    first_seen: "2025-12-01"
-    last_seen: "2025-12-05"
-    occurrences:                   # 発生日リスト
-      - "2025-12-01"
-      - "2025-12-03"
-      - "2025-12-05"
-    kb_promoted: false
-```
-
-**daily_progress.md表示例**:
-
-```markdown
-## エラー参照履歴
-- ★★★ [volume_mount] Docker volume設定エラー → KB昇格検討
-- ★★ [pytest_fixture] pytest fixture scope不一致
-```
-
 **所要時間**: 5秒（自動化率95%）
 **統合度**: 中（progress_state.yaml + daily_progress.md更新）
 
@@ -807,7 +753,7 @@ uv run safety check             # 依存関係チェック
 | **プロジェクト慣習** | MD024（重複見出し）, MD025（複数H1） | 進捗ログで同名セクションを許容 |
 | **コード例** | MD040（言語指定なしコードブロック） | 出力例・ログで言語不要なケースあり |
 | **HTML許容** | MD033（インラインHTML） | details/summary/kbd等を許容 |
-| **textlint** | no-unmatched-pair, ja-no-weak-phrase等 | コード例との競合、学習教材での表現許容 |
+| **textlint** | no-unmatched-pair, no-exclamation-question-mark, ja-no-weak-phrase, ja-no-mixed-period, ja-unnatural-alphabet | コード例との競合、学習教材での表現許容のため |
 
 **ローカル実行**:
 
