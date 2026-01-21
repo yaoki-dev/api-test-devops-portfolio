@@ -234,7 +234,7 @@ graph TB
 
 **主な機能**:
 
-- 🛡️ **機密データ保護**: 19種類の機密キーを自動スクラブ（password, token, api_key等）
+- 🛡️ **機密データ保護**: 29種類の機密キーを自動スクラブ（password, token, api_key等）
 - 🔄 **structlog連携**: ERROR/CRITICAL/EXCEPTIONレベルを自動送信
 - ⚡ **サイレント失敗**: Sentry障害時もアプリケーション継続
 - 🔐 **SecretStr保護**: DSNの平文出力防止

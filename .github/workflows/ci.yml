@@ -105,10 +105,22 @@ jobs:
         run: npm ci
 
       - name: Run markdownlint
+        id: markdownlint
         run: npx markdownlint '**/*.md' --ignore node_modules --ignore .venv --ignore .worktrees
+        continue-on-error: true
 
       - name: Run textlint
+        id: textlint
         run: npx textlint '**/*.md' --ignore-path .textlintignore
+        continue-on-error: true
+
+      - name: Check lint results
+        if: steps.markdownlint.outcome == 'failure' || steps.textlint.outcome == 'failure'
+        run: |
+          echo "::error::Markdown quality check failed"
+          echo "markdownlint: ${{ steps.markdownlint.outcome }}"
+          echo "textlint: ${{ steps.textlint.outcome }}"
+          exit 1
 
   # NOTE: post-merge-validation uses Python 3.12 only (matches Dockerfile)
 
@@ -363,12 +375,21 @@ jobs:
       - name: Find Markdown files
         id: find-md
         run: |
-          # Find MD files, excluding ignored directories
+          # Find MD files, excluding ignored directories (sync with .textlintignore)
           find . -name '*.md' \
             -not -path './node_modules/*' \
             -not -path './.venv/*' \
             -not -path './.worktrees/*' \
             -not -path './docs/archive/*' \
+            -not -path './docs/coverage/*' \
+            -not -path './docs/main/6週プラン/*' \
+            -not -path './docs/main/learning/*' \
+            -not -path './docs/main/Skills作成/*' \
+            -not -path './docs/ai_collaboration/*' \
+            -not -path './docs/tools/*' \
+            -not -path './reports/*' \
+            -not -path './.taskmaster/*' \
+            -not -path './.spec-workflow/*' \
             -not -path './obsidian-vault-local/*' \
             -type f > md_files.txt
           echo "Found $(wc -l < md_files.txt) Markdown files"
