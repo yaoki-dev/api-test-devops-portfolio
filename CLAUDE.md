@@ -761,17 +761,29 @@ uv run safety check             # 依存関係チェック
 # 依存インストール（初回のみ）
 npm ci
 
-# Markdownリント実行
+# npm scripts使用（推奨）
+npm run lint:md       # Markdownリント
+npm run lint:md:fix   # 自動修正
+npm run lint:text     # textlint
+npm run lint:text:fix # textlint自動修正
+npm run lint:links    # リンクチェック（README.md）
+npm run lint:all      # md + text 一括実行
+
+# npx直接実行（従来方式）
 npx markdownlint '**/*.md' --ignore node_modules --ignore .venv --ignore .worktrees
-
-# textlint実行（日本語品質チェック）
 npx textlint '**/*.md' --ignore-path .textlintignore
-
-# 自動修正（可能な場合）
-npx markdownlint '**/*.md' --fix --ignore node_modules --ignore .venv --ignore .worktrees
 ```
 
 **CI**: PRごとに`md-quality`ジョブで自動実行（5分以内）、週次で`weekly-link-check`実行
+
+**DRY同期確認**: CI除外パスと.textlintignoreの同期確認コマンド
+```bash
+# .textlintignoreのパターン数（コメント・空行除外）
+grep -v '^#' .textlintignore | grep -c '.'  # 期待: 14-15パターン
+
+# ci.ymlのweekly-link-check除外パターン数
+grep -c "\-not -path" .github/workflows/ci.yml  # 期待: 同数（約14）
+```
 
 ## アーキテクチャ概要
 
