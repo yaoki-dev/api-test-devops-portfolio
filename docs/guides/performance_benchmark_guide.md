@@ -43,6 +43,7 @@ pytest tests/performance/test_api_performance.py -v
 pytest tests/performance/test_benchmark.py -v
 pytest tests/performance/test_load_testing.py -v
 ```
+
 ### 詳細実行オプション
 
 ```bash
@@ -58,6 +59,7 @@ pytest -m external tests/performance/ -v
 # パフォーマンスレポート生成付き実行
 pytest tests/performance/ --benchmark-json=reports/benchmark.json -v
 ```
+
 ### 並列実行
 
 ```bash
@@ -67,6 +69,7 @@ pytest tests/performance/ -n 4 --dist worksteal -v
 # リソース監視は単独実行推奨
 pytest tests/performance/test_resource_monitoring.py -v
 ```
+
 ## ベンチマーク基準値
 
 ### 🎯 目標性能基準
@@ -83,16 +86,19 @@ pytest tests/performance/test_resource_monitoring.py -v
 ### 🔄 運用環境別基準
 
 #### 開発環境
+
 - レスポンス時間：5.0秒以下
 - エラー率：15%以下
 - 目的：基本機能確認
 
 #### ステージング環境
+
 - レスポンス時間：3.0秒以下
 - エラー率：10%以下
 - 目的：本番環境準拠テスト
 
 #### 本番環境
+
 - レスポンス時間：2.0秒以下
 - エラー率：5%以下
 - 目的：ユーザー体験保証
@@ -113,11 +119,13 @@ BASELINE_RESPONSE_TIMES = {
 # 回帰検出閾値
 REGRESSION_THRESHOLD_PERCENT = 20.0  # 20%以上の劣化で回帰と判定
 ```
+
 ## 結果の読み方
 
 ### 📈 基本メトリクス
 
 #### レスポンス時間統計
+
 ```
 📊 単一リクエストパフォーマンス: 0.245s
   - 平均実行時間: 1.234s
@@ -129,11 +137,13 @@ REGRESSION_THRESHOLD_PERCENT = 20.0  # 20%以上の劣化で回帰と判定
 ```
 
 **解釈：**
+
 - **平均値**：一般的な性能指標
 - **P95/P99**：ユーザー体験の実際の指標（重要）
 - **標準偏差**：安定性の指標（小さいほど安定）
 
 #### スループット・エラー率
+
 ```
 📊 並行リクエストパフォーマンス:
   - リクエスト数: 50
@@ -143,6 +153,7 @@ REGRESSION_THRESHOLD_PERCENT = 20.0  # 20%以上の劣化で回帰と判定
 ```
 
 **解釈：**
+
 - **成功率**：95%以上が理想
 - **スループット**：処理能力の指標
 - **メモリ増加**：メモリリーク検出指標
@@ -156,7 +167,9 @@ REGRESSION_THRESHOLD_PERCENT = 20.0  # 20%以上の劣化で回帰と判定
   回帰検出: いいえ
   測定安定性: 0.045 (安定)
 ```
+
 **回帰判定基準：**
+
 - **+20%以上**：🔴 回帰あり（改善必要）
 - **+10-20%**：🟡 注意監視
 - **±10%以内**：🟢 正常範囲
@@ -170,7 +183,9 @@ REGRESSION_THRESHOLD_PERCENT = 20.0  # 20%以上の劣化で回帰と判定
   ❌ エラー率推移: 2.0% → 4.1% → 8.3% → 15.7%
   🎯 推定安定容量: 15ユーザー
 ```
+
 **容量評価：**
+
 - **エラー率 < 10%**：安定容量
 - **エラー率 10-20%**：限界容量
 - **エラー率 > 20%**：不安定領域
@@ -186,7 +201,9 @@ REGRESSION_THRESHOLD_PERCENT = 20.0  # 20%以上の劣化で回帰と判定
   CPUスパイク数: 3
   メモリリーク検出: いいえ
 ```
+
 **リソース評価基準：**
+
 - **CPU < 80%**：正常
 - **メモリ増加 < 100MB**：正常
 - **メモリリーク**：要対策
@@ -196,6 +213,7 @@ REGRESSION_THRESHOLD_PERCENT = 20.0  # 20%以上の劣化で回帰と判定
 ### 🚀 性能改善プライオリティ
 
 #### 1. 🔴 緊急対応（即座に対応）
+
 - **レスポンス時間 > 5秒**
 - **エラー率 > 15%**
 - **メモリリーク検出**
@@ -206,13 +224,16 @@ REGRESSION_THRESHOLD_PERCENT = 20.0  # 20%以上の劣化で回帰と判定
 pytest tests/performance/test_api_performance.py::TestAPIPerformance::test_single_request_performance -v -s
 pytest tests/performance/test_resource_monitoring.py::TestResourceMonitoring::test_memory_leak_detection -v -s
 ```
+
 #### 2. 🟡 計画的改善（週内対応）
+
 - **レスポンス時間 3-5秒**
 - **エラー率 10-15%**
 - **メモリ増加 100-200MB**
 - **回帰検出**
 
 #### 3. 🟢 最適化（月内対応）
+
 - **レスポンス時間 2-3秒**
 - **エラー率 5-10%**
 - **スループット向上**
@@ -220,6 +241,7 @@ pytest tests/performance/test_resource_monitoring.py::TestResourceMonitoring::te
 ### 🛠️ 具体的改善手法
 
 #### レスポンス時間改善
+
 ```python
 # 並行処理の活用
 async def improved_batch_operations():
@@ -236,6 +258,7 @@ async def improved_batch_operations():
 ```
 
 #### メモリ効率化
+
 ```python
 # メモリ使用量最適化
 async def memory_efficient_pattern():
@@ -248,6 +271,7 @@ async def memory_efficient_pattern():
 ```
 
 #### エラー率改善
+
 ```python
 # リトライ機能付きエラーハンドリング
 async def robust_api_call(endpoint, max_retries=3):
@@ -278,6 +302,7 @@ async def robust_api_call(endpoint, max_retries=3):
 2. リソース使用効率の改善
 3. スケーラビリティの確保
 ```
+
 ## 詳細テスト説明
 
 ### 🔄 APIパフォーマンステスト
@@ -289,6 +314,7 @@ async def robust_api_call(endpoint, max_retries=3):
 **主要テスト：**
 
 1. **単一リクエストパフォーマンス**
+
    ```python
    async def test_single_request_performance(self):
        # 目的: 基本レスポンス時間測定
@@ -297,6 +323,7 @@ async def robust_api_call(endpoint, max_retries=3):
    ```
 
 2. **並行リクエストパフォーマンス**
+
    ```python
    async def test_concurrent_requests_performance(self):
        # 目的: 10並行での性能評価
@@ -305,6 +332,7 @@ async def robust_api_call(endpoint, max_retries=3):
    ```
 
 3. **負荷テストシミュレーション**
+
    ```python
    async def test_load_test_simulation(self):
        # 目的: 50リクエスト・5並行での持続性能
@@ -321,6 +349,7 @@ async def robust_api_call(endpoint, max_retries=3):
 **主要テスト：**
 
 1. **精密ベンチマーク測定**
+
    ```python
    async def test_single_user_request_benchmark(self):
        # PerformanceBenchmark による高精度測定
@@ -329,6 +358,7 @@ async def robust_api_call(endpoint, max_retries=3):
    ```
 
 2. **回帰検出システム**
+
    ```python
    async def test_performance_regression_detection(self):
        # 過去結果との自動比較
@@ -337,6 +367,7 @@ async def robust_api_call(endpoint, max_retries=3):
    ```
 
 **ベンチマーク設定：**
+
 ```python
 class BenchmarkConfig:
     BENCHMARK_ITERATIONS = 10      # 測定回数
@@ -352,6 +383,7 @@ class BenchmarkConfig:
 **目的：** 段階的負荷増加による限界点検出と容量計画
 
 **段階設定：**
+
 ```python
 LOAD_STAGES = [5, 8, 12, 15, 20]  # ユーザー数
 TEST_DURATION = 20                # 各段階の実行時間（秒）
@@ -383,6 +415,7 @@ TEST_DURATION = 20                # 各段階の実行時間（秒）
 **主要テスト：**
 
 1. **並行読み取り操作**
+
    ```python
    async def test_concurrent_read_operations(self):
        # 10並行で各5リクエスト
@@ -390,6 +423,7 @@ TEST_DURATION = 20                # 各段階の実行時間（秒）
    ```
 
 2. **高並行ストレス**
+
    ```python
    async def test_high_concurrency_stress(self):
        # 50並行で各3リクエスト
@@ -397,6 +431,7 @@ TEST_DURATION = 20                # 各段階の実行時間（秒）
    ```
 
 3. **レースコンディション検出**
+
    ```python
    async def test_race_condition_detection(self):
        # 共有リソースへの並行アクセス
@@ -412,6 +447,7 @@ TEST_DURATION = 20                # 各段階の実行時間（秒）
 **主要テスト：**
 
 1. **破壊点検出**
+
    ```python
    async def execute_breaking_point_test(self):
        # 50-2000ユーザーまで段階的増加
@@ -419,6 +455,7 @@ TEST_DURATION = 20                # 各段階の実行時間（秒）
    ```
 
 2. **回復力テスト**
+
    ```python
    async def execute_recovery_test(self):
        # ベースライン → ストレス → 回復の3段階
@@ -426,6 +463,7 @@ TEST_DURATION = 20                # 各段階の実行時間（秒）
    ```
 
 3. **リソース枯渇テスト**
+
    ```python
    async def execute_resource_exhaustion_test(self):
        # メモリ集約的負荷でのリソース監視
@@ -439,6 +477,7 @@ TEST_DURATION = 20                # 各段階の実行時間（秒）
 **目的：** CPU・メモリ・ネットワークリソースの総合監視
 
 **監視設定：**
+
 ```python
 class ResourceMonitoringConfig:
     MONITORING_INTERVAL = 0.1           # 100ms間隔監視
@@ -470,6 +509,7 @@ class ResourceMonitoringConfig:
 ### ❌ よくあるエラーと対処法
 
 #### 1. タイムアウトエラー
+
 ```
 TimeoutError: Request timed out after 30 seconds
 ```
@@ -477,6 +517,7 @@ TimeoutError: Request timed out after 30 seconds
 **原因：** ネットワーク遅延、APIサーバー過負荷
 
 **対処法：**
+
 ```python
 # タイムアウト時間の調整
 async with AsyncAPIClient(timeout=60) as client:
@@ -484,6 +525,7 @@ async with AsyncAPIClient(timeout=60) as client:
 ```
 
 #### 2. メモリエラー
+
 ```
 MemoryError: Unable to allocate array
 ```
@@ -491,6 +533,7 @@ MemoryError: Unable to allocate array
 **原因：** メモリリーク、大量データ処理
 
 **対処法：**
+
 ```python
 # バッチサイズの削減
 batch_size = 5  # 10 → 5 に削減
@@ -499,6 +542,7 @@ for batch in range(0, request_count, batch_size):
 ```
 
 #### 3. 接続エラー
+
 ```
 ConnectionError: Failed to establish connection
 ```
@@ -506,6 +550,7 @@ ConnectionError: Failed to establish connection
 **原因：** ネットワーク接続問題、APIサーバーダウン
 
 **対処法：**
+
 ```python
 # リトライ機能の実装
 for attempt in range(3):
@@ -519,6 +564,7 @@ for attempt in range(3):
 ### 🔧 パフォーマンス調整
 
 #### レスポンス時間改善
+
 ```python
 # 1. 並行処理の最適化
 concurrent_limit = 10  # 適切な並行数に調整
@@ -533,6 +579,7 @@ optimal_batch_size = 5  # テストして最適値を決定
 ```
 
 #### メモリ使用量最適化
+
 ```python
 # 1. ジェネレーターの活用
 def process_data_generator(data):
@@ -547,6 +594,7 @@ gc.collect()  # ガベージコレクション実行
 ### 📊 監視・レポート機能
 
 #### カスタムレポート生成
+
 ```python
 # パフォーマンスレポート生成
 def generate_custom_report(results):
@@ -565,6 +613,7 @@ def generate_custom_report(results):
 ```
 
 #### 継続的監視設定
+
 ```python
 # CI/CD での自動実行
 def setup_continuous_monitoring():
@@ -599,6 +648,7 @@ def setup_continuous_monitoring():
 ---
 
 **参考リンク：**
+
 - [パフォーマンス監視実装ガイド](./performance_monitor_implementation.md)
 - [日常運用コマンド](./daily_commands.md)
 - [Docker環境構築ガイド](./docker_guide.md)

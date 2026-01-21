@@ -7,11 +7,13 @@ Claude Squad調査結果に基づく正確な導入手順と制約の明記。Cl
 ## 🚨 重要な制約と現状
 
 ### インストール状況
+
 - **バージョン**: claude-squad v1.0.13 ✅ インストール済み
 - **コマンド**: `claude-squad` / `cs` 両方利用可能 ✅
 - **設定ファイル**: `/Users/yuta/.claude-squad/config.json` 存在 ✅
 
 ### TTY制限による機能制約
+
 ```bash
 # ❌ エラー: Claude Code環境では使用不可
 claude-squad
@@ -25,13 +27,16 @@ claude-squad --help  # ヘルプ
 ```
 
 ### 主要機能制約
+
 ❌ **使用不可能な機能**:
+
 - インタラクティブセッション管理
 - 複数AIエージェントの同時実行
 - リアルタイム協調作業
 - TTYを必要とする全ての対話機能
 
 ✅ **使用可能な機能**:
+
 - バージョン確認
 - 設定情報取得
 - デバッグ情報表示
@@ -61,6 +66,7 @@ TodoWrite({
   ]
 })
 ```
+
 ### 2. MCP Toolsとの組み合わせ
 
 ```bash
@@ -74,6 +80,7 @@ Task("dev1", "機能A開発", "backend-dev")
 Task("dev2", "機能B開発", "frontend-architect")
 Task("test", "統合テスト", "tester")
 ```
+
 ### 3. Makefileによる並列処理
 
 ```bash
@@ -82,24 +89,26 @@ make -j4 backend frontend testing security
 
 # 実装例
 backend:
-	@echo "バックエンド開発開始"
-	@uv run python scripts/backend_dev.py
+ @echo "バックエンド開発開始"
+ @uv run python scripts/backend_dev.py
 
 frontend:
-	@echo "フロントエンド開発開始"
-	@uv run python scripts/frontend_dev.py
+ @echo "フロントエンド開発開始"
+ @uv run python scripts/frontend_dev.py
 
 testing:
-	@echo "テスト実行開始"
-	@make test-parallel
+ @echo "テスト実行開始"
+ @make test-parallel
 
 security:
-	@echo "セキュリティ検証開始"
-	@make security-comprehensive
+ @echo "セキュリティ検証開始"
+ @make security-comprehensive
 ```
+
 ## 🔧 設定情報とデバッグ
 
 ### 現在の設定状況
+
 ```json
 {
   "default_program": "claude () {\n\tpkill -f \"claude\" 2> /dev/null || true\n\tsleep 1\n\tcommand claude \"$@\"\n}",
@@ -121,6 +130,7 @@ claude-squad reset
 # ログ確認
 tail -f /var/folders/_c/fygb61qj22q468zwrp9fxm600000gn/T/claudesquad.log
 ```
+
 ## 🚀 実践的な代替ワークフロー
 
 ### Phase 1: 開発準備（Claude Code Task Tool活用）
@@ -142,6 +152,7 @@ TodoWrite({
   ]
 })
 ```
+
 ### Phase 2: 開発実行（並列処理最適化）
 
 ```bash
@@ -154,6 +165,7 @@ python scripts/parallel_development.py \
   --workers 4 \
   --timeout 1800
 ```
+
 ### Phase 3: 統合・テスト（Claude Code + MCP統合）
 
 ```javascript
@@ -165,6 +177,7 @@ python scripts/parallel_development.py \
   Task("security", "OWASP統合検証", "security-testing")
   Task("review", "最終コードレビュー", "reviewer")
 ```
+
 ## 📊 パフォーマンス比較
 
 | 手法 | 並列度 | 期待効果 | 制約 |

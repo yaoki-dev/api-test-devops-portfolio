@@ -117,7 +117,7 @@ lead to command injection. Consider using explicit arguments instead.
 
 #### 概要
 
-4つの専門エージェントが並列でコードレビューを実行し、信頼度スコアに基づいて結果を統合します。
+4つの専門エージェントが並列でコードレビューし、信頼度スコアに基づいて結果を統合する。
 
 #### エージェント構成
 
@@ -504,6 +504,7 @@ claude /install-plugin <plugin-name>
 ### セキュリティフックが誤検出する場合
 
 security-guidanceは以下のカテゴリのパターンを検出します：
+
 - サブプロセス実行系（Node.js）
 - 動的コード実行系（JavaScript）
 - XSS関連（React/DOM操作）

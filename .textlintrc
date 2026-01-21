@@ -1,0 +1,18 @@
+{
+  "filters": {},
+  "rules": {
+    "preset-ja-technical-writing": {
+      "sentence-length": {
+        "max": 300
+      },
+      "max-kanji-continuous-len": {
+        "max": 10
+      },
+      "no-unmatched-pair": false,
+      "no-exclamation-question-mark": false,
+      "ja-no-weak-phrase": false,
+      "ja-no-mixed-period": false,
+      "ja-unnatural-alphabet": false
+    }
+  }
+}

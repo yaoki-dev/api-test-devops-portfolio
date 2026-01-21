@@ -4425,6 +4425,7 @@
 このドキュメントサイトでは以下の機能が利用できます:
 
 ### 📝 コンテンツ検索
+
 ```bash
 # ドキュメント内容から検索
 grep -r "検索キーワード" docs/
@@ -4434,11 +4435,14 @@ find . -name "*.md" | grep "キーワード"
 ```
 
 ### 📊 品質レポート
+
 ドキュメントの品質分析レポートは以下で確認できます:
+
 - [品質レポート (HTML)](../reports/documentation_quality/latest_quality_report.html)
 - [品質レポート (JSON)](../reports/documentation_quality/latest_quality_report.json)
 
 ### 🎯 使い方ガイド
+
 1. **カテゴリから探す**: 上記のカテゴリ別リストから関心のあるトピックを選択
 2. **キーワード検索**: ブラウザの検索機能 (Ctrl+F / Cmd+F) を使用
 3. **品質順で探す**: 品質レポートから高品質なドキュメントを確認

@@ -80,6 +80,48 @@ jobs:
             coverage.json
           if-no-files-found: warn
 
+  # ============================================================
+  # Stage 1.1: Markdown Quality Check
+  # Triggers: pull_request
+  # Checks: markdownlint, textlint (日本語対応)
+  # ============================================================
+  md-quality:
+    name: Markdown Quality Check
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run markdownlint
+        id: markdownlint
+        run: npx markdownlint '**/*.md' --ignore node_modules --ignore .venv --ignore .worktrees
+        continue-on-error: true
+
+      - name: Run textlint
+        id: textlint
+        run: npx textlint '**/*.md' --ignore-path .textlintignore
+        continue-on-error: true
+
+      - name: Check lint results
+        if: steps.markdownlint.outcome == 'failure' || steps.textlint.outcome == 'failure'
+        run: |
+          echo "::error::Markdown quality check failed"
+          echo "markdownlint: ${{ steps.markdownlint.outcome }}"
+          echo "textlint: ${{ steps.textlint.outcome }}"
+          exit 1
+
   # NOTE: post-merge-validation uses Python 3.12 only (matches Dockerfile)
 
   # ============================================================
@@ -227,6 +269,7 @@ jobs:
           exit 1
 
       - name: Run smoke tests (post-merge validation)
+        if: always()
         run: |
           uv run pytest -m "smoke" -v --tb=short --no-cov
         env:
@@ -306,13 +349,104 @@ jobs:
             coverage.json
 
   # ============================================================
+  # Stage 3.5: Weekly Link Check
+  # Triggers: schedule (Sunday 00:00 UTC)
+  # Checks: markdown-link-check (external/internal links)
+  # ============================================================
+  weekly-link-check:
+    name: Weekly Link Check
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Find Markdown files
+        id: find-md
+        run: |
+          # Find MD files, excluding ignored directories (sync with .textlintignore)
+          find . -name '*.md' \
+            -not -path './node_modules/*' \
+            -not -path './.venv/*' \
+            -not -path './.worktrees/*' \
+            -not -path './docs/archive/*' \
+            -not -path './docs/coverage/*' \
+            -not -path './docs/main/6週プラン/*' \
+            -not -path './docs/main/learning/*' \
+            -not -path './docs/main/Skills作成/*' \
+            -not -path './docs/ai_collaboration/*' \
+            -not -path './docs/tools/*' \
+            -not -path './reports/*' \
+            -not -path './.taskmaster/*' \
+            -not -path './.spec-workflow/*' \
+            -not -path './obsidian-vault-local/*' \
+            -type f > md_files.txt
+          echo "Found $(wc -l < md_files.txt) Markdown files"
+
+      - name: Run markdown-link-check
+        run: |
+          # Security: Use -print0/xargs -0 to safely handle filenames with special characters
+          # Performance note: Sequential execution chosen for weekly job (batch mode would fail-fast on first error)
+          echo "# Link Check Results - $(date -u +%Y-%m-%dT%H:%M:%SZ)" > link-check-results.log
+
+          check_file() {
+            local file="$1"
+            echo "Checking: $file"
+            echo "## $file" >> link-check-results.log
+            npx markdown-link-check "$file" --config .markdown-link-check.json 2>&1 | tee -a link-check-results.log || true
+            echo "" >> link-check-results.log
+          }
+          export -f check_file
+
+          # -print0 + xargs -0: Null-terminated paths prevent command injection
+          find . -name '*.md' \
+            -not -path './node_modules/*' \
+            -not -path './.venv/*' \
+            -not -path './.worktrees/*' \
+            -not -path './docs/archive/*' \
+            -not -path './docs/coverage/*' \
+            -not -path './docs/main/6週プラン/*' \
+            -not -path './docs/main/learning/*' \
+            -not -path './docs/main/Skills作成/*' \
+            -not -path './docs/ai_collaboration/*' \
+            -not -path './docs/tools/*' \
+            -not -path './reports/*' \
+            -not -path './.taskmaster/*' \
+            -not -path './.spec-workflow/*' \
+            -not -path './obsidian-vault-local/*' \
+            -type f -print0 | xargs -0 -I {} bash -c 'check_file "$@"' _ {}
+        continue-on-error: true
+
+      - name: Upload link check results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: link-check-results
+          path: |
+            md_files.txt
+            link-check-results.log
+
+  # ============================================================
   # Status Report (Summary for all pipeline stages)
   # ============================================================
   status-report:
     name: Pipeline Status Report
     runs-on: ubuntu-latest
-    needs: [pr-validation, post-merge-validation, weekly-comprehensive]
-    if: always()
+    # Note: Skipped jobs are treated as 'success' by GitHub Actions
+    # !cancelled() overrides implicit success() check, allowing execution after success/failure/skipped
+    needs: [pr-validation, md-quality, post-merge-validation, weekly-comprehensive, weekly-link-check]
+    if: "!cancelled()"
     timeout-minutes: 5
 
     steps:
@@ -332,8 +466,10 @@ jobs:
           echo "" >> status_report.md
           echo "## Stage Results" >> status_report.md
           echo "- PR Validation: ${{ needs.pr-validation.result || 'skipped' }}" >> status_report.md
+          echo "- MD Quality: ${{ needs.md-quality.result || 'skipped' }}" >> status_report.md
           echo "- Post-Merge: ${{ needs.post-merge-validation.result || 'skipped' }}" >> status_report.md
           echo "- Weekly Comprehensive: ${{ needs.weekly-comprehensive.result || 'skipped' }}" >> status_report.md
+          echo "- Weekly Link Check: ${{ needs.weekly-link-check.result || 'skipped' }}" >> status_report.md
           echo "" >> status_report.md
           echo "## Triggered By: ${{ github.event_name }}" >> status_report.md
           cat status_report.md
