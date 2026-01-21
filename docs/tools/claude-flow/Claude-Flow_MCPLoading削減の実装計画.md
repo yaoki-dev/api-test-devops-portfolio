@@ -3,6 +3,7 @@
 *最終更新: 2025年11月08日*
 
 **v2.0 更新内容**:
+
 - 34ツール完全版に変更（Week 7-10一括実装）
 - トークン削減率: 67.8% → 62.2%
 - 段階的実装を廃止（忘れる心配を解消）
@@ -134,6 +135,7 @@ npm whoami
 ```
 
 **パッケージ名決定**:
+
 - 推奨形式: `@your-username/claude-flow-lite`
 - 例: `@yuta/claude-flow-lite`、`@api-test-devops/claude-flow-lite`
 
@@ -142,7 +144,8 @@ npm whoami
 ## 実装ロードマップ
 
 ### 実装計画確定
-- リポジトリ: https://github.com/ruvnet/claude-flow
+
+- リポジトリ: <https://github.com/ruvnet/claude-flow>
 - Node.js: v20.19.4
 - ワークスペース: /Users/yuta/Yuta/python/api-test-devops-portfolio
 - ブランチ戦略:
@@ -172,6 +175,7 @@ pwd
 ```
 
 **確認ポイント**:
+
 - ✅ `package.json`が存在すること（ルートディレクトリ）
 - ✅ `src/mcp/`ディレクトリが存在すること
 - ✅ `src/mcp/mcp-server.js`が存在すること（JavaScript実装）
@@ -195,6 +199,7 @@ node src/mcp/mcp-server.js --version 2>/dev/null || echo "Server file exists"
 ```
 
 **エラー発生時**:
+
 ```bash
 # Node.jsバージョンが古い場合
 # → Node.js v18以上をインストール
@@ -231,6 +236,7 @@ cat package.json | grep '"name"'
 ```
 
 **記録推奨**:
+
 - `initializeTools()`開始行: 106行目
 - `handleToolsList()`開始行: 1096行目
 - ツール定義形式: JavaScriptオブジェクト（`{tool_name: {...}}`）
@@ -317,6 +323,7 @@ console.error('[claude-flow-lite] Total allowed tools:', ALLOWED_TOOLS.length);
 元の90ツールの定義をすべて削除し、必要な34ツールのみを新規に定義します。既存のツール定義構造（オブジェクト形式）を維持します。
 
 **修正前（既存コード - 抜粋）**:
+
 ```javascript
 // src/mcp/mcp-server.js 106行目付近
 initializeTools() {
@@ -335,6 +342,7 @@ initializeTools() {
 ```
 
 **修正後（34ツールのみ定義）**:
+
 ```javascript
 // src/mcp/mcp-server.js 106行目付近
 initializeTools() {
@@ -772,6 +780,7 @@ initializeTools() {
 ```
 
 **重要ポイント**:
+
 1. **34ツールのみ定義**: 元の90ツールを削除し、必要な34ツールのみを新規定義
 2. **デバッグログ追加**: 起動時に34ツール読み込みを確認可能
 3. **既存構造維持**: オブジェクト形式（`{tool_name: {...}}`）を維持
@@ -780,6 +789,7 @@ initializeTools() {
 #### Step 2.3: 動作確認（30分）
 
 **JavaScript構文チェック**:
+
 ```bash
 # Node.js構文チェック（ビルド不要）
 node --check src/mcp/mcp-server.js
@@ -789,6 +799,7 @@ echo $?  # 0が表示されればOK
 ```
 
 **エラー発生時のデバッグ**:
+
 ```bash
 # Node.js詳細エラー出力
 node --check src/mcp/mcp-server.js 2>&1
@@ -805,6 +816,7 @@ node --check src/mcp/mcp-server.js 2>&1
 ```
 
 **ローカルテスト実行**:
+
 ```bash
 # MCP Inspectorでツール一覧確認
 npx @modelcontextprotocol/inspector node src/mcp/mcp-server.js
@@ -820,6 +832,7 @@ npx @modelcontextprotocol/inspector node src/mcp/mcp-server.js
 ```
 
 **Inspector UIでの確認**:
+
 1. ブラウザで`http://localhost:3000`を開く
 2. "List Tools"ボタンクリック
 3. 表示されるツール数が**34個**であることを確認
@@ -833,6 +846,7 @@ npx @modelcontextprotocol/inspector node src/mcp/mcp-server.js
    - `docker_build`、`ci_pipeline_run`、`deployment_status`、`code_quality_check`、`dependency_audit`（DevOps: 5個）
 
 **コマンドライン動作確認**:
+
 ```bash
 # 標準入力でツール一覧取得
 echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | node src/mcp/mcp-server.js
@@ -846,6 +860,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | node src/mcp/mcp-server.
 ```
 
 **検証成功基準**:
+
 - ✅ 構文チェックエラーなし（`node --check` 終了コード0）
 - ✅ ツール数が正確に34個（Inspector UIまたはJSON-RPC応答で確認）
 - ✅ デバッグログでツール数・削減率表示（stderr出力）
@@ -860,6 +875,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | node src/mcp/mcp-server.
 **修正対象**: `package.json`
 
 **修正内容**:
+
 ```json
 {
   "name": "@your-username/claude-flow-lite",
@@ -892,6 +908,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | node src/mcp/mcp-server.
 **重要**: `@your-username`を実際のnpmアカウント名に置き換え
 
 **確認コマンド**:
+
 ```bash
 # package.json内容確認
 cat package.json | grep '"name"'
@@ -904,6 +921,7 @@ cat package.json | grep '"version"'
 #### Step 3.2: npm公開（15分）
 
 **公開前確認**:
+
 ```bash
 # npmログイン状態確認
 npm whoami
@@ -932,6 +950,7 @@ npm publish --dry-run
 ```
 
 **本番公開**:
+
 ```bash
 # 公開実行
 npm publish --access public --tag lite
@@ -949,6 +968,7 @@ npm view @your-username/claude-flow-lite
 ```
 
 **エラー発生時**:
+
 ```bash
 # 1. "You must be logged in to publish packages"
 npm login
@@ -1008,6 +1028,7 @@ npm install -g @your-username/claude-flow-lite
 ```
 
 ### Project-Specific Installation
+
 ```bash
 npm install --save-dev @your-username/claude-flow-lite
 ```
@@ -1038,6 +1059,7 @@ node src/mcp/mcp-server.js --version
 ```
 
 **ローカルパス設定**:
+
 - macOS/Linux: `/Users/yuta/workspace/ruv-claude-flow/src/mcp/mcp-server.js`
 - Windows: `C:\Users\YourUser\workspace\ruv-claude-flow\src\mcp\mcp-server.js`
 
@@ -1115,6 +1137,7 @@ Add to **`.mcp.json`** in your project root:
 ```
 
 **Wrapper動作仕様**:
+
 ```
 Tier 1: npm package (npx @yuta-scope/claude-flow-lite)
   ↓ (on failure: ENOENT, network error)
@@ -1158,6 +1181,7 @@ Tier 3: Error notification with recovery guidance
 ## 🔧 Development
 
 ### Prerequisites
+
 - Node.js v18+
 - npm v9+
 
@@ -1222,6 +1246,7 @@ node src/mcp/mcp-server.js
 ```
 
 **メリット**:
+
 - npm publish不要
 - リアルタイム修正反映
 - デバッグログ有効
@@ -1246,6 +1271,7 @@ npx @modelcontextprotocol/inspector node src/mcp/mcp-server.js
 ## 🗂️ Version History
 
 ### v2.7.0-lite.1 (2025-11-08)
+
 - Initial release
 - 34 essential tools for Week 7-10
 - 62.2% token reduction
@@ -1254,6 +1280,7 @@ npx @modelcontextprotocol/inspector node src/mcp/mcp-server.js
 ### Roadmap
 
 #### Week 7-10 (v2.7.0-lite.1) - **All-in-One Implementation**
+
 - **All 34 tools implemented from the start**
 - No incremental updates needed (29→32→34 eliminated)
 - Week 8-9 tools already included:
@@ -1294,6 +1321,7 @@ Based on [Claude Flow](https://github.com/ruvnet/claude-flow) by ruvnet.
 ---
 
 **Made with ❤️ for token efficiency**
+
 ```
 
 **ファイル保存確認**:
@@ -1379,6 +1407,7 @@ EOF
 ```
 
 **Windows環境の場合**:
+
 ```json
 {
   "mcpServers": {
@@ -1396,6 +1425,7 @@ EOF
 ```
 
 **設定切替方法**:
+
 ```bash
 # Primary (npm) → Fallback (local) 切替
 cp .mcp.json .mcp.json.npm.bak
@@ -1410,6 +1440,7 @@ cp .mcp.json.npm.bak .mcp.json
 <!-- ========================================== -->
 
 **.gitignore確認**:
+
 ```bash
 # .mcp.jsonをgit管理対象とする（推奨）
 git add .mcp.json
@@ -1423,11 +1454,13 @@ git commit -m "feat: add Claude Flow Lite MCP configuration (34 tools, 62.2% tok
 #### Step 4.2: Claude Code再起動・動作確認（10分）
 
 **再起動手順**:
+
 1. Claude Codeを完全終了
 2. プロジェクトを再度開く
 3. MCP Serversが自動起動するまで待機（10-30秒）
 
 **動作確認**:
+
 ```bash
 # Claude Code UI: Settings → MCP Servers → claude-flow-lite
 # 期待される表示:
@@ -1438,6 +1471,7 @@ git commit -m "feat: add Claude Flow Lite MCP configuration (34 tools, 62.2% tok
 ```
 
 **ログ確認**（任意）:
+
 ```bash
 # Claude Code MCP ログ確認（Mac）
 tail -f ~/Library/Application\ Support/Claude/mcp.log | grep "claude-flow-lite"
@@ -1456,6 +1490,7 @@ tail -f ~/Library/Application\ Support/Claude/mcp.log | grep "claude-flow-lite"
 ```
 
 **トークン消費確認**:
+
 ```bash
 # 新規セッション開始
 # Claude Code UI: 右上のトークン使用量確認
@@ -1500,21 +1535,25 @@ npm view @your-username/claude-flow-lite version
 ```
 
 **バージョン戦略（修正版）**:
+
 - Week 7-10: `2.7.0-lite.1` (34ツール) ← **一括実装版**
 - バージョンアップ不要（段階的実装を廃止）
 - 全ツール最初から含まれる（Docker/CI/CD + 最適化ツール）
 - 本番リリース準備完了
 
 **ROI実績**:
+
 - 実装時間: 4時間
 - 回収期間: 1週間（20セッション）
 - 年間削減: 36,160,800トークン
 
 **動作確認**:
+
 - ✅ MCP Server起動: 34ツール
 - ✅ トークン削減: 62.2%
 - ✅ エラー発生: なし
 - ✅ 既存プロジェクト影響: なし
+
 ```
 
 **ファイル保存確認**:
@@ -1536,16 +1575,19 @@ git commit -m "docs(claude_flow): update with implementation results (62.2% toke
 #### エラー: `git clone`失敗
 
 **症状**:
+
 ```
 fatal: unable to access 'https://github.com/ruvnet/claude-flow.git/':
 Could not resolve host: github.com
 ```
 
 **原因**:
+
 - ネットワーク接続問題
 - GitHub接続制限
 
 **解決策**:
+
 ```bash
 # 1. ネットワーク確認
 ping github.com
@@ -1560,6 +1602,7 @@ git config --global http.proxy http://proxy.example.com:8080
 #### エラー: `npm install`失敗
 
 **症状**:
+
 ```
 npm ERR! code ENOENT
 npm ERR! syscall open
@@ -1567,10 +1610,12 @@ npm ERR! path /path/to/package.json
 ```
 
 **原因**:
+
 - ディレクトリ間違い
 - `package.json`不在
 
 **解決策**:
+
 ```bash
 # 現在のディレクトリ確認
 pwd
@@ -1590,15 +1635,18 @@ cd ~/workspace/ruv-claude-flow
 #### エラー: TypeScriptコンパイル失敗
 
 **症状**:
+
 ```
 lib/server.ts:123:45 - error TS2307: Cannot find module './allowed-tools.js' or its corresponding type declarations.
 ```
 
 **原因**:
+
 - `lib/allowed-tools.ts`未作成
 - import文のパス間違い
 
 **解決策**:
+
 ```bash
 # 1. ファイル存在確認
 ls -lh lib/allowed-tools.ts
@@ -1614,6 +1662,7 @@ cat lib/server.ts | grep "import.*allowed-tools"
 #### エラー: フィルタリング後ツール数0
 
 **症状**:
+
 ```
 [claude-flow-lite] Filtered tools: 0
 [claude-flow-lite] ⚠️  WARNING: Filtered tool count mismatch!
@@ -1621,10 +1670,12 @@ cat lib/server.ts | grep "import.*allowed-tools"
 ```
 
 **原因**:
+
 - `allTools`配列の構造が想定と異なる
 - ツール名のキーが`name`ではない
 
 **デバッグ**:
+
 ```bash
 # allTools配列の構造確認
 cat lib/server.ts | grep -A 3 "const allTools = \["
@@ -1652,6 +1703,7 @@ cat lib/server.ts | grep -A 1 "memory_usage"
 #### エラー: npm公開権限エラー
 
 **症状**:
+
 ```
 npm ERR! code E403
 npm ERR! 403 403 Forbidden - PUT https://registry.npmjs.org/@your-username/claude-flow-lite
@@ -1659,10 +1711,12 @@ npm ERR! 403 You do not have permission to publish "@your-username/claude-flow-l
 ```
 
 **原因**:
+
 - npmアカウント未ログイン
 - アカウント名の間違い
 
 **解決策**:
+
 ```bash
 # 1. ログイン状態確認
 npm whoami
@@ -1683,6 +1737,7 @@ cat package.json | grep '"name"'
 #### エラー: パッケージ名重複
 
 **症状**:
+
 ```
 npm ERR! code E409
 npm ERR! 409 Conflict - PUT https://registry.npmjs.org/@your-username/claude-flow-lite
@@ -1690,9 +1745,11 @@ npm ERR! 409 Cannot publish over existing version.
 ```
 
 **原因**:
+
 - 同じバージョン番号で再公開しようとした
 
 **解決策**:
+
 ```bash
 # バージョン番号を上げて再公開
 npm version 2.7.0-lite.2
@@ -1709,11 +1766,13 @@ npm publish --access public --tag lite
 Claude Code UI: MCP Servers画面で「claude-flow-lite」が"Failed to start"表示
 
 **原因**:
+
 - `.mcp.json`のJSON構文エラー
 - パッケージ名の間違い
 - ネットワーク接続問題（npm registry）
 
 **デバッグ**:
+
 ```bash
 # 1. JSON構文チェック
 cat .mcp.json | jq .
@@ -1742,11 +1801,13 @@ npm view @your-username/claude-flow-lite
 Claude Code起動後もトークン消費量が51,300トークンのまま
 
 **原因**:
+
 - `.mcp.json`が読み込まれていない
 - グローバル設定（`~/.claude.json`）が優先されている
 - MCP Server切り替え失敗
 
 **解決策**:
+
 ```bash
 # 1. Claude Code完全再起動
 killall "Claude Code"  # Mac
@@ -1775,6 +1836,7 @@ cat ~/.claude.json | jq '.mcpServers["claude-flow"]'
 #### エラー: npm package取得失敗（ネットワーク障害）
 
 **症状**:
+
 ```
 [claude-flow-lite] Failed to start
 npm ERR! code ENETUNREACH
@@ -1783,11 +1845,13 @@ npm ERR! network request to https://registry.npmjs.org/@your-username%2fclaude-f
 ```
 
 **原因**:
+
 - ネットワーク接続なし
 - npm registry接続障害
 - プロキシ設定問題
 
 **即座復旧（Local Fallback）**:
+
 ```bash
 # 1. ローカルソースが利用可能か確認
 ls -lh /Users/yuta/workspace/ruv-claude-flow/src/mcp/mcp-server.js
@@ -1820,6 +1884,7 @@ killall "Claude Code"
 ```
 
 **恒久対策（ネットワーク復旧後）**:
+
 ```bash
 # npm設定に戻す
 cat > .mcp.json << 'EOF'
@@ -1846,17 +1911,20 @@ EOF
 #### エラー: Local Fallback起動失敗
 
 **症状**:
+
 ```
 [claude-flow-lite-local] Failed to start
 Error: Cannot find module '/Users/yuta/workspace/ruv-claude-flow/src/mcp/mcp-server.js'
 ```
 
 **原因**:
+
 - ローカルソースのパス間違い
 - リポジトリ未クローン
 - ファイル移動・削除
 
 **解決策**:
+
 ```bash
 # 1. ファイル存在確認
 ls -lh /Users/yuta/workspace/ruv-claude-flow/src/mcp/mcp-server.js
@@ -1888,15 +1956,18 @@ node /Users/yuta/workspace/ruv-claude-flow/src/mcp/mcp-server.js
 #### エラー: Wrapper未実装エラー（Future）
 
 **症状**:
+
 ```
 Error: Cannot find module 'mcp-server-wrapper.js'
 ```
 
 **原因**:
+
 - Wrapper-based auto-failoverがまだ実装されていない
 - Advanced設定を使用しようとした
 
 **解決策**:
+
 ```bash
 # 現時点では Primary または Fallback 設定を使用
 # Wrapper実装は将来のタスク
@@ -1932,6 +2003,7 @@ EOF
 **目的**: 実装前のトークン消費量を記録し、削減効果を定量化
 
 **測定手順**:
+
 ```markdown
 # ベースライン測定シート
 
@@ -1955,6 +2027,7 @@ YYYY-MM-DD HH:MM
 ```
 
 **記録推奨項目**:
+
 - 日時
 - ツール数（90）
 - トークン消費量（目視またはAPI）
@@ -1967,6 +2040,7 @@ YYYY-MM-DD HH:MM
 **目的**: 実装効果の確認、目標達成率の測定
 
 **測定手順**:
+
 ```markdown
 # 実装後測定シート
 
@@ -2040,6 +2114,7 @@ YYYY-MM-DD HH:MM
 ### ROI計算（実測値）
 
 **トークン節約実績**:
+
 ```markdown
 # ROI実績レポート
 
@@ -2070,11 +2145,13 @@ Week 7開始日（2025-10-01）から Week 10終了日（2025-10-60）まで
 #### Week 8: Docker/CI/CD強化（+3ツール）
 
 **追加ツール**:
+
 1. `docker_build`: Docker自動ビルド
 2. `ci_pipeline_run`: CI/CDパイプライン実行
 3. `deployment_status`: デプロイステータス確認
 
 **拡張手順**:
+
 ```bash
 # 1. lib/allowed-tools.ts 修正
 cd ~/workspace/claude-flow-lite/src/claude-flow
@@ -2124,6 +2201,7 @@ cd /Users/yuta/Yuta/python/api-test-devops-portfolio
 **使用ケース**: npm公開せず、プロジェクト内でのみ使用
 
 **実装手順（Phase 3スキップ版）**:
+
 ```bash
 # Phase 1-2は通常通り実行
 # Phase 3: パッケージ公開 → スキップ
@@ -2155,10 +2233,12 @@ ls -lh /Users/yuta/workspace/claude-flow-lite/src/claude-flow/build/index.js
 ```
 
 **メリット**:
+
 - npm公開不要（プライバシー保護）
 - 公開手続きスキップ（15分短縮）
 
 **デメリット**:
+
 - 別マシンで使用する場合、手動コピー必要
 - バージョン管理が手動
 
@@ -2169,6 +2249,7 @@ ls -lh /Users/yuta/workspace/claude-flow-lite/src/claude-flow/build/index.js
 **使用ケース**: 4時間連続確保困難、疲労軽減
 
 **Day 1（2時間）: Phase 1-2**
+
 ```markdown
 ## Day 1 実装内容（2時間）
 
@@ -2194,6 +2275,7 @@ ls -lh /Users/yuta/workspace/claude-flow-lite/src/claude-flow/build/index.js
 ```
 
 **Day 2（2時間）: Phase 3-4**
+
 ```markdown
 ## Day 2 実装内容（2時間）
 
@@ -2221,6 +2303,7 @@ ls -lh /Users/yuta/workspace/claude-flow-lite/src/claude-flow/build/index.js
 **頻度**: 3-6ヶ月毎（推奨）
 
 **アップデート手順**:
+
 ```bash
 # 1. 本家最新版確認
 cd ~/workspace/claude-flow-lite
@@ -2268,11 +2351,13 @@ cd /Users/yuta/Yuta/python/api-test-devops-portfolio
 4. **ビルドコマンド確立**: `npm run build`で自動コンパイル
 
 **必要な最低限のTypeScript知識**:
+
 - 配列の`filter()`メソッド理解
 - `import`/`export`構文理解
 - アロー関数`=>`の基本理解
 
 **推奨学習リソース**:
+
 - [TypeScript Playground](https://www.typescriptlang.org/play)で`filter()`を5分試す
 - Claude Flowの既存`lib/server.ts`を読み、パターンを理解
 
@@ -2283,6 +2368,7 @@ cd /Users/yuta/Yuta/python/api-test-devops-portfolio
 **A**: **即座復旧可能**。以下のロールバック手順を推奨：
 
 **レベル1: .mcp.json削除（10秒）**
+
 ```bash
 # プロジェクトルート
 cd /Users/yuta/Yuta/python/api-test-devops-portfolio
@@ -2296,6 +2382,7 @@ rm .mcp.json
 ```
 
 **レベル2: git checkout（30秒）**
+
 ```bash
 # gitコミット済みの場合
 git checkout .mcp.json
@@ -2305,6 +2392,7 @@ git reset --hard HEAD
 ```
 
 **レベル3: プロジェクトバックアップ（事前準備）**
+
 ```bash
 # 実装開始前にブランチ作成推奨
 git checkout -b feature/claude-flow-lite-implementation
@@ -2350,6 +2438,7 @@ git branch -D feature/claude-flow-lite-implementation
    - npm公開・プロジェクト設定更新
 
 **最悪の場合**: 破壊的変更が大きく、フィルタリングロジック全体の書き直しが必要な場合
+
 - 実装時間: 6-8時間（新規実装扱い）
 - 代替案: 旧バージョン（2.7.0-lite.X）を継続使用
 
@@ -2367,6 +2456,7 @@ git branch -D feature/claude-flow-lite-implementation
 **A**: **完全に可能**。ローカルソースのフォールバック設定により、オフライン環境でも使用可能：
 
 **初回セットアップ（ネットワーク必要）**:
+
 ```bash
 # リポジトリクローン（事前準備）
 cd ~/workspace
@@ -2376,6 +2466,7 @@ npm install
 ```
 
 **オフライン使用時の設定**:
+
 ```json
 {
   "mcpServers": {
@@ -2393,11 +2484,13 @@ npm install
 ```
 
 **メリット**:
+
 - ネットワーク不要で常時使用可能
 - npmレジストリ障害時の影響回避
 - 企業VPN/プロキシ環境での安定動作
 
 **デメリット**:
+
 - 初回セットアップ時のみネットワーク必要
 - バージョンアップは手動（git pull）
 
@@ -2408,18 +2501,21 @@ npm install
 **A**: **環境・目的に応じて選択**を推奨：
 
 **npm package推奨シナリオ**:
+
 - ✅ 安定したネットワーク環境
 - ✅ 本番プロジェクト（バージョン管理明確）
 - ✅ チーム共有プロジェクト（設定統一）
 - ✅ 定期的なアップデート希望
 
 **ローカルソース推奨シナリオ**:
+
 - ✅ オフライン環境
 - ✅ 企業VPN/プロキシ制限環境
 - ✅ 開発・カスタマイズ環境
 - ✅ npmレジストリ接続不安定な環境
 
 **両方維持する方法**:
+
 ```bash
 # Primary設定（npm）: .mcp.json
 cat > .mcp.json << 'EOF'
@@ -2465,6 +2561,7 @@ cp .mcp.json.local .mcp.json
 **A**: **git pullで簡単に更新可能**：
 
 **定期更新手順**（3ヶ月毎推奨）:
+
 ```bash
 # 1. ローカルリポジトリ更新
 cd /Users/yuta/workspace/ruv-claude-flow
@@ -2488,6 +2585,7 @@ node src/mcp/mcp-server.js
 ```
 
 **緊急パッチ適用**（バグ修正時）:
+
 ```bash
 # 特定コミットを指定してチェックアウト
 git checkout <commit-hash>
@@ -2499,6 +2597,7 @@ git checkout stable/v2.7
 **所要時間**: 5分（git pull + npm install + 動作確認）
 
 **メリット**:
+
 - npmレジストリ経由不要（直接ソース更新）
 - バージョン管理が明確（git commit hash）
 - ロールバックが容易（git checkout）
@@ -2600,11 +2699,13 @@ git checkout stable/v2.7
 ### ✅ Option A: 実装即座開始（推奨）
 
 **条件**:
+
 - すべての確認事項が「問題なし」
 - 連続4時間確保可能
 - npm scopeアカウント作成済み
 
 **次のアクション**:
+
 ```bash
 # Phase 1: 準備開始
 mkdir -p ~/workspace
@@ -2621,11 +2722,13 @@ npm run build
 ### ❓ Option B: 追加質問・調査
 
 **条件**:
+
 - 不明点が残っている
 - Claude Flow構造の事前確認が必要
 - npm scopeアカウント未作成
 
 **次のアクション**:
+
 - 実装前確認事項8項目に回答
 - Claude Flow構造調査（30分）
 - npm scopeアカウント作成（10分）
@@ -2635,11 +2738,13 @@ npm run build
 ### 📝 Option C: 実装計画の再検討
 
 **条件**:
+
 - npm公開せずローカルのみ使用したい
 - 実装時間を2セッションに分割したい
 - Week 8-10追加ツール要件を明確化したい
 
 **次のアクション**:
+
 - 付録B（ローカル版）の確認
 - 付録C（2セッション分割版）の確認
 - Week 8-10ツール要件の事前確認
