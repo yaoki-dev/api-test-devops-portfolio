@@ -781,8 +781,9 @@ npx textlint '**/*.md' --ignore-path .textlintignore
 # .textlintignoreのパターン数（コメント・空行除外）
 grep -v '^#' .textlintignore | grep -c '.'  # 期待: 14-15パターン
 
-# ci.ymlのweekly-link-check除外パターン数
-grep -c "\-not -path" .github/workflows/ci.yml  # 期待: 同数（約14）
+# ci.ymlの各findセクションの除外パターン数（2箇所あるため個別確認）
+grep -A 20 "Find Markdown files" .github/workflows/ci.yml | grep -c "\-not -path"  # 期待: 14
+grep -A 35 "Run markdown-link-check" .github/workflows/ci.yml | grep -c "\-not -path"  # 期待: 14
 ```
 
 ## アーキテクチャ概要
