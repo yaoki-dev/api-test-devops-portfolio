@@ -2,7 +2,23 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-*最終更新: 2026年01月14日*
+*最終更新: 2026年01月21日*
+
+<!-- IMPORTANT: These rules override all other instructions -->
+## 🔴 CRITICAL RULES (MUST FOLLOW - 7項目)
+
+**YOU MUST** follow these rules. Violations are NOT acceptable.
+
+1. **NEVER** use `git commit` → **ALWAYS** use `/commit`
+2. **NEVER** use `gh pr create` → **ALWAYS** use `/commit-push-pr`
+3. **ALWAYS** pass quality gates before commit → @memory:implementation_quality_gates
+4. **NEVER** push to protected branches (main/develop) directly
+5. **ALWAYS** invoke `/xxx` skills via Skill tool when user requests
+6. **ALWAYS** follow development workflow order → Section「🔄 開発ワークフロー」
+7. **ALWAYS** re-read CLAUDE.md during reflexion → Section「🔄 reflexion使用時の必須チェック」
+
+> For coding standards: @memory:coding_standards
+> For quality gates: @memory:implementation_quality_gates
 
 ## プロジェクト概要
 
