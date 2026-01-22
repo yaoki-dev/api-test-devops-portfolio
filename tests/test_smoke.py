@@ -41,7 +41,9 @@ class TestSmoke:
         assert exc_info.value.status_code == 404
 
     def test_api_request_produces_logs(
-        self, api_client: SyncAPIClient, caplog: pytest.LogCaptureFixture
+        self,
+        api_client: SyncAPIClient,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """#83: API呼び出し時にログが出力される
 

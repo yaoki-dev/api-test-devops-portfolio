@@ -1,5 +1,4 @@
-"""
-Refactoring Proposal: get_week_from_day_w6_plan
+"""Refactoring Proposal: get_week_from_day_w6_plan
 Technical Debt Reduction: 7/10 → 2/10
 
 Before/After Complexity Comparison:
@@ -35,26 +34,24 @@ def get_week_from_day_w6_plan_old(current_day: int) -> int | float:
 
     if current_day <= 6:
         return 1
-    elif current_day <= 12:
+    if current_day <= 12:
         return 2
-    elif current_day <= 18:
+    if current_day <= 18:
         return 3
-    elif current_day <= 24:
+    if current_day <= 24:
         return 4
-    elif current_day <= 30:
+    if current_day <= 30:
         return 5
-    elif current_day <= 32:
+    if current_day <= 32:
         return 5.5
-    else:
-        return 6
+    return 6
 
 
 # ============================================================
 # AFTER: Data-driven lookup (8 lines, CC=2)
 # ============================================================
 def get_week_from_day_w6_plan(current_day: int) -> int | float:
-    """
-    Data-driven implementation (RECOMMENDED)
+    """Data-driven implementation (RECOMMENDED)
 
     Args:
         current_day: Day number (1-38)
@@ -71,6 +68,7 @@ def get_week_from_day_w6_plan(current_day: int) -> int | float:
         - DRY Compliance: Week ranges defined once
         - Maintainability: Changing week 3 from "13-18" to "13-19"
           requires 1 edit (W6_PLAN_WEEK_MAP), not 3 edits
+
     """
     # P2-1: Type validation (YAML injection protection)
     if isinstance(current_day, bool) or not isinstance(current_day, int):

@@ -90,7 +90,9 @@ async def test_real_async_update_post():
     async with AsyncJSONPlaceholderClient() as client:
         # 既存投稿を更新（id=1 は常に存在する）
         updated = await client.update_post(
-            post_id=1, title="Updated Title via Integration Test", body="Updated body content"
+            post_id=1,
+            title="Updated Title via Integration Test",
+            body="Updated body content",
         )
 
         # 結果検証
@@ -165,7 +167,9 @@ async def test_real_async_crud_integration():
 
         # Step 3: Update - 既存投稿を更新（id=1）
         updated = await client.update_post(
-            post_id=1, title="Updated in Integration Test", body="Updated body content"
+            post_id=1,
+            title="Updated in Integration Test",
+            body="Updated body content",
         )
         assert updated["id"] == 1
         assert updated["title"] == "Updated in Integration Test"

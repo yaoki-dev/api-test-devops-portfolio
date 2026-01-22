@@ -43,7 +43,7 @@ class PerformanceMetrics:
         self.memory_usage.append(psutil.Process().memory_info().rss / 1024 / 1024)  # MB
         self.cpu_usage.append(psutil.cpu_percent())
 
-    def record_response_time(self, response_time: float):
+    def record_response_time(self, response_time: float) -> None:
         """レスポンス時間記録"""
         self.response_times.append(response_time)
 
@@ -242,8 +242,11 @@ class TestAPIPerformance:
         )
 
     async def _measure_request(
-        self, client: AsyncAPIClient, endpoint: str, metrics: PerformanceMetrics
-    ):
+        self,
+        client: AsyncAPIClient,
+        endpoint: str,
+        metrics: PerformanceMetrics,
+    ) -> None:
         """リクエスト実行とレスポンス時間測定"""
         start_time = time.time()
         try:
@@ -304,8 +307,11 @@ class TestPerformanceRegression:
             )
 
     async def _measure_request(
-        self, client: AsyncAPIClient, endpoint: str, metrics: PerformanceMetrics
-    ):
+        self,
+        client: AsyncAPIClient,
+        endpoint: str,
+        metrics: PerformanceMetrics,
+    ) -> None:
         """リクエスト実行とレスポンス時間測定"""
         start_time = time.time()
         try:
@@ -324,7 +330,7 @@ class TestPerformanceRegression:
 def generate_performance_report(
     metrics_list: list[PerformanceMetrics],
     output_file: str = "reports/performance-report.json",
-):
+) -> None:
     """パフォーマンステストレポート生成"""
     import json
     from pathlib import Path
@@ -339,7 +345,7 @@ def generate_performance_report(
                     metrics.get_summary()["response_times"]["mean"]
                     for metrics in metrics_list
                     if "response_times" in metrics.get_summary()
-                ]
+                ],
             )
             if metrics_list
             else 0,

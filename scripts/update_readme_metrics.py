@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-README.md メトリクス自動更新スクリプト
+"""README.md メトリクス自動更新スクリプト
 
 coverage.json から最新のカバレッジ数値を抽出し、
 README.md 内のバッジを自動更新します。
@@ -33,6 +32,7 @@ def get_coverage_from_json(coverage_file: Path) -> float | None:
 
     Returns:
         カバレッジ率 (0-100)、取得失敗時は None
+
     """
     if not coverage_file.exists():
         print(f"警告: {coverage_file} が見つかりません")
@@ -51,10 +51,11 @@ def get_coverage_from_json(coverage_file: Path) -> float | None:
 
 
 def get_test_count() -> int | None:
-    """pytest --collect-only でテスト数を取得する。
+    """Pytest --collect-only でテスト数を取得する。
 
     Returns:
         テスト数、取得失敗時は None
+
     """
     try:
         result = subprocess.run(
@@ -89,17 +90,17 @@ def get_badge_color(percent: float) -> str:
 
     Returns:
         shields.io 用の色名
+
     """
     if percent >= 80:
         return "brightgreen"
-    elif percent >= 60:
+    if percent >= 60:
         return "green"
-    elif percent >= 40:
+    if percent >= 40:
         return "yellow"
-    elif percent >= 20:
+    if percent >= 20:
         return "orange"
-    else:
-        return "red"
+    return "red"
 
 
 def update_readme_badges(readme_file: Path, coverage: float, test_count: int | None) -> bool:
@@ -112,6 +113,7 @@ def update_readme_badges(readme_file: Path, coverage: float, test_count: int | N
 
     Returns:
         更新成功時 True
+
     """
     if not readme_file.exists():
         print(f"エラー: {readme_file} が見つかりません")
@@ -151,9 +153,8 @@ def update_readme_badges(readme_file: Path, coverage: float, test_count: int | N
         readme_file.write_text(content, encoding="utf-8")
         print(f"✅ {readme_file} を更新しました")
         return True
-    else:
-        print("ℹ️ 変更はありません")
-        return True
+    print("ℹ️ 変更はありません")
+    return True
 
 
 def main() -> int:
@@ -161,6 +162,7 @@ def main() -> int:
 
     Returns:
         終了コード (0: 成功, 1: 失敗)
+
     """
     # プロジェクトルートを検出
     script_dir = Path(__file__).parent

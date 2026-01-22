@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Error Tracker Module - Trigger 7 エラー記録
+"""Error Tracker Module - Trigger 7 エラー記録
 ============================================
 
 Obsidian導入計画_v2で定義されたTrigger 7「エラー記録」の実装。
@@ -36,8 +35,7 @@ import yaml
 
 
 def normalize_error_id(error_id: str) -> str:
-    """
-    error_idをsnake_case小文字に正規化。
+    """error_idをsnake_case小文字に正規化。
 
     Args:
         error_id: 入力されたエラーID
@@ -59,6 +57,7 @@ def normalize_error_id(error_id: str) -> str:
         Traceback (most recent call last):
         ...
         ValueError: error_id cannot be empty
+
     """
     # 前後の空白を除去
     normalized = error_id.strip()
@@ -73,7 +72,7 @@ def normalize_error_id(error_id: str) -> str:
     # snake_case検証（英小文字、数字、アンダースコアのみ許可）
     if not re.match(r"^[a-z][a-z0-9_]*$", normalized):
         raise ValueError(
-            f"error_id must be snake_case (lowercase, numbers, underscores): {error_id}"
+            f"error_id must be snake_case (lowercase, numbers, underscores): {error_id}",
         )
 
     # 長さ検証（1-64文字）
@@ -114,7 +113,7 @@ YAML_RESERVED_WORDS = frozenset(
         ".inf",
         "-.inf",
         ".nan",
-    }
+    },
 )
 
 # 機密情報パターン（マスク対象）
@@ -147,8 +146,7 @@ SENSITIVE_PATTERNS = [
 
 
 def validate_description(description: str) -> str:
-    """
-    descriptionのYAML Injection対策と機密情報マスク。
+    """descriptionのYAML Injection対策と機密情報マスク。
 
     Args:
         description: 入力された説明文
@@ -168,6 +166,7 @@ def validate_description(description: str) -> str:
         Traceback (most recent call last):
         ...
         ValueError: YAML reserved word detected in description
+
     """
     if not description:
         return "説明未設定"
@@ -282,8 +281,7 @@ class ProgressStateManager:
             )
 
     def record_error(self, error_id: str, description: str) -> tuple[int, bool]:
-        """
-        エラーを記録し、カウントを更新。
+        """エラーを記録し、カウントを更新。
 
         Args:
             error_id: 正規化済みのerror_id
@@ -291,6 +289,7 @@ class ProgressStateManager:
 
         Returns:
             (count, kb_promotion_suggested): カウントとKB昇格推奨フラグ
+
         """
         today = date.today().isoformat()
 
@@ -397,16 +396,20 @@ class DailyProgressManager:
             f.write(self._content)
 
     def append_error_entry(
-        self, error_id: str, description: str, count: int, kb_suggested: bool
+        self,
+        error_id: str,
+        description: str,
+        count: int,
+        kb_suggested: bool,
     ) -> None:
-        """
-        エラー参照履歴セクションにエントリを追記。
+        """エラー参照履歴セクションにエントリを追記。
 
         Args:
             error_id: エラーID
             description: 説明
             count: 発生回数
             kb_suggested: KB昇格推奨フラグ
+
         """
         # ★マーク生成（count数に応じて★/★★/★★★）
         stars = "★" * min(count, 3)
@@ -461,8 +464,7 @@ def record_error(
     progress_file: str | Path = "progress_state.yaml",
     daily_file: str | Path = "daily_progress.md",
 ) -> dict[str, Any]:
-    """
-    エラーを記録する統合関数。
+    """エラーを記録する統合関数。
 
     Args:
         error_id: エラーID（正規化前でも可）
@@ -477,6 +479,7 @@ def record_error(
         >>> result = record_error("volume_mount", "Docker volume設定エラー")
         >>> result["success"]
         True
+
     """
     try:
         # Task 1: error_id正規化
