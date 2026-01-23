@@ -107,7 +107,12 @@ docs/text.md
 
 # Environment variables
 .env
+
+# other docs
 docs/main/6週プラン/技術記事/技術記事作成.md
+.claude/agents/CLAUDE.md
+.claude/commands/CLAUDE.md
+.github/workflows/CLAUDE.md
 
 # Snyk Security Extension - AI Rules (auto-generated)
 .github/instructions/snyk_rules.instructions.md
