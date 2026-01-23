@@ -1,5 +1,4 @@
-"""
-アプリケーション設定管理
+"""アプリケーション設定管理
 
 学習目標:
 - Pydantic Settingsを使った環境設定管理
@@ -92,6 +91,7 @@ def is_private_ip(hostname: str) -> bool:
     Security:
         - IPv4-mapped IPv6（::ffff:x.x.x.x）もプライベートIPとして検出
         - DNS解決失敗時はFail-Closed（ブロック）
+
     """
     try:
         # IPアドレス形式の場合
@@ -149,10 +149,14 @@ class APIConfig(BaseModel):
     """API関連の設定"""
 
     base_url: str = Field(
-        default="https://jsonplaceholder.typicode.com", description="APIのベースURL"
+        default="https://jsonplaceholder.typicode.com",
+        description="APIのベースURL",
     )
     timeout: float = Field(
-        default=30.0, ge=1.0, le=300.0, description="リクエストタイムアウト（秒）"
+        default=30.0,
+        ge=1.0,
+        le=300.0,
+        description="リクエストタイムアウト（秒）",
     )
     retry_count: int = Field(default=3, ge=0, le=10, description="リトライ回数")
     retry_delay: float = Field(default=1.0, ge=0.1, le=60.0, description="リトライ間隔（秒）")
@@ -182,14 +186,14 @@ class APIConfig(BaseModel):
         # SSRF Prevention: プライベートIPチェック
         if is_private_ip(hostname):
             raise ValueError(
-                f"SSRF Prevention: Private/loopback IP addresses are not allowed: {hostname}"
+                f"SSRF Prevention: Private/loopback IP addresses are not allowed: {hostname}",
             )
 
         # SSRF Prevention: 許可ドメインチェック
         if hostname not in ALLOWED_DOMAINS:
             raise ValueError(
                 f"SSRF Prevention: Domain not in allowlist: {hostname}. "
-                f"Allowed: {', '.join(sorted(ALLOWED_DOMAINS))}"
+                f"Allowed: {', '.join(sorted(ALLOWED_DOMAINS))}",
             )
 
         if v.endswith("/"):
@@ -214,7 +218,10 @@ class LogConfig(BaseModel):
         description="ログファイルの最大サイズ（バイト）",
     )
     backup_count: int = Field(
-        default=5, ge=1, le=100, description="ローテーションするログファイル数"
+        default=5,
+        ge=1,
+        le=100,
+        description="ローテーションするログファイル数",
     )
     console_output: bool = Field(default=True, description="コンソール出力の有効化")
 
@@ -238,14 +245,20 @@ class TestConfig(BaseModel):
     """テスト関連の設定"""
 
     slow_test_threshold: float = Field(
-        default=5.0, ge=0.1, description="スローテストの判定閾値（秒）"
+        default=5.0,
+        ge=0.1,
+        description="スローテストの判定閾値（秒）",
     )
     max_concurrent_requests: int = Field(
-        default=5, ge=1, le=50, description="並行テストでの最大リクエスト数"
+        default=5,
+        ge=1,
+        le=50,
+        description="並行テストでの最大リクエスト数",
     )
     external_api_enabled: bool = Field(default=True, description="外部APIテストの有効化")
     performance_test_enabled: bool = Field(
-        default=False, description="パフォーマンステストの有効化"
+        default=False,
+        description="パフォーマンステストの有効化",
     )
     security_test_enabled: bool = Field(default=False, description="セキュリティテストの有効化")
     test_data_cleanup: bool = Field(default=True, description="テスト後のデータクリーンアップ")
@@ -260,11 +273,13 @@ class SecurityConfig(BaseModel):
     """セキュリティ関連の設定"""
 
     api_key: SecretStr | None = Field(default=None, description="API認証キー")
-    jwt_secret: SecretStr | None = Field(  # noqa: S105
-        default=None, description="JWT署名用シークレット"
+    jwt_secret: SecretStr | None = Field(
+        default=None,
+        description="JWT署名用シークレット",
     )
     allowed_hosts: list[str] = Field(
-        default=["localhost", "127.0.0.1"], description="許可するホスト一覧"
+        default=["localhost", "127.0.0.1"],
+        description="許可するホスト一覧",
     )
     rate_limit_requests: int = Field(default=100, ge=1, description="レート制限：リクエスト数")
     rate_limit_window: int = Field(
@@ -281,13 +296,20 @@ class SentryConfig(BaseModel):
     dsn: SecretStr = Field(default=SecretStr(""), description="Sentry DSN")
     enabled: bool = Field(default=False, description="Sentry有効化")
     environment: str | None = Field(
-        default=None, description="環境名（未設定時はsettings.environmentを使用）"
+        default=None,
+        description="環境名（未設定時はsettings.environmentを使用）",
     )
     traces_sample_rate: float = Field(
-        default=0.1, ge=0.0, le=1.0, description="トレースサンプリングレート"
+        default=0.1,
+        ge=0.0,
+        le=1.0,
+        description="トレースサンプリングレート",
     )
     profiles_sample_rate: float = Field(
-        default=0.1, ge=0.0, le=1.0, description="プロファイリングサンプリングレート"
+        default=0.1,
+        ge=0.0,
+        le=1.0,
+        description="プロファイリングサンプリングレート",
     )
     send_default_pii: bool = Field(default=False, description="PII送信の有効化")
 
@@ -342,12 +364,13 @@ class Settings(BaseSettings):
 
         Note:
             開発/テスト環境ではシークレットなしで動作可能。
+
         """
         if self.environment == Environment.PRODUCTION:
             if self.security.api_key is None and self.security.jwt_secret is None:
                 raise ValueError(
                     "Production environment requires at least one of: "
-                    "SECURITY__API_KEY or SECURITY__JWT_SECRET"
+                    "SECURITY__API_KEY or SECURITY__JWT_SECRET",
                 )
         return self
 
@@ -377,6 +400,7 @@ class Settings(BaseSettings):
             >>> structlog.configure(
             ...     wrapper_class=structlog.make_filtering_bound_logger(settings.get_log_level())
             ... )
+
         """
         # LogLevel Enum → logging定数への明示的マッピング（型安全）
         level_map: dict[LogLevel, int] = {

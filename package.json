@@ -7,7 +7,8 @@
     "lint:text": "textlint '**/*.md' --ignore-path .textlintignore",
     "lint:text:fix": "textlint '**/*.md' --ignore-path .textlintignore --fix",
     "lint:links": "markdown-link-check README.md --config .markdown-link-check.json",
-    "lint:all": "npm run lint:md && npm run lint:text"
+    "lint:all": "npm run lint:md && npm run lint:text",
+    "lint:all:fix": "npm run lint:md:fix && npm run lint:text:fix"
   },
   "devDependencies": {
     "markdown-link-check": "^3.14.0",

@@ -17,10 +17,10 @@ from .api_client import (
 )
 
 __all__ = [
-    "SyncAPIClient",
-    "AsyncAPIClient",
-    "SyncJSONPlaceholderClient",
-    "AsyncJSONPlaceholderClient",
     "APIClientError",
     "APIJSONDecodeError",
+    "AsyncAPIClient",
+    "AsyncJSONPlaceholderClient",
+    "SyncAPIClient",
+    "SyncJSONPlaceholderClient",
 ]

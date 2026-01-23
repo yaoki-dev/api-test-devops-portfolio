@@ -174,7 +174,8 @@ def test_todo_user_mapping(todo_id: int, expected_user_id: int) -> None:
 
 
 @pytest.mark.parametrize(
-    "endpoint", ["/posts", "/comments", "/albums", "/photos", "/todos", "/users"]
+    "endpoint",
+    ["/posts", "/comments", "/albums", "/photos", "/todos", "/users"],
 )
 def test_all_endpoints_accessible(endpoint: str) -> None:
     """全エンドポイントのアクセス確認"""
