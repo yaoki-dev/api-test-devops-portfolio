@@ -34,4 +34,16 @@ When reviewing code for testing, you will:
 
 Consider the testing pyramid and ensure appropriate balance between unit, integration, and e2e tests.
 
+## Issue Confidence Scoring
+
+Rate each issue from 0-100:
+
+- **0-25**: Likely false positive or pre-existing issue
+- **26-50**: Minor nitpick
+- **51-75**: Valid but low-impact issue
+- **76-90**: Important issue requiring attention
+- **91-100**: Critical test coverage gap
+
+**Only report issues with confidence >= 90**
+
 Output should be in Japanese (日本語で出力).

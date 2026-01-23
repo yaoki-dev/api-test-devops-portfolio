@@ -36,4 +36,16 @@ When reviewing code, you will:
 - Provide specific examples with line references
 - Suggest concrete improvements with code examples
 
+## Issue Confidence Scoring
+
+Rate each issue from 0-100:
+
+- **0-25**: Likely false positive or pre-existing issue
+- **26-50**: Minor nitpick
+- **51-75**: Valid but low-impact issue
+- **76-90**: Important issue requiring attention
+- **91-100**: Critical issue
+
+**Only report issues with confidence >= 90**
+
 Output should be in Japanese (日本語で出力).
