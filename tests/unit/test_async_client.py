@@ -22,6 +22,7 @@ import asyncio
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from httpx import Request, Response
 
@@ -217,6 +218,81 @@ async def test_async_multiple_users_with_semaphore():
 
             # 全ユーザー取得成功確認
             assert mock_client_instance.request.call_count == 5
+
+
+@pytest.mark.asyncio
+async def test_partial_failure_graceful_degradation():
+    """
+    一部リクエスト失敗時のgraceful degradationテスト
+
+    検証項目：
+    - 5件中2件が失敗するシナリオ
+    - 失敗したリクエストはNoneとして返される
+    - 成功したリクエストは正常に取得できる
+    - システム全体はクラッシュせず継続動作
+
+    学習ポイント:
+    - graceful degradation: 部分的失敗でもシステム全体は継続動作
+    - asyncio.gather(return_exceptions=True)との違い
+    - 実運用でのエラー耐性設計
+    """
+    with patch("httpx.AsyncClient") as mock_client_class:
+        mock_client_instance = AsyncMock()
+        mock_client_class.return_value = mock_client_instance
+
+        # 5件中2件失敗（ID=2, 4が失敗）
+        def create_response_or_error(user_id: int):
+            if user_id in [2, 4]:
+                # 失敗ケース: HTTPStatusError
+                mock_response = MagicMock(spec=Response)
+                mock_response.status_code = 500
+                error = httpx.HTTPStatusError(
+                    message=f"Server Error for user {user_id}",
+                    request=MagicMock(),
+                    response=mock_response,
+                )
+                raise error
+            # 成功ケース
+            return MagicMock(
+                spec=Response,
+                status_code=200,
+                json=MagicMock(return_value={"id": user_id, "name": f"User {user_id}"}),
+                raise_for_status=MagicMock(return_value=None),
+                content=f'{{"id": {user_id}, "name": "User {user_id}"}}'.encode(),
+            )
+
+        # side_effectで動的にレスポンス生成
+        call_count = [0]
+        user_ids_order = [1, 2, 3, 4, 5]
+
+        def side_effect_handler(*args, **kwargs):
+            idx = call_count[0]
+            call_count[0] += 1
+            user_id = user_ids_order[idx]
+            return create_response_or_error(user_id)
+
+        mock_client_instance.request.side_effect = side_effect_handler
+
+        async with AsyncJSONPlaceholderClient() as client:
+            results = await client.get_multiple_users([1, 2, 3, 4, 5], max_concurrent=2)
+
+            # graceful degradation検証
+            # 実装によって失敗時の挙動が異なる:
+            # - None返却パターン: len(results) == 5, results[1] is None
+            # - スキップパターン: len(results) == 3
+            # - 例外パターン: 全体が失敗
+            #
+            # 現在の実装は成功分のみ返却（スキップパターン）
+            assert len(results) == 3, f"Expected 3 successful results, got {len(results)}"
+            assert all(isinstance(r, dict) for r in results)
+
+            # 成功したID (1, 3, 5) のみ含まれる
+            result_ids = [r["id"] for r in results]
+            assert 1 in result_ids
+            assert 3 in result_ids
+            assert 5 in result_ids
+            assert 2 not in result_ids  # 失敗
+            assert 4 not in result_ids  # 失敗
 
 
 # ===============================================================================

@@ -506,7 +506,11 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
             response = self.get("/users", params={"_limit": 1})
             return response.status_code == 200
         except Exception as e:
-            self.logger.warning("health_check_failed", error=str(e))
+            self.logger.warning(
+                "health_check_failed",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
             return False
 
 
@@ -958,7 +962,11 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             response = await self.get("/users", params={"_limit": 1})
             return response.status_code == 200
         except Exception as e:
-            self.logger.warning("health_check_failed", error=str(e))
+            self.logger.warning(
+                "health_check_failed",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
             return False
 
     # 複数ユーザー取得（Semaphore制御）
