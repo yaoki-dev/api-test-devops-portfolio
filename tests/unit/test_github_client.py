@@ -353,7 +353,9 @@ async def test_httpx_status_error_4xx():
             mock_response.status_code = 401
             mock_response.headers = {"X-RateLimit-Remaining": "60"}
             mock_exception = httpx.HTTPStatusError(
-                "401 Unauthorized", request=MagicMock(), response=mock_response
+                "401 Unauthorized",
+                request=MagicMock(),
+                response=mock_response,
             )
             mock_request.side_effect = mock_exception
 
@@ -371,7 +373,9 @@ async def test_httpx_status_error_5xx():
             mock_response.status_code = 503
             mock_response.headers = {"X-RateLimit-Remaining": "60"}
             mock_exception = httpx.HTTPStatusError(
-                "503 Service Unavailable", request=MagicMock(), response=mock_response
+                "503 Service Unavailable",
+                request=MagicMock(),
+                response=mock_response,
             )
             mock_request.side_effect = mock_exception
 

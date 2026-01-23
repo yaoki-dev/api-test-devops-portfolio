@@ -38,6 +38,7 @@ def sanitize_user_content(value: str | None) -> str:
     Example:
         >>> sanitize_user_content("<script>alert('XSS')</script>")
         '&lt;script&gt;alert(&#x27;XSS&#x27;)&lt;/script&gt;'
+
     """
     if not value:
         return ""
@@ -61,6 +62,7 @@ class Post(BaseModel):
         user_id: 投稿者ユーザーID（1以上）
         title: 投稿タイトル（サニタイズ済み、最大200文字）
         body: 投稿本文（サニタイズ済み、最大5000文字）
+
     """
 
     id: int = Field(..., ge=1, description="投稿ID")
@@ -83,6 +85,7 @@ class Post(BaseModel):
 
         Returns:
             サニタイズ済み文字列
+
         """
         return sanitize_user_content(v)
 
@@ -99,6 +102,7 @@ class Comment(BaseModel):
         name: コメント投稿者名（サニタイズ済み、最大100文字）
         email: コメント投稿者メールアドレス（サニタイズ済み、最大100文字）
         body: コメント本文（サニタイズ済み、最大2000文字）
+
     """
 
     id: int = Field(..., ge=1, description="コメントID")
@@ -122,6 +126,7 @@ class Comment(BaseModel):
 
         Returns:
             サニタイズ済み文字列
+
         """
         return sanitize_user_content(v)
 
@@ -140,6 +145,7 @@ class Geo(BaseModel):
     Attributes:
         lat: 緯度（文字列形式、サニタイズ済み）
         lng: 経度（文字列形式、サニタイズ済み）
+
     """
 
     lat: str = Field(..., max_length=50, description="緯度")
@@ -160,6 +166,7 @@ class Geo(BaseModel):
 
         Returns:
             サニタイズ済み文字列
+
         """
         return sanitize_user_content(v)
 
@@ -176,6 +183,7 @@ class Address(BaseModel):
         city: 市区町村（サニタイズ済み、最大100文字）
         zipcode: 郵便番号（サニタイズ済み、最大20文字）
         geo: 地理座標（ネストされたGeoモデル）
+
     """
 
     street: str = Field(..., max_length=200, description="通り名")
@@ -199,6 +207,7 @@ class Address(BaseModel):
 
         Returns:
             サニタイズ済み文字列
+
         """
         return sanitize_user_content(v)
 
@@ -213,11 +222,15 @@ class Company(BaseModel):
         name: 企業名（サニタイズ済み、最大100文字）
         catch_phrase: キャッチフレーズ（サニタイズ済み、最大200文字）
         bs: ビジネススローガン（サニタイズ済み、最大200文字）
+
     """
 
     name: str = Field(..., max_length=100, description="企業名")
     catch_phrase: str = Field(
-        ..., max_length=200, alias="catchPhrase", description="キャッチフレーズ"
+        ...,
+        max_length=200,
+        alias="catchPhrase",
+        description="キャッチフレーズ",
     )
     bs: str = Field(..., max_length=200, description="ビジネススローガン")
 
@@ -236,6 +249,7 @@ class Company(BaseModel):
 
         Returns:
             サニタイズ済み文字列
+
         """
         return sanitize_user_content(v)
 
@@ -255,6 +269,7 @@ class User(BaseModel):
         phone: 電話番号（サニタイズ済み、最大50文字）
         website: ウェブサイトURL（サニタイズ済み、最大200文字）
         company: 企業情報（ネストされたCompanyモデル）
+
     """
 
     id: int = Field(..., ge=1, description="ユーザーID")
@@ -281,6 +296,7 @@ class User(BaseModel):
 
         Returns:
             サニタイズ済み文字列
+
         """
         return sanitize_user_content(v)
 
@@ -301,6 +317,7 @@ class Todo(BaseModel):
         user_id: 所有者ユーザーID（1以上）
         title: TODOタイトル（サニタイズ済み、最大200文字）
         completed: 完了フラグ
+
     """
 
     id: int = Field(..., ge=1, description="TODO ID")
@@ -323,6 +340,7 @@ class Todo(BaseModel):
 
         Returns:
             サニタイズ済み文字列
+
         """
         return sanitize_user_content(v)
 
@@ -337,6 +355,7 @@ class Album(BaseModel):
         id: アルバムID（1以上）
         user_id: 所有者ユーザーID（1以上）
         title: アルバムタイトル（サニタイズ済み、最大200文字）
+
     """
 
     id: int = Field(..., ge=1, description="アルバムID")
@@ -358,6 +377,7 @@ class Album(BaseModel):
 
         Returns:
             サニタイズ済み文字列
+
         """
         return sanitize_user_content(v)
 
@@ -374,6 +394,7 @@ class Photo(BaseModel):
         title: 写真タイトル（サニタイズ済み、最大200文字）
         url: 写真URL（最大500文字）
         thumbnail_url: サムネイルURL（最大500文字）
+
     """
 
     id: int = Field(..., ge=1, description="写真ID")
@@ -381,7 +402,10 @@ class Photo(BaseModel):
     title: str = Field(..., max_length=200, description="写真タイトル")
     url: str = Field(..., max_length=500, description="写真URL")
     thumbnail_url: str = Field(
-        ..., max_length=500, alias="thumbnailUrl", description="サムネイルURL"
+        ...,
+        max_length=500,
+        alias="thumbnailUrl",
+        description="サムネイルURL",
     )
 
     model_config = {"populate_by_name": True, "extra": "forbid"}
@@ -399,6 +423,7 @@ class Photo(BaseModel):
 
         Returns:
             サニタイズ済み文字列
+
         """
         return sanitize_user_content(v)
 
@@ -418,6 +443,7 @@ class Photo(BaseModel):
 
         Raises:
             ValueError: URLがhttp/httpsで始まらない場合
+
         """
         # case-insensitive check (JAVASCRIPT: などのバイパス防止)
         if not v.lower().startswith(("http://", "https://")):

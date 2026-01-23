@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-面接準備支援システム
+"""面接準備支援システム
 
 学習目標:
 - 技術面接対策資料生成
@@ -72,7 +71,9 @@ class InterviewPreparation:
 
             # 技術スタック情報を抽出
             tech_stack_section = re.search(
-                r"## 技術スタック・実装実績.*?(?=##|\Z)", content, re.DOTALL | re.MULTILINE
+                r"## 技術スタック・実装実績.*?(?=##|\Z)",
+                content,
+                re.DOTALL | re.MULTILINE,
             )
 
             if tech_stack_section:
@@ -92,7 +93,7 @@ class InterviewPreparation:
                                 "technology": tech_name,
                                 "level": int(match.group(1)),
                                 "percentage": match.group(2),
-                            }
+                            },
                         )
 
             # 最新更新日を抽出
@@ -124,7 +125,7 @@ class InterviewPreparation:
                     "date": "2025-09-11",
                     "description": "ruff+mypy統合マスタリー",
                     "achievement": "Level 3達成(99.8%)",
-                }
+                },
             ],
             "technical_stack": [
                 {"technology": "httpx", "level": 2, "percentage": "94%"},
@@ -190,7 +191,7 @@ class InterviewPreparation:
                 level_str = f"Level {tech['level']} ({tech['percentage']})"
                 table.append(
                     f"| {tech_mapping[tech_name]['category']} | {tech_name} | "
-                    f"{level_str} | {tech_mapping[tech_name]['reason']} |"
+                    f"{level_str} | {tech_mapping[tech_name]['reason']} |",
                 )
 
         # 基本技術を追加（重複を避ける）
@@ -204,7 +205,7 @@ class InterviewPreparation:
             if base_tech["category"] not in existing_categories:
                 table.append(
                     f"| {base_tech['category']} | {base_tech['name']} | "
-                    f"{base_tech['level']} | {base_tech['reason']} |"
+                    f"{base_tech['level']} | {base_tech['reason']} |",
                 )
 
         return "\\n".join(table)
@@ -280,7 +281,6 @@ class InterviewPreparation:
 
     def generate_technical_overview(self) -> str:
         """技術概要資料生成（CLAUDE.md自動更新機能付き）"""
-
         # CLAUDE.mdから最新の学習成果を自動抽出
         latest_achievements = self.extract_learning_achievements_from_claude_md()
 

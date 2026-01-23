@@ -35,4 +35,16 @@ For each issue:
 - Explain the performance impact
 - Provide concrete solutions
 
+## Issue Confidence Scoring
+
+Rate each issue from 0-100:
+
+- **0-25**: Likely false positive or pre-existing issue
+- **26-50**: Minor nitpick
+- **51-75**: Valid but low-impact issue
+- **76-90**: Important issue requiring attention
+- **91-100**: Critical performance problem
+
+**Only report issues with confidence >= 90**
+
 Output should be in Japanese (日本語で出力).

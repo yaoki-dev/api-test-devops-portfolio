@@ -55,7 +55,7 @@ class TestScrubSensitiveData:
             "headers": [
                 {"Authorization": "Bearer token123"},
                 {"Content-Type": "application/json"},
-            ]
+            ],
         }
         result = _scrub_sensitive_data(data)
         assert result["headers"][0]["Authorization"] == "[REDACTED]"
@@ -257,7 +257,7 @@ class TestInitSentry:
         """有効なDSNで初期化成功"""
         mock_settings.return_value.sentry.enabled = True
         mock_settings.return_value.sentry.dsn = SecretStr(
-            "https://abc123@o456.ingest.us.sentry.io/789"
+            "https://abc123@o456.ingest.us.sentry.io/789",
         )
         mock_settings.return_value.sentry.environment = "testing"
         mock_settings.return_value.sentry.traces_sample_rate = 0.1
@@ -273,12 +273,14 @@ class TestInitSentry:
     @patch("utils.sentry_init.get_settings")
     @patch("sentry_sdk.init")
     def test_double_init_prevented(
-        self, mock_sdk_init: MagicMock, mock_settings: MagicMock
+        self,
+        mock_sdk_init: MagicMock,
+        mock_settings: MagicMock,
     ) -> None:
         """二重初期化は防止される"""
         mock_settings.return_value.sentry.enabled = True
         mock_settings.return_value.sentry.dsn = SecretStr(
-            "https://abc123@o456.ingest.us.sentry.io/789"
+            "https://abc123@o456.ingest.us.sentry.io/789",
         )
         mock_settings.return_value.sentry.environment = "testing"
         mock_settings.return_value.sentry.traces_sample_rate = 0.1
@@ -324,12 +326,14 @@ class TestSentryState:
     @patch("utils.sentry_init.get_settings")
     @patch("sentry_sdk.init")
     def test_state_persists_after_init(
-        self, mock_sdk_init: MagicMock, mock_settings: MagicMock
+        self,
+        mock_sdk_init: MagicMock,
+        mock_settings: MagicMock,
     ) -> None:
         """初期化後は状態が維持される"""
         mock_settings.return_value.sentry.enabled = True
         mock_settings.return_value.sentry.dsn = SecretStr(
-            "https://abc123@o456.ingest.us.sentry.io/789"
+            "https://abc123@o456.ingest.us.sentry.io/789",
         )
         mock_settings.return_value.sentry.environment = "testing"
         mock_settings.return_value.sentry.traces_sample_rate = 0.1
@@ -420,12 +424,14 @@ class TestSdkExceptionHandling:
     @patch("utils.sentry_init.get_settings")
     @patch("sentry_sdk.init", side_effect=RuntimeError("SDK init failed"))
     def test_sdk_init_exception_returns_false(
-        self, mock_sdk_init: MagicMock, mock_settings: MagicMock
+        self,
+        mock_sdk_init: MagicMock,
+        mock_settings: MagicMock,
     ) -> None:
         """sentry_sdk.init()が例外を投げた場合、非本番環境ではFalseを返す"""
         mock_settings.return_value.sentry.enabled = True
         mock_settings.return_value.sentry.dsn = SecretStr(
-            "https://abc123@o456.ingest.us.sentry.io/789"
+            "https://abc123@o456.ingest.us.sentry.io/789",
         )
         mock_settings.return_value.sentry.environment = "testing"
         mock_settings.return_value.sentry.traces_sample_rate = 0.1
@@ -443,12 +449,14 @@ class TestSdkExceptionHandling:
     @patch("utils.sentry_init.get_settings")
     @patch("sentry_sdk.init", side_effect=ValueError("Invalid configuration"))
     def test_sdk_init_value_error_returns_false(
-        self, mock_sdk_init: MagicMock, mock_settings: MagicMock
+        self,
+        mock_sdk_init: MagicMock,
+        mock_settings: MagicMock,
     ) -> None:
         """sentry_sdk.init()がValueErrorを投げた場合、非本番環境ではFalseを返す"""
         mock_settings.return_value.sentry.enabled = True
         mock_settings.return_value.sentry.dsn = SecretStr(
-            "https://abc123@o456.ingest.us.sentry.io/789"
+            "https://abc123@o456.ingest.us.sentry.io/789",
         )
         mock_settings.return_value.sentry.environment = "testing"
         mock_settings.return_value.sentry.traces_sample_rate = 0.1
@@ -466,7 +474,9 @@ class TestSdkExceptionHandling:
     @patch("utils.sentry_init.get_settings")
     @patch("sentry_sdk.init", side_effect=ConnectionError("Network error"))
     def test_sdk_init_exception_warning_with_debug(
-        self, mock_sdk_init: MagicMock, mock_settings: MagicMock
+        self,
+        mock_sdk_init: MagicMock,
+        mock_settings: MagicMock,
     ) -> None:
         """SDK例外時にSENTRY_DEBUG=trueなら警告が出る（非本番環境）"""
         import utils.sentry_init as sentry_module
@@ -475,7 +485,7 @@ class TestSdkExceptionHandling:
 
         mock_settings.return_value.sentry.enabled = True
         mock_settings.return_value.sentry.dsn = SecretStr(
-            "https://abc123@o456.ingest.us.sentry.io/789"
+            "https://abc123@o456.ingest.us.sentry.io/789",
         )
         mock_settings.return_value.sentry.environment = "testing"
         mock_settings.return_value.sentry.traces_sample_rate = 0.1
@@ -500,7 +510,9 @@ class TestSdkExceptionHandling:
     @patch("utils.sentry_init.get_settings")
     @patch("sentry_sdk.init", side_effect=ValueError("Invalid configuration"))
     def test_sdk_init_exception_raises_in_production(
-        self, mock_sdk_init: MagicMock, mock_settings: MagicMock
+        self,
+        mock_sdk_init: MagicMock,
+        mock_settings: MagicMock,
     ) -> None:
         """本番環境でSDK例外が発生した場合はRuntimeErrorを発生させる
 
@@ -511,7 +523,7 @@ class TestSdkExceptionHandling:
         """
         mock_settings.return_value.sentry.enabled = True
         mock_settings.return_value.sentry.dsn = SecretStr(
-            "https://abc123@o456.ingest.us.sentry.io/789"
+            "https://abc123@o456.ingest.us.sentry.io/789",
         )
         mock_settings.return_value.sentry.environment = "production"
         mock_settings.return_value.sentry.traces_sample_rate = 0.1
@@ -538,7 +550,7 @@ class TestSdkExceptionHandling:
         """
         mock_settings.return_value.sentry.enabled = True
         mock_settings.return_value.sentry.dsn = SecretStr(
-            "https://abc123@o456.ingest.us.sentry.io/789"
+            "https://abc123@o456.ingest.us.sentry.io/789",
         )
         mock_settings.return_value.sentry.environment = "production"
         mock_settings.return_value.is_production.return_value = True  # 本番環境
@@ -566,7 +578,7 @@ class TestSdkExceptionHandling:
         """開発環境でsentry-sdk未インストールの場合はFalseを返す"""
         mock_settings.return_value.sentry.enabled = True
         mock_settings.return_value.sentry.dsn = SecretStr(
-            "https://abc123@o456.ingest.us.sentry.io/789"
+            "https://abc123@o456.ingest.us.sentry.io/789",
         )
         mock_settings.return_value.sentry.environment = "development"
         mock_settings.return_value.is_production.return_value = False  # 開発環境

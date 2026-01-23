@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-4次元評価スクリプト
+"""4次元評価スクリプト
 
 Task要件を4次元評価基準で自動スコアリングし、改善推奨事項を生成します。
 
@@ -16,8 +15,7 @@ from typing import Any
 
 
 def evaluate_dimension_1(task_text: str) -> int:
-    """
-    Dimension 1: AI実装成功率（25点満点）
+    """Dimension 1: AI実装成功率（25点満点）
 
     判定ロジック:
     - 正規表現パターンマッチング
@@ -114,8 +112,7 @@ def evaluate_dimension_1(task_text: str) -> int:
 
 
 def evaluate_dimension_2(task_text: str) -> int:
-    """
-    Dimension 2: テスト可能性（30点満点）
+    """Dimension 2: テスト可能性（30点満点）
 
     判定ロジック:
     - 定量的成功基準: テスト件数・カバレッジ目標の明示検出
@@ -228,8 +225,7 @@ def evaluate_dimension_2(task_text: str) -> int:
 
 
 def evaluate_dimension_3(task_text: str) -> int:  # noqa: C901 - スコアリングロジック集約（複数の品質指標評価）のため許容
-    """
-    Dimension 3: 品質ゲート整合性（25点満点）
+    """Dimension 3: 品質ゲート整合性（25点満点）
 
     判定ロジック:
     - 数値検出（カバレッジ目標、テスト件数）
@@ -300,8 +296,7 @@ def evaluate_dimension_3(task_text: str) -> int:  # noqa: C901 - スコアリン
 
 
 def evaluate_dimension_4(task_text: str) -> int:  # noqa: C901 - スコアリングロジック集約（複数のセキュリティ指標評価）のため許容
-    """
-    Dimension 4: セキュリティ・標準準拠（20点満点）
+    """Dimension 4: セキュリティ・標準準拠（20点満点）
 
     判定ロジック:
     - Pydantic型制約検出（constr, conint）
@@ -407,8 +402,7 @@ def evaluate_dimension_4(task_text: str) -> int:  # noqa: C901 - スコアリン
 
 
 def generate_recommendations(scores: dict[str, int], passing_scores: dict[str, int]) -> list[str]:
-    """
-    推奨事項生成
+    """推奨事項生成
 
     生成ロジック:
     1. 不合格Dimensionのみ対象（score < passing_score）
@@ -480,7 +474,7 @@ def generate_recommendations(scores: dict[str, int], passing_scores: dict[str, i
 
         recommendations.append(
             f"Dimension {dim_num}: {suggestion}が必要"
-            f"（現状: {current_score}点/満点{max_score}点、不足: {gap}点）"
+            f"（現状: {current_score}点/満点{max_score}点、不足: {gap}点）",
         )
 
     return recommendations

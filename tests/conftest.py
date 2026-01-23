@@ -102,7 +102,7 @@ def pytest_collection_modifyitems(config, items):
             "slow" in [mark.name for mark in item.iter_markers()],
             "external" in [mark.name for mark in item.iter_markers()],
             item.name,
-        )
+        ),
     )
 
 
@@ -289,7 +289,9 @@ def mock_error_response() -> Mock:
     mock_response.text = '{"error": "Not Found"}'
     mock_response.headers = {"content-type": "application/json"}
     mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-        "404 Not Found", request=Mock(), response=mock_response
+        "404 Not Found",
+        request=Mock(),
+        response=mock_response,
     )
     return mock_response
 
@@ -398,7 +400,7 @@ def performance_timer():
         def assert_faster_than(self, threshold: float, message: str = "") -> None:
             if self.elapsed > threshold:
                 pytest.fail(
-                    f"Performance test failed: {self.elapsed:.3f}s > {threshold:.3f}s. {message}"
+                    f"Performance test failed: {self.elapsed:.3f}s > {threshold:.3f}s. {message}",
                 )
 
     return Timer()
@@ -416,7 +418,9 @@ def error_scenarios():
         "timeout": httpx.TimeoutException("Request timed out"),
         "connection_error": httpx.ConnectError("Connection failed"),
         "http_error": httpx.HTTPStatusError(
-            "500 Internal Server Error", request=Mock(), response=Mock(status_code=500)
+            "500 Internal Server Error",
+            request=Mock(),
+            response=Mock(status_code=500),
         ),
         "json_decode_error": json.JSONDecodeError("Invalid JSON", "doc", 0),
     }

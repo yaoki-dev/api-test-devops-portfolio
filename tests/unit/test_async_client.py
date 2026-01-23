@@ -282,7 +282,9 @@ async def test_async_error_handling_and_retry():
         error_response.status_code = 404
         error_response.is_client_error = True  # 4xxエラー判定用
         error_response.raise_for_status.side_effect = HTTPStatusError(
-            "404 Not Found", request=MagicMock(spec=Request), response=error_response
+            "404 Not Found",
+            request=MagicMock(spec=Request),
+            response=error_response,
         )
         mock_client_instance.request.return_value = error_response
 
@@ -370,13 +372,16 @@ async def test_async_bulk_create_users(mock_response_factory):
     # 作成成功のモックレスポンス
     created_responses = [
         mock_response_factory(
-            201, json_data={"id": 101, "name": "User 1", "email": "user1@test.com"}
+            201,
+            json_data={"id": 101, "name": "User 1", "email": "user1@test.com"},
         ),
         mock_response_factory(
-            201, json_data={"id": 102, "name": "User 2", "email": "user2@test.com"}
+            201,
+            json_data={"id": 102, "name": "User 2", "email": "user2@test.com"},
         ),
         mock_response_factory(
-            201, json_data={"id": 103, "name": "User 3", "email": "user3@test.com"}
+            201,
+            json_data={"id": 103, "name": "User 3", "email": "user3@test.com"},
         ),
     ]
 
