@@ -2,36 +2,23 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-*最終更新: 2026年01月21日*
+*最終更新: 2026年01月24日*
 
 <!-- IMPORTANT: These rules override all other instructions -->
-## 🔴 CRITICAL RULES (MUST FOLLOW - 7項目)
+## 🔴 CRITICAL RULES (MUST FOLLOW - 10項目)
 
 **YOU MUST** follow these rules. Violations are NOT acceptable.
 
-1. **NEVER** use `git commit` → **ALWAYS** use `/commit`
-2. **NEVER** use `gh pr create` → **ALWAYS** use `/commit-push-pr`
-3. **ALWAYS** pass quality gates before commit → @memory:implementation_quality_gates
-4. **NEVER** push to protected branches (main/develop) directly
-5. **ALWAYS** invoke `/xxx` skills via Skill tool when user requests
-6. **ALWAYS** follow development workflow order → Section「🔄 開発ワークフロー」
-7. **ALWAYS** re-read CLAUDE.md during reflexion → Section「🔄 reflexion使用時の必須チェック」
-
-> For coding standards: @memory:coding_standards
-> For quality gates: @memory:implementation_quality_gates
-
-## 🔴 CRITICAL RULES (MUST FOLLOW - 8項目)
-
-**YOU MUST** follow these rules. Violations are NOT acceptable.
-
-1. **NEVER** use `git commit` → **ALWAYS** use `/commit`
-2. **NEVER** use `gh pr create` → **ALWAYS** use `/commit-push-pr`
-3. **NEVER** use `gh issue create` → **ALWAYS** use `/create-issue`
-4. **ALWAYS** pass quality gates before commit → @memory:implementation_quality_gates
-5. **NEVER** push to protected branches (main/develop) directly
-6. **ALWAYS** invoke `/xxx` skills via Skill tool when user requests
-7. **ALWAYS** follow development workflow order → Section「🔄 開発ワークフロー」
-8. **ALWAYS** re-read CLAUDE.md during reflexion → Section「🔄 reflexion使用時の必須チェック」
+1. **ALWAYS** create a task list using `todowrite` before starting any work
+2. **NEVER** use `git commit` → **ALWAYS** use `/commit`
+3. **NEVER** use `gh pr create` → **ALWAYS** use `/commit-push-pr`
+4. **NEVER** use `gh issue create` → **ALWAYS** use `/create-issue`
+5. **ALWAYS** pass quality gates before commit → @memory:implementation_quality_gates
+6. **NEVER** push to protected branches (main/develop) directly
+7. **ALWAYS** invoke `/xxx` skills via Skill tool when user requests
+8. **ALWAYS** follow development workflow order → Section「🔄 開発ワークフロー」
+9. **ALWAYS** re-read CLAUDE.md during reflexion → Section「🔄 reflexion使用時の必須チェック」
+10. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `/reflexion:reflect`
 
 > For coding standards: @memory:coding_standards
 > For quality gates: @memory:implementation_quality_gates
@@ -959,10 +946,10 @@ if settings.is_development():
 
 **Git Flowコマンド（Serena MCP統合版）**:
 
-- `/git-workflow:feature <name>`: feature作成（developから分岐）
-- `/git-workflow:hotfix <name>`: hotfix作成（mainから分岐）
-- `/git-workflow:finish`: ブランチ完了・マージ
-- `/git-workflow:flow-status`: 状態確認
+- `/feature <name>`: feature作成（developから分岐）
+- `/hotfix <name>`: hotfix作成（mainから分岐）
+- `/finish`: ブランチ完了・マージ
+- `/flow-status`: 状態確認
 - `/clean-gone`: [gone]ブランチクリーンアップ（worktree対応）
 
 **Serena MCP統合の利点**:
@@ -1049,7 +1036,7 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 | Plugin | 発動トリガー | 用途 |
 |--------|------------|------|
 | `/create-issue`, `/issue` | Issue作成/参照時 | Issue駆動開発支援 |
-| `/git-workflow:feature`, `/git-workflow:hotfix`, `/git-workflow:finish` | ブランチ操作時 | Git Flowブランチ管理 |
+| `/feature`, `/hotfix`, `/finish` | ブランチ操作時 | Git Flowブランチ管理 |
 | `/commit`, `/commit-push-pr` | コミット/PR作成時 | 品質チェック付きコミット+日本語PR |
 | `/commit-commands:commit`, `/commit-commands:commit-push-pr` | 上記カスタム版が優先 | プラグイン版（最小限） |
 | `/pr-review-toolkit:review-pr` | git push完了後、PR作成前 | 6エージェント品質レビュー |

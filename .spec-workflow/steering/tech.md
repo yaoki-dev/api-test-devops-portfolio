@@ -288,8 +288,8 @@ uv run bandit -r utils/ config/
 - CI/CD（.github/workflows/ci.yml）が既にdevelop対応済み
 
 **コマンド**:
-- `/git-workflow:feature <name>`: feature作成（developから分岐）
-- `/git-workflow:release <version>`: release作成
-- `/git-workflow:hotfix <name>`: hotfix作成（mainから分岐）
-- `/git-workflow:finish`: ブランチ完了・マージ
-- `/git-workflow:flow-status`: 状態確認
+- `/feature <name>`: feature作成（developから分岐）
+- `/release <version>`: release作成
+- `/hotfix <name>`: hotfix作成（mainから分岐）
+- `/finish`: ブランチ完了・マージ
+- `/flow-status`: 状態確認
