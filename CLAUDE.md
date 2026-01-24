@@ -4,6 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 *最終更新: 2026年01月14日*
 
+## 🔴 CRITICAL RULES (MUST FOLLOW - 8項目)
+
+**YOU MUST** follow these rules. Violations are NOT acceptable.
+
+1. **NEVER** use `git commit` → **ALWAYS** use `/commit`
+2. **NEVER** use `gh pr create` → **ALWAYS** use `/commit-push-pr`
+3. **NEVER** use `gh issue create` → **ALWAYS** use `/create-issue`
+4. **ALWAYS** pass quality gates before commit → @memory:implementation_quality_gates
+5. **NEVER** push to protected branches (main/develop) directly
+6. **ALWAYS** invoke `/xxx` skills via Skill tool when user requests
+7. **ALWAYS** follow development workflow order → Section「🔄 開発ワークフロー」
+8. **ALWAYS** re-read CLAUDE.md during reflexion → Section「🔄 reflexion使用時の必須チェック」
+
+> For coding standards: @memory:coding_standards
+> For quality gates: @memory:implementation_quality_gates
+
 ## プロジェクト概要
 
 APIテスト + DevOps統合学習ポートフォリオ。時給4000-4500円レベルの技術力を証明するために設計されています。
