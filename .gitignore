@@ -72,6 +72,9 @@ reports/
 # Claude Code
 .claude/settings.local.json
 
+# Git Worktrees (parallel development branches)
+.worktrees/
+
 # MCP and AI Tools
 .mcp.json
 .serena/
@@ -104,6 +107,13 @@ docs/text.md
 
 # Environment variables
 .env
+
+# Claude MCP auto-generated files (claude-mem)
+# Excludes all CLAUDE.md in subdirectories, preserves root CLAUDE.md
+**/CLAUDE.md
+!/CLAUDE.md
+
+# Other project-specific ignores
 docs/main/6週プラン/技術記事/技術記事作成.md
 
 # Snyk Security Extension - AI Rules (auto-generated)

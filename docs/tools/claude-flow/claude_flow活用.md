@@ -24,6 +24,7 @@
 **導入推奨度**: ⭐⭐⭐⭐⭐ **9.2/10（強く推奨）**
 
 **期待効果**（6週プラン Week 3-6対象、198H）:
+
 - ⏰ **開発時間**: 198H → 94-116h（**41-53%削減**）
 - 💰 **時間コスト削減**: **328,000-416,000円**（@4,000円/h）
 - 🤖 **AIコスト削減**: **$9-12**（トークン32.3%削減）
@@ -119,6 +120,7 @@
 ### プロジェクト現状分析
 
 **本プロジェクト**: APIテスト + DevOps統合学習ポートフォリオ
+
 - **目標**: 時給4,000-4,500円レベルの技術力証明
 - **期間**: Week 1-6+5.5（38日間、6週間+2日、294H総計）
 - **技術スタック**: Python 3.12, httpx, pytest, Docker, CI/CD
@@ -184,6 +186,7 @@ After (Claude Flow統合):
 | **フォールバック** | ReasoningBank自動切替 | なし | 🟢 **AgentDB優位** |
 
 **実用例**:
+
 ```python
 # Week 5+5.5: 非同期処理+最適化（1000+ファイル検索）
 # 既存Serena: 10秒/検索 × 50回 = 8.3分
@@ -206,6 +209,7 @@ After (Claude Flow統合):
 | **ワークフロー定義** | 自然言語スキル（25種） | YAML定義（13ワークフロー） | 🟡 **用途次第** |
 
 **実用例**:
+
 ```python
 # Week 4: CI/CD統合（複雑タスク）
 # 既存: 手動でpython-expert → ci-cd-pipeline → code-reviewer選択（15h）
@@ -227,6 +231,7 @@ After (Claude Flow統合):
 | **コードレビュー** | ✅ AI自動レビュー | ⚠️ code-reviewer agent手動 | 🟡 **同等** |
 
 **実用例**:
+
 ```python
 # Week 4: GitHub Actions統合
 # 既存: workflow YAML手動作成（6h）
@@ -247,13 +252,14 @@ After (Claude Flow統合):
 | **検証ワークフロー** | ✅ 自動品質ゲート | ⚠️ 手動pytest/ruff実行 | 🟢 **claude-flow優位** |
 
 **実用例**:
+
 ```yaml
 # Week 3-6: 品質ゲート完全自動化
 hooks:
   pre_commit:
     - uv run pytest --cov=. --cov-fail-under=85
     - uv run ruff check --fix .
-    - uv run mypy utils/ config/
+    - uv run mypy utils/ config/ models/
     - uv run bandit -r utils/ config/
   post_commit:
     - docker build -t api-test .
@@ -274,6 +280,7 @@ hooks:
 | **実行速度改善** | ✅ 2.8-4.4倍高速化 | ❌ なし | 🟢 **claude-flow独自** |
 
 **実用例**:
+
 ```python
 # Week 5-6: トークンコスト最適化
 # 既存トークンコスト: $30-40（AI協働60h）
@@ -310,6 +317,7 @@ hooks:
 #### 活用シナリオ
 
 **Week 4: CI/CD設定ファイル検索（20+ファイル）**
+
 ```python
 # 検索タスク: GitHub Actions workflow examples
 # 検索対象: 20ファイル、各5KB平均
@@ -327,6 +335,7 @@ hooks:
 ```
 
 **Week 5: 非同期処理+最適化（1000+ファイル検索）**
+
 ```python
 # 検索タスク: Best practice patterns
 # 検索対象: 1000ファイル、各3KB平均
@@ -387,7 +396,7 @@ hooks:
 │  ┌──────────────────────────────┐  │
 │  │ pytest --cov=. --cov-fail... │  │
 │  │ ruff check --fix .           │  │
-│  │ mypy utils/ config/          │  │
+│  │ mypy utils/ config/ models/  │  │
 │  └──────────────────────────────┘  │
 └────────────────────────────────────┘
 ```
@@ -478,7 +487,7 @@ hooks:
   pre_commit:
     - uv run pytest --cov=. --cov-fail-under=85
     - uv run ruff check --fix .
-    - uv run mypy utils/ config/
+    - uv run mypy utils/ config/ models/
     - uv run bandit -r utils/ config/
     - uv run safety check
 
@@ -517,7 +526,7 @@ hooks:
 # 1. git pull（手動）
 # 2. uv run pytest --cov=. --cov-fail-under=85（手動、5分）
 # 3. uv run ruff check --fix .（手動、1分）
-# 4. uv run mypy utils/ config/（手動、3分）
+# 4. uv run mypy utils/ config/ models/（手動、3分）
 # 5. uv run bandit -r .（手動、2分）
 # 合計: 11分/日
 
@@ -808,7 +817,7 @@ hooks:
   pre_docker_build:
     - uv run ruff check --fix .
     - uv run pytest --cov=. --cov-fail-under=60
-    - uv run mypy utils/ config/
+    - uv run mypy utils/ config/ models/
 
   post_docker_build:
     - docker images --format "table {{.Repository}}\t{{.Size}}"
@@ -818,6 +827,7 @@ hooks:
 ```
 
 **効果**:
+
 - 品質ゲート手動実行時間: 10h → 0h（完全自動化）
 - Dockerビルド後検証: 手動3h → 自動0h
 
@@ -1050,7 +1060,7 @@ hooks:
     # 品質ゲート
     - uv run pytest --cov=. --cov-fail-under=85 -v
     - uv run ruff check .
-    - uv run mypy utils/ config/
+    - uv run mypy utils/ config/ models/
     - uv run bandit -r utils/ config/ -ll
     - uv run safety check
 
@@ -1076,6 +1086,7 @@ hooks:
 ```
 
 **効果**:
+
 - 品質チェック手動実行: 15h → 0h（完全自動化）
 - エラー時のみユーザー介入（推定2-3h）
 
@@ -1181,6 +1192,7 @@ npx claude-flow@alpha init --mode hive-mind
 ```
 
 **確認項目**:
+
 - [ ] Hive-Mind SQLiteデータベース作成（`.claude-flow/hive-mind.db`）
 - [ ] ネームスペース4つ作成
 - [ ] AgentDB初期化完了
@@ -1196,7 +1208,7 @@ hooks:
   pre_docker_build:
     - uv run ruff check --fix .
     - uv run pytest --cov=. --cov-fail-under=60
-    - uv run mypy utils/ config/
+    - uv run mypy utils/ config/ models/
 
   post_docker_build:
     - docker images --format "table {{.Repository}}\t{{.Size}}"
@@ -1208,7 +1220,7 @@ hooks:
   pre_commit:
     - uv run ruff check --fix .
     - uv run pytest --cov=. --cov-fail-under=60 -q
-    - uv run mypy utils/ config/ --no-error-summary
+    - uv run mypy utils/ config/ models/ --no-error-summary
 
   # 共通: Push前統合テスト
   pre_push:
@@ -1218,6 +1230,7 @@ hooks:
 ```
 
 **確認項目**:
+
 - [ ] フック設定ファイル作成
 - [ ] pre_commit フック動作確認（git commit時）
 - [ ] pre_docker_build フック動作確認（手動実行）
@@ -1247,6 +1260,7 @@ git commit -m "test: verify pre_commit hook"
 ```
 
 **成功基準**:
+
 - [ ] AgentDB検索 <0.1秒
 - [ ] Hive-Mindタスク分解成功
 - [ ] pre_commit フック自動実行成功
@@ -1276,11 +1290,13 @@ npx claude-flow@alpha hive \
 ```
 
 **実装フロー**:
+
 1. Worker1-3並列実装開始
 2. 各Workerの進捗を確認（`npx claude-flow@alpha hive status`）
 3. 完了後、Validator自動実行（品質ゲート）
 
 **成功基準**:
+
 - [ ] 並列実装時間 <5h（逐次10h → 2倍高速化）
 - [ ] 品質ゲート自動合格
 - [ ] フック自動実行成功
@@ -1304,6 +1320,7 @@ npx claude-flow@alpha hive \
 ```
 
 **AgentDB活用**:
+
 ```bash
 # Best practice検索（高速）
 npx claude-flow@alpha search \
@@ -1314,6 +1331,7 @@ npx claude-flow@alpha search \
 ```
 
 **成功基準**:
+
 - [ ] 並列実装時間 <4h（逐次8h → 2倍高速化）
 - [ ] AgentDB検索 <0.1秒
 - [ ] 4環境すべてdocker-compose up成功
@@ -1337,6 +1355,7 @@ npx claude-flow@alpha optimize \
 ```
 
 **成功基準**:
+
 - [ ] カバレッジ60%達成
 - [ ] Dockerイメージサイズ<500MB
 - [ ] ビルド時間<3分
@@ -1352,6 +1371,7 @@ npx claude-flow@alpha report \
 ```
 
 **期待メトリクス**:
+
 - 実装時間: 20-25h（目標達成）
 - 削減時間: 20-25h（44-56%削減）
 - 品質ゲート自動化: 100%
@@ -1388,6 +1408,7 @@ npx claude-flow@alpha github \
 ```
 
 **生成内容確認**:
+
 ```yaml
 # .github/workflows/ci.yml（抜粋）
 name: CI
@@ -1413,10 +1434,11 @@ jobs:
       - name: Run ruff
         run: uv run ruff check .
       - name: Run mypy
-        run: uv run mypy utils/ config/
+        run: uv run mypy utils/ config/ models/
 ```
 
 **成功基準**:
+
 - [ ] CI/CD workflow自動生成成功
 - [ ] PR自動作成成功
 - [ ] AI自動レビュー完了（3-5件の提案）
@@ -1442,6 +1464,7 @@ npx claude-flow@alpha search \
 ```
 
 **成功基準**:
+
 - [ ] CI workflow自動実行成功
 - [ ] 全テスト合格（pytest, ruff, mypy）
 - [ ] Docker build成功
@@ -1464,6 +1487,7 @@ npx claude-flow@alpha github \
 ```
 
 **成功基準**:
+
 - [ ] セキュリティスキャン統合成功
 - [ ] CI/CD成熟度60%達成（目標50%超え）
 
@@ -1478,6 +1502,7 @@ npx claude-flow@alpha report \
 ```
 
 **期待メトリクス**:
+
 - 実装時間: 22-27h（目標達成）
 - 削減時間: 15-20h（36-48%削減）
 - CI/CD成熟度: 60%達成
@@ -1535,6 +1560,7 @@ npx claude-flow@alpha hive \
 ```
 
 **成功基準**:
+
 - [ ] 検索時間98%削減（10秒 → <0.1秒）
 - [ ] トークン32.3%削減（$2.91節約）
 - [ ] 並列リファクタリング2-3倍高速化
@@ -1553,7 +1579,7 @@ git commit -m "chore: prepare release v1.0.0"
 # 期待動作:
 # ✓ pytest --cov=. --cov-fail-under=85
 # ✓ ruff check .
-# ✓ mypy utils/ config/
+# ✓ mypy utils/ config/ models/
 # ✓ bandit -r . -ll
 # ✓ safety check
 # ✓ docker build -t api-test:prod
@@ -1606,6 +1632,7 @@ npx claude-flow@alpha docs \
 ```
 
 **成功基準**:
+
 - [ ] 品質チェック完全自動化（15h → 0h）
 - [ ] Issue/PR管理時間90%削減（5.5h → 0.5h）
 - [ ] 文書最適化時間70%削減（10h → 3h）
@@ -1622,6 +1649,7 @@ npx claude-flow@alpha report \
 ```
 
 **期待最終メトリクス**:
+
 - **総削減時間**: 80-100h（42-53%削減）
 - **時間コスト削減**: 320,000-400,000円
 - **AIコスト削減**: $8.72
@@ -1645,6 +1673,7 @@ npx claude-flow@alpha report \
 | **合計** | - | **198H** | **94-116h** | **82-104h** | **41-53%** |
 
 **時間価値換算**（@4,000円/h）:
+
 - 削減時間: 82-104h
 - **時間コスト削減: 328,000-416,000円**
 
@@ -1702,6 +1731,7 @@ npx claude-flow@alpha report \
 #### 1. 開発体験向上
 
 **Before（claude-flow導入前）**:
+
 - ❌ 手動TodoWrite（5-10分/タスク）
 - ❌ 逐次実装（待ち時間多数）
 - ❌ 手動品質チェック（11分/回、3回/日）
@@ -1709,6 +1739,7 @@ npx claude-flow@alpha report \
 - ❌ 手動文書作成（テンプレートなし）
 
 **After（claude-flow導入後）**:
+
 - ✅ Hive-Mind自動分解（<1分/タスク）
 - ✅ 並列実装（2.8-4.4倍高速）
 - ✅ 自動品質チェック（0分、フック）
@@ -1720,6 +1751,7 @@ npx claude-flow@alpha report \
 #### 2. ストレス削減
 
 **削減されるストレス要因**:
+
 - 🎯 タスク分解の迷い（Queen自動分解）
 - ⏰ 品質チェック忘れ（フック自動実行）
 - 🔍 検索遅延イライラ（AgentDB高速化）
@@ -1731,6 +1763,7 @@ npx claude-flow@alpha report \
 #### 3. 学習効果
 
 **Week 3-6での新技術習得**:
+
 - 🐝 Hive-Mind協働パターン
 - 🔍 AgentDB最適化技術
 - 🪝 Hooks自動化設計
@@ -1746,6 +1779,7 @@ npx claude-flow@alpha report \
 #### 履歴書/ポートフォリオ追加要素
 
 **追加できる技術キーワード**:
+
 - ✅ Claude Flow（最新AIオーケストレーション）
 - ✅ Hive-Mind協働開発
 - ✅ AgentDB高速検索（96-164倍）
@@ -1753,10 +1787,12 @@ npx claude-flow@alpha report \
 - ✅ Hooks自動化（CI/CD統合）
 
 **市場価値評価**:
+
 - 既存: 4,000-4,500円/h
 - **統合後: 4,500-5,000円/h**（+500円/h、12%向上）
 
 **年収換算**（1800h/年）:
+
 - 既存: 7,200,000-8,100,000円
 - **統合後: 8,100,000-9,000,000円**（+900,000円/年）
 
@@ -1841,6 +1877,7 @@ tools:
 | **合計** | - | **11-15h** | - |
 
 **学習コスト軽減策**:
+
 1. **Day 13**: 公式ドキュメント精読（2h）
 2. **Day 14-18**: 実践学習（Week 3タスクで習得）
 3. **Week 4以降**: 必要に応じてリファレンス参照
@@ -1854,6 +1891,7 @@ tools:
 **懸念**: 初期設定・学習時にトークン使用増加
 
 **実測推定**:
+
 ```python
 # Day 13（初期設定日）:
 # - 公式ドキュメント読解: +2000 tokens
@@ -1924,6 +1962,7 @@ memory:
 ```
 
 **自動切替シナリオ**:
+
 1. AgentDB検索エラー（3回連続）
 2. 自動でReasoningBank切替
 3. ユーザーに通知（エラーログ）
@@ -1940,6 +1979,7 @@ agents:
 ```
 
 **手動介入オプション**:
+
 - `npx claude-flow@alpha hive abort`: タスク中断
 - `npx claude-flow@alpha swarm init`: Swarmモード切替
 - 手動TodoWrite復帰
@@ -2073,6 +2113,7 @@ Week 6 (最適化+応募準備):
 **決定**: **即座導入を強く推奨**
 
 **理由**:
+
 1. **ROI高**: Week 3終了で投資回収、最終286-357%
 2. **時間削減大**: 82-104h削減（年換算984-1248h）
 3. **品質向上**: カバレッジ+6-12%、完成度+5%
@@ -2080,6 +2121,7 @@ Week 6 (最適化+応募準備):
 5. **学習価値**: +50,000円相当の技術習得
 
 **次のアクション**:
+
 ```bash
 # Day 13 午前（今すぐ実行）
 claude mcp add claude-flow npx claude-flow@alpha mcp start
@@ -2096,6 +2138,3 @@ npx claude-flow@alpha hive \
 *最終更新: 2025年12月11日*
 *分析基準: claude-flow v2.7.0, 本プロジェクト Week 3-6学習計画*
 *導入推奨度: 9.2/10（強く推奨）*
-
-
-

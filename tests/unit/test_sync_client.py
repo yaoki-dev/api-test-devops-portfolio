@@ -42,7 +42,8 @@ def test_sync_get_user(mock_httpx_sync_client: Mock) -> None:
 def test_sync_post_create_user(mock_httpx_sync_client: Mock) -> None:
     """POSTリクエスト検証"""
     mock_response = create_mock_response(
-        201, json_data={"id": 101, "name": "New User", "email": "new@example.com"}
+        201,
+        json_data={"id": 101, "name": "New User", "email": "new@example.com"},
     )
     mock_response.raise_for_status.return_value = None
     mock_httpx_sync_client.request.return_value = mock_response

@@ -21,6 +21,7 @@
 ## Option 1: 完全削除
 
 ### 実装内容
+
 ```bash
 # 削除するファイル
 - config/settings.py (328行)
@@ -31,6 +32,7 @@
 ```
 
 ### メリット
+
 ```
 ✅ コード複雑度: 最小化
 ✅ トークン消費: 最大削減 (2,400)
@@ -40,6 +42,7 @@
 ```
 
 ### デメリット
+
 ```
 ❌ 学習効果: 低い (自分で実装する必要)
 ❌ チーム理解: 高度な説明必要
@@ -48,6 +51,7 @@
 ```
 
 ### 適用シーン
+
 ```
 - Pydantic 経験者チーム
 - 本番環境最適化優先
@@ -56,6 +60,7 @@
 ```
 
 ### 実装手順
+
 ```bash
 # 1. 依存関係確認
 grep -r "from config.settings import" . --include="*.py"
@@ -74,6 +79,7 @@ pytest tests/ -v
 ```
 
 ### リスク管理
+
 ```yaml
 リスク: 高
 対策:
@@ -90,12 +96,14 @@ pytest tests/ -v
 ### 実装内容
 
 **削除ファイル**:
+
 ```
 - config/settings.py (328行) → 80行に簡略化
 - docs/config/settings_guide.md (詳細ドキュメント削除)
 ```
 
 **簡略化版コード** (`config/settings.py` - 80行):
+
 ```python
 """
 アプリケーション設定管理（簡略版）
@@ -160,6 +168,7 @@ settings = Settings()
 ```
 
 **簡略化版テスト** (`tests/config/test_settings.py` - 20行):
+
 ```python
 """設定テスト"""
 
@@ -185,6 +194,7 @@ def test_environment_detection():
 ```
 
 ### メリット
+
 ```
 ✅ 複雑度削減: 328行 → 80行 (76%削減)
 ✅ トークン削減: 2,400 → 600 (75%削減)
@@ -196,6 +206,7 @@ def test_environment_detection():
 ```
 
 ### デメリット
+
 ```
 ❌ 機能削減: いくつかの詳細設定は削除
    (例: LogConfig の max_size, backup_count)
@@ -203,6 +214,7 @@ def test_environment_detection():
 ```
 
 ### 適用シーン (推奨)
+
 ```
 ✅ 初級〜中級チーム
 ✅ 学習効果を重視
@@ -212,6 +224,7 @@ def test_environment_detection():
 ```
 
 ### 実装手順
+
 ```bash
 # 1. 現在の設定をバックアップ
 cp config/settings.py config/settings.py.bak
@@ -234,6 +247,7 @@ rm docs/config/settings_guide.md (詳細ガイドのみ)
 ```
 
 ### 段階的マイグレーション
+
 ```
 Day 1:
   - 簡略版コード実装
@@ -251,6 +265,7 @@ Day 4:
 ```
 
 ### リスク管理
+
 ```yaml
 リスク: 低
 対策:
@@ -267,6 +282,7 @@ Day 4:
 ### 実装内容
 
 **新規ドキュメント** (`docs/config/SETTINGS_GUIDE.md`):
+
 ```markdown
 # 設定管理ガイド
 
@@ -291,13 +307,17 @@ LOG_LEVEL=DEBUG
 ```
 
 ## トラブルシューティング
+
 [よくある問題と対策]
+
 ```
 
 **削除ファイル**:
 ```
+
 - config/settings.py (328行) → 参照に置き換え
 - docs/config/settings_guide.md
+
 ```
 
 **簡略版コード** (`config/__init__.py`):
@@ -333,6 +353,7 @@ settings = Settings()
 ```
 
 ### メリット
+
 ```
 ✅ コード量: 最小 (20行程度)
 ✅ トークン削減: 最大 (2,400 → 300)
@@ -342,6 +363,7 @@ settings = Settings()
 ```
 
 ### デメリット
+
 ```
 ❌ 学習効果: 低い (実装がないため)
 ❌ チーム独立性: 低い (公式ドキュメント依存)
@@ -349,6 +371,7 @@ settings = Settings()
 ```
 
 ### 適用シーン
+
 ```
 - 十分に成熟したチーム
 - ドキュメント重視プロジェクト
@@ -357,6 +380,7 @@ settings = Settings()
 ```
 
 ### 実装手順
+
 ```bash
 # 1. ドキュメント作成
 vim docs/config/SETTINGS_GUIDE.md
@@ -428,4 +452,3 @@ Total: 5時間
 | 3 | Option 3 | 参照最適だが、学習効果低 |
 
 **実装開始**: 今週中に Option 2 を開始 → 期待効果: 2,400トークン削減
-

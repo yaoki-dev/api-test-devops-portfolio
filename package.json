@@ -1,0 +1,19 @@
+{
+  "name": "api-test-devops-portfolio",
+  "private": true,
+  "scripts": {
+    "lint:md": "markdownlint '**/*.md' --ignore node_modules --ignore .venv --ignore .worktrees",
+    "lint:md:fix": "markdownlint '**/*.md' --ignore node_modules --ignore .venv --ignore .worktrees --fix",
+    "lint:text": "textlint '**/*.md' --ignore-path .textlintignore",
+    "lint:text:fix": "textlint '**/*.md' --ignore-path .textlintignore --fix",
+    "lint:links": "markdown-link-check README.md --config .markdown-link-check.json",
+    "lint:all": "npm run lint:md && npm run lint:text",
+    "lint:all:fix": "npm run lint:md:fix && npm run lint:text:fix"
+  },
+  "devDependencies": {
+    "markdown-link-check": "^3.14.0",
+    "markdownlint-cli": "^0.47.0",
+    "textlint": "^15.5.1",
+    "textlint-rule-preset-ja-technical-writing": "^12.0.2"
+  }
+}

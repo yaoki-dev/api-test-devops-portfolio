@@ -464,6 +464,32 @@ class TestPhotoModel:
 
         assert "<script>" not in photo.title
 
+    def test_photo_rejects_javascript_url(self) -> None:
+        """Photo モデルが javascript: スキームを拒否することを確認"""
+        with pytest.raises(ValidationError) as exc_info:
+            Photo(
+                albumId=1,
+                id=1,
+                title="Test",
+                url="javascript:alert('XSS')",
+                thumbnailUrl="https://example.com/thumb.jpg",
+            )
+
+        assert "url must start with http://" in str(exc_info.value).lower()
+
+    def test_photo_rejects_data_url(self) -> None:
+        """Photo モデルが data: スキームを拒否することを確認"""
+        with pytest.raises(ValidationError) as exc_info:
+            Photo(
+                albumId=1,
+                id=1,
+                title="Test",
+                url="https://example.com/photo.jpg",
+                thumbnailUrl="data:image/png;base64,iVBORw0KGgo=",
+            )
+
+        assert "url must start with http://" in str(exc_info.value).lower()
+
 
 class TestExtraFieldsForbidden:
     """全モデルの extra="forbid" 設定確認"""

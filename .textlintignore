@@ -1,0 +1,15 @@
+docs/archive/**
+docs/coverage/**
+docs/guides/performance_monitor_implementation.md
+docs/main/6週プラン/**
+docs/main/learning/**
+docs/main/Skills作成/**
+docs/ai_collaboration/**
+docs/tools/**
+reports/**
+node_modules/**
+.venv/**
+.worktrees/**
+.taskmaster/**
+.spec-workflow/**
+obsidian-vault-local/**

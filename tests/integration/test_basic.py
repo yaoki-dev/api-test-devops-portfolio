@@ -13,6 +13,9 @@ from typing import Any
 import httpx
 import pytest
 
+# Module-level marker: All tests in this file are integration tests
+pytestmark = pytest.mark.integration
+
 # =============================================================================
 # 基本同期テスト
 # =============================================================================
@@ -155,7 +158,7 @@ async def test_concurrent_requests(async_client):
         (31, 2),
     ],
 )
-def test_todo_user_mapping(todo_id: int, expected_user_id: int):
+def test_todo_user_mapping(todo_id: int, expected_user_id: int) -> None:
     """TODOとユーザーIDのマッピング確認（パラメータ化テスト）"""
     # Given: 特定のTODO ID
     url = f"https://jsonplaceholder.typicode.com/todos/{todo_id}"
@@ -171,9 +174,10 @@ def test_todo_user_mapping(todo_id: int, expected_user_id: int):
 
 
 @pytest.mark.parametrize(
-    "endpoint", ["/posts", "/comments", "/albums", "/photos", "/todos", "/users"]
+    "endpoint",
+    ["/posts", "/comments", "/albums", "/photos", "/todos", "/users"],
 )
-def test_all_endpoints_accessible(endpoint: str):
+def test_all_endpoints_accessible(endpoint: str) -> None:
     """全エンドポイントのアクセス確認"""
     # Given: 各種エンドポイント
     url = f"https://jsonplaceholder.typicode.com{endpoint}"
@@ -225,7 +229,7 @@ def test_invalid_endpoint_returns_404():
 # =============================================================================
 
 
-def test_with_sample_data(sample_api_response: dict[str, Any]):
+def test_with_sample_data(sample_api_response: dict[str, Any]) -> None:
     """サンプルデータフィクスチャの活用例"""
     # Given: フィクスチャから提供されるサンプルデータ
     # Then: 期待される構造を持つことを確認

@@ -107,7 +107,7 @@ async def test_async_retry_on_server_error_then_success(mock_httpx_async_client:
     success_response.raise_for_status.return_value = None
 
     mock_httpx_async_client.request = AsyncMock(
-        side_effect=[error_response, error_response, success_response]
+        side_effect=[error_response, error_response, success_response],
     )
 
     async with AsyncAPIClient(retry_count=3, retry_delay=0.01) as client:
@@ -173,7 +173,7 @@ async def test_async_4xx_error_no_retry(mock_httpx_async_client: Mock) -> None:
 async def test_async_timeout_error_retry(mock_httpx_async_client: Mock) -> None:
     """タイムアウト時にAPIRetryErrorが発生することを確認"""
     mock_httpx_async_client.request = AsyncMock(
-        side_effect=httpx.TimeoutException("Request timed out")
+        side_effect=httpx.TimeoutException("Request timed out"),
     )
 
     async with AsyncAPIClient(retry_count=1, retry_delay=0.01) as client:
@@ -199,7 +199,7 @@ async def test_async_timeout_then_success(mock_httpx_async_client: Mock) -> None
         side_effect=[
             httpx.TimeoutException("Timeout 1"),
             success_response,
-        ]
+        ],
     )
 
     async with AsyncAPIClient(retry_count=2, retry_delay=0.01) as client:
@@ -219,7 +219,7 @@ async def test_async_timeout_then_success(mock_httpx_async_client: Mock) -> None
 async def test_async_connection_error_retry(mock_httpx_async_client: Mock) -> None:
     """接続エラー時にAPIRetryErrorが発生することを確認"""
     mock_httpx_async_client.request = AsyncMock(
-        side_effect=httpx.ConnectError("Connection refused")
+        side_effect=httpx.ConnectError("Connection refused"),
     )
 
     async with AsyncAPIClient(retry_count=1, retry_delay=0.01) as client:
@@ -245,7 +245,7 @@ async def test_async_connection_then_success(mock_httpx_async_client: Mock) -> N
             httpx.ConnectError("Connection 1"),
             httpx.ConnectError("Connection 2"),
             success_response,
-        ]
+        ],
     )
 
     async with AsyncAPIClient(retry_count=3, retry_delay=0.01) as client:
@@ -279,7 +279,7 @@ async def test_async_mixed_errors_then_success(mock_httpx_async_client: Mock) ->
             httpx.TimeoutException("Timeout"),
             server_error,
             success_response,
-        ]
+        ],
     )
 
     async with AsyncAPIClient(retry_count=3, retry_delay=0.01) as client:
@@ -305,7 +305,7 @@ async def test_async_mixed_errors_exhaust_retries(mock_httpx_async_client: Mock)
             httpx.TimeoutException("Timeout"),
             httpx.ConnectError("Connection failed"),
             server_error,
-        ]
+        ],
     )
 
     async with AsyncAPIClient(retry_count=2, retry_delay=0.01) as client:
@@ -340,7 +340,8 @@ async def test_async_post_with_retry(mock_httpx_async_client: Mock) -> None:
     async with AsyncAPIClient(retry_count=2, retry_delay=0.01) as client:
         client._client = mock_httpx_async_client
         response = await client.post(
-            "/posts", json={"title": "test", "body": "content", "userId": 1}
+            "/posts",
+            json={"title": "test", "body": "content", "userId": 1},
         )
 
         assert mock_httpx_async_client.request.call_count == 2
@@ -381,7 +382,7 @@ async def test_async_delete_with_retry(mock_httpx_async_client: Mock) -> None:
         side_effect=[
             httpx.TimeoutException("Timeout"),
             success_response,
-        ]
+        ],
     )
 
     async with AsyncAPIClient(retry_count=2, retry_delay=0.01) as client:

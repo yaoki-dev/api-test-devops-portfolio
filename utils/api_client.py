@@ -1,5 +1,4 @@
-"""
-基本的な同期HTTPAPIクライアント
+"""基本的な同期HTTPAPIクライアント
 
 学習目標:
 - HTTPクライアントの設計パターン
@@ -37,6 +36,7 @@ def exponential_backoff_with_jitter(
 
     Returns:
         計算された遅延時間（秒、最小0.1秒）
+
     """
     # 指数バックオフ計算
     delay = min(base_delay * (2**attempt), max_delay)
@@ -55,19 +55,13 @@ def exponential_backoff_with_jitter(
 class APIClientError(Exception):
     """APIクライアント基底例外"""
 
-    pass
-
 
 class APIConnectionError(APIClientError):
     """API接続エラー"""
 
-    pass
-
 
 class APITimeoutError(APIClientError):
     """APIタイムアウトエラー"""
-
-    pass
 
 
 class APIHTTPError(APIClientError):
@@ -81,8 +75,6 @@ class APIHTTPError(APIClientError):
 
 class APIRetryError(APIClientError):
     """リトライ上限エラー"""
-
-    pass
 
 
 class APIJSONDecodeError(APIClientError):
@@ -104,6 +96,7 @@ def _safe_parse_json(response: httpx.Response) -> Any:
 
     Raises:
         APIJSONDecodeError: JSONパース失敗時
+
     """
     try:
         return response.json()
@@ -132,6 +125,7 @@ def _map_request_error(e: httpx.RequestError | httpx.InvalidURL) -> APIClientErr
         - ConnectError → リトライ可能
         - NetworkError → リトライ可能
         - TooManyRedirects, InvalidURL → 非リトライ（即座にraise）
+
     """
     # Non-retryable errors - raise immediately (no point in retrying)
     if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
@@ -140,11 +134,10 @@ def _map_request_error(e: httpx.RequestError | httpx.InvalidURL) -> APIClientErr
     # Retryable errors
     if isinstance(e, httpx.TimeoutException):
         return APITimeoutError(f"Request timeout: {e}")
-    elif isinstance(e, httpx.ConnectError):
+    if isinstance(e, httpx.ConnectError):
         return APIConnectionError(f"Connection failed: {e}")
-    else:
-        # NetworkError, etc. - retryable network issues
-        return APIConnectionError(f"Network error: {e}")
+    # NetworkError, etc. - retryable network issues
+    return APIConnectionError(f"Network error: {e}")
 
 
 # =============================================================================
@@ -153,8 +146,7 @@ def _map_request_error(e: httpx.RequestError | httpx.InvalidURL) -> APIClientErr
 
 
 class SyncAPIClient:
-    """
-    基本的な同期HTTPクライアント
+    """基本的な同期HTTPクライアント
 
     学習目標:
     - クライアント設計の基本パターン
@@ -170,13 +162,13 @@ class SyncAPIClient:
         retry_delay: float | None = None,
         headers: dict[str, str] | None = None,
     ):
-        """
-        Args:
-            base_url: APIのベースURL（設定から自動取得可能）
-            timeout: リクエストタイムアウト（秒）
-            retry_count: リトライ回数
-            retry_delay: リトライ間隔（秒）
-            headers: 追加HTTPヘッダー
+        """Args:
+        base_url: APIのベースURL（設定から自動取得可能）
+        timeout: リクエストタイムアウト（秒）
+        retry_count: リトライ回数
+        retry_delay: リトライ間隔（秒）
+        headers: 追加HTTPヘッダー
+
         """
         # 設定から値を取得（引数で上書き可能）
         self.base_url = base_url or settings.api.base_url
@@ -226,8 +218,7 @@ class SyncAPIClient:
             self.logger.info("api_client_closed")
 
     def _make_request_with_retry(self, method: str, endpoint: str, **kwargs: Any) -> httpx.Response:
-        """
-        リトライ機能付きHTTPリクエスト実行
+        """リトライ機能付きHTTPリクエスト実行
 
         Args:
             method: HTTPメソッド
@@ -242,6 +233,7 @@ class SyncAPIClient:
             APITimeoutError: タイムアウトエラー
             APIHTTPError: HTTPステータスエラー
             APIRetryError: リトライ上限エラー
+
         """
         last_exception: APIClientError | None = None
 
@@ -308,7 +300,9 @@ class SyncAPIClient:
             # 最後の試行でなければ指数バックオフ + 30%ジッターで待機
             if attempt < self.retry_count:
                 delay = exponential_backoff_with_jitter(
-                    attempt=attempt, base_delay=self.retry_delay, jitter_percent=0.3
+                    attempt=attempt,
+                    base_delay=self.retry_delay,
+                    jitter_percent=0.3,
                 )
                 self.logger.debug(
                     "retry_backoff",
@@ -321,7 +315,7 @@ class SyncAPIClient:
         # すべてのリトライが失敗
         self.logger.error("all_retries_failed", method=method, endpoint=endpoint)
         raise APIRetryError(
-            f"Request failed after {self.retry_count + 1} attempts"
+            f"Request failed after {self.retry_count + 1} attempts",
         ) from last_exception
 
     def get(
@@ -342,7 +336,11 @@ class SyncAPIClient:
     ) -> httpx.Response:
         """POSTリクエスト実行"""
         return self._make_request_with_retry(
-            "POST", endpoint, json=json, data=data, headers=headers
+            "POST",
+            endpoint,
+            json=json,
+            data=data,
+            headers=headers,
         )
 
     def put(
@@ -368,7 +366,11 @@ class SyncAPIClient:
     ) -> httpx.Response:
         """PATCHリクエスト実行"""
         return self._make_request_with_retry(
-            "PATCH", endpoint, json=json, data=data, headers=headers
+            "PATCH",
+            endpoint,
+            json=json,
+            data=data,
+            headers=headers,
         )
 
 
@@ -378,8 +380,7 @@ class SyncAPIClient:
 
 
 class SyncJSONPlaceholderClient(SyncAPIClient):
-    """
-    JSONPlaceholder API専用クライアント
+    """JSONPlaceholder API専用クライアント
 
     学習目標:
     - 特化型クライアントの設計
@@ -499,12 +500,17 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
             >>> with SyncJSONPlaceholderClient() as client:
             ...     if client.health_check():
             ...         print("API is healthy")
+
         """
         try:
             response = self.get("/users", params={"_limit": 1})
             return response.status_code == 200
         except Exception as e:
-            self.logger.warning("health_check_failed", error=str(e))
+            self.logger.warning(
+                "health_check_failed",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
             return False
 
 
@@ -514,8 +520,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
 
 
 class AsyncAPIClient:
-    """
-    非同期HTTPクライアント
+    """非同期HTTPクライアント
 
     学習目標:
     - 非同期プログラミングパターン
@@ -531,13 +536,13 @@ class AsyncAPIClient:
         retry_delay: float | None = None,
         headers: dict[str, str] | None = None,
     ):
-        """
-        Args:
-            base_url: APIのベースURL（設定から自動取得可能）
-            timeout: リクエストタイムアウト（秒）
-            retry_count: リトライ回数
-            retry_delay: リトライ間隔（秒）
-            headers: 追加HTTPヘッダー
+        """Args:
+        base_url: APIのベースURL（設定から自動取得可能）
+        timeout: リクエストタイムアウト（秒）
+        retry_count: リトライ回数
+        retry_delay: リトライ間隔（秒）
+        headers: 追加HTTPヘッダー
+
         """
         # 設定から値を取得（引数で上書き可能）
         self.base_url = base_url or settings.api.base_url
@@ -587,10 +592,12 @@ class AsyncAPIClient:
             self.logger.info("AsyncAPIClient closed")
 
     async def _make_request_with_retry(
-        self, method: str, endpoint: str, **kwargs: Any
+        self,
+        method: str,
+        endpoint: str,
+        **kwargs: Any,
     ) -> httpx.Response:
-        """
-        リトライ機能付き非同期HTTPリクエスト実行
+        """リトライ機能付き非同期HTTPリクエスト実行
 
         Args:
             method: HTTPメソッド
@@ -605,6 +612,7 @@ class AsyncAPIClient:
             APITimeoutError: タイムアウトエラー
             APIHTTPError: HTTPステータスエラー
             APIRetryError: リトライ上限エラー
+
         """
         last_exception: APIClientError | None = None
 
@@ -629,7 +637,10 @@ class AsyncAPIClient:
                 # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
                 last_exception = _map_request_error(e)
                 self.logger.warning(
-                    "Async request error", method=method, endpoint=endpoint, error=str(e)
+                    "Async request error",
+                    method=method,
+                    endpoint=endpoint,
+                    error=str(e),
                 )
             else:
                 # ネットワーク成功時のみHTTPステータス処理
@@ -673,7 +684,9 @@ class AsyncAPIClient:
             # 最後の試行でなければ指数バックオフ + 30%ジッターで待機
             if attempt < self.retry_count:
                 delay = exponential_backoff_with_jitter(
-                    attempt=attempt, base_delay=self.retry_delay, jitter_percent=0.3
+                    attempt=attempt,
+                    base_delay=self.retry_delay,
+                    jitter_percent=0.3,
                 )
                 self.logger.debug(
                     "async_retry_backoff",
@@ -686,7 +699,7 @@ class AsyncAPIClient:
         # すべてのリトライが失敗
         self.logger.error("async_all_retries_failed", method=method, endpoint=endpoint)
         raise APIRetryError(
-            f"Async request failed after {self.retry_count + 1} attempts"
+            f"Async request failed after {self.retry_count + 1} attempts",
         ) from last_exception
 
     async def get(
@@ -707,7 +720,11 @@ class AsyncAPIClient:
     ) -> httpx.Response:
         """非同期POSTリクエスト実行"""
         return await self._make_request_with_retry(
-            "POST", endpoint, json=json, data=data, headers=headers
+            "POST",
+            endpoint,
+            json=json,
+            data=data,
+            headers=headers,
         )
 
     async def put(
@@ -719,7 +736,11 @@ class AsyncAPIClient:
     ) -> httpx.Response:
         """非同期PUTリクエスト実行"""
         return await self._make_request_with_retry(
-            "PUT", endpoint, json=json, data=data, headers=headers
+            "PUT",
+            endpoint,
+            json=json,
+            data=data,
+            headers=headers,
         )
 
     async def delete(self, endpoint: str, headers: dict[str, str] | None = None) -> httpx.Response:
@@ -735,13 +756,16 @@ class AsyncAPIClient:
     ) -> httpx.Response:
         """非同期PATCHリクエスト実行"""
         return await self._make_request_with_retry(
-            "PATCH", endpoint, json=json, data=data, headers=headers
+            "PATCH",
+            endpoint,
+            json=json,
+            data=data,
+            headers=headers,
         )
 
 
 class AsyncJSONPlaceholderClient(AsyncAPIClient):
-    """
-    JSONPlaceholder API専用非同期クライアント
+    """JSONPlaceholder API専用非同期クライアント
 
     学習目標:
     - 非同期API操作の実践
@@ -816,7 +840,10 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         return _safe_parse_json(response)
 
     async def create_todo(
-        self, title: str, user_id: int, completed: bool = False
+        self,
+        title: str,
+        user_id: int,
+        completed: bool = False,
     ) -> dict[str, Any]:
         """新規TODOの非同期作成"""
         data = {"title": title, "userId": user_id, "completed": completed}
@@ -897,7 +924,10 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 
         # 全ての結果を待機
         user, posts, todos, albums = await asyncio.gather(
-            user_task, posts_task, todos_task, albums_task
+            user_task,
+            posts_task,
+            todos_task,
+            albums_task,
         )
 
         return {
@@ -926,17 +956,24 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             >>> async with AsyncJSONPlaceholderClient() as client:
             ...     if await client.health_check():
             ...         print("API is healthy")
+
         """
         try:
             response = await self.get("/users", params={"_limit": 1})
             return response.status_code == 200
         except Exception as e:
-            self.logger.warning("health_check_failed", error=str(e))
+            self.logger.warning(
+                "health_check_failed",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
             return False
 
     # 複数ユーザー取得（Semaphore制御）
     async def get_multiple_users(
-        self, user_ids: list[int], max_concurrent: int = 5
+        self,
+        user_ids: list[int],
+        max_concurrent: int = 5,
     ) -> list[dict[str, Any]]:
         """複数ユーザーを並行取得（Semaphore制御付き）
 
@@ -960,6 +997,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             >>> async with AsyncJSONPlaceholderClient() as client:
             ...     users = await client.get_multiple_users([1, 2, 3], max_concurrent=2)
             ...     print(f"Fetched {len(users)} users")
+
         """
         semaphore = asyncio.Semaphore(max_concurrent)
 

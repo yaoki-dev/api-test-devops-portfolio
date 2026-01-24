@@ -125,6 +125,7 @@ pytestmark = [
 ```
 
 **設計根拠**:
+
 - 全テストに一括適用（DRY原則）
 - 既存の個別`@pytest.mark`と共存可能
 - `test_security_with_mock.py`と一貫したパターン
