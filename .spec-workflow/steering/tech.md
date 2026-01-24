@@ -293,3 +293,4 @@ uv run bandit -r utils/ config/
 - `/hotfix <name>`: hotfix作成（mainから分岐）
 - `/finish`: ブランチ完了・マージ
 - `/flow-status`: 状態確認
+- `/clean-gone` : [gone]ブランチクリーンアップ
