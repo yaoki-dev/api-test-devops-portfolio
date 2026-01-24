@@ -41,6 +41,7 @@ def validate_github_username(username: str) -> None:
         - 1-39文字
         - 英数字、ハイフン（連続不可、先頭・末尾不可）
         - 先頭は英数字
+
     """
     if not username or not GITHUB_USERNAME_PATTERN.match(username):
         raise ValueError(f"Invalid GitHub username: '{username}'")
@@ -54,6 +55,7 @@ def validate_github_repo(repo: str) -> None:
 
     Raises:
         ValueError: バリデーション失敗
+
     """
     if not repo or not GITHUB_REPO_PATTERN.match(repo):
         raise ValueError(f"Invalid GitHub repository name: '{repo}'")

@@ -79,7 +79,7 @@ SENSITIVE_KEYS: frozenset[str] = frozenset(
         "credit_card",
         "cvv",
         "card_number",
-    }
+    },
 )
 
 # 遅延初期化フラグ
@@ -103,6 +103,7 @@ def _scrub_sensitive_data(data: Any, _depth: int = 0) -> Any:
     Note:
         MAX_SCRUB_DEPTH（デフォルト10）を超えると再帰を停止し、
         循環参照による無限ループを防止する。
+
     """
     if not isinstance(data, dict):
         return data
@@ -137,6 +138,7 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001
 
     Returns:
         処理済みイベント、またはNone（送信キャンセル）
+
     """
     # リクエストデータのスクラブ
     if "request" in event:
@@ -171,6 +173,7 @@ def init_sentry() -> bool:
     Example:
         if init_sentry():
             logger.info("Sentry monitoring enabled")
+
     """
     global _sentry_initialized  # noqa: PLW0603
 
@@ -215,7 +218,7 @@ def init_sentry() -> bool:
         settings = get_settings()
         if settings.is_production():
             raise RuntimeError(
-                f"Sentry SDK not installed in production: {exc}. Add 'sentry-sdk' to dependencies."
+                f"Sentry SDK not installed in production: {exc}. Add 'sentry-sdk' to dependencies.",
             ) from exc
 
         # 開発/テスト環境では許容（警告のみ）
@@ -227,12 +230,12 @@ def init_sentry() -> bool:
             )
         return False
 
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         # その他の初期化失敗 - 本番環境では例外を発生させる（Fail-Fast）
         settings = get_settings()
         if settings.is_production():
             raise RuntimeError(
-                f"Sentry initialization failed in production: {type(exc).__name__}: {exc}"
+                f"Sentry initialization failed in production: {type(exc).__name__}: {exc}",
             ) from exc
 
         # 開発/テスト環境では警告のみ
@@ -251,6 +254,7 @@ def is_sentry_initialized() -> bool:
     Returns:
         True: 初期化済み
         False: 未初期化
+
     """
     return _sentry_initialized
 
@@ -260,6 +264,7 @@ def reset_sentry_state() -> None:
 
     Warning:
         本番コードでは使用しないでください。
+
     """
     global _sentry_initialized  # noqa: PLW0603
     _sentry_initialized = False

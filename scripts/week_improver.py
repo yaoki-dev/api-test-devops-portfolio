@@ -65,7 +65,7 @@ class WeekConfig:
 - 統合テスト実装（実API呼び出し、mock不使用）
 - 詳細: @[ポートフォリオ戦略分析_改善版.md#W2-Day8-JSONPlaceholder統合]
 """,
-            }
+            },
         },
         3: {
             14: {
@@ -96,7 +96,7 @@ class WeekConfig:
 - パフォーマンステスト実装（P95応答時間 < 500ms）
 - 詳細: @[ポートフォリオ戦略分析_改善版.md#W4-Day20-非同期統合完了]
 """,
-            }
+            },
         },
         5: {
             26: {
@@ -127,7 +127,7 @@ class WeekConfig:
 - エッジケーステスト追加（エラーパス、境界値）
 - 詳細: @[ポートフォリオ戦略分析_改善版.md#W6-Day32-カバレッジ78達成]
 """,
-            }
+            },
         },
         7: {
             37: {
@@ -218,9 +218,9 @@ class WeekImprover:
     """Week別学習計画改善自動化クラス"""
 
     def __init__(self, week_num: int):
-        """
-        Args:
-            week_num: Week番号（1-10）
+        """Args:
+        week_num: Week番号（1-10）
+
         """
         if week_num < 1 or week_num > 10:
             raise ValueError(f"Week number must be between 1-10, got {week_num}")
@@ -253,7 +253,7 @@ class WeekImprover:
             print(f"✅ Loaded learning plan: {len(self.learning_plan_content)} characters")
         except FileNotFoundError as e:
             raise FileNotFoundError(
-                f"Learning plan file not found: {self.learning_plan_path}"
+                f"Learning plan file not found: {self.learning_plan_path}",
             ) from e
 
     def extract_week_section(self) -> None:
@@ -277,7 +277,7 @@ class WeekImprover:
         print(
             f"✅ Extracted Week {self.week_num} section: "
             f"{len(self.week_section)} chars "
-            f"(pos {self.week_start}-{self.week_end}, {lines_count} lines)"
+            f"(pos {self.week_start}-{self.week_end}, {lines_count} lines)",
         )
 
     def apply_step1_format_unification(self) -> None:
@@ -286,7 +286,9 @@ class WeekImprover:
 
         # Week表記統一
         self.week_section = re.sub(
-            rf"### Week {self.week_num}:", f"### W{self.week_num}:", self.week_section
+            rf"### Week {self.week_num}:",
+            f"### W{self.week_num}:",
+            self.week_section,
         )
 
         # 時間表記統一（XX時間 → XXH）
@@ -299,7 +301,7 @@ class WeekImprover:
             self.changes_applied.append("Step 1: Format unification completed")
             print(
                 f"✅ Step 1: Format unified "
-                f"(W{self.week_num}, {self.total_hours}H, {self.test_count}テスト)"
+                f"(W{self.week_num}, {self.total_hours}H, {self.test_count}テスト)",
             )
         else:
             print("⚠️  Step 1: Already unified")
@@ -358,7 +360,10 @@ class WeekImprover:
         match = re.search(insert_pattern, self.week_section)
         if match:
             self.week_section = re.sub(
-                insert_pattern, match.group(1) + weekly_summary, self.week_section, count=1
+                insert_pattern,
+                match.group(1) + weekly_summary,
+                self.week_section,
+                count=1,
             )
             self.changes_applied.append("Step 3: Weekly summary inserted")
             print("✅ Step 3: Weekly summary inserted")
@@ -531,12 +536,12 @@ class WeekImprover:
                 (
                     f"W{self.week_num + 1} preview",
                     f"**W{self.week_num + 1}で学ぶこと**" in self.week_section,
-                )
+                ),
             )
 
         # クロスリファレンスチェック
         checks.append(
-            ("Cross-references present", "@[ポートフォリオ戦略分析_改善版.md" in self.week_section)
+            ("Cross-references present", "@[ポートフォリオ戦略分析_改善版.md" in self.week_section),
         )
 
         passed = 0

@@ -46,6 +46,7 @@ def _sentry_processor(
 
     Returns:
         変更なしのevent_dict（プロセッサーチェーン継続）
+
     """
     # ERROR以上のみ対象
     log_level = event_dict.get("level", "").upper()
@@ -108,6 +109,7 @@ def get_logger(name: str | None = None) -> FilteringBoundLogger:
         logger.info("処理完了", elapsed_ms=150)
         logger.warning("リトライ実行", attempt=2, max_attempts=3)
         logger.error("API呼び出し失敗", status_code=500, url="/api/users")
+
     """
     settings = get_settings()
 
@@ -115,7 +117,7 @@ def get_logger(name: str | None = None) -> FilteringBoundLogger:
     if not structlog.is_configured():
         _configure_structlog(settings.log.format, settings.get_log_level())
 
-    return cast(FilteringBoundLogger, structlog.get_logger(name))
+    return cast("FilteringBoundLogger", structlog.get_logger(name))
 
 
 def _configure_structlog(log_format: LogFormat, log_level: int) -> None:
@@ -124,6 +126,7 @@ def _configure_structlog(log_format: LogFormat, log_level: int) -> None:
     Args:
         log_format: ログフォーマット（console/json）
         log_level: ログレベル（logging定数）
+
     """
     # 共通プロセッサー（Sentry連携を含む）
     shared_processors: list[Any] = [

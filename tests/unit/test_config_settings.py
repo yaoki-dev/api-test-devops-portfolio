@@ -52,7 +52,10 @@ class TestAPIConfigBoundaryValues:
         ],
     )
     def test_numeric_field_boundaries(
-        self, field: str, value: int | float, should_pass: bool
+        self,
+        field: str,
+        value: float,
+        should_pass: bool,
     ) -> None:
         """数値フィールドの境界値検証
 
@@ -119,7 +122,7 @@ class TestLogConfigValidation:
         log_file = tmp_path / "logs" / "subdir" / "app.log"
         assert not log_file.parent.exists()
 
-        _ = LogConfig(file=str(log_file))  # noqa: F841 - ディレクトリ作成の副作用をテスト
+        _ = LogConfig(file=str(log_file))
 
         # ディレクトリが作成されたことを確認
         assert log_file.parent.exists()
@@ -137,7 +140,7 @@ class TestLogConfigValidation:
     def test_log_file_deep_nested_directory_creation(self, tmp_path: Path) -> None:
         """深くネストされたディレクトリの作成"""
         log_file = tmp_path / "a" / "b" / "c" / "d" / "app.log"
-        _ = LogConfig(file=str(log_file))  # noqa: F841 - ディレクトリ作成の副作用をテスト
+        _ = LogConfig(file=str(log_file))
         assert log_file.parent.exists()
 
 
@@ -154,7 +157,10 @@ class TestSettingsEnvironmentValidation:
         ],
     )
     def test_environment_validation(
-        self, env_input: str | Environment, expected: Environment, needs_secret: bool
+        self,
+        env_input: str | Environment,
+        expected: Environment,
+        needs_secret: bool,
     ) -> None:
         """環境設定バリデーション: 文字列→小文字変換、Enum直接指定
 
@@ -165,7 +171,7 @@ class TestSettingsEnvironmentValidation:
         if needs_secret:
             settings = Settings(
                 environment=env_input,  # type: ignore[arg-type]
-                security=SecurityConfig(api_key=SecretStr("test-key")),  # noqa: S106
+                security=SecurityConfig(api_key=SecretStr("test-key")),
             )
         else:
             settings = Settings(environment=env_input)  # type: ignore[arg-type]
@@ -190,7 +196,7 @@ class TestSettingsEnvironmentMethods:
         # 本番環境ではシークレットが必須
         settings = Settings(
             environment=Environment.PRODUCTION,
-            security=SecurityConfig(api_key=SecretStr("test-key")),  # noqa: S106
+            security=SecurityConfig(api_key=SecretStr("test-key")),
         )
         assert settings.is_production() is True
 
@@ -224,7 +230,7 @@ class TestProductionSecretValidation:
         """本番環境でapi_key設定時は有効"""
         settings = Settings(
             environment=Environment.PRODUCTION,
-            security=SecurityConfig(api_key=SecretStr("test-key")),  # noqa: S106
+            security=SecurityConfig(api_key=SecretStr("test-key")),
         )
         assert settings.is_production() is True
 
@@ -232,7 +238,7 @@ class TestProductionSecretValidation:
         """本番環境でjwt_secret設定時は有効"""
         settings = Settings(
             environment=Environment.PRODUCTION,
-            security=SecurityConfig(jwt_secret=SecretStr("test-secret")),  # noqa: S106
+            security=SecurityConfig(jwt_secret=SecretStr("test-secret")),
         )
         assert settings.is_production() is True
 
@@ -249,8 +255,8 @@ class TestSettingsSecretMasking:
         """exclude_secrets=True でシークレットがマスクされる (lines 217-223)"""
         settings = Settings()
         # テスト専用ダミー値（本番では使用されない）
-        settings.security.api_key = SecretStr("test-api-key-12345")  # noqa: S105
-        settings.security.jwt_secret = SecretStr("test-jwt-secret-67890")  # noqa: S105
+        settings.security.api_key = SecretStr("test-api-key-12345")
+        settings.security.jwt_secret = SecretStr("test-jwt-secret-67890")
 
         result = settings.to_dict(exclude_secrets=True)
 
@@ -261,8 +267,8 @@ class TestSettingsSecretMasking:
         """exclude_secrets=False でシークレットがそのまま出力される (line 216)"""
         settings = Settings()
         # テスト専用ダミー値（本番では使用されない）
-        settings.security.api_key = SecretStr("test-api-key-12345")  # noqa: S105
-        settings.security.jwt_secret = SecretStr("test-jwt-secret-67890")  # noqa: S105
+        settings.security.api_key = SecretStr("test-api-key-12345")
+        settings.security.jwt_secret = SecretStr("test-jwt-secret-67890")
 
         result = settings.to_dict(exclude_secrets=False)
 
@@ -309,7 +315,7 @@ class TestSettingsSecretMasking:
 
         settings = Settings()
         settings.sentry = SentryConfig(
-            dsn=SecretStr("https://abc123@o456.ingest.sentry.io/789")  # noqa: S106
+            dsn=SecretStr("https://abc123@o456.ingest.sentry.io/789"),
         )
 
         result = settings.to_dict(exclude_secrets=True)
@@ -371,7 +377,7 @@ class TestSettingsSingleton:
         """reload_settings() がグローバル変数を更新 (line 247)"""
         # 最初のインスタンス作成
         settings1 = get_settings()
-        _ = settings1.project_name  # noqa: F841 - 元の値を確認（後で検証に使用）
+        _ = settings1.project_name
 
         # 環境変数を変更してreload
         monkeypatch.setenv("PROJECT_NAME", "New Project Name")
@@ -565,7 +571,7 @@ class TestSSRFPrevention:
             f"Expected is_private_ip({ip_address}) == {expected_private}"
         )
 
-    def test_is_private_ip_dns_failure_returns_true(self, monkeypatch) -> None:
+    def test_is_private_ip_dns_failure_returns_true(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """DNS解決失敗時はTrueを返す（Fail-Closed動作）
 
         Security Rationale (CRITICAL):
@@ -667,7 +673,10 @@ class TestSSRFPrevention:
         ],
     )
     def test_is_private_ip_boundary_values(
-        self, boundary_ip: str, expected_private: bool, description: str
+        self,
+        boundary_ip: str,
+        expected_private: bool,
+        description: str,
     ) -> None:
         """プライベートIP範囲の境界値テスト
 

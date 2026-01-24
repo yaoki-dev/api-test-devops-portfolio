@@ -5,15 +5,20 @@
 - structlog遅延初期化
 - ログフォーマット選択（console/json）
 - FilteringBoundLogger型の検証
+- _sentry_processor()のSentry連携（5分岐カバレッジ）
 """
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+import pytest
 import structlog
 from structlog.testing import capture_logs
 
 from config.settings import LogFormat
-from utils.logger import get_logger
+from utils.logger import _sentry_processor, get_logger
+
+# Module-level marker: All tests in this file are unit tests
+pytestmark = pytest.mark.unit
 
 
 class TestGetLogger:
@@ -194,3 +199,250 @@ class TestLoggerIntegration:
         retry_log = captured[1]
         assert retry_log["attempt"] == 2
         assert retry_log["status_code"] == 503
+
+
+class TestSentryProcessor:
+    """_sentry_processor関数のテスト（5分岐カバレッジ）
+
+    PR#130レビュー指摘対応:
+    - 64行・5分岐のSentry連携プロセッサーを網羅的にテスト
+    - Silent Failure防止のための監視系テスト
+
+    テスト対象分岐:
+    1. INFO/WARNログ → 即return（Sentry送信しない）
+    2. Sentry未初期化 → 即return
+    3. 例外情報あり → capture_exception()
+    4. 例外情報なし → capture_message()
+    5. ImportError/Exception → エラー処理
+    """
+
+    # ダミーのWrappedLoggerとmethod_name（未使用だが引数として必要）
+    _dummy_logger = None
+    _dummy_method = "error"
+
+    @pytest.mark.parametrize(
+        "level",
+        ["info", "INFO", "warning", "WARNING", "debug", "DEBUG", ""],
+    )
+    def test_skip_non_error_levels(self, level: str) -> None:
+        """分岐1: ERROR以上以外のログレベルはスキップされる"""
+        event_dict = {"level": level, "event": "test message"}
+
+        result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+        # event_dictがそのまま返される（Sentry送信なし）
+        assert result is event_dict
+        assert result["event"] == "test message"
+
+    @pytest.mark.parametrize(
+        "level", ["error", "ERROR", "critical", "CRITICAL", "exception", "EXCEPTION"]
+    )
+    def test_process_error_levels(self, level: str) -> None:
+        """ERROR/CRITICAL/EXCEPTIONレベルは処理対象"""
+        event_dict = {"level": level, "event": "error message"}
+
+        # 動的インポートをパッチするため sentry_sdk モジュール全体をモック
+        mock_sdk = MagicMock()
+        mock_client = MagicMock()
+        mock_client.is_active.return_value = True
+        mock_sdk.get_client.return_value = mock_client
+        mock_sdk.push_scope.return_value.__enter__ = MagicMock(return_value=MagicMock())
+        mock_sdk.push_scope.return_value.__exit__ = MagicMock(return_value=False)
+
+        with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
+            result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+        assert result is event_dict
+        # Sentryメソッドが呼ばれたことを確認
+        assert mock_sdk.capture_message.called or mock_sdk.capture_exception.called
+
+    def test_skip_when_sentry_not_active(self) -> None:
+        """分岐2: Sentry未初期化時はスキップ"""
+        event_dict = {"level": "error", "event": "error message"}
+
+        mock_sdk = MagicMock()
+        mock_client = MagicMock()
+        mock_client.is_active.return_value = False  # 未初期化
+        mock_sdk.get_client.return_value = mock_client
+
+        with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
+            result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+        assert result is event_dict
+        # capture_messageもcapture_exceptionも呼ばれない
+        mock_sdk.capture_message.assert_not_called()
+        mock_sdk.capture_exception.assert_not_called()
+
+    def test_capture_exception_with_exc_info(self) -> None:
+        """分岐3: 例外情報ありの場合capture_exceptionを呼ぶ"""
+        test_exception = ValueError("test error")
+        event_dict = {
+            "level": "error",
+            "event": "error with exception",
+            "exc_info": test_exception,
+        }
+
+        mock_sdk = MagicMock()
+        mock_client = MagicMock()
+        mock_client.is_active.return_value = True
+        mock_sdk.get_client.return_value = mock_client
+
+        with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
+            result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+        assert result is event_dict
+        mock_sdk.capture_exception.assert_called_once_with(test_exception)
+        mock_sdk.capture_message.assert_not_called()
+
+    def test_capture_message_without_exc_info(self) -> None:
+        """分岐4: 例外情報なしの場合capture_messageを呼ぶ"""
+        event_dict = {
+            "level": "error",
+            "event": "error without exception",
+            "user_id": 123,
+            "action": "test",
+        }
+
+        mock_sdk = MagicMock()
+        mock_client = MagicMock()
+        mock_client.is_active.return_value = True
+        mock_sdk.get_client.return_value = mock_client
+
+        mock_scope = MagicMock()
+        mock_sdk.push_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
+        mock_sdk.push_scope.return_value.__exit__ = MagicMock(return_value=False)
+
+        with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
+            result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+        assert result is event_dict
+        mock_sdk.capture_message.assert_called_once_with(
+            "error without exception",
+            level="error",
+        )
+        mock_sdk.capture_exception.assert_not_called()
+
+    def test_capture_message_with_exc_info_true(self) -> None:
+        """exc_info=Trueの場合はcapture_messageを呼ぶ（例外オブジェクトではない）"""
+        event_dict = {
+            "level": "error",
+            "event": "error with exc_info=True",
+            "exc_info": True,  # Trueは例外オブジェクトではない
+        }
+
+        mock_sdk = MagicMock()
+        mock_client = MagicMock()
+        mock_client.is_active.return_value = True
+        mock_sdk.get_client.return_value = mock_client
+
+        mock_scope = MagicMock()
+        mock_sdk.push_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
+        mock_sdk.push_scope.return_value.__exit__ = MagicMock(return_value=False)
+
+        with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
+            result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+        assert result is event_dict
+        mock_sdk.capture_message.assert_called_once()
+        mock_sdk.capture_exception.assert_not_called()
+
+    def test_silent_skip_on_import_error(self) -> None:
+        """分岐5a: sentry-sdk未インストール時はサイレントスキップ"""
+        event_dict = {"level": "error", "event": "error message"}
+
+        # sys.modulesからsentry_sdkを除去してImportErrorを発生させる
+        import sys
+
+        original_modules = sys.modules.copy()
+        # sentry_sdkが既にインポートされている場合は除去
+        if "sentry_sdk" in sys.modules:
+            del sys.modules["sentry_sdk"]
+
+        try:
+            with patch.dict("sys.modules", {"sentry_sdk": None}):
+                with patch(
+                    "builtins.__import__",
+                    side_effect=ImportError("No module named 'sentry_sdk'"),
+                ):
+                    result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+        finally:
+            sys.modules.update(original_modules)
+
+        # event_dictがそのまま返される（例外は発生しない）
+        assert result is event_dict
+
+    def test_stderr_output_on_sentry_failure(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """分岐5b: Sentry送信失敗時はstderrへ出力"""
+        event_dict = {"level": "error", "event": "error message"}
+
+        mock_sdk = MagicMock()
+        mock_client = MagicMock()
+        mock_client.is_active.return_value = True
+        mock_sdk.get_client.return_value = mock_client
+        # capture_messageで例外を発生させる
+        mock_sdk.capture_message.side_effect = RuntimeError("Sentry connection failed")
+
+        mock_scope = MagicMock()
+        mock_sdk.push_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
+        mock_sdk.push_scope.return_value.__exit__ = MagicMock(return_value=False)
+
+        with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
+            result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+        # event_dictは正常に返される（プロセッサーチェーン継続）
+        assert result is event_dict
+
+        # stderrにエラーメッセージが出力される
+        captured = capsys.readouterr()
+        assert "[SENTRY_ERROR]" in captured.err
+        assert "Sentry connection failed" in captured.err
+
+    def test_extra_context_set_in_scope(self) -> None:
+        """追加コンテキストがSentryスコープに設定される"""
+        event_dict = {
+            "level": "error",
+            "event": "error with context",
+            "user_id": 456,
+            "request_id": "abc-123",
+            "endpoint": "/api/users",
+        }
+
+        mock_sdk = MagicMock()
+        mock_client = MagicMock()
+        mock_client.is_active.return_value = True
+        mock_sdk.get_client.return_value = mock_client
+
+        mock_scope = MagicMock()
+        mock_sdk.push_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
+        mock_sdk.push_scope.return_value.__exit__ = MagicMock(return_value=False)
+
+        with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
+            _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+        # set_extraが追加コンテキストで呼ばれる
+        set_extra_calls = {call[0][0]: call[0][1] for call in mock_scope.set_extra.call_args_list}
+        assert set_extra_calls.get("user_id") == 456
+        assert set_extra_calls.get("request_id") == "abc-123"
+        assert set_extra_calls.get("endpoint") == "/api/users"
+
+    def test_default_message_when_event_missing(self) -> None:
+        """eventキーがない場合のデフォルトメッセージ"""
+        event_dict = {"level": "error"}  # eventキーなし
+
+        mock_sdk = MagicMock()
+        mock_client = MagicMock()
+        mock_client.is_active.return_value = True
+        mock_sdk.get_client.return_value = mock_client
+
+        mock_scope = MagicMock()
+        mock_sdk.push_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
+        mock_sdk.push_scope.return_value.__exit__ = MagicMock(return_value=False)
+
+        with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
+            _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+        # デフォルトメッセージが使用される
+        mock_sdk.capture_message.assert_called_once_with(
+            "Unknown error",
+            level="error",
+        )
