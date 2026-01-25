@@ -1047,6 +1047,7 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 | `/documentation-generator:update-docs` | ドキュメント更新時 | 一括同期・バッジ自動生成 |
 | `/security-pro:security-audit`, `/security-pro:dependency-audit` | 週次/リリース前 | セキュリティ・依存関係監査 |
 | `/performance-optimizer:performance-audit` | パフォーマンス懸念時 | ボトルネック特定・最適化 |
+| `/make-it-pretty` | 週次/スプリント境界 | 全体リファクタリング |
 
 ### Low（特定場面）
 
