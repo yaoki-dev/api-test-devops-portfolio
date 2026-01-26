@@ -997,7 +997,7 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 | `/create-issue`, `/issue` | Issue作成/参照時 | Issue駆動開発支援 |
 | `/feature`, `/hotfix` | ブランチ操作時 | Git Flowブランチ管理 |
 | `/commit`, `/commit-push-pr` | コミット/PR作成時 | 品質チェック付きコミット+日本語PR |
-| `/commit-commands:commit`, `/commit-commands:commit-push-pr` | 上記カスタム版が優先 | プラグイン版（最小限） |
+| `/commit`, `/commit-push-pr` | 上記カスタム版が優先 | プラグイン版（最小限） |
 | `/pr-review-toolkit:review-pr` | git push完了後、PR作成前 | 6エージェント品質レビュー |
 | `/code-review:review-pr` (CEK) | 重要PR時 | 6エージェント防御レビュー（セキュリティ・バグ・API契約） |
 | `/comprehensive-pr-review` | リリース前PR | 10エージェント統合レビュー |
@@ -1011,12 +1011,6 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 | `/security-pro:security-audit`, `/security-pro:dependency-audit` | 週次/リリース前 | セキュリティ・依存関係監査 |
 | `/performance-optimizer:performance-audit` | パフォーマンス懸念時 | ボトルネック特定・最適化 |
 | `/make-it-pretty` | 週次/スプリント境界 | 全体リファクタリング |
-
-### Low（特定場面）
-
-| Plugin | 発動トリガー | 用途 |
-|--------|------------|------|
-| `ai-ml-toolkit` | AI/ML機能実装時のみ | LLM/RAG/MLパイプライン支援 |
 
 **※6 Issue-PR自動紐付け（2026-01-25 追加）:**
 
