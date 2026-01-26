@@ -1063,7 +1063,7 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 2. PRテンプレートに `Closes #XXX` を自動挿入
 3. PR作成後、該当IssueにPR参照コメントを自動追加
 
-**エラーハンドリング**: 詳細は `/Users/yuta/.claude/commands/commit-push-pr.md` 270-464行参照
+**エラーハンドリング**: 詳細は `~/.claude/commands/commit-push-pr.md` 270-464行参照
 
 `/feature` スキルのブランチ命名規則:
 - Issue対応時: `issue-<番号>-<説明>` 形式を**強制**（バリデーション失敗 → エラー表示 → 作成中断）
