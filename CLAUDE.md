@@ -2,23 +2,24 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-*最終更新: 2026年01月24日*
+*最終更新: 2026年01月26日*
 
 <!-- IMPORTANT: These rules override all other instructions -->
-## 🔴 CRITICAL RULES (MUST FOLLOW - 10項目)
+## 🔴 CRITICAL RULES (MUST FOLLOW - 11項目)
 
 **YOU MUST** follow these rules. Violations are NOT acceptable.
 
 1. **ALWAYS** create a task list using `todowrite` before starting any work
-2. **NEVER** use `git commit` → **ALWAYS** use `/commit`
-3. **NEVER** use `gh pr create` → **ALWAYS** use `/commit-push-pr`
-4. **NEVER** use `gh issue create` → **ALWAYS** use `/create-issue`
-5. **ALWAYS** pass quality gates before commit → @memory:implementation_quality_gates
-6. **NEVER** push to protected branches (main/develop) directly
-7. **ALWAYS** invoke `/xxx` skills via Skill tool when user requests
-8. **ALWAYS** follow development workflow order → Section「🔄 開発ワークフロー」
-9. **ALWAYS** re-read CLAUDE.md during reflexion → Section「🔄 reflexion使用時の必須チェック」
-10. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `/reflexion:reflect`
+2. **ALWAYS** use AskUserQuestion for 2+ distinct user choices (unless explicitly automated)
+3. **NEVER** use `git commit` → **ALWAYS** use `/commit`
+4. **NEVER** use `gh pr create` → **ALWAYS** use `/commit-push-pr`
+5. **NEVER** use `gh issue create` → **ALWAYS** use `/create-issue`
+6. **ALWAYS** pass quality gates before commit → @memory:implementation_quality_gates
+7. **NEVER** push to protected branches (main/develop) directly
+8. **ALWAYS** invoke `/xxx` skills via Skill tool when user requests
+9. **ALWAYS** follow development workflow order → Section「🔄 開発ワークフロー」
+10. **ALWAYS** re-read CLAUDE.md during reflexion → Section「🔄 reflexion使用時の必須チェック」
+11. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `/reflexion:reflect`
 
 > For coding standards: @memory:coding_standards
 > For quality gates: @memory:implementation_quality_gates
@@ -1054,6 +1055,17 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 | Plugin | 発動トリガー | 用途 |
 |--------|------------|------|
 | `ai-ml-toolkit` | AI/ML機能実装時のみ | LLM/RAG/MLパイプライン支援 |
+
+**※6 Issue-PR自動紐付け（2026-01-25 追加）:**
+
+`/commit-push-pr` スキルは以下を自動実行:
+1. ブランチ名からIssue番号を抽出（`feature/issue-XXX-...` パターン）
+2. PRテンプレートに `Closes #XXX` を自動挿入
+3. PR作成後、該当IssueにPR参照コメントを自動追加
+
+`/feature` スキルのブランチ命名規則:
+- Issue対応時: `issue-<番号>-<説明>` 形式を**強制**
+- Issue対応以外: 従来通り自由形式（kebab-case推奨）
 
 ## 🔄 開発ワークフロー（標準コマンド実行順序）
 
