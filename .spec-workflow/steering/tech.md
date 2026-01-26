@@ -291,6 +291,6 @@ uv run bandit -r utils/ config/
 - `/feature <name>`: feature作成（developから分岐）
 - `/release <version>`: release作成
 - `/hotfix <name>`: hotfix作成（mainから分岐）
-- `/finish`: ブランチ完了・マージ
 - `/flow-status`: 状態確認
 - `/clean-gone` : [gone]ブランチクリーンアップ
+- ブランチ完了: `/superpowers:finishing-a-development-branch`
