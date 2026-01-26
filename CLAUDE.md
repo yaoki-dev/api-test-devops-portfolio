@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **YOU MUST** follow these rules. Violations are NOT acceptable.
 
 1. **ALWAYS** create a task list using `todowrite` before starting any work
-2. **ALWAYS** use AskUserQuestion for 2+ distinct user choices (unless explicitly automated)
+2. **ALWAYS** use AskUserQuestion for 2+ distinct user choices
 3. **NEVER** use `git commit` → **ALWAYS** use `/commit`
 4. **NEVER** use `gh pr create` → **ALWAYS** use `/commit-push-pr`
 5. **NEVER** use `gh issue create` → **ALWAYS** use `/create-issue`
@@ -1063,8 +1063,10 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 2. PRテンプレートに `Closes #XXX` を自動挿入
 3. PR作成後、該当IssueにPR参照コメントを自動追加
 
+**エラーハンドリング**: 詳細は `/Users/yuta/.claude/commands/commit-push-pr.md` 270-464行参照
+
 `/feature` スキルのブランチ命名規則:
-- Issue対応時: `issue-<番号>-<説明>` 形式を**強制**
+- Issue対応時: `issue-<番号>-<説明>` 形式を**強制**（バリデーション失敗 → エラー表示 → 作成中断）
 - Issue対応以外: 従来通り自由形式（kebab-case推奨）
 
 ## 🔄 開発ワークフロー（標準コマンド実行順序）
