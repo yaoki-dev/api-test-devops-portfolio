@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-*最終更新: 2026年01月26日*
+*最終更新: 2026年01月28日*
 
 <!-- IMPORTANT: These rules override all other instructions -->
 ## 🔴 CRITICAL RULES (MUST FOLLOW - 11項目)
@@ -570,7 +570,7 @@ def get_week_from_day_w6_plan(current_day: int) -> Union[int, float]:
 # トリガー詳細セクションのオフセットマップ
 TRIGGER_SECTION_MAP = {
     "trigger_6": {
-        "file": "obsidian-vault-local/docs/Obsidian導入計画_v2_改善版.md",
+        "file": "obsidian-vault-local/docs/Obsidian導入計画.md",
         "start": 1644,   # "### 4.7 Trigger 6: 理解度確認" 開始
         "end": 1993,     # セクション終了（Trigger 7開始の直前）
         "lines": 350,    # 約350行
@@ -979,40 +979,44 @@ git pull origin develop  # ← Protected Branchで不要
 
 - カバレッジ目標: Week 7-10でPhase別に設定（最終目標85%）
 
-## 🔌 Plugin自動発動ルール
+## 🔌 コマンド/スキル/プラグイン自動発動ルール
 
-AIが自動的に適切なPluginを発動するためのルール。詳細（パッケージ情報・完全な発動トリガー一覧）は`@memory:command_usage_guide`を参照。
+AIが自動的に適切なコマンド・スキル・プラグインを発動するためのルール。詳細（パッケージ情報・完全な発動トリガー一覧）は`@memory:command_usage_guide`を参照。
+
+**種別の違い**:
+- **Plugin**: `~/.claude/plugins/`にインストールされたもの（例: `pr-review-toolkit@claude-code-plugins`）
+- **Command**: `~/.claude/commands/`に配置されたグローバルコマンド（`.md`ファイル）
+- **Skill**: Skill toolに登録された組み込みスキル
 
 ### Critical（毎コミット必須）
 
-| Plugin | 発動トリガー | 用途 |
-|--------|------------|------|
-| `security-guidance` (hook) | Edit/Write/MultiEdit時 | 自動警告（明示的呼出不要） |
-| `/code-review:code-review` | 品質ゲート全合格後（※1） | 4並列エージェントレビュー（80点閾値） |
+| コマンド/スキル | 種別 | 発動トリガー | 用途 |
+|----------------|------|------------|------|
+| `security-guidance` (hook) | Plugin | Edit/Write/MultiEdit時 | 自動警告（明示的呼出不要） |
+| `/code-review:code-review` | Plugin | 品質ゲート全合格後（※1） | 4並列エージェントレビュー（80点閾値） |
 
 ### High（開発標準）
 
-| Plugin | 発動トリガー | 用途 |
-|--------|------------|------|
-| `/create-issue`, `/issue` | Issue作成/参照時 | Issue駆動開発支援 |
-| `/feature`, `/hotfix` | ブランチ操作時 | Git Flowブランチ管理 |
-| `/commit`, `/commit-push-pr` | コミット/PR作成時 | 品質チェック付きコミット+日本語PR |
-| `/commit`, `/commit-push-pr` | 上記カスタム版が優先 | プラグイン版（最小限） |
-| `/pr-review-toolkit:review-pr` | git push完了後、PR作成前 | 6エージェント品質レビュー |
-| `/code-review:review-pr` (CEK) | 重要PR時 | 6エージェント防御レビュー（セキュリティ・バグ・API契約） |
-| `/comprehensive-pr-review` | リリース前PR | 10エージェント統合レビュー |
-| `/test-coverage`, `/generate-tests` | テスト関連時 | カバレッジ分析・テスト生成 |
+| コマンド/スキル | 種別 | 発動トリガー | 用途 |
+|----------------|------|------------|------|
+| `/create-issue`, `/issue` | Command | Issue作成/参照時 | Issue駆動開発支援 |
+| `/feature`, `/hotfix` | Command | ブランチ操作時 | Git Flowブランチ管理 |
+| `/commit`, `/commit-push-pr` | Command | コミット/PR作成時 | 品質チェック付きコミット+日本語PR |
+| `/pr-review-toolkit:review-pr` | Plugin | git push完了後、PR作成前 | 6エージェント品質レビュー |
+| `/code-review:review-pr` (CEK) | Plugin | 重要PR時 | 6エージェント防御レビュー（セキュリティ・バグ・API契約） |
+| `/comprehensive-pr-review` | Command | リリース前PR | 10エージェント統合レビュー |
+| `/test-coverage`, `/generate-tests` | Command | テスト関連時 | カバレッジ分析・テスト生成 |
 
 ### Medium（必要時）
 
-| Plugin | 発動トリガー | 用途 |
-|--------|------------|------|
-| `/docs-maintenance` | ドキュメント保守時 | 品質保証・バリデーション・自動更新 |
-| `/troubleshooting-guide` | トラブルシューティング時 | 診断手順・共通問題・自動解決 |
-| `/prompt-lookup` | プロンプト検索時 | プロンプトテンプレート発見・改善 |
-| `/skill-lookup` | スキル検索時 | 再利用可能なAI機能発見・インストール |
-| `/senior-devops` | DevOps包括作業時 | CI/CD、IaC、コンテナ、クラウド統合 |
-| `/make-it-pretty` | 週次/スプリント境界 | 全体リファクタリング |
+| コマンド/スキル | 種別 | 発動トリガー | 用途 |
+|----------------|------|------------|------|
+| `/docs-maintenance` | Command | ドキュメント保守時 | 品質保証・バリデーション・自動更新 |
+| `/troubleshooting-guide` | Command | トラブルシューティング時 | 診断手順・共通問題・自動解決 |
+| `/prompt-lookup` | Skill | プロンプト検索時 | プロンプトテンプレート発見・改善 |
+| `/skill-lookup` | Skill | スキル検索時 | 再利用可能なAI機能発見・インストール |
+| `/senior-devops` | Skill | DevOps包括作業時 | CI/CD、IaC、コンテナ、クラウド統合 |
+| `/make-it-pretty` | Command | 週次/スプリント境界 | 全体リファクタリング |
 
 **※6 Issue-PR自動紐付け（2026-01-25 追加）:**
 
@@ -1124,7 +1128,7 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
   - プロジェクト固有コマンド使用（/commit, /commit-push-pr）
   - 生コマンド（git commit, gh pr create）使用禁止
 
-- [ ] **Plugin自動発動ルール**（Section「🔌 Plugin自動発動ルール」）
+- [ ] **コマンド/スキル/プラグイン自動発動ルール**（Section「🔌 コマンド/スキル/プラグイン自動発動ルール」）
   - Critical/High/Mediumの優先度確認
   - 発動条件の確認
 
@@ -1143,7 +1147,7 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 ### 3. 提案前の確認
 
 - [ ] ワークフロー提案時: Section「🔄 開発ワークフロー」参照
-- [ ] コマンド提案時: Section「🔌 Plugin自動発動ルール」参照
+- [ ] コマンド提案時: Section「🔌 コマンド/スキル/プラグイン自動発動ルール」参照
 - [ ] コード提案時: coding_standards参照
 
 **目的**: CLAUDE.md記載内容の「適用漏れ」防止
