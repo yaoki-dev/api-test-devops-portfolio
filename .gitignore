@@ -37,6 +37,7 @@ htmlcov/
 coverage.xml
 *.cover
 coverage.json
+.pre-commit-cache/
 
 # IDEs
 .vscode/
