@@ -1001,7 +1001,7 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 | `/pr-review-toolkit:review-pr` | git push完了後、PR作成前 | 6エージェント品質レビュー |
 | `/code-review:review-pr` (CEK) | 重要PR時 | 6エージェント防御レビュー（セキュリティ・バグ・API契約） |
 | `/comprehensive-pr-review` | リリース前PR | 10エージェント統合レビュー |
-| `/test-coverage`, `/generate-tests` | カバレッジ分析・テスト生成 |　テスト生成時 |
+| `/test-coverage`, `/generate-tests` | テスト関連時 | カバレッジ分析・テスト生成 |
 
 ### Medium（必要時）
 
