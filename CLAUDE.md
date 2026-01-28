@@ -571,9 +571,9 @@ def get_week_from_day_w6_plan(current_day: int) -> Union[int, float]:
 TRIGGER_SECTION_MAP = {
     "trigger_6": {
         "file": "obsidian-vault-local/docs/Obsidian導入計画.md",
-        "start": 1644,   # "### 4.7 Trigger 6: 理解度確認" 開始
-        "end": 1993,     # セクション終了（Trigger 7開始の直前）
-        "lines": 350,    # 約350行
+        "start": 1796,   # "### 4.7 Trigger 6: 理解度確認" 開始
+        "end": 2165,     # セクション終了（Trigger 7開始の直前）
+        "lines": 369,    # 約369行
         "chars": "~7k",  # 部分読み込みでパフォーマンス警告回避
         "title": "Trigger 6: 理解度確認（Day都度オンデマンド生成）"
     }
