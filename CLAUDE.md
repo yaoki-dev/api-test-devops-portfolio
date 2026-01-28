@@ -1007,9 +1007,12 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 
 | Plugin | 発動トリガー | 用途 |
 |--------|------------|------|
-| `/documentation-generator:update-docs` | ドキュメント更新時 | 一括同期・バッジ自動生成 |
+| `/docs-maintenance` | ドキュメント保守時 | 品質保証・バリデーション・自動更新 |
+| `/troubleshooting-guide` | トラブルシューティング時 | 診断手順・共通問題・自動解決 |
 | `/security-pro:security-audit`, `/security-pro:dependency-audit` | 週次/リリース前 | セキュリティ・依存関係監査 |
-| `/performance-optimizer:performance-audit` | パフォーマンス懸念時 | ボトルネック特定・最適化 |
+| `/prompt-lookup` | プロンプト検索時 | プロンプトテンプレート発見・改善 |
+| `/skill-lookup` | スキル検索時 | 再利用可能なAI機能発見・インストール |
+| `/senior-devops` | DevOps包括作業時 | CI/CD、IaC、コンテナ、クラウド統合 |
 | `/make-it-pretty` | 週次/スプリント境界 | 全体リファクタリング |
 
 **※6 Issue-PR自動紐付け（2026-01-25 追加）:**
