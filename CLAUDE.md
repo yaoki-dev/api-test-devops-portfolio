@@ -1001,7 +1001,7 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 | `/pr-review-toolkit:review-pr` | git push完了後、PR作成前 | 6エージェント品質レビュー |
 | `/code-review:review-pr` (CEK) | 重要PR時 | 6エージェント防御レビュー（セキュリティ・バグ・API契約） |
 | `/comprehensive-pr-review` | リリース前PR | 10エージェント統合レビュー |
-| `/testing-suite:test-coverage`, `/testing-suite:generate-tests` | テスト関連時 | カバレッジ分析・テスト生成 |
+| `/test-coverage`, `/generate-tests` | カバレッジ分析・テスト生成 |　テスト生成時 |
 
 ### Medium（必要時）
 
@@ -1009,7 +1009,6 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 |--------|------------|------|
 | `/docs-maintenance` | ドキュメント保守時 | 品質保証・バリデーション・自動更新 |
 | `/troubleshooting-guide` | トラブルシューティング時 | 診断手順・共通問題・自動解決 |
-| `/security-pro:security-audit`, `/security-pro:dependency-audit` | 週次/リリース前 | セキュリティ・依存関係監査 |
 | `/prompt-lookup` | プロンプト検索時 | プロンプトテンプレート発見・改善 |
 | `/skill-lookup` | スキル検索時 | 再利用可能なAI機能発見・インストール |
 | `/senior-devops` | DevOps包括作業時 | CI/CD、IaC、コンテナ、クラウド統合 |
@@ -1088,9 +1087,9 @@ AIが自動的に適切なPluginを発動するためのルール。詳細（パ
 
    | 行数 | 1-2ファイル | ≥3ファイル |
    |------|------------|-----------|
-   | <100行 | `requesting-code-review` | + `critique` |
-   | 100-200行 | `code-review:code-review` | + `critique` |
-   | ≥200行 | `code-review` + `critique` | `code-review` + `critique` |
+   | <100行 | `/superpowers:requesting-code-review` | `/superpowers:requesting-code-review`+ `/reflexion:critique` |
+   | 100-200行 | `code-review:code-review` | `code-review:code-review` + `/reflexion:critique` |
+   | ≥200行 | `/code-review:code-review` + `/reflexion:critique` | `/code-review:code-review` + `/reflexion:critique` |
 
 **※5 マージ戦略（Protected Branch対応）:**
 

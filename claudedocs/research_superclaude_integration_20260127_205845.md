@@ -817,8 +817,3 @@ echo $TAVILY_API_KEY
 **次のアクション**: Phase 1実行（SuperClaudeインストール、/sc:research検証）
 
 **質問・フィードバック**: Week 6 Day 33開始時に実施判断を確認してください。
-
-
-claude mcp add --transport http tavily https://mcp.tavily.com/mcp/?tavilyApiKey="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"
-
-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
