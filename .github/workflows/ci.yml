@@ -272,7 +272,14 @@ jobs:
             exit 1
           fi
 
-          echo "✅ Trivy SARIF output verified ($SARIF_SIZE bytes)"
+          # JSON構文検証（破損ファイル検出）
+          if ! jq empty trivy-results.sarif 2>/dev/null; then
+            echo "::error::SARIF file is not valid JSON"
+            echo "::warning::File may be corrupted or incomplete"
+            exit 1
+          fi
+
+          echo "✅ Trivy SARIF output verified ($SARIF_SIZE bytes, valid JSON)"
 
       - name: Upload Trivy results to Security tab
         uses: github/codeql-action/upload-sarif@v4
