@@ -258,11 +258,21 @@ jobs:
         if: always()
         run: |
           if [ ! -f "trivy-results.sarif" ]; then
-            echo "::error::Trivy scan did not produce SARIF output (crash/timeout/disk issue)"
+            echo "::error::Trivy scan did not produce SARIF output"
+            echo "::warning::Possible causes: crash/timeout/disk issue/DB download failure"
             echo "Check 'Trivy image scan' step logs for details"
             exit 1
           fi
-          echo "✅ Trivy SARIF output verified"
+
+          # SARIF内容の妥当性確認（空ファイル・極小ファイル検出）
+          SARIF_SIZE=$(wc -c < "trivy-results.sarif")
+          if [ "$SARIF_SIZE" -lt 100 ]; then
+            echo "::error::SARIF file is too small ($SARIF_SIZE bytes) - likely incomplete"
+            echo "::warning::This indicates Trivy crashed during SARIF generation"
+            exit 1
+          fi
+
+          echo "✅ Trivy SARIF output verified ($SARIF_SIZE bytes)"
 
       - name: Upload Trivy results to Security tab
         uses: github/codeql-action/upload-sarif@v4

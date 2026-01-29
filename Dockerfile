@@ -7,6 +7,7 @@
 # ============================================================
 # セキュリティ: SHA256ダイジェスト固定（サプライチェーン攻撃防止）
 # 更新時: docker pull python:3.12-slim && docker inspect --format='{{index .RepoDigests 0}}' python:3.12-slim
+# 2026-01-29更新: 定期セキュリティパッチ適用（OpenSSL等）
 FROM python:3.12-slim@sha256:5e2dbd4bbdd9c0e67412aea9463906f74a22c60f89eb7b5bbb7d45b66a2b68a6 AS base
 
 WORKDIR /app
