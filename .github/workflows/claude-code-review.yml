@@ -8,6 +8,7 @@ on:
 jobs:
   claude-review:
     runs-on: ubuntu-latest
+    timeout-minutes: 15  # Job-level timeout to prevent runaway jobs
     # Skip for Dependabot PRs (package updates don't need code review)
     if: github.actor != 'dependabot[bot]'
     permissions:
@@ -22,13 +23,29 @@ jobs:
         with:
           fetch-depth: 1
 
+      # ast-grep MCP availability verification (graceful degradation)
+      # NOTE: mcp_available output reserved for Phase 2 conditional execution
+      - name: Verify ast-grep MCP availability
+        id: verify-mcp
+        timeout-minutes: 2
+        run: |
+          echo "🔍 Verifying @notprolands/ast-grep-mcp@1.1.1 availability..."
+          if npm view @notprolands/ast-grep-mcp@1.1.1 version 2>&1; then
+            echo "✅ Package verified"
+            echo "mcp_available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::ast-grep MCP package unavailable. Review will proceed without AST analysis."
+            echo "mcp_available=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run Claude Code Review
         id: claude-review
+        timeout-minutes: 10  # Step-level timeout for Claude review
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: |
-            --mcp-config '{"mcpServers": {"ast-grep": {"command": "npx", "args": ["-y", "@notprolands/ast-grep-mcp"]}}}'
+            --mcp-config '{"mcpServers": {"ast-grep": {"command": "npx", "args": ["-y", "@notprolands/ast-grep-mcp@1.1.1"]}}}'
             --allowedTools "Read,Glob,Grep,Task,WebFetch,WebSearch,TodoWrite,mcp__github_inline_comment__create_inline_comment,mcp__ast-grep__find_code,mcp__ast-grep__find_code_by_rule,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
           prompt: |
             /review-pr REPO: ${{ github.repository }} PR_NUMBER: ${{ github.event.pull_request.number }}
