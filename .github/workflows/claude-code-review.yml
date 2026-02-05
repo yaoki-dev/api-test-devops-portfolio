@@ -8,8 +8,15 @@ on:
 jobs:
   claude-review:
     runs-on: ubuntu-latest
+    timeout-minutes: 15  # Job-level timeout to prevent runaway jobs
     # Skip for Dependabot PRs (package updates don't need code review)
     if: github.actor != 'dependabot[bot]'
+    env:
+      AST_GREP_MCP_VERSION: "1.1.1"
+      BASE_TOOLS: "Read,Glob,Grep,Task,WebFetch,WebSearch,TodoWrite,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+      AST_GREP_TOOLS: "mcp__ast-grep__find_code,mcp__ast-grep__find_code_by_rule"
+      # MCP configuration (job-level for consistency with other env vars)
+      MCP_CONFIG: '{"mcpServers": {"ast-grep": {"command": "npx", "args": ["-y", "@notprolands/ast-grep-mcp@1.1.1"]}}}'
     permissions:
       contents: read
       pull-requests: write
@@ -22,14 +29,61 @@ jobs:
         with:
           fetch-depth: 1
 
+      # ast-grep MCP availability verification (graceful degradation)
+      # mcp_available controls: --mcp-config injection + allowedTools list
+      # When false: review proceeds without AST analysis (degraded but functional)
+      - name: Verify ast-grep MCP availability
+        id: verify-mcp
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+
+          # npm可用性チェック（ubuntu-latestにはnpmがプリインストールされているため、
+          # 存在しない場合は環境異常）
+          if ! command -v npm &> /dev/null; then
+            echo "::error::npm is not installed. This is unexpected on ubuntu-latest."
+            echo "::error::AST-based code analysis will be UNAVAILABLE. Review quality may be reduced."
+            echo "mcp_available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "🔍 Verifying @notprolands/ast-grep-mcp@${{ env.AST_GREP_MCP_VERSION }} availability..."
+
+          # stderrを保持して診断情報を確保（Issue 1対応）
+          NPM_OUTPUT=$(npm view @notprolands/ast-grep-mcp@${{ env.AST_GREP_MCP_VERSION }} version 2>&1) && NPM_STATUS=0 || NPM_STATUS=$?
+
+          if [ "$NPM_STATUS" -eq 0 ]; then
+            echo "✅ Package verified: $NPM_OUTPUT"
+            echo "mcp_available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::ast-grep MCP verification failed (exit code: $NPM_STATUS)"
+            echo "::warning::npm output: $NPM_OUTPUT"
+            echo "::warning::Review will proceed without AST analysis."
+            echo "mcp_available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Validate MCP verification output (Issue 2: edge case handling)
+      - name: Validate MCP verification
+        if: steps.verify-mcp.outputs.mcp_available == ''
+        run: |
+          echo "::error::MCP verification step did not produce expected output"
+          echo "::error::Check 'Verify ast-grep MCP availability' step for errors"
+          # Continue with degraded mode rather than failing the workflow
+          echo "mcp_available=false" >> "$GITHUB_OUTPUT"
+
       - name: Run Claude Code Review
+        # NOTE: Workflow fails if this step fails (default behavior)
+        # Claude Action errors (auth, timeout, rate limit) propagate automatically
         id: claude-review
+        timeout-minutes: 10
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Conditional MCP config: inject only when package is verified available
+          # When unavailable: Claude proceeds with BASE_TOOLS only (no AST analysis)
           claude_args: |
-            --mcp-config '{"mcpServers": {"ast-grep": {"command": "npx", "args": ["-y", "@notprolands/ast-grep-mcp"]}}}'
-            --allowedTools "Read,Glob,Grep,Task,WebFetch,WebSearch,TodoWrite,mcp__github_inline_comment__create_inline_comment,mcp__ast-grep__find_code,mcp__ast-grep__find_code_by_rule,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+            ${{ steps.verify-mcp.outputs.mcp_available == 'true' && format('--mcp-config {0}', env.MCP_CONFIG) || '' }}
+            --allowedTools "${{ env.BASE_TOOLS }}${{ steps.verify-mcp.outputs.mcp_available == 'true' && format(',{0}', env.AST_GREP_TOOLS) || '' }}"
           prompt: |
             /review-pr REPO: ${{ github.repository }} PR_NUMBER: ${{ github.event.pull_request.number }}
 
