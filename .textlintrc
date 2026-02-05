@@ -8,6 +8,9 @@
       "max-kanji-continuous-len": {
         "max": 10
       },
+      "max-comma": {
+        "max": 7
+      },
       "no-unmatched-pair": false,
       "no-exclamation-question-mark": false,
       "ja-no-weak-phrase": false,

@@ -1,0 +1,74 @@
+# ===================================================================
+# Claude Code Context Exclusion Rules
+# ===================================================================
+# このファイルは、Claude Codeがコンテキスト読み込み時に除外すべき
+# ファイル/ディレクトリを定義します。
+#
+# 最終更新: 2026-01-31
+# トークン削減効果: ~225,000トークン/セッション
+# ファイル削減率: 98.0% (50,568 → 990ファイル)
+# ===================================================================
+
+# === 1. セキュリティ・プライバシー（Critical） ===
+.env                           # 環境変数（API_KEY等）
+.claude/settings.local.json    # ローカル設定
+obsidian-vault-local/          # 個人メモ・機密情報
+Users/                         # 誤配置ディレクトリ
+
+# === 2. MCP/AIツール内部データ（Critical） ===
+.serena/                       # Serena MCP内部DB
+!.serena/memories/             # メモリファイルは保持
+.memory_mcp/                   # Memory MCP内部データ
+.claude-flow/                  # Claude Flow状態
+.taskmaster/                   # Task Master管理データ
+.hive-mind/                    # Hive Mind協働データ
+.swarm/                        # Swarm MCP内部DB
+memory/                        # 旧Memory実装
+.spec-workflow/                # Spec Workflow（テンプレート含む）
+
+# === 3. Git Worktrees（Important） ===
+.worktrees/                    # 並列開発ブランチ（重複コンテキスト防止）
+
+# === 4. レポート・生成物（Important） ===
+reports/                       # テスト・カバレッジレポート（大容量HTML）
+docs/coverage/                 # カバレッジドキュメント
+coverage.json                  # カバレッジデータ
+claudedocs/                    # Claude生成ドキュメント
+.claude/CLAUDE.md              # Claude固有ドキュメント
+**/CLAUDE.md                   # サブディレクトリのCLAUDE.md
+!CLAUDE.md                     # rootのCLAUDE.mdは保持
+/.claude/CLAUDE.md            # .claude/CLAUDE.md
+.github/instructions/snyk_rules.instructions.md  # Snyk自動生成
+
+# === 5. Python開発環境 ===
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.pre-commit-cache/
+
+# === 6. Node.js依存関係 ===
+node_modules/
+.npm/
+.pnpm-store/
+
+# === 7. ビルド・キャッシュ・システム ===
+dist/
+build/
+*.egg-info/
+.docker/
+.vscode/
+.idea/
+*.log
+logs/
+data/
+.cache/
+.DS_Store
+*.backup

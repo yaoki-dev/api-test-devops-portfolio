@@ -91,6 +91,9 @@ claude-flow.config.json
 # Obsidian Vault (contains personal notes and potentially sensitive data)
 obsidian-vault-local/
 
+# claude flow
+.swarm/
+
 # Node.js (if any JS tooling)
 node_modules/
 
@@ -124,3 +127,6 @@ docs/main/6週プラン/技術記事/技術記事作成.md
 coverage.json
 *.py,cover
 docs/coverage/
+
+# Claude Code working documents (local only)
+claudedocs/
