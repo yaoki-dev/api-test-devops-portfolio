@@ -91,6 +91,9 @@ claude-flow.config.json
 # Obsidian Vault (contains personal notes and potentially sensitive data)
 obsidian-vault-local/
 
+# claude flow
+.swarm/
+
 # Node.js (if any JS tooling)
 node_modules/
 
