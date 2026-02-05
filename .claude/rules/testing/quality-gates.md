@@ -211,8 +211,8 @@ Gate 4 (git commit) → 未コミット?
 
 ## 参考リソース
 
-- **RULES.md**: ~/.claude/RULES.md「Implementation Integrity」セクション
-- **coding_standards**: .serena/memories/coding_standards.md
-- **test_strategy**: .serena/memories/test_strategy.md
-- **test_strategy_details**: .serena/memories/test_strategy_details.md
+- **RULES.md**: .claude/rules/workflow/RULES.md「Implementation Integrity」セクション
+- **coding_standards**: .claude/rules/python/coding-standards.md
+- **test_strategy**: .claude/rules/testing/test-strategy.md
+- **test_strategy_details**: @memory:test_strategy_details（Serena MCP経由）
 - **ポートフォリオ戦略**: docs/プロジェクト再編/ポートフォリオ戦略.md
