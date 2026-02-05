@@ -13,3 +13,11 @@ node_modules/**
 .taskmaster/**
 .spec-workflow/**
 obsidian-vault-local/**
+# Cache directories
+.pre-commit-cache/**
+# Claude-flow generated files
+.claude-flow/**
+# Serena memories (dynamic content)
+.serena/**
+# Claude Code working documents (local only)
+claudedocs/**
