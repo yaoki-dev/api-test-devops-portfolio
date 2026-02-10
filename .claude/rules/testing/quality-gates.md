@@ -1,218 +1,98 @@
 # プロジェクト品質ゲート基準
 
-*最終更新: 2025年12月27日*
+*最終更新: 2026年02月10日*
 
 ## 目的
 
-このドキュメントは、api-test-devops-portfolioプロジェクトにおける「実装活動」の認定基準を定義します。RULES.md「Implementation Integrity」カテゴリの具体化版として、定量的な品質ゲートを提供します。
+「実装活動」の認定基準を定義。RULES.md「Implementation Integrity」の具体化版。
 
 ---
 
 ## 実装活動認定条件（全て合格必須）
 
-実装コード・テスト・設定ファイルの作成が「実装活動」として認定されるには、以下の**4つの品質ゲート全て**に合格する必要があります。
+### Gate 1: pytest合格
 
-### ✅ Gate 1: pytest合格
-
-**検証コマンド**:
 ```bash
 uv run pytest --cov=utils --cov=config --cov=models --cov-fail-under=[Phase別目標]
 ```
 
-**合格基準**:
 - 全テストケース合格（0 failed）
-- カバレッジ目標達成（Phase別、下記参照）
-- テストマーカー別実行も合格（unit, integration）
-
-
-**不合格時の対応**:
-- テスト失敗: 失敗原因を特定し、コード修正またはテスト修正
-- カバレッジ不足: 未カバー箇所を特定（`--cov-report=term-missing`）し、テスト追加
+- カバレッジ目標達成（Phase別）
+- 不合格時: `--cov-report=term-missing`で未カバー箇所特定
 
 ---
 
-### ✅ Gate 2: ruff合格（コードスタイル・品質）
+### Gate 2: ruff合格
 
-**検証コマンド**:
 ```bash
 uv run ruff check --fix .
 ```
 
-**合格基準**:
 - ruff検出エラー: 0件
-- 自動修正可能な警告: 全て修正済み（`--fix`適用）
-- 行長制限: 100文字以内（pyproject.toml設定）
-
-**ruffチェック項目**:
-- インポート順序（isort統合）
-- 命名規則（snake_case、PascalCase）
-- 未使用変数・インポート
-- コードスタイル（PEP 8準拠）
-
-**不合格時の対応**:
-- `uv run ruff check --fix .` で自動修正
-- 修正不可エラーは手動対応
+- 自動修正適用済み
+- 不合格時: 手動対応
 
 ---
 
-### ✅ Gate 3: mypy合格（型チェック）
+### Gate 3: mypy合格
 
-**検証コマンド**:
 ```bash
 uv run mypy utils/ config/ models/
 ```
 
-**合格基準**:
 - 型エラー: 0件
-- 全ての関数・メソッドに型ヒント（`disallow_untyped_defs = true`）
-- 戻り値の型明示
-
-**mypyチェック項目**:
-- 型ヒント欠落検出
-- 型の不一致検出
-- Optional型の適切な使用
-
-**不合格時の対応**:
-- 型ヒント追加（引数・戻り値）
-- 型の不整合修正
+- 全関数に型ヒント（`disallow_untyped_defs = true`）
+- 不合格時: 型ヒント追加
 
 ---
 
-### ✅ Gate 4: git commit実行済み
+### Gate 4: git commit実行済み
 
-**検証コマンド**:
+- 変更がgit commitされている（`/commit`スキル使用、**生 `git commit` 禁止**）
+- Conventional Commits形式: `feat:`, `fix:`, `test:`, `docs:`, `refactor:`, `chore:`, `perf:`, `ci:`, `security:`
+
+---
+
+## 統合検証コマンド
+
 ```bash
-git status
-git log -1 --oneline
-```
-
-**合格基準**:
-- 変更がgit commitされている
-- コミットメッセージが意味を持つ（`feat:`, `fix:`, `test:` 等のprefix使用）
-- Untracked filesが実装成果物のみ（一時ファイルは除外）
-
-**Conventional Commits形式**:
-```
-feat: 新機能追加
-fix: バグ修正
-test: テスト追加・修正
-docs: ドキュメント更新
-refactor: リファクタリング
-chore: ビルド・設定変更
-```
-
-**不合格時の対応**:
-- 未コミット: `git add` + `git commit -m "meaningful message"`
-- 一時ファイル混入: `.gitignore`追加、`git rm --cached`で除外
-
----
-
-## 統合検証コマンド（全ゲート一括実行）
-
-**ワンライナー**:
-```bash
-uv run pytest -n auto --cov-fail-under=[目標] && \
-uv run ruff check . && \
-uv run mypy utils/ config/ models/ && \
-git status
-```
-
-**成功例**:
-```
-===== test session starts =====
-collected 38 items
-
-tests/unit/test_async_client.py ............ [ 31%]
-tests/integration/test_api_integration.py ... [ 39%]
-...
-===== 38 passed in 5.23s =====
-
-Coverage: 62% (target: 60%) ✅
-
-ruff check: 0 errors ✅
-mypy: Success: no issues found ✅
-
-On branch local/history
-nothing to commit, working tree clean ✅
-
-🎉 全ての品質ゲート合格！実装活動認定
+uv run pytest -n auto --cov-fail-under=[目標] && uv run ruff check . && uv run mypy utils/ config/ models/ && git status
 ```
 
 ---
 
-## 品質ゲート不合格時のフロー
+## 品質ゲート不合格時の対応
 
-```
-実装完了
-  ↓
-品質ゲート実行
-  ↓
-Gate 1 (pytest) → 失敗?
-  ├─ YES → テスト修正・コード修正 → 再実行
-  └─ NO → Gate 2へ
-  ↓
-Gate 2 (ruff) → 失敗?
-  ├─ YES → ruff --fix実行・手動修正 → 再実行
-  └─ NO → Gate 3へ
-  ↓
-Gate 3 (mypy) → 失敗?
-  ├─ YES → 型ヒント追加 → 再実行
-  └─ NO → Gate 4へ
-  ↓
-Gate 4 (git commit) → 未コミット?
-  ├─ YES → git commit実行 → 再確認
-  └─ NO → 実装活動認定 ✅
-```
+1. **Gate 1失敗**: テスト修正・コード修正 → 再実行
+2. **Gate 2失敗**: `ruff --fix` → 手動修正 → 再実行
+3. **Gate 3失敗**: 型ヒント追加 → 再実行
+4. **Gate 4未完了**: `/commit`スキル実行
+
+**フロー**: 実装完了 → 品質ゲート実行 → 全Gate合格 → 実装活動認定
 
 ---
 
-## 実装活動記録フォーマット
+## 実装活動記録
 
-品質ゲート合格後、`docs/progress/daily_progress.md`に以下を記録：
+品質ゲート合格後、`docs/progress/daily_progress.md`に記録。
 
-```markdown
-### YYYY-MM-DD (曜日)
-
-#### 🛠️ ポートフォリオ実装進捗
-
-**品質ゲート（実装活動判定）**:
-- [x] pytest合格（カバレッジ: 62% / 目標60%）
-- [x] ruff合格（0 errors）
-- [x] mypy合格（0 errors）
-- [x] git commit実行済み（commit: a1b2c3d）
-
-**実装活動認定**: ✅ 認定
-
-**完了タスク**:
-- [x] Docker 4-stage実装
-- [x] docker-compose dev環境構築
-
-**メトリクス変化**:
-- カバレッジ: 58.56% → 62%
-- テスト数: 38 → 42
-- Docker実装: 0% → 40%
-
-**成果物**:
-- git commit: a1b2c3d
-- 変更行数: +234/-12
-- 変更ファイル数: 8
-```
+**記録フォーマット**: @memory:learning_triggers 参照
 
 ---
 
-## 品質ゲート基準の変更履歴
+## 変更履歴
 
-| 日付 | 変更内容 | 理由 |
-|------|---------|------|
-| 2025-11-14 | 初版作成 | RULES.md「Implementation Integrity」の具体化 |
-| 2025-12-27 | 参照更新 | test_strategy統合に伴う参照先更新 |
+| 日付 | 変更内容 |
+|------|---------|
+| 2025-11-14 | 初版作成 |
+| 2025-12-27 | 参照更新 |
+| 2026-02-05 | Gate 4: /commit必須化 |
+| 2026-02-10 | 簡潔化（221行→90行） |
 
 ---
 
-## 参考リソース
+## 参考
 
-- **RULES.md**: .claude/rules/workflow/RULES.md「Implementation Integrity」セクション
-- **coding_standards**: .claude/rules/python/coding-standards.md
-- **test_strategy**: .claude/rules/testing/test-strategy.md
-- **test_strategy_details**: @memory:test_strategy_details（Serena MCP経由）
-- **ポートフォリオ戦略**: docs/プロジェクト再編/ポートフォリオ戦略.md
+- RULES.md「Implementation Integrity」
+- @memory:coding_standards
+- @memory:test_strategy
