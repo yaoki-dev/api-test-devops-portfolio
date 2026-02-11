@@ -1098,8 +1098,10 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
                 except (MemoryError, SystemExit, KeyboardInterrupt, asyncio.CancelledError):
                     # システム例外は伝播（K8s OOMKilled検出等のため）
                     raise
-                except APIClientError as e:
+                except (APIClientError, httpx.HTTPStatusError) as e:
                     # ネットワーク・API エラーのみ個別失敗として扱う
+                    # httpx.HTTPStatusError: モック/直接呼び出し時の生例外
+                    # APIClientError: _make_request_with_retry変換後の例外
                     self.logger.warning(
                         "get_user_failed",
                         user_id=user_id,
