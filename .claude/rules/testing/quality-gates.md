@@ -49,7 +49,7 @@ uv run mypy utils/ config/ models/
 ### Gate 4: git commit実行済み
 
 - 変更がgit commitされている（`/commit`スキル使用、**生 `git commit` 禁止**）
-- Conventional Commits形式: `feat:`, `fix:`, `test:`, `docs:`, `refactor:`, `chore:`, `perf:`, `ci:`, `security:`
+- Conventional Commits形式（`feat:`/`fix:`/`test:`/`docs:`/`refactor:`/`chore:`/`perf:`/`ci:`/`security:`）
 
 ---
 

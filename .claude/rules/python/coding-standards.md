@@ -72,7 +72,7 @@ except json.JSONDecodeError as e:
     raise APIClientError(f"Invalid JSON: {e}") from e  # チェーン維持
 ```
 
-**規則**: 階層的例外設計、`from e`でチェーン維持、4xxは即失敗・5xxはリトライ
+**規則**: 階層的例外設計、`from e`でチェーン維持、4xx即失敗/5xxリトライ
 
 ---
 
