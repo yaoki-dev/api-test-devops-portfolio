@@ -5,6 +5,7 @@ import pytest
 
 from utils.api_client import (
     AsyncJSONPlaceholderClient,
+    BulkOperationResult,
     SyncAPIClient,
     SyncJSONPlaceholderClient,
 )
@@ -39,6 +40,34 @@ mock_settings_instance = MockSettings()
 def mock_settings():
     with patch("config.settings.settings", new=mock_settings_instance):
         yield
+
+
+def test_bulk_operation_result_properties():
+    """BulkOperationResultのプロパティテスト（境界値含む）
+
+    検証項目:
+    - total_count: 成功数+失敗数の合計
+    - success_rate: ゼロ除算保護、正常計算
+    """
+    # ケース1: 空の結果（ゼロ除算保護）
+    result_empty = BulkOperationResult()
+    assert result_empty.total_count == 0
+    assert result_empty.success_rate == 0.0  # ゼロ除算で0.0を返す
+
+    # ケース2: 全件成功
+    result_all_success = BulkOperationResult(success_count=5, failure_count=0)
+    assert result_all_success.total_count == 5
+    assert result_all_success.success_rate == 1.0
+
+    # ケース3: 全件失敗
+    result_all_failure = BulkOperationResult(success_count=0, failure_count=3)
+    assert result_all_failure.total_count == 3
+    assert result_all_failure.success_rate == 0.0
+
+    # ケース4: 部分成功（70%成功率）
+    result_partial = BulkOperationResult(success_count=7, failure_count=3)
+    assert result_partial.total_count == 10
+    assert abs(result_partial.success_rate - 0.7) < 0.001  # 浮動小数点誤差許容
 
 
 def test_base_client_initialization():

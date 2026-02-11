@@ -4,9 +4,9 @@
 
 ## エグゼクティブサマリー
 
-**現在のカバレッジ**: 77.80% | **最終目標**: 85%
-**テスト資産**: 109関数 / 401収集、~7,500行
-**最優先改善領域**: utils/api_client.py (63.99%)
+**現在のカバレッジ**: 79.25%（CI条件） | **最終目標**: 85%
+**テスト資産**: 252関数 / 313収集（CI条件: unit+integration, not external）
+**最優先改善領域**: utils/api_client.py (55.13%)
 
 ---
 
@@ -56,7 +56,7 @@ uv run pytest --cov=utils --cov=config --cov=models --cov-report=term-missing
 | 3-4 | 65-70% | Docker/CI-CD |
 | 5-6 | 80-85% | 非同期/e2e |
 
-**優先モジュール**: utils/api_client.py (63.99%) → 最優先
+**優先モジュール**: utils/api_client.py (55.13%) → 最優先
 
 ---
 
