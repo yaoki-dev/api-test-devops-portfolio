@@ -86,6 +86,15 @@ class GitHubServerError(GitHubAPIError):
     """GitHub側のサーバーエラー（5xx）"""
 
 
+class CacheUnavailableError(GitHubAPIError):
+    """304 Not Modifiedレスポンスでキャッシュデータが利用不可能な場合
+
+    発生条件:
+    - 304レスポンスを受信したが、対応するキャッシュデータが存在しない
+    - 理論上は発生しないが、キャッシュの不整合やクリア後に発生する可能性あり
+    """
+
+
 # =============================================================================
 # AsyncGitHubClient実装
 # =============================================================================
@@ -231,6 +240,17 @@ class AsyncGitHubClient:
             raise GitHubAPIError(f"Expected dict response, got {type(result).__name__}")
         return result
 
+    def _get_cached_data(self, endpoint: str) -> dict[str, Any] | list[dict[str, Any]] | None:
+        """キャッシュからデータ取得（既存_data_cacheと連携）
+
+        Args:
+            endpoint: APIエンドポイント（相対パス、例: '/users/octocat'）
+
+        Returns:
+            キャッシュされたデータ、またはNone
+        """
+        return self._data_cache.get(endpoint)
+
     async def _request(  # noqa: C901 - 統合HTTPリクエスト処理（Rate Limit/ETag/リトライ統合）のため許容
         self,
         method: str,
@@ -292,9 +312,12 @@ class AsyncGitHubClient:
                 # ステータスコード処理
                 if response.status_code == 304:
                     # 304 Not Modified: キャッシュデータを返却
-                    if endpoint in self._data_cache:
-                        return self._data_cache[endpoint]
-                    return {}  # キャッシュミス時は空辞書（理論上発生しない）
+                    cached_data = self._get_cached_data(endpoint)
+                    if cached_data is None:
+                        raise CacheUnavailableError(
+                            f"304 Not Modified response but no cached data for '{endpoint}'"
+                        )
+                    return cached_data
 
                 if response.status_code == 404:
                     raise NotFoundError(f"Resource not found: {endpoint}")

@@ -604,9 +604,10 @@ async def test_async_health_check():
             assert "params" in call_args[1]
             assert call_args[1]["params"]["_limit"] == 1
 
-        # Test 2: エラー時 → False（graceful degradation）
+        # Test 2: ネットワークエラー時 → False（graceful degradation）
+        # httpx.ConnectErrorを使用（httpx.RequestErrorのサブクラス）
         mock_client_instance.reset_mock()
-        mock_client_instance.request.side_effect = Exception("Connection refused")
+        mock_client_instance.request.side_effect = httpx.ConnectError("Connection refused")
 
         async with AsyncJSONPlaceholderClient() as client:
             result = await client.health_check()

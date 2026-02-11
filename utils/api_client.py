@@ -490,11 +490,21 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         軽量なリクエスト（/users?_limit=1）でAPI到達性を確認。
 
         Returns:
-            bool: API到達可能ならTrue、エラー時はFalse
+            bool: API到達可能ならTrue、ネットワーク/HTTPエラー時はFalse
+
+        Raises:
+            MemoryError: メモリ不足時（Kubernetes OOMKilled対応で伝播）
+            KeyboardInterrupt: 割り込み時（伝播）
+            SystemExit: 終了シグナル時（伝播）
 
         Note:
-            Async版と同一インターフェースで統一。
-            CLI、スクリプト、レガシーシステム統合時に使用。
+            self.get()はリトライロジックを経由するため、以下の例外が発生:
+            - APIRetryError: リトライ上限到達時（ネットワークエラー等）
+            - APIHTTPError: HTTPステータスエラー（4xx）
+            - APIClientError: その他のAPIエラー
+
+            MemoryError等のシステム例外はKubernetesに伝播させ、
+            OOMKilled等の適切なコンテナ再起動を可能にする。
 
         Example:
             >>> with SyncJSONPlaceholderClient() as client:
@@ -505,13 +515,15 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         try:
             response = self.get("/users", params={"_limit": 1})
             return response.status_code == 200
-        except Exception as e:
+        except APIClientError as e:
+            # APIクライアント例外（リトライ失敗、HTTPエラー等）
             self.logger.warning(
                 "health_check_failed",
                 error=str(e),
                 error_type=type(e).__name__,
             )
             return False
+        # MemoryError, KeyboardInterrupt, SystemExit → Kubernetesに伝播
 
 
 # =============================================================================
@@ -939,13 +951,27 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 
     # ヘルスチェック（DevOps/K8s readiness対応）
     async def health_check(self) -> bool:
-        """API接続の健全性チェック
+        """API接続の健全性チェック（非同期版）
 
         Docker/Kubernetes readiness probeとして使用可能。
         軽量なリクエスト（/users?_limit=1）でAPI到達性を確認。
 
         Returns:
-            bool: API到達可能ならTrue、エラー時はFalse
+            bool: API到達可能ならTrue、ネットワーク/HTTPエラー時はFalse
+
+        Raises:
+            MemoryError: メモリ不足時（Kubernetes OOMKilled対応で伝播）
+            KeyboardInterrupt: 割り込み時（伝播）
+            SystemExit: 終了シグナル時（伝播）
+
+        Note:
+            self.get()はリトライロジックを経由するため、以下の例外が発生:
+            - APIRetryError: リトライ上限到達時（ネットワークエラー等）
+            - APIHTTPError: HTTPステータスエラー（4xx）
+            - APIClientError: その他のAPIエラー
+
+            MemoryError等のシステム例外はKubernetesに伝播させ、
+            OOMKilled等の適切なコンテナ再起動を可能にする。
 
         学習ポイント:
         - Readiness Probe: コンテナがトラフィックを受け入れ可能か確認
@@ -961,13 +987,15 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         try:
             response = await self.get("/users", params={"_limit": 1})
             return response.status_code == 200
-        except Exception as e:
+        except APIClientError as e:
+            # APIクライアント例外（リトライ失敗、HTTPエラー等）
             self.logger.warning(
                 "health_check_failed",
                 error=str(e),
                 error_type=type(e).__name__,
             )
             return False
+        # MemoryError, KeyboardInterrupt, SystemExit → Kubernetesに伝播
 
     # 複数ユーザー取得（Semaphore制御）
     async def get_multiple_users(

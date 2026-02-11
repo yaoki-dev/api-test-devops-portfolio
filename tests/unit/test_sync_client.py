@@ -14,6 +14,7 @@ Note:
 import sys
 from unittest.mock import Mock
 
+import httpx
 import pytest
 
 from tests.conftest import create_mock_response
@@ -179,9 +180,10 @@ def test_sync_health_check(mock_httpx_sync_client: Mock) -> None:
         assert "params" in call_args[1]
         assert call_args[1]["params"]["_limit"] == 1
 
-    # Test 2: エラー時 → False（graceful degradation）
+    # Test 2: ネットワークエラー時 → False（graceful degradation）
+    # httpx.ConnectErrorを使用（httpx.RequestErrorのサブクラス）
     mock_httpx_sync_client.reset_mock()
-    mock_httpx_sync_client.request.side_effect = Exception("Connection refused")
+    mock_httpx_sync_client.request.side_effect = httpx.ConnectError("Connection refused")
 
     with SyncJSONPlaceholderClient() as client:
         client._client = mock_httpx_sync_client

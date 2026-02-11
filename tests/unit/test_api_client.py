@@ -1,10 +1,12 @@
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 
 from utils.api_client import (
+    AsyncJSONPlaceholderClient,
     SyncAPIClient,
+    SyncJSONPlaceholderClient,
 )
 
 # Module-level marker: All tests in this file are unit tests
@@ -84,3 +86,73 @@ def test_base_client_close_method():
     # httpx.Client.close() doesn't set _client to None, but it closes the transport.
     # We can't easily assert the underlying httpx client is closed without mocking.
     # For now, just ensure no error is raised.
+
+
+# =============================================================================
+# health_check システム例外伝播テスト（Kubernetes OOMKilled対応）
+# =============================================================================
+
+
+@pytest.mark.unit
+def test_health_check_memory_error_propagates():
+    """MemoryErrorはhealth_checkから伝播する（Kubernetes OOMKilled対応）
+
+    システム例外（MemoryError, KeyboardInterrupt, SystemExit）は
+    health_checkで隠蔽せず、Kubernetesに伝播させる必要がある。
+    これにより、OOMKilled等の適切なコンテナ再起動が可能になる。
+    """
+    with SyncJSONPlaceholderClient() as client:
+        with patch.object(client, "get", side_effect=MemoryError("Out of memory")):
+            with pytest.raises(MemoryError):
+                client.health_check()
+
+
+@pytest.mark.unit
+def test_health_check_keyboard_interrupt_propagates():
+    """KeyboardInterruptはhealth_checkから伝播する"""
+    with SyncJSONPlaceholderClient() as client:
+        with patch.object(client, "get", side_effect=KeyboardInterrupt()):
+            with pytest.raises(KeyboardInterrupt):
+                client.health_check()
+
+
+@pytest.mark.unit
+def test_health_check_system_exit_propagates():
+    """SystemExitはhealth_checkから伝播する"""
+    with SyncJSONPlaceholderClient() as client:
+        with patch.object(client, "get", side_effect=SystemExit(1)):
+            with pytest.raises(SystemExit):
+                client.health_check()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_async_health_check_memory_error_propagates():
+    """非同期版: MemoryErrorは伝播する（Kubernetes OOMKilled対応）"""
+    async with AsyncJSONPlaceholderClient() as client:
+        with patch.object(client, "get", new_callable=AsyncMock) as mock_get:
+            mock_get.side_effect = MemoryError("Out of memory")
+            with pytest.raises(MemoryError):
+                await client.health_check()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_async_health_check_keyboard_interrupt_propagates():
+    """非同期版: KeyboardInterruptは伝播する"""
+    async with AsyncJSONPlaceholderClient() as client:
+        with patch.object(client, "get", new_callable=AsyncMock) as mock_get:
+            mock_get.side_effect = KeyboardInterrupt()
+            with pytest.raises(KeyboardInterrupt):
+                await client.health_check()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_async_health_check_system_exit_propagates():
+    """非同期版: SystemExitは伝播する"""
+    async with AsyncJSONPlaceholderClient() as client:
+        with patch.object(client, "get", new_callable=AsyncMock) as mock_get:
+            mock_get.side_effect = SystemExit(1)
+            with pytest.raises(SystemExit):
+                await client.health_check()

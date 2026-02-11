@@ -15,6 +15,7 @@ import pytest
 
 from utils.github_client import (
     AsyncGitHubClient,
+    CacheUnavailableError,
     GitHubAPIError,
     GitHubServerError,
     NotFoundError,
@@ -462,3 +463,38 @@ async def test_json_decode_error():
 
             with pytest.raises(GitHubAPIError, match="Invalid JSON"):
                 await client.get_user("octocat")
+
+
+# =============================================================================
+# 304 Not Modified キャッシュミステスト
+# =============================================================================
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_304_cache_miss_raises_exception():
+    """304レスポンスでキャッシュなしの場合、CacheUnavailableError例外を発生させる
+
+    検証項目:
+    - 304レスポンス受信時にキャッシュが空の場合
+    - CacheUnavailableError例外が発生する
+    - エラーメッセージに304とno cached dataが含まれる
+    """
+    async with AsyncGitHubClient() as client:
+        with patch.object(client._client, "request", new_callable=AsyncMock) as mock_request:
+            # 304 Not Modifiedレスポンスを設定
+            mock_response = MagicMock(spec=httpx.Response)
+            mock_response.status_code = 304
+            mock_response.headers = {"X-RateLimit-Remaining": "50"}
+            mock_request.return_value = mock_response
+
+            # キャッシュが空の状態をシミュレート
+            client._data_cache = {}
+            client._etag_cache = {}
+
+            # Act & Assert
+            with pytest.raises(CacheUnavailableError) as exc_info:
+                await client.get_user("octocat")
+
+            assert "304" in str(exc_info.value)
+            assert "no cached data" in str(exc_info.value).lower()
