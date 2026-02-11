@@ -67,7 +67,25 @@ def validate_github_repo(repo: str) -> None:
 
 
 class GitHubAPIError(APIClientError):
-    """GitHub API基底例外（APIClientErrorを継承し統一的なエラーハンドリングを実現）"""
+    """GitHub API基底例外（APIClientErrorを継承し統一的なエラーハンドリングを実現）
+
+    Attributes:
+        status_code: HTTPステータスコード（403, 404等）
+        response_body: GitHubからのレスポンス本文（デバッグ用）
+    """
+
+    def __init__(
+        self,
+        message: str,
+        status_code: int | None = None,
+        response_body: dict | None = None,
+    ) -> None:
+        self.status_code = status_code
+        self.response_body = response_body or {}
+        if status_code:
+            super().__init__(f"[{status_code}] {message}")
+        else:
+            super().__init__(message)
 
 
 class RateLimitError(GitHubAPIError):
@@ -331,11 +349,17 @@ class AsyncGitHubClient:
                         raise RateLimitError(reset_time)
                     # その他の403エラー（IPブロック、アクセス権限不足等）
                     error_message = "Access forbidden"
+                    response_body: dict = {}
                     try:
-                        error_message = response.json().get("message", error_message)
+                        response_body = response.json()
+                        error_message = response_body.get("message", error_message)
                     except Exception as parse_err:
                         self.logger.warning("failed_to_parse_403_message", error=str(parse_err))
-                    raise GitHubAPIError(f"Access forbidden: {error_message}")
+                    raise GitHubAPIError(
+                        message=f"Access forbidden: {error_message}",
+                        status_code=403,
+                        response_body=response_body,
+                    )
 
                 if response.status_code >= 500:
                     # 5xxエラー: リトライ

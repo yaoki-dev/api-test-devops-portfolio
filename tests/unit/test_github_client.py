@@ -498,3 +498,40 @@ async def test_304_cache_miss_raises_exception():
 
             assert "304" in str(exc_info.value)
             assert "no cached data" in str(exc_info.value).lower()
+
+
+# =============================================================================
+# 403 Forbidden エラーメッセージ保持テスト（PR#170 Task 11）
+# =============================================================================
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_403_error_preserves_github_message():
+    """403エラー時にGitHub提供のエラーメッセージを保持する
+
+    検証項目:
+    - 403レスポンス受信時にGitHubAPIError例外が発生する
+    - GitHubのエラーメッセージが例外に含まれる
+    - status_code属性が403である
+    """
+    async with AsyncGitHubClient() as client:
+        with patch.object(client._client, "request", new_callable=AsyncMock) as mock_request:
+            # 403 Forbiddenレスポンス（Rate Limit以外）を設定
+            mock_response = MagicMock(spec=httpx.Response)
+            mock_response.status_code = 403
+            mock_response.headers = {"X-RateLimit-Remaining": "50"}  # Rate Limit残あり
+            mock_response.json.return_value = {
+                "message": "API rate limit exceeded for user ID 123",
+                "documentation_url": "https://docs.github.com/rest#rate-limiting",
+            }
+            mock_request.return_value = mock_response
+
+            # Act & Assert
+            with pytest.raises(GitHubAPIError) as exc_info:
+                await client.get_user("octocat")
+
+            # GitHubのメッセージが保持されていることを確認
+            assert "API rate limit exceeded" in str(exc_info.value)
+            assert "user ID 123" in str(exc_info.value)
+            assert exc_info.value.status_code == 403

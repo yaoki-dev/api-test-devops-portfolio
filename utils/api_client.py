@@ -11,6 +11,7 @@ import asyncio
 import json
 import random
 import time
+from dataclasses import dataclass, field
 from types import TracebackType
 from typing import Any, Self
 
@@ -45,6 +46,40 @@ def exponential_backoff_with_jitter(
     delay = delay + random.uniform(-jitter, jitter)  # noqa: S311
     # 最小値保証
     return max(0.1, delay)
+
+
+# =============================================================================
+# データクラス
+# =============================================================================
+
+
+@dataclass
+class BulkOperationResult:
+    """バルク操作結果（部分失敗対応）
+
+    Attributes:
+        success_count: 成功件数
+        failure_count: 失敗件数
+        successful_items: 成功したアイテムのリスト
+        failed_items: 失敗したアイテムのリスト（元の入力とエラー情報を含む）
+    """
+
+    success_count: int = 0
+    failure_count: int = 0
+    successful_items: list[dict[str, Any]] = field(default_factory=list)
+    failed_items: list[dict[str, Any]] = field(default_factory=list)
+
+    @property
+    def total_count(self) -> int:
+        """総件数"""
+        return self.success_count + self.failure_count
+
+    @property
+    def success_rate(self) -> float:
+        """成功率（0.0〜1.0）"""
+        if self.total_count == 0:
+            return 0.0
+        return self.success_count / self.total_count
 
 
 # =============================================================================
@@ -873,30 +908,56 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         response = await self.post("/users", json=user_data)
         return _safe_parse_json(response)
 
-    async def bulk_create_users(self, users_data: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """複数ユーザーの非同期一括作成
+    async def bulk_create_users(self, users_data: list[dict[str, Any]]) -> BulkOperationResult:
+        """複数ユーザーの非同期一括作成（部分失敗対応）
 
-        個別失敗を許容し、成功したユーザーのみ返却。
-        失敗時はwarningログを出力（最初の5件まで詳細表示）。
+        Args:
+            users_data: 作成するユーザーデータのリスト
+
+        Returns:
+            BulkOperationResult: 成功/失敗の詳細情報を含む結果オブジェクト
         """
+        result = BulkOperationResult()
+
         # 並行してユーザー作成（個別失敗許容）
         tasks = [self.create_user(user_data) for user_data in users_data]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        responses = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # 成功・失敗を分離（型安全なフィルタリング）
-        successful: list[dict[str, Any]] = [r for r in results if isinstance(r, dict)]
-        failed: list[BaseException] = [r for r in results if isinstance(r, BaseException)]
+        # 成功・失敗を分離して詳細情報を保持
+        for index, (user_data, response) in enumerate(zip(users_data, responses, strict=True)):
+            if isinstance(response, BaseException):
+                # 失敗: 元の入力とエラー情報を保持
+                result.failed_items.append(
+                    {
+                        "index": index,
+                        "input": user_data,
+                        "error": str(response),
+                        "error_type": type(response).__name__,
+                    }
+                )
+                result.failure_count += 1
+            else:
+                # 成功: レスポンスと元の入力を保持
+                result.successful_items.append(
+                    {
+                        "index": index,
+                        "input": user_data,
+                        "response": response,
+                    }
+                )
+                result.success_count += 1
 
-        # 失敗時はログ出力（A1: デバッグ改善）
-        if failed:
+        # 部分失敗時はログ出力
+        if result.failure_count > 0:
             self.logger.warning(
                 "bulk_create_partial_failure",
-                failed_count=len(failed),
-                success_count=len(successful),
-                errors=[str(e) for e in failed[:5]],  # 最初の5件のみ
+                failed_count=result.failure_count,
+                success_count=result.success_count,
+                success_rate=f"{result.success_rate:.2%}",
+                failed_emails=[item["input"].get("email") for item in result.failed_items[:5]],
             )
 
-        return successful
+        return result
 
     # Comments API
     async def get_comments(self, post_id: int | None = None) -> list[dict[str, Any]]:

@@ -467,17 +467,18 @@ async def test_async_bulk_create_users(mock_response_factory):
         mock_client_instance.request.side_effect = created_responses
 
         async with AsyncJSONPlaceholderClient() as client:
-            results = await client.bulk_create_users(users_to_create)
+            result = await client.bulk_create_users(users_to_create)
 
-            # 結果検証
-            assert len(results) == 3
-            assert all(result["id"] > 100 for result in results)
+            # BulkOperationResult型の検証（Task 12で導入）
+            assert result.success_count == 3
+            assert result.failure_count == 0
+            assert len(result.successful_items) == 3
 
             # 並行実行確認
             assert mock_client_instance.request.call_count == 3
 
             # 作成されたユーザー確認
-            created_names = [result["name"] for result in results]
+            created_names = [item["response"]["name"] for item in result.successful_items]
             assert "User 1" in created_names
             assert "User 2" in created_names
             assert "User 3" in created_names

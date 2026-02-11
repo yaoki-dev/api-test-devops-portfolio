@@ -156,3 +156,51 @@ async def test_async_health_check_system_exit_propagates():
             mock_get.side_effect = SystemExit(1)
             with pytest.raises(SystemExit):
                 await client.health_check()
+
+
+# =============================================================================
+# Bulk操作部分失敗コンテキスト保持テスト（PR#170 Task 12）
+# =============================================================================
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_bulk_create_users_partial_failure_tracking():
+    """bulk_create_usersで部分失敗時に失敗ユーザーを特定可能
+
+    検証項目:
+    - BulkOperationResult型で結果が返される
+    - 成功/失敗のカウントが正確
+    - 失敗アイテムに元の入力データとエラー情報が含まれる
+    """
+    from utils.api_client import BulkOperationResult
+
+    async with AsyncJSONPlaceholderClient() as client:
+        # 3件中1件失敗するシナリオを設定
+        users = [
+            {"name": "User1", "email": "user1@example.com"},
+            {"name": "User2", "email": "invalid-email"},  # 失敗予定
+            {"name": "User3", "email": "user3@example.com"},
+        ]
+
+        # create_userをモック: 2番目のみ例外発生
+        call_count = 0
+
+        async def mock_create_user(user_data):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 2:
+                raise ValueError("Invalid email format")
+            return {"id": call_count, **user_data}
+
+        with patch.object(client, "create_user", side_effect=mock_create_user):
+            result = await client.bulk_create_users(users)
+
+        # BulkOperationResult型であることを確認
+        assert isinstance(result, BulkOperationResult)
+        assert result.success_count == 2
+        assert result.failure_count == 1
+        assert len(result.failed_items) == 1
+        # 失敗アイテムに元の入力が含まれる
+        assert result.failed_items[0]["input"] == users[1]
+        assert "error" in result.failed_items[0]
