@@ -353,7 +353,8 @@ class AsyncGitHubClient:
                     try:
                         response_body = response.json()
                         error_message = response_body.get("message", error_message)
-                    except Exception as parse_err:
+                    except json.JSONDecodeError as parse_err:
+                        # JSONパースエラーのみ捕捉（システム例外は伝播）
                         self.logger.warning("failed_to_parse_403_message", error=str(parse_err))
                     raise GitHubAPIError(
                         message=f"Access forbidden: {error_message}",
@@ -412,16 +413,18 @@ class AsyncGitHubClient:
                 self.logger.warning("request_timeout", endpoint=endpoint, method=method)
                 raise GitHubAPIError(f"Request timeout: {e}") from e
 
-            except (KeyboardInterrupt, asyncio.CancelledError):
-                # システム例外は再発生（非同期キャンセル・ユーザー中断を適切に伝播）
+            except (MemoryError, SystemExit, KeyboardInterrupt, asyncio.CancelledError):
+                # システム例外は伝播（K8s OOMKilled検出、非同期キャンセル等）
                 raise
 
             except Exception as e:
+                # 予期しないエラーをラップ（システム例外は上で伝播済み）
                 self.logger.error(
                     "unexpected_error",
                     endpoint=endpoint,
                     method=method,
                     error=str(e),
+                    error_type=type(e).__name__,
                 )
                 raise GitHubAPIError(f"Unexpected error: {e}") from e
 

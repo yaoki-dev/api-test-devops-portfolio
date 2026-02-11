@@ -1095,11 +1095,16 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             async with semaphore:
                 try:
                     return await self.get_user(user_id)
-                except Exception as e:
+                except (MemoryError, SystemExit, KeyboardInterrupt, asyncio.CancelledError):
+                    # システム例外は伝播（K8s OOMKilled検出等のため）
+                    raise
+                except APIClientError as e:
+                    # ネットワーク・API エラーのみ個別失敗として扱う
                     self.logger.warning(
                         "get_user_failed",
                         user_id=user_id,
                         error=str(e),
+                        error_type=type(e).__name__,
                     )
                     return None
 
