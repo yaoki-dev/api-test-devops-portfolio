@@ -30,14 +30,14 @@ memory/                        # 旧Memory実装
 .worktrees/                    # 並列開発ブランチ（重複コンテキスト防止）
 
 # === 4. レポート・生成物（Important） ===
-reports/                       # テスト・カバレッジレポート（大容量HTML）
-docs/coverage/                 # カバレッジドキュメント
-coverage.json                  # カバレッジデータ
-claudedocs/                    # Claude生成ドキュメント
-.claude/CLAUDE.md              # Claude固有ドキュメント
-**/CLAUDE.md                   # サブディレクトリのCLAUDE.md
-!CLAUDE.md                     # rootのCLAUDE.mdは保持
-/.claude/CLAUDE.md            # .claude/CLAUDE.md
+reports/                         # テスト・カバレッジレポート（大容量HTML）
+docs/coverage/                   # カバレッジドキュメント
+coverage.json                    # カバレッジデータ
+claudedocs/                      # Claude生成ドキュメント
+.claude/rules/python/CLAUDE.md   # Pythonルールドキュメント
+.claude/rules/testing/CLAUDE.md  # テストルールドキュメント
+.claude/rules/workflow/CLAUDE.md # ワークフロールールドキュメント
+**/CLAUDE.md                     # サブディレクトリのCLAUDE.md
 .github/instructions/snyk_rules.instructions.md  # Snyk自動生成
 
 # === 5. Python開発環境 ===
