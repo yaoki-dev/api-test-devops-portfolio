@@ -234,7 +234,7 @@ git status
 /create-issue
 
 # 2. ブランチ作成（Git Flow + worktree）
-/feature <task-name>
+/git:feature <task-name>
 
 # 3. 実装 + 品質ゲート
 # （コード変更後）

@@ -115,7 +115,6 @@ docs/text.md
 # Claude MCP auto-generated files (claude-mem)
 # Excludes all CLAUDE.md in subdirectories, preserves root CLAUDE.md
 **/CLAUDE.md
-!/CLAUDE.md
 
 # Other project-specific ignores
 docs/main/6週プラン/技術記事/技術記事作成.md
@@ -126,7 +125,9 @@ docs/main/6週プラン/技術記事/技術記事作成.md
 # Coverage artifacts
 coverage.json
 *.py,cover
-docs/coverage/
 
 # Claude Code working documents (local only)
 claudedocs/
+docs/agent-teams/
+docs/ai_collaboration/
+docs/analysis/
