@@ -86,6 +86,8 @@ def _sentry_processor(
 
     except ImportError:
         pass  # sentry-sdk未インストール（サイレントスキップ）
+    except MemoryError:
+        raise  # K8s OOMKilled検出のため伝播必須
     except Exception as e:  # noqa: BLE001
         # Sentry送信失敗時はstderrへ出力（循環参照回避のためstructlog不使用）
         import sys

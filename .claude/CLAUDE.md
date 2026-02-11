@@ -164,7 +164,7 @@ git fetch --prune origin && \
 git checkout -b feature/<次のタスク> origin/develop
 ```
 
-**品質基準**: カバレッジ目標85%（現在: 83.06%）| 詳細: quality-gates.md
+**品質基準**: カバレッジ目標85%（現在: 83.32%）| 詳細: quality-gates.md
 
 ## 🔌 コマンド/スキル/プラグイン自動発動ルール
 

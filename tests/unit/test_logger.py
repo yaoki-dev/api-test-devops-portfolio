@@ -446,3 +446,60 @@ class TestSentryProcessor:
             "Unknown error",
             level="error",
         )
+
+    def test_keyboard_interrupt_propagates(self) -> None:
+        """KeyboardInterruptはSentry処理中でも伝播する（K8s graceful shutdown対応）"""
+        event_dict = {"level": "error", "event": "error message"}
+
+        mock_sdk = MagicMock()
+        mock_client = MagicMock()
+        mock_client.is_active.return_value = True
+        mock_sdk.get_client.return_value = mock_client
+        # capture_message実行中にKeyboardInterrupt発生
+        mock_sdk.capture_message.side_effect = KeyboardInterrupt()
+
+        mock_scope = MagicMock()
+        mock_sdk.push_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
+        mock_sdk.push_scope.return_value.__exit__ = MagicMock(return_value=False)
+
+        with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
+            with pytest.raises(KeyboardInterrupt):
+                _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+    def test_memory_error_propagates(self) -> None:
+        """MemoryErrorはSentry処理中でも伝播する（K8s OOMKilled対応）"""
+        event_dict = {"level": "error", "event": "error message"}
+
+        mock_sdk = MagicMock()
+        mock_client = MagicMock()
+        mock_client.is_active.return_value = True
+        mock_sdk.get_client.return_value = mock_client
+        # capture_message実行中にMemoryError発生
+        mock_sdk.capture_message.side_effect = MemoryError()
+
+        mock_scope = MagicMock()
+        mock_sdk.push_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
+        mock_sdk.push_scope.return_value.__exit__ = MagicMock(return_value=False)
+
+        with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
+            with pytest.raises(MemoryError):
+                _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+    def test_system_exit_propagates(self) -> None:
+        """SystemExitはSentry処理中でも伝播する"""
+        event_dict = {"level": "error", "event": "error message"}
+
+        mock_sdk = MagicMock()
+        mock_client = MagicMock()
+        mock_client.is_active.return_value = True
+        mock_sdk.get_client.return_value = mock_client
+        # capture_message実行中にSystemExit発生
+        mock_sdk.capture_message.side_effect = SystemExit(1)
+
+        mock_scope = MagicMock()
+        mock_sdk.push_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
+        mock_sdk.push_scope.return_value.__exit__ = MagicMock(return_value=False)
+
+        with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
+            with pytest.raises(SystemExit):
+                _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)

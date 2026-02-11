@@ -7,7 +7,7 @@
 このプロジェクトは、APIテストとDevOps技術を統合した実践的なポートフォリオです。
 
 [![CI/CD Pipeline](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml/badge.svg)](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/badge/coverage-81%25-brightgreen)](https://yuta158.github.io/api-test-portfolio/htmlcov/)
+[![Coverage](https://img.shields.io/badge/coverage-83%25-brightgreen)](https://yuta158.github.io/api-test-portfolio/htmlcov/)
 ![Python](https://img.shields.io/badge/Python-3.12-blue)
 [![Docker](https://img.shields.io/badge/docker-multi--stage-blue)](./Dockerfile)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
@@ -21,7 +21,7 @@
 ## 概要
 
 - **334個のテスト関数（401テストケース）**: Unit / Integration / Security / Performance
-- **カバレッジ 81%**: 継続的な品質向上
+- **カバレッジ 83%**: 継続的な品質向上
 - **CI/CD自動化**: GitHub Actions による4段階パイプライン
 - **セキュリティ**: CI/CD品質ゲート（pytest + ruff + mypy + Trivy）
 - **GitHub API統合**: 実務的なAPI統合スキルを証明（Rate Limit管理、ETag活用、非同期処理）
