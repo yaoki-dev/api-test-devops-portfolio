@@ -7,7 +7,7 @@
 このプロジェクトは、APIテストとDevOps技術を統合した実践的なポートフォリオです。
 
 [![CI/CD Pipeline](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml/badge.svg)](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/badge/coverage-83%25-brightgreen)](https://yuta158.github.io/api-test-portfolio/htmlcov/)
+![Coverage](https://img.shields.io/badge/coverage-84%25-brightgreen)
 ![Python](https://img.shields.io/badge/Python-3.12-blue)
 [![Docker](https://img.shields.io/badge/docker-multi--stage-blue)](./Dockerfile)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
@@ -16,11 +16,11 @@
 [![Security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 [![Dependencies: safety](https://img.shields.io/badge/dependencies-safety--checked-green.svg)](https://safetycli.com/)
 
-> **Python/Docker/CI/CDを統合したAPIテスト自動化ポートフォリオ。334個のテスト関数（401テストケース）で品質を保証。**
+> **Python/Docker/CI/CDを統合したAPIテスト自動化ポートフォリオ。414テストケースで品質を保証。**
 
 ## 概要
 
-- **334個のテスト関数（401テストケース）**: Unit / Integration / Security / Performance
+- **414テストケース**: Unit / Integration / Security / Performance
 - **カバレッジ 83%**: 継続的な品質向上
 - **CI/CD自動化**: GitHub Actions による4段階パイプライン
 - **セキュリティ**: CI/CD品質ゲート（pytest + ruff + mypy + Trivy）
@@ -34,20 +34,20 @@
 
 ![Test Demo - pytest実行で19件テスト合格、カバレッジ64%を5秒で確認。テスト自動化スキルを実証](assets/demo-test.gif)
 
-> **📝 デモ内容**: クイック実行例（基本テスト19件、デモ時間短縮のため抽出。全401テストケースは約60秒）
-> **🔍 全401テストケースを今すぐ確認**: [GitHub Actions CI/CD](https://github.com/yuta158/api-test-portfolio/actions) でフルテスト結果＋カバレッジレポートを閲覧
+> **📝 デモ内容**: クイック実行例（基本テスト19件、デモ時間短縮のため抽出。全414テストケースは約60秒）
+> **🔍 全414テストケースを今すぐ確認**: [GitHub Actions CI/CD](https://github.com/yuta158/api-test-portfolio/actions) でフルテスト結果＋カバレッジレポートを閲覧
 
 **何がわかるか**:
 
 - pytest + pytest-covによる自動テスト実行
 - カバレッジレポートによる品質可視化
-- テスト実行: 基本19件 ~5秒、全401テストケース ~60秒
+- テスト実行: 基本19件 ~5秒、全414テストケース ~60秒
 
 <details>
-<summary>全テスト実行コマンド（401テストケース、約60秒）</summary>
+<summary>全テスト実行コマンド（414テストケース、約60秒）</summary>
 
 ```bash
-# 全テスト実行（401テストケース）
+# 全テスト実行（414テストケース）
 uv run pytest --cov=. --cov-report=term -q --color=yes
 
 # クイック実行（デモと同じ、19件）
@@ -179,7 +179,7 @@ api-test-devops-portfolio/
 ├── config/              # 設定管理（Pydantic Settings）
 ├── utils/               # ユーティリティ（APIクライアント等）
 ├── models/              # データモデル
-├── tests/               # テストスイート（334関数/401テストケース）
+├── tests/               # テストスイート（334関数/414テストケース）
 │   ├── unit/            # 単体テスト
 │   ├── integration/     # 統合テスト
 │   ├── performance/     # パフォーマンステスト
@@ -267,7 +267,7 @@ if init_sentry():
 
 ```mermaid
 graph TB
-    subgraph "Test Pyramid - 401テストケース"
+    subgraph "Test Pyramid - 414テストケース"
         E2E["🔝 E2E<br/>0件 → 5%目標"]
         Integration["🔗 Integration<br/>31件 (8%) → 25%目標"]
         Unit["🧱 Unit<br/>338件 (92%) → 70%目標"]
@@ -285,7 +285,7 @@ graph TB
 - **Integration (25%)**: API・DB接続の検証（中速・実環境近似）
 - **E2E (5%)**: クリティカルパスのみ（低速・高信頼）
 
-> **Note**: pytestパラメータ化テストにより、334個のテスト関数 → pytest収集401テストケース
+> **Note**: pytestパラメータ化テストにより、334個のテスト関数 → pytest収集414テストケース
 
 ### テスト実行特性（CI最適化）
 
