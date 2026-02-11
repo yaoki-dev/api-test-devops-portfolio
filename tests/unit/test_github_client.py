@@ -390,16 +390,26 @@ async def test_httpx_status_error_5xx():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_unexpected_exception():
-    """予期しない例外処理の検証"""
+    """予期しない例外処理の検証
+
+    プログラミングエラー（ValueError, TypeError等）は直接伝播され、
+    デバッグ容易性を確保する。その他の予期しない例外のみGitHubAPIErrorにラップ。
+    """
     async with AsyncGitHubClient() as client:
         with patch.object(client._client, "request", new_callable=AsyncMock) as mock_request:
+            # ValueError（プログラミングエラー）は直接伝播
             mock_request.side_effect = ValueError("Unexpected error")
+            with pytest.raises(ValueError) as exc_info:
+                await client.get_user("octocat")
+            assert "Unexpected error" in str(exc_info.value)
 
+        with patch.object(client._client, "request", new_callable=AsyncMock) as mock_request:
+            # その他の予期しない例外（例: OSError）はGitHubAPIErrorにラップ
+            mock_request.side_effect = OSError("Network unreachable")
             with pytest.raises(GitHubAPIError) as exc_info:
                 await client.get_user("octocat")
-
-            assert "Unexpected error" in str(exc_info.value)
-            assert isinstance(exc_info.value.__cause__, ValueError)
+            assert "Network unreachable" in str(exc_info.value)
+            assert isinstance(exc_info.value.__cause__, OSError)
 
 
 # =============================================================================

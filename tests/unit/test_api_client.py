@@ -233,3 +233,24 @@ async def test_bulk_create_users_partial_failure_tracking():
         # 失敗アイテムに元の入力が含まれる
         assert result.failed_items[0]["input"] == users[1]
         assert "error" in result.failed_items[0]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_bulk_create_users_memory_error_propagates():
+    """bulk_create_usersでMemoryErrorが伝播されることを確認
+
+    システム例外（MemoryError, SystemExit, KeyboardInterrupt等）は
+    失敗として記録せず、K8s OOMKilled検出等のために伝播する。
+    """
+    async with AsyncJSONPlaceholderClient() as client:
+        users = [{"name": "User1"}, {"name": "User2"}]
+
+        async def mock_create_user(user_data):
+            if user_data["name"] == "User2":
+                raise MemoryError("Out of memory")
+            return {"id": 1, **user_data}
+
+        with patch.object(client, "create_user", side_effect=mock_create_user):
+            with pytest.raises(MemoryError):
+                await client.bulk_create_users(users)

@@ -926,7 +926,13 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         # 成功・失敗を分離して詳細情報を保持
         for index, (user_data, response) in enumerate(zip(users_data, responses, strict=True)):
             if isinstance(response, BaseException):
-                # 失敗: 元の入力とエラー情報を保持
+                # システム例外は伝播（K8s OOMKilled検出、Ctrl+C対応等）
+                if isinstance(
+                    response, (MemoryError, SystemExit, KeyboardInterrupt, asyncio.CancelledError)
+                ):
+                    raise response
+
+                # 通常のエラーのみ失敗として記録
                 result.failed_items.append(
                     {
                         "index": index,

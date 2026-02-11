@@ -91,9 +91,13 @@ class GitHubAPIError(APIClientError):
 class RateLimitError(GitHubAPIError):
     """Rate Limit超過エラー（403 Forbidden）"""
 
-    def __init__(self, reset_time: int):
+    def __init__(self, reset_time: int, response_body: dict | None = None):
         self.reset_time = reset_time
-        super().__init__(f"Rate limit exceeded. Reset at {reset_time}")
+        super().__init__(
+            f"Rate limit exceeded. Reset at {reset_time}",
+            status_code=403,
+            response_body=response_body,
+        )
 
 
 class NotFoundError(GitHubAPIError):
@@ -343,19 +347,30 @@ class AsyncGitHubClient:
                 if response.status_code == 403:
                     # 403判定: Rate Limit超過 vs その他のアクセス禁止
                     rate_remaining = int(response.headers.get("X-RateLimit-Remaining", -1))
-                    if rate_remaining == 0:
-                        # Rate Limit超過確定
-                        reset_time = int(response.headers.get("X-RateLimit-Reset", 0))
-                        raise RateLimitError(reset_time)
-                    # その他の403エラー（IPブロック、アクセス権限不足等）
                     error_message = "Access forbidden"
                     response_body: dict = {}
                     try:
-                        response_body = response.json()
-                        error_message = response_body.get("message", error_message)
-                    except json.JSONDecodeError as parse_err:
-                        # JSONパースエラーのみ捕捉（システム例外は伝播）
-                        self.logger.warning("failed_to_parse_403_message", error=str(parse_err))
+                        parsed = response.json()
+                        if isinstance(parsed, dict):
+                            response_body = parsed
+                            error_message = response_body.get("message", error_message)
+                        else:
+                            self.logger.warning(
+                                "unexpected_403_response_type",
+                                response_type=type(parsed).__name__,
+                            )
+                    except (json.JSONDecodeError, UnicodeDecodeError, TypeError) as parse_err:
+                        # JSON/デコード/型エラーをフォールバック（MemoryErrorは伝播）
+                        self.logger.warning(
+                            "failed_to_parse_403_message",
+                            error=str(parse_err),
+                            error_type=type(parse_err).__name__,
+                        )
+                    if rate_remaining == 0:
+                        # Rate Limit超過確定
+                        reset_time = int(response.headers.get("X-RateLimit-Reset", 0))
+                        raise RateLimitError(reset_time, response_body)
+                    # その他の403エラー（IPブロック、アクセス権限不足等）
                     raise GitHubAPIError(
                         message=f"Access forbidden: {error_message}",
                         status_code=403,
@@ -413,12 +428,21 @@ class AsyncGitHubClient:
                 self.logger.warning("request_timeout", endpoint=endpoint, method=method)
                 raise GitHubAPIError(f"Request timeout: {e}") from e
 
-            except (MemoryError, SystemExit, KeyboardInterrupt, asyncio.CancelledError):
-                # システム例外は伝播（K8s OOMKilled検出、非同期キャンセル等）
+            except (
+                MemoryError,
+                SystemExit,
+                KeyboardInterrupt,
+                asyncio.CancelledError,
+                RuntimeError,
+                TypeError,
+                AttributeError,
+                ValueError,
+            ):
+                # システム例外・プログラミングエラーは伝播（デバッグ容易性確保）
                 raise
 
             except Exception as e:
-                # 予期しないエラーをラップ（システム例外は上で伝播済み）
+                # 上記以外の予期しないエラーをラップ（主にネットワーク系）
                 self.logger.error(
                     "unexpected_error",
                     endpoint=endpoint,
