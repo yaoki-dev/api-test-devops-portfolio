@@ -67,37 +67,15 @@ def validate_github_repo(repo: str) -> None:
 
 
 class GitHubAPIError(APIClientError):
-    """GitHub API基底例外（APIClientErrorを継承し統一的なエラーハンドリングを実現）
-
-    Attributes:
-        status_code: HTTPステータスコード（403, 404等）
-        response_body: GitHubからのレスポンス本文（デバッグ用）
-    """
-
-    def __init__(
-        self,
-        message: str,
-        status_code: int | None = None,
-        response_body: dict | None = None,
-    ) -> None:
-        self.status_code = status_code
-        self.response_body = response_body or {}
-        if status_code:
-            super().__init__(f"[{status_code}] {message}")
-        else:
-            super().__init__(message)
+    """GitHub API基底例外（APIClientErrorを継承し統一的なエラーハンドリングを実現）"""
 
 
 class RateLimitError(GitHubAPIError):
     """Rate Limit超過エラー（403 Forbidden）"""
 
-    def __init__(self, reset_time: int, response_body: dict | None = None):
+    def __init__(self, reset_time: int):
         self.reset_time = reset_time
-        super().__init__(
-            f"Rate limit exceeded. Reset at {reset_time}",
-            status_code=403,
-            response_body=response_body,
-        )
+        super().__init__(f"Rate limit exceeded. Reset at {reset_time}")
 
 
 class NotFoundError(GitHubAPIError):
@@ -106,15 +84,6 @@ class NotFoundError(GitHubAPIError):
 
 class GitHubServerError(GitHubAPIError):
     """GitHub側のサーバーエラー（5xx）"""
-
-
-class CacheUnavailableError(GitHubAPIError):
-    """304 Not Modifiedレスポンスでキャッシュデータが利用不可能な場合
-
-    発生条件:
-    - 304レスポンスを受信したが、対応するキャッシュデータが存在しない
-    - 理論上は発生しないが、キャッシュの不整合やクリア後に発生する可能性あり
-    """
 
 
 # =============================================================================
@@ -262,17 +231,6 @@ class AsyncGitHubClient:
             raise GitHubAPIError(f"Expected dict response, got {type(result).__name__}")
         return result
 
-    def _get_cached_data(self, endpoint: str) -> dict[str, Any] | list[dict[str, Any]] | None:
-        """キャッシュからデータ取得（既存_data_cacheと連携）
-
-        Args:
-            endpoint: APIエンドポイント（相対パス、例: '/users/octocat'）
-
-        Returns:
-            キャッシュされたデータ、またはNone
-        """
-        return self._data_cache.get(endpoint)
-
     async def _request(  # noqa: C901 - 統合HTTPリクエスト処理（Rate Limit/ETag/リトライ統合）のため許容
         self,
         method: str,
@@ -334,12 +292,16 @@ class AsyncGitHubClient:
                 # ステータスコード処理
                 if response.status_code == 304:
                     # 304 Not Modified: キャッシュデータを返却
-                    cached_data = self._get_cached_data(endpoint)
-                    if cached_data is None:
-                        raise CacheUnavailableError(
-                            f"304 Not Modified response but no cached data for '{endpoint}'"
-                        )
-                    return cached_data
+                    if endpoint in self._data_cache:
+                        return self._data_cache[endpoint]
+                    # キャッシュミス時（理論上発生しない: ETagあり=キャッシュあり）
+                    # 防御的プログラミング: 異常状態をログに記録
+                    self.logger.warning(
+                        "cache_miss_on_304",
+                        endpoint=endpoint,
+                        hint="ETag存在時のキャッシュミスは異常状態",
+                    )
+                    return {}
 
                 if response.status_code == 404:
                     raise NotFoundError(f"Resource not found: {endpoint}")
@@ -347,35 +309,17 @@ class AsyncGitHubClient:
                 if response.status_code == 403:
                     # 403判定: Rate Limit超過 vs その他のアクセス禁止
                     rate_remaining = int(response.headers.get("X-RateLimit-Remaining", -1))
-                    error_message = "Access forbidden"
-                    response_body: dict = {}
-                    try:
-                        parsed = response.json()
-                        if isinstance(parsed, dict):
-                            response_body = parsed
-                            error_message = response_body.get("message", error_message)
-                        else:
-                            self.logger.warning(
-                                "unexpected_403_response_type",
-                                response_type=type(parsed).__name__,
-                            )
-                    except (json.JSONDecodeError, UnicodeDecodeError, TypeError) as parse_err:
-                        # JSON/デコード/型エラーをフォールバック（MemoryErrorは伝播）
-                        self.logger.warning(
-                            "failed_to_parse_403_message",
-                            error=str(parse_err),
-                            error_type=type(parse_err).__name__,
-                        )
                     if rate_remaining == 0:
                         # Rate Limit超過確定
                         reset_time = int(response.headers.get("X-RateLimit-Reset", 0))
-                        raise RateLimitError(reset_time, response_body)
+                        raise RateLimitError(reset_time)
                     # その他の403エラー（IPブロック、アクセス権限不足等）
-                    raise GitHubAPIError(
-                        message=f"Access forbidden: {error_message}",
-                        status_code=403,
-                        response_body=response_body,
-                    )
+                    error_message = "Access forbidden"
+                    try:
+                        error_message = response.json().get("message", error_message)
+                    except Exception as parse_err:
+                        self.logger.warning("failed_to_parse_403_message", error=str(parse_err))
+                    raise GitHubAPIError(f"Access forbidden: {error_message}")
 
                 if response.status_code >= 500:
                     # 5xxエラー: リトライ
@@ -428,27 +372,16 @@ class AsyncGitHubClient:
                 self.logger.warning("request_timeout", endpoint=endpoint, method=method)
                 raise GitHubAPIError(f"Request timeout: {e}") from e
 
-            except (
-                MemoryError,
-                SystemExit,
-                KeyboardInterrupt,
-                asyncio.CancelledError,
-                RuntimeError,
-                TypeError,
-                AttributeError,
-                ValueError,
-            ):
-                # システム例外・プログラミングエラーは伝播（デバッグ容易性確保）
+            except (KeyboardInterrupt, asyncio.CancelledError):
+                # システム例外は再発生（非同期キャンセル・ユーザー中断を適切に伝播）
                 raise
 
             except Exception as e:
-                # 上記以外の予期しないエラーをラップ（主にネットワーク系）
                 self.logger.error(
                     "unexpected_error",
                     endpoint=endpoint,
                     method=method,
                     error=str(e),
-                    error_type=type(e).__name__,
                 )
                 raise GitHubAPIError(f"Unexpected error: {e}") from e
 

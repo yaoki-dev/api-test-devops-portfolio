@@ -467,18 +467,17 @@ async def test_async_bulk_create_users(mock_response_factory):
         mock_client_instance.request.side_effect = created_responses
 
         async with AsyncJSONPlaceholderClient() as client:
-            result = await client.bulk_create_users(users_to_create)
+            results = await client.bulk_create_users(users_to_create)
 
-            # BulkOperationResult型の検証（Task 12で導入）
-            assert result.success_count == 3
-            assert result.failure_count == 0
-            assert len(result.successful_items) == 3
+            # 結果検証
+            assert len(results) == 3
+            assert all(result["id"] > 100 for result in results)
 
             # 並行実行確認
             assert mock_client_instance.request.call_count == 3
 
             # 作成されたユーザー確認
-            created_names = [item["response"]["name"] for item in result.successful_items]
+            created_names = [result["name"] for result in results]
             assert "User 1" in created_names
             assert "User 2" in created_names
             assert "User 3" in created_names
@@ -605,10 +604,9 @@ async def test_async_health_check():
             assert "params" in call_args[1]
             assert call_args[1]["params"]["_limit"] == 1
 
-        # Test 2: ネットワークエラー時 → False（graceful degradation）
-        # httpx.ConnectErrorを使用（httpx.RequestErrorのサブクラス）
+        # Test 2: エラー時 → False（graceful degradation）
         mock_client_instance.reset_mock()
-        mock_client_instance.request.side_effect = httpx.ConnectError("Connection refused")
+        mock_client_instance.request.side_effect = Exception("Connection refused")
 
         async with AsyncJSONPlaceholderClient() as client:
             result = await client.health_check()

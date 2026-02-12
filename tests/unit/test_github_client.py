@@ -15,7 +15,6 @@ import pytest
 
 from utils.github_client import (
     AsyncGitHubClient,
-    CacheUnavailableError,
     GitHubAPIError,
     GitHubServerError,
     NotFoundError,
@@ -390,26 +389,16 @@ async def test_httpx_status_error_5xx():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_unexpected_exception():
-    """予期しない例外処理の検証
-
-    プログラミングエラー（ValueError, TypeError等）は直接伝播され、
-    デバッグ容易性を確保する。その他の予期しない例外のみGitHubAPIErrorにラップ。
-    """
+    """予期しない例外処理の検証"""
     async with AsyncGitHubClient() as client:
         with patch.object(client._client, "request", new_callable=AsyncMock) as mock_request:
-            # ValueError（プログラミングエラー）は直接伝播
             mock_request.side_effect = ValueError("Unexpected error")
-            with pytest.raises(ValueError) as exc_info:
-                await client.get_user("octocat")
-            assert "Unexpected error" in str(exc_info.value)
 
-        with patch.object(client._client, "request", new_callable=AsyncMock) as mock_request:
-            # その他の予期しない例外（例: OSError）はGitHubAPIErrorにラップ
-            mock_request.side_effect = OSError("Network unreachable")
             with pytest.raises(GitHubAPIError) as exc_info:
                 await client.get_user("octocat")
-            assert "Network unreachable" in str(exc_info.value)
-            assert isinstance(exc_info.value.__cause__, OSError)
+
+            assert "Unexpected error" in str(exc_info.value)
+            assert isinstance(exc_info.value.__cause__, ValueError)
 
 
 # =============================================================================
@@ -473,75 +462,3 @@ async def test_json_decode_error():
 
             with pytest.raises(GitHubAPIError, match="Invalid JSON"):
                 await client.get_user("octocat")
-
-
-# =============================================================================
-# 304 Not Modified キャッシュミステスト
-# =============================================================================
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_304_cache_miss_raises_exception():
-    """304レスポンスでキャッシュなしの場合、CacheUnavailableError例外を発生させる
-
-    検証項目:
-    - 304レスポンス受信時にキャッシュが空の場合
-    - CacheUnavailableError例外が発生する
-    - エラーメッセージに304とno cached dataが含まれる
-    """
-    async with AsyncGitHubClient() as client:
-        with patch.object(client._client, "request", new_callable=AsyncMock) as mock_request:
-            # 304 Not Modifiedレスポンスを設定
-            mock_response = MagicMock(spec=httpx.Response)
-            mock_response.status_code = 304
-            mock_response.headers = {"X-RateLimit-Remaining": "50"}
-            mock_request.return_value = mock_response
-
-            # キャッシュが空の状態をシミュレート
-            client._data_cache = {}
-            client._etag_cache = {}
-
-            # Act & Assert
-            with pytest.raises(CacheUnavailableError) as exc_info:
-                await client.get_user("octocat")
-
-            assert "304" in str(exc_info.value)
-            assert "no cached data" in str(exc_info.value).lower()
-
-
-# =============================================================================
-# 403 Forbidden エラーメッセージ保持テスト（PR#170 Task 11）
-# =============================================================================
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_403_error_preserves_github_message():
-    """403エラー時にGitHub提供のエラーメッセージを保持する
-
-    検証項目:
-    - 403レスポンス受信時にGitHubAPIError例外が発生する
-    - GitHubのエラーメッセージが例外に含まれる
-    - status_code属性が403である
-    """
-    async with AsyncGitHubClient() as client:
-        with patch.object(client._client, "request", new_callable=AsyncMock) as mock_request:
-            # 403 Forbiddenレスポンス（Rate Limit以外）を設定
-            mock_response = MagicMock(spec=httpx.Response)
-            mock_response.status_code = 403
-            mock_response.headers = {"X-RateLimit-Remaining": "50"}  # Rate Limit残あり
-            mock_response.json.return_value = {
-                "message": "API rate limit exceeded for user ID 123",
-                "documentation_url": "https://docs.github.com/rest#rate-limiting",
-            }
-            mock_request.return_value = mock_response
-
-            # Act & Assert
-            with pytest.raises(GitHubAPIError) as exc_info:
-                await client.get_user("octocat")
-
-            # GitHubのメッセージが保持されていることを確認
-            assert "API rate limit exceeded" in str(exc_info.value)
-            assert "user ID 123" in str(exc_info.value)
-            assert exc_info.value.status_code == 403

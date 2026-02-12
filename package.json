@@ -6,7 +6,8 @@
     "lint:md:fix": "markdownlint '**/*.md' --ignore node_modules --ignore .venv --ignore .worktrees --fix",
     "lint:text": "textlint '**/*.md' --ignore-path .textlintignore",
     "lint:text:fix": "textlint '**/*.md' --ignore-path .textlintignore --fix",
-    "lint:links": "markdown-link-check README.md --config .markdown-link-check.json",
+    "lint:links": "find . -name '*.md' -not -path './node_modules/*' -not -path './.venv/*' -not -path './.worktrees/*' -not -path './claudedocs/*' | xargs -I {} markdown-link-check {} --config .markdown-link-check.json --quiet",
+    "lint:links:verbose": "find . -name '*.md' -not -path './node_modules/*' -not -path './.venv/*' -not -path './.worktrees/*' -not -path './claudedocs/*' | xargs -I {} markdown-link-check {} --config .markdown-link-check.json",
     "lint:all": "npm run lint:md && npm run lint:text",
     "lint:all:fix": "npm run lint:md:fix && npm run lint:text:fix"
   },
