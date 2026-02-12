@@ -505,7 +505,11 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         try:
             response = self.get("/users", params={"_limit": 1})
             return response.status_code == 200
-        except Exception as e:
+        except (KeyboardInterrupt, SystemExit, MemoryError):
+            # システム例外は再発生（K8s OOMKilled検知、graceful shutdown対応）
+            raise
+        except APIClientError as e:
+            # 予期されるAPI例外のみキャッチ
             self.logger.warning(
                 "health_check_failed",
                 error=str(e),
@@ -877,11 +881,32 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 
         # 失敗時はログ出力（A1: デバッグ改善）
         if failed:
+            # 失敗したユーザーデータのコンテキストを収集（リトライ可能性向上）
+            # Note: user_dataにはPII含まれる可能性あり。Sentryスクラブで保護済み。
+            failed_details = []
+            for i, result in enumerate(results):
+                if isinstance(result, BaseException):
+                    # PIIリスク軽減: nameとemailのみ抽出（password等は除外）
+                    user_data_safe = None
+                    if i < len(users_data):
+                        raw = users_data[i]
+                        user_data_safe = {
+                            "name": raw.get("name"),
+                            "email": raw.get("email"),
+                        }
+                    failed_details.append(
+                        {
+                            "index": i,
+                            "user_data": user_data_safe,
+                            "error": str(result),
+                            "error_type": type(result).__name__,
+                        }
+                    )
             self.logger.warning(
                 "bulk_create_partial_failure",
                 failed_count=len(failed),
                 success_count=len(successful),
-                errors=[str(e) for e in failed[:5]],  # 最初の5件のみ
+                failed_details=failed_details[:5],  # 最初の5件の詳細
             )
 
         return successful
@@ -961,7 +986,11 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         try:
             response = await self.get("/users", params={"_limit": 1})
             return response.status_code == 200
-        except Exception as e:
+        except (KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError):
+            # システム例外・タスクキャンセルは再発生（K8s対応、graceful shutdown）
+            raise
+        except APIClientError as e:
+            # 予期されるAPI例外のみキャッチ
             self.logger.warning(
                 "health_check_failed",
                 error=str(e),
@@ -1006,11 +1035,16 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             async with semaphore:
                 try:
                     return await self.get_user(user_id)
-                except Exception as e:
+                except (KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError):
+                    # システム例外・タスクキャンセルは再発生（並行処理全体を停止）
+                    raise
+                except APIClientError as e:
+                    # 予期されるAPI例外のみキャッチ（graceful degradation）
                     self.logger.warning(
                         "get_user_failed",
                         user_id=user_id,
                         error=str(e),
+                        error_type=type(e).__name__,
                     )
                     return None
 

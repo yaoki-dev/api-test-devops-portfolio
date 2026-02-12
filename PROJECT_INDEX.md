@@ -145,7 +145,7 @@ api-test-devops-portfolio/
 - **E2E Tests**: 0 files (tests/e2e/ - prepared but empty)
 
 ### Coverage Metrics
-- **Current Coverage**: 79.0%
+- **Current Coverage**: 76.65%
 - **Target Coverage**: 85% (Week 7-10 goal)
 - **Coverage Reports**: `reports/coverage.json`, `reports/htmlcov/`
 
@@ -234,7 +234,7 @@ git status
 /create-issue
 
 # 2. ブランチ作成（Git Flow + worktree）
-/feature <task-name>
+/git:feature <task-name>
 
 # 3. 実装 + 品質ゲート
 # （コード変更後）
@@ -287,7 +287,7 @@ uv run pytest && uv run ruff check . && uv run mypy utils/ config/ models/
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Test Coverage | 79.0% | 85% (Week 7-10) |
+| Test Coverage | 76.65% | 85% (Week 7-10) |
 | Test Files | 19 | - |
 | Python Version | 3.12+ | - |
 | Code Quality | ruff + mypy | 0 errors |

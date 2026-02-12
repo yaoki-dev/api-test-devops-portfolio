@@ -17,6 +17,21 @@
     },
     {
       "pattern": "\\{\\{.*\\}\\}"
+    },
+    {
+      "pattern": "https://yuta158\\.github\\.io/api-test-portfolio/htmlcov/"
+    },
+    {
+      "pattern": "https://medium\\.com/"
+    },
+    {
+      "pattern": "https://claude\\.com/"
+    },
+    {
+      "pattern": "your-username"
+    },
+    {
+      "pattern": "https://github\\.com/anthropics/claude-code-plugins"
     }
   ],
   "replacementPatterns": [

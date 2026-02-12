@@ -86,8 +86,13 @@ def _sentry_processor(
 
     except ImportError:
         pass  # sentry-sdk未インストール（サイレントスキップ）
+    except (KeyboardInterrupt, SystemExit, MemoryError):
+        # システム例外は再発生（graceful shutdown/K8s OOMKilled検知対応）
+        raise
     except Exception as e:  # noqa: BLE001
         # Sentry送信失敗時はstderrへ出力（循環参照回避のためstructlog不使用）
+        # 設計意図: Sentry障害時もアプリケーション継続を優先
+        # ネットワークエラー、Sentry側の一時障害等を想定
         import sys
 
         print(f"[SENTRY_ERROR] Failed to send to Sentry: {e}", file=sys.stderr)

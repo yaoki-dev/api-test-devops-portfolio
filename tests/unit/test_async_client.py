@@ -22,12 +22,12 @@ import asyncio
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
 import pytest
 from httpx import Request, Response
 
 # プロジェクト内モジュール
 from utils.api_client import (
+    APIConnectionError,
     APIHTTPError,
     APIRetryError,
     AsyncAPIClient,
@@ -243,15 +243,11 @@ async def test_partial_failure_graceful_degradation():
         # 5件中2件失敗（ID=2, 4が失敗）
         def create_response_or_error(user_id: int):
             if user_id in [2, 4]:
-                # 失敗ケース: HTTPStatusError
-                mock_response = MagicMock(spec=Response)
-                mock_response.status_code = 500
-                error = httpx.HTTPStatusError(
+                # 失敗ケース: APIHTTPError（APIClientErrorサブクラス）
+                raise APIHTTPError(
+                    status_code=500,
                     message=f"Server Error for user {user_id}",
-                    request=MagicMock(),
-                    response=mock_response,
                 )
-                raise error
             # 成功ケース
             return MagicMock(
                 spec=Response,
@@ -604,9 +600,9 @@ async def test_async_health_check():
             assert "params" in call_args[1]
             assert call_args[1]["params"]["_limit"] == 1
 
-        # Test 2: エラー時 → False（graceful degradation）
+        # Test 2: APIClientError時 → False（graceful degradation）
         mock_client_instance.reset_mock()
-        mock_client_instance.request.side_effect = Exception("Connection refused")
+        mock_client_instance.request.side_effect = APIConnectionError("Connection refused")
 
         async with AsyncJSONPlaceholderClient() as client:
             result = await client.health_check()
