@@ -1,12 +1,12 @@
 # テスト戦略・設計ドキュメント
 
-*最終更新: 2026年02月10日*
+*最終更新: 2026年02月11日*
 
 ## エグゼクティブサマリー
 
-**現在のカバレッジ**: 83.06% | **最終目標**: 85%
-**テスト資産**: 109関数 / 401収集、~7,500行
-**最優先改善領域**: utils/api_client.py (63.99%)
+**現在のカバレッジ**: 76.40%（CI条件: unit+integration, not external） | **最終目標**: 85%
+**テスト資産**: 300件（CI条件）/ 全415件
+**最優先改善領域**: utils/api_client.py (49.19%)
 
 ---
 
@@ -17,7 +17,11 @@
 ```bash
 uv run pytest                          # 全テスト
 uv run pytest -n auto                  # 並列実行
-uv run pytest --cov=utils --cov=config --cov=models --cov-report=term-missing
+
+# カバレッジ計測（CI/CD品質ゲート用）
+# IMPORTANT: unit+integrationマーカーのみで計測（externalは除外）
+uv run pytest -n auto -m "(unit or integration) and not external" \
+    --cov=utils --cov=config --cov=models --cov-report=term-missing
 ```
 
 ### 主要マーカー
@@ -56,7 +60,7 @@ uv run pytest --cov=utils --cov=config --cov=models --cov-report=term-missing
 | 3-4 | 65-70% | Docker/CI-CD |
 | 5-6 | 80-85% | 非同期/e2e |
 
-**優先モジュール**: utils/api_client.py (63.99%) → 最優先
+**優先モジュール**: utils/api_client.py (49.41%) → 最優先
 
 ---
 

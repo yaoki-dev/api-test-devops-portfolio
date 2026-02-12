@@ -17,7 +17,7 @@ from unittest.mock import Mock
 import pytest
 
 from tests.conftest import create_mock_response
-from utils.api_client import SyncAPIClient, SyncJSONPlaceholderClient
+from utils.api_client import APIConnectionError, SyncAPIClient, SyncJSONPlaceholderClient
 
 # =============================================================================
 # Basic Operations (4件)
@@ -179,9 +179,9 @@ def test_sync_health_check(mock_httpx_sync_client: Mock) -> None:
         assert "params" in call_args[1]
         assert call_args[1]["params"]["_limit"] == 1
 
-    # Test 2: エラー時 → False（graceful degradation）
+    # Test 2: APIClientError時 → False（graceful degradation）
     mock_httpx_sync_client.reset_mock()
-    mock_httpx_sync_client.request.side_effect = Exception("Connection refused")
+    mock_httpx_sync_client.request.side_effect = APIConnectionError("Connection refused")
 
     with SyncJSONPlaceholderClient() as client:
         client._client = mock_httpx_sync_client
