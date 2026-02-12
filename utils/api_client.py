@@ -505,7 +505,11 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         try:
             response = self.get("/users", params={"_limit": 1})
             return response.status_code == 200
-        except Exception as e:
+        except (KeyboardInterrupt, SystemExit, MemoryError):
+            # システム例外は再発生（K8s OOMKilled検知、graceful shutdown対応）
+            raise
+        except APIClientError as e:
+            # 予期されるAPI例外のみキャッチ
             self.logger.warning(
                 "health_check_failed",
                 error=str(e),
@@ -982,7 +986,11 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         try:
             response = await self.get("/users", params={"_limit": 1})
             return response.status_code == 200
-        except Exception as e:
+        except (KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError):
+            # システム例外・タスクキャンセルは再発生（K8s対応、graceful shutdown）
+            raise
+        except APIClientError as e:
+            # 予期されるAPI例外のみキャッチ
             self.logger.warning(
                 "health_check_failed",
                 error=str(e),
@@ -1027,11 +1035,16 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             async with semaphore:
                 try:
                     return await self.get_user(user_id)
-                except Exception as e:
+                except (KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError):
+                    # システム例外・タスクキャンセルは再発生（並行処理全体を停止）
+                    raise
+                except APIClientError as e:
+                    # 予期されるAPI例外のみキャッチ（graceful degradation）
                     self.logger.warning(
                         "get_user_failed",
                         user_id=user_id,
                         error=str(e),
+                        error_type=type(e).__name__,
                     )
                     return None
 

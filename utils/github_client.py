@@ -295,13 +295,16 @@ class AsyncGitHubClient:
                     if endpoint in self._data_cache:
                         return self._data_cache[endpoint]
                     # キャッシュミス時（理論上発生しない: ETagあり=キャッシュあり）
-                    # 防御的プログラミング: 異常状態をログに記録
-                    self.logger.warning(
+                    # Fail-fast: キャッシュ不整合は実装バグの証拠
+                    self.logger.error(
                         "cache_miss_on_304",
                         endpoint=endpoint,
-                        hint="ETag存在時のキャッシュミスは異常状態",
+                        hint="ETag存在時のキャッシュミスは実装バグ",
+                        etag=self._etag_cache.get(endpoint),
                     )
-                    return {}
+                    raise GitHubAPIError(
+                        f"Cache inconsistency: 304 response without cached data for {endpoint}"
+                    )
 
                 if response.status_code == 404:
                     raise NotFoundError(f"Resource not found: {endpoint}")
@@ -317,7 +320,8 @@ class AsyncGitHubClient:
                     error_message = "Access forbidden"
                     try:
                         error_message = response.json().get("message", error_message)
-                    except Exception as parse_err:
+                    except json.JSONDecodeError as parse_err:
+                        # JSONパース失敗は想定内（非JSON応答の可能性）
                         self.logger.warning("failed_to_parse_403_message", error=str(parse_err))
                     raise GitHubAPIError(f"Access forbidden: {error_message}")
 

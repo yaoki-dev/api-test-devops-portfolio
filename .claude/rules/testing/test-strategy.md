@@ -4,9 +4,9 @@
 
 ## エグゼクティブサマリー
 
-**現在のカバレッジ**: 76.65%（CI条件） | **最終目標**: 85%
-**テスト資産**: 300収集（CI条件: unit+integration, not external）/ 全415件
-**最優先改善領域**: utils/api_client.py (49.41%)
+**現在のカバレッジ**: 76.40%（CI条件: unit+integration, not external） | **最終目標**: 85%
+**テスト資産**: 300件（CI条件）/ 全415件
+**最優先改善領域**: utils/api_client.py (49.19%)
 
 ---
 
@@ -17,7 +17,11 @@
 ```bash
 uv run pytest                          # 全テスト
 uv run pytest -n auto                  # 並列実行
-uv run pytest --cov=utils --cov=config --cov=models --cov-report=term-missing
+
+# カバレッジ計測（CI/CD品質ゲート用）
+# IMPORTANT: unit+integrationマーカーのみで計測（externalは除外）
+uv run pytest -n auto -m "(unit or integration) and not external" \
+    --cov=utils --cov=config --cov=models --cov-report=term-missing
 ```
 
 ### 主要マーカー
