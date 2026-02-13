@@ -42,7 +42,8 @@ runs:
           echo "::error::SARIF file is not valid JSON"
           echo "::warning::File may be corrupted or incomplete"
           echo "::group::JSON Parse Error Details"
-          echo "$JQ_ERROR"
+          # Escape '::' to prevent GitHub Actions workflow command injection
+          echo "$JQ_ERROR" | sed 's/::/\\::/g'
           echo "::endgroup::"
           echo "::group::File Preview (first 20 lines)"
           head -20 "$SARIF_FILE" || echo "Cannot read file"
