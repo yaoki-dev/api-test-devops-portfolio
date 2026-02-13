@@ -46,7 +46,8 @@ runs:
           echo "$JQ_ERROR" | sed 's/::/\\::/g'
           echo "::endgroup::"
           echo "::group::File Preview (first 20 lines)"
-          head -20 "$SARIF_FILE" || echo "Cannot read file"
+          # Escape '::' in file content to prevent workflow command injection
+          head -20 "$SARIF_FILE" 2>/dev/null | sed 's/::/\\::/g' || echo "Cannot read file"
           echo "::endgroup::"
           exit 1
         }
