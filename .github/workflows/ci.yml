@@ -183,11 +183,17 @@ jobs:
       - name: Fail job if vulnerabilities found or verification failed
         if: steps.fs-scan.outcome == 'failure' || steps.verify-fs-scan.outcome == 'failure'
         run: |
+          # 優先度1: SARIF検証失敗（インフラ問題の可能性）
           if [ "${{ steps.verify-fs-scan.outcome }}" == "failure" ]; then
-            echo "::error::SARIF検証が失敗しました - セキュリティレポートが不完全です"
+            echo "::error::SARIF検証が失敗しました - Trivyがクラッシュした可能性があります"
+            echo "::warning::考えられる原因: DB取得失敗、タイムアウト、ディスク容量不足"
+            echo "::notice::対処法: Trivyログを確認し、インフラ問題を調査してください"
           fi
+
+          # 優先度2: 脆弱性検出（正常な失敗）
           if [ "${{ steps.fs-scan.outcome }}" == "failure" ]; then
             echo "::error::脆弱性（CRITICAL/HIGH）が dependencies で検出されました"
+            echo "::notice::対処法: 脆弱性レポートを確認し、依存関係を更新してください"
           fi
           exit 1
 
@@ -237,11 +243,17 @@ jobs:
       - name: Fail job if vulnerabilities found or verification failed
         if: steps.image-scan.outcome == 'failure' || steps.verify-image-scan.outcome == 'failure'
         run: |
+          # 優先度1: SARIF検証失敗（インフラ問題の可能性）
           if [ "${{ steps.verify-image-scan.outcome }}" == "failure" ]; then
-            echo "::error::SARIF検証が失敗しました - セキュリティレポートが不完全です"
+            echo "::error::SARIF検証が失敗しました - Trivyがクラッシュした可能性があります"
+            echo "::warning::考えられる原因: DB取得失敗、タイムアウト、ディスク容量不足"
+            echo "::notice::対処法: Trivyログを確認し、インフラ問題を調査してください"
           fi
+
+          # 優先度2: 脆弱性検出（正常な失敗）
           if [ "${{ steps.image-scan.outcome }}" == "failure" ]; then
             echo "::error::脆弱性（CRITICAL/HIGH）が Docker image で検出されました"
+            echo "::notice::対処法: 脆弱性レポートを確認し、ベースイメージを更新してください"
           fi
           exit 1
 

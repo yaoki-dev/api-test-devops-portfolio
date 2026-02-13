@@ -38,10 +38,16 @@ runs:
         fi
 
         # Layer 3: JSON Validity Check
-        if ! jq empty "$SARIF_FILE" 2>/dev/null; then
+        JQ_ERROR=$(jq empty "$SARIF_FILE" 2>&1) || {
           echo "::error::SARIF file is not valid JSON"
           echo "::warning::File may be corrupted or incomplete"
+          echo "::group::JSON Parse Error Details"
+          echo "$JQ_ERROR"
+          echo "::endgroup::"
+          echo "::group::File Preview (first 20 lines)"
+          head -20 "$SARIF_FILE" || echo "Cannot read file"
+          echo "::endgroup::"
           exit 1
-        fi
+        }
 
         echo "✅ Trivy $SCAN_TYPE scan verified ($SARIF_SIZE bytes, valid JSON)"
