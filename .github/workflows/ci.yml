@@ -202,7 +202,9 @@ jobs:
         id: docker-build
         # Trigger conditions (OR logic):
         # 1. main PRs: Production security validation
-        # 2. docker label PRs: Dependabot SHA256 updates (target: develop, CI gate before auto-merge)
+        # 2. docker label PRs: Dependabot SHA256 updates
+        #    - Dependabotがdependabot.yml L103設定により'docker'ラベルを自動付与
+        #    - target: develop, CI gate before auto-merge
         if: github.base_ref == 'main' || contains(github.event.pull_request.labels.*.name, 'docker')
         run: |
           if ! docker build -t security-scan:${{ github.sha }} --target runtime .; then
