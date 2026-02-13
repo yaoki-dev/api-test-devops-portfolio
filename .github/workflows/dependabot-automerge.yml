@@ -34,17 +34,33 @@ jobs:
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: Auto-merge (patch/minor only)
+      - name: Auto-merge (patch/minor/docker)
         # NOTE: fetch-metadata returns null update-type for uv group updates (upstream limitation)
         # See: https://github.com/dependabot/fetch-metadata/issues/499
         # Workaround: Allow indirect dependencies in groups, but explicitly block major updates
-        # Risk assessment: Low (develop-only, CI gates, squash merge for easy revert)
+        #
+        # Docker ecosystem support (2026-02-13追加):
+        #
+        # トリガー条件:
+        # - Dependabotがdocker ecosystemのSHA256更新を検出（週次月曜09:00 JST）
+        # - dependabot.yml L103設定により'docker'ラベルを自動付与
+        # - L53条件: contains(github.event.pull_request.labels.*.name, 'docker')でマッチ
+        #
+        # セーフガード（3層防御）:
+        # 1. Tag固定: python:3.12-slim（major変更はタグ変更必須→手動レビュー）
+        # 2. Trivy scan: CRITICAL/HIGH脆弱性検出時は自動マージブロック（CI必須）
+        # 3. pytest実行: アプリロジック検証（httpx, Pydantic, structlog等）
+        #
+        # Risk assessment: Medium
+        # 理由: OSパッケージ（OpenSSL, libc等）のABI変更可能性、ゼロデイ脆弱性は未検出
+        # 軽減策: develop-only（本番直撃なし）、CI必須、squash merge（1コマンドrevert可能）
         if: |
           steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
           steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
           (steps.metadata.outputs.dependency-type == 'indirect' &&
            steps.metadata.outputs.dependency-group != '' &&
-           steps.metadata.outputs.update-type != 'version-update:semver-major')
+           steps.metadata.outputs.update-type != 'version-update:semver-major') ||
+          contains(github.event.pull_request.labels.*.name, 'docker')
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}

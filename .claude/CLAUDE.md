@@ -23,8 +23,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 11. **ALWAYS** re-read CLAUDE.md during reflexion → Section「🔄 reflexion使用時の必須チェック」
 12. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `/reflexion:reflect`
 
-> For coding standards: @memory:coding_standards
-> For quality gates: @memory:implementation_quality_gates
 
 ## プロジェクト概要
 
@@ -241,7 +239,7 @@ git checkout -b feature/<次のタスク> origin/develop
 【実装フェーズ】
 2. コード変更 → security-guidance (hook自動)
 3. 品質ゲート → pytest + ruff + mypy 全合格（※2）
-4. コミット前レビュー → /code-review:review-local-changes (80点閾値)　※REQUIRED
+4. コミット前レビュー → /code-review:review-local-changes (80点閾値)
 5. コミット   → /commit【git commit禁止】
 
 【レビューフェーズ】

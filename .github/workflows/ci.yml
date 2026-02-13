@@ -197,20 +197,25 @@ jobs:
           fi
           exit 1
 
-      # Step 2: Build Docker image (main PRs only)
+      # Step 2: Build Docker image (main PRs + Dependabot docker PRs)
       - name: Build Docker image for scanning
         id: docker-build
-        if: github.base_ref == 'main'
+        # Trigger conditions (OR logic):
+        # 1. main PRs: Production security validation
+        # 2. docker label PRs: Dependabot SHA256 updates
+        #    - Dependabotがdependabot.yml L103設定により'docker'ラベルを自動付与
+        #    - target: develop, CI gate before auto-merge
+        if: github.base_ref == 'main' || contains(github.event.pull_request.labels.*.name, 'docker')
         run: |
           if ! docker build -t security-scan:${{ github.sha }} --target runtime .; then
             echo "::error::Docker build failed"
             exit 1
           fi
 
-      # Step 3: Docker image scan (main PRs only - comprehensive security)
-      - name: Trivy image scan (main PRs only)
+      # Step 3: Docker image scan (main PRs + Dependabot docker PRs)
+      - name: Trivy image scan (main PRs + docker label)
         id: image-scan
-        if: github.base_ref == 'main' && steps.docker-build.outcome == 'success'
+        if: steps.docker-build.outcome == 'success'
         uses: aquasecurity/trivy-action@0.33.1
         env:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
@@ -235,7 +240,7 @@ jobs:
 
       - name: Upload image scan results to Security tab
         uses: github/codeql-action/upload-sarif@v4
-        if: always() && github.base_ref == 'main' && steps.verify-image-scan.outcome == 'success' && steps.image-scan.outcome != 'cancelled' && steps.image-scan.outcome != 'skipped'
+        if: always() && steps.verify-image-scan.outcome == 'success' && steps.image-scan.outcome != 'cancelled' && steps.image-scan.outcome != 'skipped'
         with:
           sarif_file: 'trivy-image-scan.sarif'
           category: 'trivy-pr-image-scan'
@@ -259,7 +264,7 @@ jobs:
 
       # Step 4: Cleanup Docker image (resource hygiene)
       - name: Clean up Docker image
-        if: always() && github.base_ref == 'main'
+        if: always() && steps.docker-build.outcome != 'skipped'
         run: docker rmi security-scan:${{ github.sha }} || true
   # ============================================================
   # Stage 2: Post-Merge Validation
