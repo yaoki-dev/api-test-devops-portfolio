@@ -324,7 +324,7 @@ jobs:
 
       - name: Upload Trivy results to Security tab
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
+        if: always() && steps.verify-trivy-scan.outcome == 'success'
         with:
           sarif_file: 'trivy-results.sarif'
           category: 'trivy-post-merge'
