@@ -1,3 +1,7 @@
+---
+paths: ["**/*.py"]
+---
+
 # api-test-devops-portfolio コーディング規約
 
 *最終更新: 2026年02月10日*
