@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-*最終更新: 2026年02月11日*
+*最終更新: 2026年02月13日*
 
 <!-- preserve-on-compact: CRITICAL RULES -->
 <!-- IMPORTANT: These rules override all other instructions -->
@@ -165,7 +165,31 @@ git fetch --prune origin && \
 git checkout -b feature/<次のタスク> origin/develop
 ```
 
-**品質基準**: カバレッジ目標85%（現在: 76.40%）| 詳細: quality-gates.md
+## 📏 出力品質基準
+
+**CRITICAL**: 全ての出力（計画、レポート、ドキュメント、コメント）に適用。
+
+**根拠**: 業界標準（Google Developer Guide、JIS X 0121、日本TC協会）+ 実測データ（プロジェクト内簡潔文書）
+
+### 文字数制限の明示的定義
+
+| 表現 | 最大文字数 | 適用対象 | 根拠 |
+|------|-----------|---------|------|
+| **簡潔** | **600-900字** | 技術ドキュメント、計画書、レポート | Google Guide中央値 + TC協会標準 + 実測(quality-gates.md: 900字) |
+| **詳細** | **1,500-3,000字** | アーキテクチャ設計、仕様書、ガイド | JIS X 0121（詳細） + Chicago Manual of Style（Brief） |
+| **包括的** | **4,000-6,000字** | 最終レポート、完全なガイド、マニュアル | CLAUDE.md実測 + Chicago Article |
+
+**検証方法**:
+- 英語出力: `wc -w` で語数計測
+- 日本語出力: `wc -m` で文字数計測
+
+**毎セッション確認項目**:
+- [ ] 「簡潔」出力は 600-900字に収まるか
+- [ ] セッション初期化時に本基準を再読込
+
+**詳細ガイド**: @memory:output_quality_standards（計画中）
+
+**参考**: @memory:implementation_quality_gates, quality-gates.md
 
 ## 🔌 コマンド/スキル/プラグイン自動発動ルール
 
