@@ -552,7 +552,7 @@ jobs:
           echo "" >> status_report.md
           echo "## Test Pyramid Strategy" >> status_report.md
           echo "- Unit 70% / Integration 25% / E2E 5%" >> status_report.md
-          echo "- Coverage Target: 58% (baseline protection)" >> status_report.md
+          echo "- Coverage Target: 85% (baseline protection)" >> status_report.md
           echo "" >> status_report.md
           echo "## Stage Results" >> status_report.md
           echo "- PR Validation: ${{ needs.pr-validation.result || 'skipped' }}" >> status_report.md
