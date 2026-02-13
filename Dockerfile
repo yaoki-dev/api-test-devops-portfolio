@@ -6,7 +6,8 @@
 # Stage 1: Base - 共通ベースイメージ
 # ============================================================
 # セキュリティ: SHA256ダイジェスト固定（サプライチェーン攻撃防止）
-# 更新時: docker pull python:3.12-slim && docker inspect --format='{{index .RepoDigests 0}}' python:3.12-slim
+# 更新フロー: Dependabotが週次（月曜 09:00 JST）で自動検出・PR作成
+# 手動更新: docker pull python:3.12-slim && docker inspect --format='{{index .RepoDigests 0}}' python:3.12-slim
 # 2026-01-29更新: 定期セキュリティパッチ適用（OpenSSL等）
 FROM python:3.12-slim@sha256:5e2dbd4bbdd9c0e67412aea9463906f74a22c60f89eb7b5bbb7d45b66a2b68a6 AS base
 

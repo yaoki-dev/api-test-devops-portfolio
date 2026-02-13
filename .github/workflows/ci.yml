@@ -160,19 +160,22 @@ jobs:
           trivyignores: '.trivyignore'
           cache: 'false'
 
-      # Step 2: Docker image scan (main PRs only)
+      # Step 2: Docker image scan (main PRs + Dependabot docker PRs)
       - name: Build Docker image for scanning
         id: docker-build
-        if: github.base_ref == 'main'
+        # Trigger conditions (OR logic):
+        # 1. main PRs: Production security validation
+        # 2. docker label PRs: Dependabot SHA256 updates (target: develop, CI gate before auto-merge)
+        if: github.base_ref == 'main' || contains(github.event.pull_request.labels.*.name, 'docker')
         run: |
           if ! docker build -t security-scan:${{ github.sha }} --target runtime .; then
             echo "::error::Docker build failed"
             exit 1
           fi
 
-      # Step 3: Docker image scan (main PRs only - comprehensive security)
-      - name: Trivy image scan (main PRs only)
-        if: github.base_ref == 'main' && steps.docker-build.outcome == 'success'
+      # Step 3: Docker image scan (main PRs + Dependabot docker PRs)
+      - name: Trivy image scan (main PRs + docker label)
+        if: steps.docker-build.outcome == 'success'
         uses: aquasecurity/trivy-action@0.33.1
         env:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
@@ -187,7 +190,7 @@ jobs:
 
       # Step 4: Cleanup Docker image (resource hygiene)
       - name: Clean up Docker image
-        if: always() && github.base_ref == 'main'
+        if: always() && steps.docker-build.outcome != 'skipped'
         run: docker rmi security-scan:${{ github.sha }} || true
   # ============================================================
   # Stage 2: Post-Merge Validation

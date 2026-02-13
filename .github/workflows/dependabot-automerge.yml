@@ -34,17 +34,23 @@ jobs:
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: Auto-merge (patch/minor only)
+      - name: Auto-merge (patch/minor/docker)
         # NOTE: fetch-metadata returns null update-type for uv group updates (upstream limitation)
         # See: https://github.com/dependabot/fetch-metadata/issues/499
         # Workaround: Allow indirect dependencies in groups, but explicitly block major updates
+        #
+        # Docker ecosystem support (2026-02-13追加):
+        # - Docker images have no semver (SHA256 digest only)
+        # - python:3.12-slim tag prevents major changes (3.13 requires manual tag change)
+        # - CI gates (Trivy + pytest) block vulnerable SHA256 updates
         # Risk assessment: Low (develop-only, CI gates, squash merge for easy revert)
         if: |
           steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
           steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
           (steps.metadata.outputs.dependency-type == 'indirect' &&
            steps.metadata.outputs.dependency-group != '' &&
-           steps.metadata.outputs.update-type != 'version-update:semver-major')
+           steps.metadata.outputs.update-type != 'version-update:semver-major') ||
+          contains(github.event.pull_request.labels.*.name, 'docker')
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
