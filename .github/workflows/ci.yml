@@ -175,7 +175,7 @@ jobs:
 
       - name: Upload filesystem scan results to Security tab
         uses: github/codeql-action/upload-sarif@v4
-        if: always() && steps.verify-fs-scan.outcome == 'success'
+        if: always() && steps.verify-fs-scan.outcome == 'success' && steps.fs-scan.conclusion != 'cancelled' && steps.fs-scan.conclusion != 'skipped'
         with:
           sarif_file: 'trivy-fs-scan.sarif'
           category: 'trivy-pr-fs-scan'
@@ -229,7 +229,7 @@ jobs:
 
       - name: Upload image scan results to Security tab
         uses: github/codeql-action/upload-sarif@v4
-        if: always() && github.base_ref == 'main' && steps.verify-image-scan.outcome == 'success'
+        if: always() && github.base_ref == 'main' && steps.verify-image-scan.outcome == 'success' && steps.image-scan.conclusion != 'cancelled' && steps.image-scan.conclusion != 'skipped'
         with:
           sarif_file: 'trivy-image-scan.sarif'
           category: 'trivy-pr-image-scan'
