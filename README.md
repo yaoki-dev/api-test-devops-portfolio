@@ -311,6 +311,34 @@ graph TB
 | Post-Merge | Push to main | Docker Build + Trivy | 8分 |
 | Weekly Comprehensive | 週次スケジュール | Performance + External API | 30分 |
 
+### Trivy Security Scan（SARIF形式 + 3層検証）
+
+Trivyセキュリティスキャンは**SARIF（Static Analysis Results Format）**形式で出力し、**3層検証**により確実性を担保：
+
+```mermaid
+graph LR
+    A[Trivy Scan] --> B[Layer 1: File Existence]
+    B --> C[Layer 2: Size Check ≥100 bytes]
+    C --> D[Layer 3: JSON Validity]
+    D --> E[GitHub Security Tab Upload]
+```
+
+**検証フロー**:
+
+1. **Layer 1**: SARIFファイル存在確認
+2. **Layer 2**: ファイルサイズ検証（≥100 bytes、空ファイル検出）
+3. **Layer 3**: JSON妥当性検証（`jq empty`）
+
+**エラーハンドリング**:
+
+- `continue-on-error: true`: Trivyスキャン失敗時もパイプライン継続
+- 各層で明確なエラーメッセージ出力
+- Filesystem/Image scan個別に検証実行
+
+**実装詳細**: 3層検証ロジックはComposite Actionとして実装され、PR/Post-Mergeの3箇所で再利用されています。
+
+> 📚 詳細実装は [CI/CD運用ガイド](docs/guides/ci_cd_guide.md) を参照
+
 ---
 
 ## ライセンス
