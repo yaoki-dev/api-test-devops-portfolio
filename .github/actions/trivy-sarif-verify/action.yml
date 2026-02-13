@@ -1,0 +1,47 @@
+name: 'Trivy SARIF Verification'
+description: '3-layer verification for Trivy SARIF output (existence → size → JSON validity)'
+author: 'yuta158'
+
+inputs:
+  sarif-file:
+    description: 'Path to SARIF file to verify'
+    required: true
+  scan-type:
+    description: 'Scan type for error messages (filesystem or image)'
+    required: true
+    default: 'generic'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Verify SARIF output
+      shell: bash
+      env:
+        SARIF_FILE: ${{ inputs.sarif-file }}
+        SCAN_TYPE: ${{ inputs.scan-type }}
+      run: |
+        set -euo pipefail
+
+        # Layer 1: File Existence Check
+        if [ ! -f "$SARIF_FILE" ]; then
+          echo "::error::Trivy $SCAN_TYPE scan did not produce SARIF output"
+          echo "::warning::Possible causes: crash/timeout/disk issue/DB download failure"
+          exit 1
+        fi
+
+        # Layer 2: Size Check (≥100 bytes)
+        SARIF_SIZE=$(wc -c < "$SARIF_FILE")
+        if [ "$SARIF_SIZE" -lt 100 ]; then
+          echo "::error::SARIF file is too small ($SARIF_SIZE bytes) - likely incomplete"
+          echo "::warning::This indicates Trivy crashed during SARIF generation"
+          exit 1
+        fi
+
+        # Layer 3: JSON Validity Check
+        if ! jq empty "$SARIF_FILE" 2>/dev/null; then
+          echo "::error::SARIF file is not valid JSON"
+          echo "::warning::File may be corrupted or incomplete"
+          exit 1
+        fi
+
+        echo "✅ Trivy $SCAN_TYPE scan verified ($SARIF_SIZE bytes, valid JSON)"

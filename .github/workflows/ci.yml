@@ -130,6 +130,8 @@ jobs:
   # Strategy:
   #   - develop: trivy fs only (fast, no Docker build)
   #   - main: trivy fs + trivy image (comprehensive)
+  # Format: SARIF (error differentiation + GitHub Security tab integration)
+  # Error Handling: Differentiates security findings vs infrastructure errors
   # ============================================================
   pr-security-scan:
     name: PR Security Scan
@@ -147,20 +149,49 @@ jobs:
 
       # Step 1: Filesystem scan (both develop and main)
       - name: Trivy filesystem scan (dependencies)
+        id: fs-scan
         uses: aquasecurity/trivy-action@0.33.1
         env:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
         with:
           scan-type: 'fs'
           scan-ref: '.'
-          format: 'table'
+          format: 'sarif'
+          output: 'trivy-fs-scan.sarif'
           exit-code: '1'
           ignore-unfixed: true
           severity: 'CRITICAL,HIGH'
           trivyignores: '.trivyignore'
           cache: 'false'
+        continue-on-error: true
 
-      # Step 2: Docker image scan (main PRs only)
+      - name: Verify filesystem scan execution
+        id: verify-fs-scan
+        if: always()
+        uses: ./.github/actions/trivy-sarif-verify
+        with:
+          sarif-file: 'trivy-fs-scan.sarif'
+          scan-type: 'filesystem'
+
+      - name: Upload filesystem scan results to Security tab
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && steps.verify-fs-scan.outcome == 'success'
+        with:
+          sarif_file: 'trivy-fs-scan.sarif'
+          category: 'trivy-pr-fs-scan'
+
+      - name: Fail job if vulnerabilities found or verification failed
+        if: steps.fs-scan.outcome == 'failure' || steps.verify-fs-scan.outcome == 'failure'
+        run: |
+          if [ "${{ steps.verify-fs-scan.outcome }}" == "failure" ]; then
+            echo "::error::SARIF検証が失敗しました - セキュリティレポートが不完全です"
+          fi
+          if [ "${{ steps.fs-scan.outcome }}" == "failure" ]; then
+            echo "::error::脆弱性（CRITICAL/HIGH）が dependencies で検出されました"
+          fi
+          exit 1
+
+      # Step 2: Build Docker image (main PRs only)
       - name: Build Docker image for scanning
         id: docker-build
         if: github.base_ref == 'main'
@@ -172,18 +203,47 @@ jobs:
 
       # Step 3: Docker image scan (main PRs only - comprehensive security)
       - name: Trivy image scan (main PRs only)
+        id: image-scan
         if: github.base_ref == 'main' && steps.docker-build.outcome == 'success'
         uses: aquasecurity/trivy-action@0.33.1
         env:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
         with:
           image-ref: 'security-scan:${{ github.sha }}'
-          format: 'table'
+          format: 'sarif'
+          output: 'trivy-image-scan.sarif'
           exit-code: '1'
           ignore-unfixed: true
           severity: 'CRITICAL,HIGH'
           trivyignores: '.trivyignore'
           cache: 'false'
+        continue-on-error: true
+
+      - name: Verify image scan execution
+        id: verify-image-scan
+        if: always() && steps.image-scan.conclusion != 'skipped'
+        uses: ./.github/actions/trivy-sarif-verify
+        with:
+          sarif-file: 'trivy-image-scan.sarif'
+          scan-type: 'image'
+
+      - name: Upload image scan results to Security tab
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && github.base_ref == 'main' && steps.verify-image-scan.outcome == 'success'
+        with:
+          sarif_file: 'trivy-image-scan.sarif'
+          category: 'trivy-pr-image-scan'
+
+      - name: Fail job if vulnerabilities found or verification failed
+        if: steps.image-scan.outcome == 'failure' || steps.verify-image-scan.outcome == 'failure'
+        run: |
+          if [ "${{ steps.verify-image-scan.outcome }}" == "failure" ]; then
+            echo "::error::SARIF検証が失敗しました - セキュリティレポートが不完全です"
+          fi
+          if [ "${{ steps.image-scan.outcome }}" == "failure" ]; then
+            echo "::error::脆弱性（CRITICAL/HIGH）が Docker image で検出されました"
+          fi
+          exit 1
 
       # Step 4: Cleanup Docker image (resource hygiene)
       - name: Clean up Docker image
@@ -255,31 +315,12 @@ jobs:
         continue-on-error: true
 
       - name: Verify Trivy scan execution
+        id: verify-trivy-scan
         if: always()
-        run: |
-          if [ ! -f "trivy-results.sarif" ]; then
-            echo "::error::Trivy scan did not produce SARIF output"
-            echo "::warning::Possible causes: crash/timeout/disk issue/DB download failure"
-            echo "Check 'Trivy image scan' step logs for details"
-            exit 1
-          fi
-
-          # SARIF内容の妥当性確認（空ファイル・極小ファイル検出）
-          SARIF_SIZE=$(wc -c < "trivy-results.sarif")
-          if [ "$SARIF_SIZE" -lt 100 ]; then
-            echo "::error::SARIF file is too small ($SARIF_SIZE bytes) - likely incomplete"
-            echo "::warning::This indicates Trivy crashed during SARIF generation"
-            exit 1
-          fi
-
-          # JSON構文検証（破損ファイル検出）
-          if ! jq empty trivy-results.sarif 2>/dev/null; then
-            echo "::error::SARIF file is not valid JSON"
-            echo "::warning::File may be corrupted or incomplete"
-            exit 1
-          fi
-
-          echo "✅ Trivy SARIF output verified ($SARIF_SIZE bytes, valid JSON)"
+        uses: ./.github/actions/trivy-sarif-verify
+        with:
+          sarif-file: 'trivy-results.sarif'
+          scan-type: 'image'
 
       - name: Upload Trivy results to Security tab
         uses: github/codeql-action/upload-sarif@v4
@@ -471,7 +512,7 @@ jobs:
     runs-on: ubuntu-latest
     # Note: Skipped jobs are treated as 'success' by GitHub Actions
     # !cancelled() overrides implicit success() check, allowing execution after success/failure/skipped
-    needs: [pr-validation, md-quality, post-merge-validation, weekly-comprehensive, weekly-link-check]
+    needs: [pr-validation, pr-security-scan, md-quality, post-merge-validation, weekly-comprehensive, weekly-link-check]
     if: "!cancelled()"
     timeout-minutes: 5
 
@@ -492,6 +533,7 @@ jobs:
           echo "" >> status_report.md
           echo "## Stage Results" >> status_report.md
           echo "- PR Validation: ${{ needs.pr-validation.result || 'skipped' }}" >> status_report.md
+          echo "- PR Security Scan: ${{ needs.pr-security-scan.result || 'skipped' }}" >> status_report.md
           echo "- MD Quality: ${{ needs.md-quality.result || 'skipped' }}" >> status_report.md
           echo "- Post-Merge: ${{ needs.post-merge-validation.result || 'skipped' }}" >> status_report.md
           echo "- Weekly Comprehensive: ${{ needs.weekly-comprehensive.result || 'skipped' }}" >> status_report.md
