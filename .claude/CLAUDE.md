@@ -23,7 +23,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 11. **ALWAYS** re-read CLAUDE.md during reflexion → Section「🔄 reflexion使用時の必須チェック」
 12. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `/reflexion:reflect`
 
-
 ## プロジェクト概要
 
 APIテスト + DevOps統合学習ポートフォリオ。時給4000-4500円レベルの技術力を証明するために設計されています。
@@ -192,6 +191,11 @@ git checkout -b feature/<次のタスク> origin/develop
 ## 🔌 コマンド/スキル/プラグイン自動発動ルール
 
 **詳細**: @memory:command_usage_guide
+
+**ast-grep vs mgrep選択**:
+- **コード変更時**: ast-grep必須（AST保証、リファクタリング◎）
+- **文書構造探索時**: mgrep推奨（Markdown構造◎）
+- **詳細な機能差**: @memory:command_usage_guide Section 9.3参照
 
 **種別の違い**:
 - **Plugin**: `~/.claude/plugins/`にインストールされたもの
