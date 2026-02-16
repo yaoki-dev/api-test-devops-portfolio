@@ -162,7 +162,8 @@ jobs:
           ignore-unfixed: true
           severity: 'CRITICAL,HIGH'
           trivyignores: '.trivyignore'
-          cache: 'false'
+          # Trivyキャッシュ戦略: 週次スケジュール実行時のみDB再ダウンロード、通常PRではキャッシュ利用
+          cache: ${{ github.event_name != 'schedule' }}
         continue-on-error: true
 
       - name: Verify filesystem scan execution
@@ -227,7 +228,8 @@ jobs:
           ignore-unfixed: true
           severity: 'CRITICAL,HIGH'
           trivyignores: '.trivyignore'
-          cache: 'false'
+          # Trivyキャッシュ戦略: 週次スケジュール実行時のみDB再ダウンロード、通常PRではキャッシュ利用
+          cache: ${{ github.event_name != 'schedule' }}
         continue-on-error: true
 
       - name: Verify image scan execution
@@ -328,7 +330,8 @@ jobs:
           output: 'trivy-results.sarif'
           ignore-unfixed: true
           trivyignores: '.trivyignore'
-          cache: 'false'
+          # Trivyキャッシュ戦略: 週次スケジュール実行時のみDB再ダウンロード、通常PRではキャッシュ利用
+          cache: ${{ github.event_name != 'schedule' }}
         continue-on-error: true
 
       - name: Verify Trivy scan execution

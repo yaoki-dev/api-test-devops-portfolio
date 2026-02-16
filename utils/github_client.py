@@ -376,8 +376,8 @@ class AsyncGitHubClient:
                 self.logger.warning("request_timeout", endpoint=endpoint, method=method)
                 raise GitHubAPIError(f"Request timeout: {e}") from e
 
-            except (KeyboardInterrupt, asyncio.CancelledError):
-                # システム例外は再発生（非同期キャンセル・ユーザー中断を適切に伝播）
+            except (KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError):
+                # システム例外は再発生（K8s OOMKilled検知、graceful shutdown対応）
                 raise
 
             except Exception as e:

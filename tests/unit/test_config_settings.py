@@ -13,6 +13,7 @@ from config.settings import (
     SentryConfig,
     Settings,
     TestConfig,
+    _resolve_hostname,
     get_settings,
     is_private_ip,
     reload_settings,
@@ -590,6 +591,9 @@ class TestSSRFPrevention:
             raise OSError("DNS resolution failed")
 
         monkeypatch.setattr(socket, "gethostbyname", mock_gethostbyname)
+
+        # LRUキャッシュをクリアしてモックが確実に呼ばれるようにする
+        _resolve_hostname.cache_clear()
 
         # 不明なホストはプライベートIPとして扱う（Fail-Closed）
         result = is_private_ip("unknown-host.test")
