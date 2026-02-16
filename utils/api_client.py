@@ -393,7 +393,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
     def get_posts(self, limit: int | None = None) -> list[dict[str, Any]]:
         """投稿一覧の取得"""
         params = {}
-        if limit:
+        if limit is not None:
             params["_limit"] = limit
 
         response = self.get("/posts", params=params)
@@ -434,7 +434,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
             params["userId"] = user_id
         if completed is not None:
             params["completed"] = completed
-        if limit:
+        if limit is not None:
             params["_limit"] = limit
 
         response = self.get("/todos", params=params)
@@ -782,7 +782,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
     async def get_posts(self, limit: int | None = None) -> list[dict[str, Any]]:
         """投稿一覧の非同期取得"""
         params = {}
-        if limit:
+        if limit is not None:
             params["_limit"] = limit
 
         response = await self.get("/posts", params=params)
@@ -833,7 +833,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             params["userId"] = user_id
         if completed is not None:
             params["completed"] = completed
-        if limit:
+        if limit is not None:
             params["_limit"] = limit
 
         response = await self.get("/todos", params=params)
