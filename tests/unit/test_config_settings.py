@@ -1,4 +1,5 @@
 import logging
+import socket
 from pathlib import Path
 
 import pytest
@@ -692,4 +693,78 @@ class TestSSRFPrevention:
         assert result == expected_private, (
             f"Boundary test failed for {description}: "
             f"is_private_ip({boundary_ip}) should be {expected_private}"
+        )
+
+
+class TestResolveHostname:
+    """_resolve_hostname関数のDNS解決テスト
+
+    Security Rationale:
+        DNS解決結果のキャッシュ動作とエラーハンドリングを検証し、
+        ネットワーク障害時の安全なフォールバック（None返却）を保証する。
+    """
+
+    def test_resolve_hostname_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """DNS解決成功時に正しいIPアドレス文字列を返す"""
+        _resolve_hostname.cache_clear()
+        monkeypatch.setattr(socket, "gethostbyname", lambda _: "93.184.216.34")
+
+        result = _resolve_hostname("example.com")
+
+        assert result == "93.184.216.34"
+
+    def test_resolve_hostname_failure_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """DNS解決失敗（OSError）時にNoneを返す"""
+        _resolve_hostname.cache_clear()
+
+        def raise_os_error(hostname: str) -> str:
+            raise OSError(f"Name resolution failed: {hostname}")
+
+        monkeypatch.setattr(socket, "gethostbyname", raise_os_error)
+
+        result = _resolve_hostname("nonexistent.invalid")
+
+        assert result is None
+
+    def test_resolve_hostname_cache_hit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """2回目の呼び出しでキャッシュヒット（socket.gethostbynameが1回しか呼ばれない）"""
+        _resolve_hostname.cache_clear()
+        call_count = 0
+
+        def counting_resolver(hostname: str) -> str:
+            nonlocal call_count
+            call_count += 1
+            return "10.0.0.1"
+
+        monkeypatch.setattr(socket, "gethostbyname", counting_resolver)
+
+        result1 = _resolve_hostname("cached.example.com")
+        result2 = _resolve_hostname("cached.example.com")
+
+        assert result1 == "10.0.0.1"
+        assert result2 == "10.0.0.1"
+        assert call_count == 1, (
+            f"gethostbyname should be called once due to cache, but was called {call_count} times"
+        )
+
+    def test_resolve_hostname_cache_clear(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """cache_clear()後に再度DNS解決が実行される"""
+        _resolve_hostname.cache_clear()
+        call_count = 0
+
+        def counting_resolver(hostname: str) -> str:
+            nonlocal call_count
+            call_count += 1
+            return "10.0.0.2"
+
+        monkeypatch.setattr(socket, "gethostbyname", counting_resolver)
+
+        _resolve_hostname("cleared.example.com")
+        assert call_count == 1
+
+        _resolve_hostname.cache_clear()
+        _resolve_hostname("cleared.example.com")
+        assert call_count == 2, (
+            f"gethostbyname should be called again after cache_clear(), "
+            f"but total calls were {call_count}"
         )

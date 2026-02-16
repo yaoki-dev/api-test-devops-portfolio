@@ -377,7 +377,10 @@ class AsyncGitHubClient:
                 raise GitHubAPIError(f"Request timeout: {e}") from e
 
             except (KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError):
-                # システム例外は再発生（K8s OOMKilled検知、graceful shutdown対応）
+                # システム例外は再発生
+                # - KeyboardInterrupt/SystemExit: graceful shutdown対応
+                # - MemoryError: K8s OOMKilled等のリソース枯渇検知
+                # - CancelledError: asyncioタスクキャンセル伝播
                 raise
 
             except Exception as e:
