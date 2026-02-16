@@ -31,6 +31,7 @@ dependencies = [
     "psutil>=6.1.1",            # システムメトリクス
     "pyyaml>=6.0",              # YAML設定ファイル読み込み
     "sentry-sdk[httpx]>=2.48.0,<3.0.0",  # エラー監視（httpx統合）
+    "typing-extensions>=4.0.0", # Python 3.10互換（Self型等）
 ]
 
 [project.urls]
@@ -144,6 +145,8 @@ ignore = [
     "S101",  # Use of assert detected
     "S603",  # subprocess-without-shell-equals-true
     "B008",  # Do not perform function calls in argument defaults
+    "UP035", # Python 3.10互換: typing_extensionsからのimportを維持
+    "UP042", # Python 3.10互換: str+Enumを維持（StrEnumは3.11+）
 ]
 unfixable = ["F841"]  # unused variables
 

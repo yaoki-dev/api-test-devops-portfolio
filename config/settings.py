@@ -11,7 +11,8 @@ import ipaddress
 import logging
 import os
 import socket
-from enum import StrEnum
+from enum import Enum
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -79,6 +80,38 @@ def _check_ip_private(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool
     return any(ip in network for network in PRIVATE_IP_RANGES)
 
 
+@lru_cache(maxsize=256)
+def _resolve_hostname(hostname: str) -> str | None:
+    """ホスト名をDNS解決してIPアドレス文字列を返す（結果をキャッシュ）
+
+    Args:
+        hostname: 解決対象のホスト名
+
+    Returns:
+        解決されたIPアドレス文字列。失敗時はNone。
+
+    Note:
+        キャッシュサイズ256の根拠:
+        - 本プロジェクトの許可ドメイン数は最大10程度
+        - テスト中のユニークホスト名は約20-30種類
+        - 256は実用上十分な余裕を持たせた値（メモリ消費は無視できる程度）
+        - Python標準のlru_cacheデフォルト(128)の2倍で、
+          将来的なドメイン追加にも対応
+
+    Security:
+        キャッシュポイズニングリスク評価:
+        - プロセス内キャッシュのため、外部からの直接改ざんは不可能
+        - DNS応答自体が汚染されている場合のリスクはキャッシュ有無に関わらず同一
+          （初回解決時点で汚染されたIPが返る）
+        - プロセス再起動でキャッシュはクリアされる
+        - 長時間稼働サービスでは定期的なcache_clear()を検討
+    """
+    try:
+        return socket.gethostbyname(hostname)
+    except OSError:
+        return None
+
+
 def is_private_ip(hostname: str) -> bool:
     """ホスト名がプライベートIPまたはローカルアドレスかチェック
 
@@ -91,21 +124,24 @@ def is_private_ip(hostname: str) -> bool:
     Security:
         - IPv4-mapped IPv6（::ffff:x.x.x.x）もプライベートIPとして検出
         - DNS解決失敗時はFail-Closed（ブロック）
+        - DNS解決結果はLRUキャッシュ（256エントリ）で高速化
 
     """
     try:
-        # IPアドレス形式の場合
+        # IPアドレス形式の場合（DNS解決不要）
         ip = ipaddress.ip_address(hostname)
         return _check_ip_private(ip)
     except ValueError:
-        # ホスト名の場合、DNS解決を試みる
-        try:
-            resolved_ip = socket.gethostbyname(hostname)
-            ip = ipaddress.ip_address(resolved_ip)
-            return _check_ip_private(ip)
-        except (OSError, ValueError):
+        # ホスト名の場合、DNS解決を試みる（キャッシュ付き）
+        resolved = _resolve_hostname(hostname)
+        if resolved is None:
             # DNS解決失敗は安全側に倒す（ブロック = Fail-Closed）
             # セキュリティ: SSRF攻撃防止のため、不明なホストはプライベートIPと見なす
+            return True
+        try:
+            ip = ipaddress.ip_address(resolved)
+            return _check_ip_private(ip)
+        except ValueError:
             return True
 
 
@@ -114,7 +150,7 @@ def is_private_ip(hostname: str) -> bool:
 # =============================================================================
 
 
-class Environment(StrEnum):
+class Environment(str, Enum):
     """実行環境の定義"""
 
     DEVELOPMENT = "development"
@@ -123,7 +159,7 @@ class Environment(StrEnum):
     PRODUCTION = "production"
 
 
-class LogLevel(StrEnum):
+class LogLevel(str, Enum):
     """ログレベルの定義"""
 
     DEBUG = "DEBUG"
@@ -133,7 +169,7 @@ class LogLevel(StrEnum):
     CRITICAL = "CRITICAL"
 
 
-class LogFormat(StrEnum):
+class LogFormat(str, Enum):
     """ログフォーマットの定義"""
 
     CONSOLE = "console"

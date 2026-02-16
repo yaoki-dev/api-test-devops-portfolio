@@ -12,9 +12,10 @@ import json
 import random
 import time
 from types import TracebackType
-from typing import Any, Self
+from typing import Any
 
 import httpx
+from typing_extensions import Self
 
 from config.settings import settings
 from utils.logger import get_logger
