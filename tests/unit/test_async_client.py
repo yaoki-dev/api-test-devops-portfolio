@@ -1194,7 +1194,7 @@ async def test_get_todos_with_filters(
 
     # パラメータに応じてフィルタされたモックデータを作成
     filtered_todos = all_todos
-    if user_id:
+    if user_id is not None:
         filtered_todos = [t for t in filtered_todos if t["userId"] == user_id]
     if completed is not None:
         filtered_todos = [t for t in filtered_todos if t["completed"] == completed]
@@ -1203,7 +1203,7 @@ async def test_get_todos_with_filters(
 
     # クエリパラメータ構築（Noneは除外）
     query_params = []
-    if user_id:
+    if user_id is not None:
         query_params.append(f"userId={user_id}")
     if completed is not None:
         query_params.append(f"completed={str(completed).lower()}")
@@ -1231,10 +1231,52 @@ async def test_get_todos_with_filters(
     assert all(isinstance(todo, dict) for todo in result)
 
     # 追加検証: フィルタ条件が結果に反映されている
-    if user_id:
+    if user_id is not None:
         assert all(t["userId"] == user_id for t in result)
     if completed is not None:
         assert all(t["completed"] == completed for t in result)
+
+
+# ===============================================================================
+# Test: get_todos() - 入力値バリデーション
+# ===============================================================================
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "limit,user_id,expected_error",
+    [
+        (-1, None, "limit must be >= 0"),
+        (-100, None, "limit must be >= 0"),
+        (None, 0, "user_id must be >= 1"),
+        (None, -1, "user_id must be >= 1"),
+        (-1, 0, "limit must be >= 0"),
+    ],
+    ids=[
+        "negative_limit",
+        "very_negative_limit",
+        "zero_user_id",
+        "negative_user_id",
+        "both_invalid_limit_first",
+    ],
+)
+async def test_async_get_todos_validation_error(limit, user_id, expected_error):
+    """
+    get_todos()の入力値バリデーション検証
+
+    検証項目：
+    - limit < 0: ValueError発生
+    - user_id < 1: ValueError発生（JSONPlaceholder APIはID=1から）
+    - 両方無効な場合: limitが先に検証される
+
+    学習ポイント:
+    - Fail-Fast原則: 無効な入力は即座に拒否
+    - get_posts()と同一パターンのバリデーション一貫性
+    """
+    async with AsyncJSONPlaceholderClient() as client:
+        with pytest.raises(ValueError, match=expected_error):
+            await client.get_todos(limit=limit, user_id=user_id)
 
 
 # ===============================================================================
@@ -1420,7 +1462,7 @@ async def test_get_albums_with_filters(user_id, expected_count, test_description
     ]
 
     # パラメータに応じてフィルタ
-    if user_id:
+    if user_id is not None:
         filtered_albums = [a for a in all_albums if a["userId"] == user_id]
         url = f"{BASE_URL}/albums?userId={user_id}"
     else:
@@ -1442,8 +1484,39 @@ async def test_get_albums_with_filters(user_id, expected_count, test_description
     assert all(isinstance(album, dict) for album in result)
 
     # user_idフィルタ検証
-    if user_id:
+    if user_id is not None:
         assert all(a["userId"] == user_id for a in result)
+
+
+# ===============================================================================
+# Test: get_albums() - 入力値バリデーション
+# ===============================================================================
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "user_id,expected_error",
+    [
+        (0, "user_id must be >= 1"),
+        (-1, "user_id must be >= 1"),
+    ],
+    ids=["zero_user_id", "negative_user_id"],
+)
+async def test_async_get_albums_validation_error(user_id, expected_error):
+    """
+    get_albums()の入力値バリデーション検証
+
+    検証項目：
+    - user_id < 1: ValueError発生（JSONPlaceholder APIはID=1から）
+
+    学習ポイント:
+    - Fail-Fast原則: 無効な入力は即座に拒否
+    - get_posts()と同一パターンのバリデーション一貫性
+    """
+    async with AsyncJSONPlaceholderClient() as client:
+        with pytest.raises(ValueError, match=expected_error):
+            await client.get_albums(user_id=user_id)
 
 
 # ===============================================================================

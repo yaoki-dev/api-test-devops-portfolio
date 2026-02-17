@@ -471,7 +471,7 @@ def test_sync_get_todos(
 
     # パラメータに応じてフィルタされたモックデータを作成
     filtered_todos = all_todos
-    if user_id:
+    if user_id is not None:
         filtered_todos = [t for t in filtered_todos if t["userId"] == user_id]
     if completed is not None:
         filtered_todos = [t for t in filtered_todos if t["completed"] == completed]
@@ -488,6 +488,48 @@ def test_sync_get_todos(
 
     assert len(result) == expected_count
     assert result == filtered_todos
+
+
+# =============================================================================
+# Issue #173: get_todos() 入力値バリデーション
+# =============================================================================
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "limit,user_id,expected_error",
+    [
+        (-1, None, "limit must be >= 0"),
+        (-100, None, "limit must be >= 0"),
+        (None, 0, "user_id must be >= 1"),
+        (None, -1, "user_id must be >= 1"),
+        (-1, 0, "limit must be >= 0"),
+    ],
+    ids=[
+        "negative_limit",
+        "very_negative_limit",
+        "zero_user_id",
+        "negative_user_id",
+        "both_invalid_limit_first",
+    ],
+)
+def test_sync_get_todos_validation_error(
+    limit: int | None, user_id: int | None, expected_error: str
+) -> None:
+    """
+    SyncJSONPlaceholderClient.get_todos()の入力値バリデーション検証
+
+    検証項目：
+    - limit < 0: ValueError発生
+    - user_id < 1: ValueError発生（JSONPlaceholder APIはID=1から）
+
+    学習ポイント:
+    - Fail-Fast原則: 無効な入力は即座に拒否
+    - get_posts()と同一パターンのバリデーション一貫性
+    """
+    with SyncJSONPlaceholderClient() as client:
+        with pytest.raises(ValueError, match=expected_error):
+            client.get_todos(limit=limit, user_id=user_id)
 
 
 # =============================================================================
@@ -526,7 +568,7 @@ def test_sync_get_albums(
     ]
 
     # パラメータに応じてフィルタ
-    if user_id:
+    if user_id is not None:
         mock_data = [a for a in all_albums if a["userId"] == user_id]
     else:
         mock_data = all_albums
@@ -541,6 +583,36 @@ def test_sync_get_albums(
 
     assert len(result) == expected_count
     assert result == mock_data
+
+
+# =============================================================================
+# Issue #173: get_albums() 入力値バリデーション
+# =============================================================================
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "user_id,expected_error",
+    [
+        (0, "user_id must be >= 1"),
+        (-1, "user_id must be >= 1"),
+    ],
+    ids=["zero_user_id", "negative_user_id"],
+)
+def test_sync_get_albums_validation_error(user_id: int, expected_error: str) -> None:
+    """
+    SyncJSONPlaceholderClient.get_albums()の入力値バリデーション検証
+
+    検証項目：
+    - user_id < 1: ValueError発生（JSONPlaceholder APIはID=1から）
+
+    学習ポイント:
+    - Fail-Fast原則: 無効な入力は即座に拒否
+    - get_posts()と同一パターンのバリデーション一貫性
+    """
+    with SyncJSONPlaceholderClient() as client:
+        with pytest.raises(ValueError, match=expected_error):
+            client.get_albums(user_id=user_id)
 
 
 # =============================================================================
