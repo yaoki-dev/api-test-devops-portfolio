@@ -123,7 +123,7 @@
 
 - **目標**: 時給4,000-4,500円レベルの技術力証明
 - **期間**: Week 1-6+5.5（38日間、6週間+2日、294H総計）
-- **技術スタック**: Python 3.12, httpx, pytest, Docker, CI/CD
+- **技術スタック**: Python 3.13, httpx, pytest, Docker, CI/CD
 
 ### 現状の課題（6週プラン Week 3-6対象）
 
