@@ -31,7 +31,7 @@ dependencies = [
     "psutil>=6.1.1",            # システムメトリクス
     "pyyaml>=6.0",              # YAML設定ファイル読み込み
     "sentry-sdk[httpx]>=2.48.0,<3.0.0",  # エラー監視（httpx統合）
-    "typing-extensions>=4.0.0", # Python 3.10互換（Self型等）
+    "typing-extensions>=4.0.0", # 推移的依存（typing.SelfはPython 3.11+標準のため直接不要）
 ]
 
 [project.urls]

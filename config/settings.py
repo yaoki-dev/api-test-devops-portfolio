@@ -384,7 +384,15 @@ class Settings(BaseSettings):
     @field_validator("environment", mode="before")
     @classmethod
     def validate_environment(cls, v: str | Environment) -> str | Environment:
-        """環境設定のバリデーション"""
+        """環境設定のバリデーション
+
+        Note:
+            StrEnumはstrを継承するため isinstance(v, str) はEnumインスタンスにもTrueを返す。
+            型アノテーションの意図（両者を区別）を明示するためEnumインスタンスを先に判定する。
+        """
+        # StrEnumはstrを継承するため、Enumインスタンスを先に判定して早期リターン
+        if isinstance(v, Environment):
+            return v
         if isinstance(v, str):
             v = v.lower()
         return v
