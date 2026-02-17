@@ -6,7 +6,7 @@
 
 **現在のカバレッジ**: 85.46%（CI条件: unit+integration, not external） | **目標達成**: ✅
 **テスト資産**: 300件（CI条件）/ 全415件
-**最優先改善領域**: utils/api_client.py (49.19%)
+**最優先改善領域**: utils/api_client.py (75.62%)
 
 ---
 
@@ -60,7 +60,7 @@ uv run pytest -n auto -m "(unit or integration) and not external" \
 | 3-4 | 65-70% | Docker/CI-CD |
 | 5-6 | 80-85% | 非同期/e2e |
 
-**優先モジュール**: utils/api_client.py (49.41%) → 最優先
+**優先モジュール**: utils/api_client.py (75.62%) → 最優先
 
 ---
 

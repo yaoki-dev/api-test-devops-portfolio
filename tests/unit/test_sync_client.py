@@ -19,6 +19,8 @@ import pytest
 from tests.conftest import create_mock_response
 from utils.api_client import APIConnectionError, SyncAPIClient, SyncJSONPlaceholderClient
 
+pytestmark = pytest.mark.unit
+
 # =============================================================================
 # Basic Operations (4件)
 # =============================================================================

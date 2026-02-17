@@ -799,8 +799,8 @@ async def test_get_user_data_with_empty_posts():
         json={"id": 1, "name": "Leanne Graham", "email": "Sincere@april.biz"}
     )
 
-    # Posts API: 空リスト
-    respx.get(f"{BASE_URL}/posts").respond(json=[])
+    # Posts API: userId=1 でフィルタされた結果が空
+    respx.get(f"{BASE_URL}/posts", params={"userId": user_id}).respond(json=[])
 
     # Todos API
     respx.get(f"{BASE_URL}/todos?userId={user_id}").respond(
