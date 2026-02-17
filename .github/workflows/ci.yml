@@ -29,10 +29,10 @@ jobs:
     name: PR Validation
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 10  # 単一Python版（3.12固定、Dockerfile一致）
+    timeout-minutes: 10  # 単一Python版（3.13固定、Dockerfile一致）
     strategy:
       matrix:
-        python-version: ['3.12']
+        python-version: ['3.13']
 
     steps:
       - name: Checkout code
@@ -122,7 +122,7 @@ jobs:
           echo "textlint: ${{ steps.textlint.outcome }}"
           exit 1
 
-  # NOTE: post-merge-validation uses Python 3.12 only (matches Dockerfile)
+  # NOTE: post-merge-validation uses Python 3.13 only (matches Dockerfile)
 
   # ============================================================
   # Stage 1.5: PR Security Scan
@@ -290,7 +290,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version: '3.13'
 
       - name: Install uv
         run: |
@@ -393,7 +393,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        python-version: ['3.12']
+        python-version: ['3.13']
 
     steps:
       - name: Checkout code

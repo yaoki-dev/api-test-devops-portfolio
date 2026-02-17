@@ -13,11 +13,11 @@ authors = [
     {name = "Yuta", email = "yuta@example.com"},
 ]
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = "==3.13.*"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
@@ -118,7 +118,7 @@ precision = 2
 
 # Ruff設定（統合リンター・フォーマッター）
 [tool.ruff]
-target-version = "py312"
+target-version = "py313"
 line-length = 100  # DevOps軽量化: コミット時の厳密度緩和
 fix = true
 
@@ -159,7 +159,7 @@ section-order = ["future", "standard-library", "third-party", "first-party", "lo
 
 # mypy設定（型チェック）
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 explicit_package_bases = true
 warn_return_any = true
 warn_unused_configs = true

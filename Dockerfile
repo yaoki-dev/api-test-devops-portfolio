@@ -7,9 +7,9 @@
 # ============================================================
 # セキュリティ: SHA256ダイジェスト固定（サプライチェーン攻撃防止）
 # 更新フロー: Dependabotが週次（月曜 09:00 JST）で自動検出・PR作成
-# 手動更新: docker pull python:3.12-slim && docker inspect --format='{{index .RepoDigests 0}}' python:3.12-slim
-# 2026-02-16更新: Python 3.14→3.12 (pyproject.toml/ci.yml整合性維持)
-FROM python:3.12-slim@sha256:9e01bf1ae5db7649a236da7be1e94ffbbbdd7a93f867dd0d8d5720d9e1f89fab AS base
+# 手動更新: docker pull python:3.13-slim && docker inspect --format='{{index .RepoDigests 0}}' python:3.13-slim
+# 2026-02-17更新: Python 3.12→3.13 (CVE-2025-8869修正: pip 25.3搭載)
+FROM python:3.13-slim@sha256:3de9a8d7aedbb7984dc18f2dff178a7850f16c1ae7c34ba9d7ecc23d0755e35f AS base
 
 WORKDIR /app
 

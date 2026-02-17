@@ -13,7 +13,7 @@ from utils.api_client import APIHTTPError, SyncAPIClient
 
 
 @pytest.fixture(scope="class")
-def api_client() -> Generator[SyncAPIClient, None, None]:
+def api_client() -> Generator[SyncAPIClient]:
     """Smoke test用の共有APIクライアント（TCP接続効率化）"""
     with SyncAPIClient() as client:
         yield client

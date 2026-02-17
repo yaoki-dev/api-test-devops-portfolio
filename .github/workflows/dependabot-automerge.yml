@@ -47,7 +47,7 @@ jobs:
         # - L53条件: contains(github.event.pull_request.labels.*.name, 'docker')でマッチ
         #
         # セーフガード（3層防御）:
-        # 1. Tag固定: python:3.12-slim（major変更はタグ変更必須→手動レビュー）
+        # 1. Tag固定: python:3.13-slim（major変更はタグ変更必須→手動レビュー）
         # 2. Trivy scan: CRITICAL/HIGH脆弱性検出時は自動マージブロック（CI必須）
         # 3. pytest実行: アプリロジック検証（httpx, Pydantic, structlog等）
         #
