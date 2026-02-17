@@ -155,7 +155,7 @@ class TestSettingsEnvironmentValidation:
             pytest.param("PRODUCTION", Environment.PRODUCTION, True, id="uppercase"),
             pytest.param("DeVeLoPmEnT", Environment.DEVELOPMENT, False, id="mixed_case"),
             pytest.param(Environment.TESTING, Environment.TESTING, False, id="enum_direct"),
-            pytest.param("staging", Environment.STAGING, False, id="lowercase"),
+            pytest.param("staging", Environment.STAGING, True, id="lowercase"),
         ],
     )
     def test_environment_validation(
@@ -169,11 +169,14 @@ class TestSettingsEnvironmentValidation:
         Note:
             Pydantic field_validatorが実行時に文字列→Enum変換を行うため、
             str | Environment を受け入れる。静的型チェックとの差異あり。
+            本番・ステージング環境はシークレット必須かつHTTPS強制のため、
+            needs_secret=Trueの場合はHTTPS URLも合わせて指定する。
         """
         if needs_secret:
             settings = Settings(
                 environment=env_input,  # type: ignore[arg-type]
                 security=SecurityConfig(api_key=SecretStr("test-key")),
+                api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),
             )
         else:
             settings = Settings(environment=env_input)  # type: ignore[arg-type]
@@ -220,7 +223,7 @@ class TestSettingsEnvironmentMethods:
 
 
 class TestProductionSecretValidation:
-    """本番環境でのシークレット検証テスト"""
+    """本番・ステージング環境でのシークレット検証テスト"""
 
     def test_production_without_secrets_raises_error(self):
         """本番環境でシークレット未設定時にエラー"""
@@ -249,6 +252,24 @@ class TestProductionSecretValidation:
         settings = Settings(environment=Environment.DEVELOPMENT)
         assert settings.is_development() is True
 
+    def test_staging_without_secrets_raises_error(self):
+        """ステージング環境でシークレット未設定時にエラー (STAGING=本番同等ポリシー)"""
+        with pytest.raises(ValidationError) as exc_info:
+            Settings(
+                environment=Environment.STAGING,
+                api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),
+            )
+        assert "SECURITY__API_KEY or SECURITY__JWT_SECRET" in str(exc_info.value)
+
+    def test_staging_with_api_key_valid(self):
+        """ステージング環境でapi_key設定時は有効"""
+        settings = Settings(
+            environment=Environment.STAGING,
+            security=SecurityConfig(api_key=SecretStr("test-key")),
+            api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),
+        )
+        assert settings.environment == Environment.STAGING
+
 
 class TestProductionHTTPSValidation:
     """本番環境でのHTTPS強制テスト"""
@@ -267,6 +288,25 @@ class TestProductionHTTPSValidation:
         """本番環境でHTTPS URLは有効"""
         settings = Settings(
             environment=Environment.PRODUCTION,
+            security=SecurityConfig(api_key=SecretStr("test-key")),
+            api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),
+        )
+        assert settings.api.base_url == "https://jsonplaceholder.typicode.com"
+
+    def test_staging_http_raises_error(self):
+        """ステージング環境でHTTP URLはエラー (OWASP A02)"""
+        with pytest.raises(ValidationError) as exc_info:
+            Settings(
+                environment=Environment.STAGING,
+                security=SecurityConfig(api_key=SecretStr("test-key")),
+                api=APIConfig(base_url="http://jsonplaceholder.typicode.com"),
+            )
+        assert "requires HTTPS" in str(exc_info.value)
+
+    def test_staging_https_valid(self):
+        """ステージング環境でHTTPS URLは有効"""
+        settings = Settings(
+            environment=Environment.STAGING,
             security=SecurityConfig(api_key=SecretStr("test-key")),
             api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),
         )
