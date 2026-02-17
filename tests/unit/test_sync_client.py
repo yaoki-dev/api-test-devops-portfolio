@@ -266,6 +266,100 @@ def test_sync_get_posts(
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    "user_id,expected_count",
+    [
+        (None, 5),  # user_id=Noneで全投稿取得
+        (1, 2),  # user_id=1でユーザー1の投稿のみ
+        (2, 1),  # user_id=2でユーザー2の投稿のみ
+        (999, 0),  # user_id=999で存在しないユーザー
+    ],
+    ids=["no_filter", "user_1", "user_2", "nonexistent_user"],
+)
+def test_sync_get_posts_user_filter(
+    mock_httpx_sync_client: Mock, user_id: int | None, expected_count: int
+) -> None:
+    """
+    SyncJSONPlaceholderClient.get_posts()のuser_idパラメータ検証
+
+    検証項目：
+    - user_id=None: フィルタなしで全投稿取得
+    - user_id=1/2: 指定ユーザーの投稿のみ取得（API側フィルタ）
+    - user_id=999: 存在しないユーザーで空配列返却
+
+    学習ポイント:
+    - API側フィルタリング: クライアント側フィルタリングと比較して90%転送削減
+    - クエリパラメータ: /posts?userId=X
+    - パフォーマンス最適化: ネットワーク転送量削減
+    """
+    all_posts = [
+        {"id": 1, "userId": 1, "title": "Post 1", "body": "Content 1"},
+        {"id": 2, "userId": 2, "title": "Post 2", "body": "Content 2"},
+        {"id": 3, "userId": 1, "title": "Post 3", "body": "Content 3"},
+        {"id": 4, "userId": 3, "title": "Post 4", "body": "Content 4"},
+        {"id": 5, "userId": 3, "title": "Post 5", "body": "Content 5"},
+    ]
+
+    # user_idパラメータに応じてモックデータを設定
+    if user_id is None:
+        mock_data = all_posts
+    elif user_id == 999:
+        mock_data = []
+    else:
+        mock_data = [p for p in all_posts if p["userId"] == user_id]
+
+    mock_response = create_mock_response(200, json_data=mock_data)
+    mock_response.raise_for_status.return_value = None
+    mock_httpx_sync_client.request.return_value = mock_response
+
+    with SyncJSONPlaceholderClient() as client:
+        client._client = mock_httpx_sync_client
+        result = client.get_posts(user_id=user_id)
+
+    assert len(result) == expected_count
+    assert result == mock_data
+    if user_id is not None and user_id != 999:
+        assert all(post["userId"] == user_id for post in result)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "limit,user_id,expected_error",
+    [
+        (-1, None, "limit must be >= 0"),
+        (-100, None, "limit must be >= 0"),
+        (None, 0, "user_id must be >= 1"),
+        (None, -1, "user_id must be >= 1"),
+        (-1, 0, "limit must be >= 0"),
+    ],
+    ids=[
+        "negative_limit",
+        "very_negative_limit",
+        "zero_user_id",
+        "negative_user_id",
+        "both_invalid_limit_first",
+    ],
+)
+def test_sync_get_posts_validation_error(
+    limit: int | None, user_id: int | None, expected_error: str
+) -> None:
+    """
+    SyncJSONPlaceholderClient.get_posts()の入力値バリデーション検証
+
+    検証項目：
+    - limit < 0: ValueError発生
+    - user_id < 1: ValueError発生（JSONPlaceholder APIはID=1から）
+
+    学習ポイント:
+    - 早期エラー検出: API呼び出し前にクライアント側で検証
+    - Fail-Fast原則: 無効な入力は即座に拒否
+    """
+    with SyncJSONPlaceholderClient() as client:
+        with pytest.raises(ValueError, match=expected_error):
+            client.get_posts(limit=limit, user_id=user_id)
+
+
+@pytest.mark.unit
 def test_sync_get_post_success(mock_httpx_sync_client: Mock) -> None:
     """
     SyncJSONPlaceholderClient.get_post()の正常系テスト
@@ -381,7 +475,7 @@ def test_sync_get_todos(
         filtered_todos = [t for t in filtered_todos if t["userId"] == user_id]
     if completed is not None:
         filtered_todos = [t for t in filtered_todos if t["completed"] == completed]
-    if limit:
+    if limit is not None:
         filtered_todos = filtered_todos[:limit]
 
     mock_response = create_mock_response(200, json_data=filtered_todos)

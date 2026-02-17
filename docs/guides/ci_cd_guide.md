@@ -120,7 +120,7 @@ uv run pytest -n auto -m "(unit or integration) and not external" \
 
 | 品質基準 | 目標値 | 現在値 | 検証コマンド |
 |---------|-------|-------|------------|
-| カバレッジ | 85% | 76.40% | `pytest --cov-fail-under=76` |
+| カバレッジ | 85% | 85.46% | `pytest --cov-fail-under=85` |
 | ruff | 0 errors | ✅ | `ruff check .` |
 | mypy | 0 errors | ✅ | `mypy utils/ config/ models/` |
 | セキュリティ | 0 Critical/High | ✅ | Trivy SARIF |

@@ -390,11 +390,28 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
     """
 
     # Posts API
-    def get_posts(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """投稿一覧の取得"""
+    def get_posts(
+        self, limit: int | None = None, user_id: int | None = None
+    ) -> list[dict[str, Any]]:
+        """投稿一覧の取得
+
+        Args:
+            limit: 取得件数上限（0以上）
+            user_id: ユーザーIDでフィルタリング（API側フィルタ、1以上）
+
+        Raises:
+            ValueError: limit < 0 または user_id < 1 の場合
+        """
+        if limit is not None and limit < 0:
+            raise ValueError("limit must be >= 0")
+        if user_id is not None and user_id < 1:
+            raise ValueError("user_id must be >= 1")
+
         params = {}
         if limit is not None:
             params["_limit"] = limit
+        if user_id is not None:
+            params["userId"] = user_id
 
         response = self.get("/posts", params=params)
         return _safe_parse_json(response)
@@ -779,11 +796,28 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
     """
 
     # Posts API
-    async def get_posts(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """投稿一覧の非同期取得"""
+    async def get_posts(
+        self, limit: int | None = None, user_id: int | None = None
+    ) -> list[dict[str, Any]]:
+        """投稿一覧の非同期取得
+
+        Args:
+            limit: 取得件数上限（0以上）
+            user_id: ユーザーIDでフィルタリング（API側フィルタ、1以上）
+
+        Raises:
+            ValueError: limit < 0 または user_id < 1 の場合
+        """
+        if limit is not None and limit < 0:
+            raise ValueError("limit must be >= 0")
+        if user_id is not None and user_id < 1:
+            raise ValueError("user_id must be >= 1")
+
         params = {}
         if limit is not None:
             params["_limit"] = limit
+        if user_id is not None:
+            params["userId"] = user_id
 
         response = await self.get("/posts", params=params)
         return _safe_parse_json(response)
@@ -944,7 +978,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         """ユーザーに関連するデータを並行取得"""
         # 並行してユーザー情報、投稿、TODO、アルバムを取得
         user_task = self.get_user(user_id)
-        posts_task = self.get_posts()
+        posts_task = self.get_posts(user_id=user_id)
         todos_task = self.get_todos(user_id=user_id)
         albums_task = self.get_albums(user_id=user_id)
 
@@ -958,7 +992,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 
         return {
             "user": user,
-            "posts": [p for p in posts if p["userId"] == user_id],
+            "posts": posts,
             "todos": todos,
             "albums": albums,
         }

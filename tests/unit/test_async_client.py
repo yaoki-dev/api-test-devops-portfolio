@@ -724,11 +724,10 @@ async def test_get_user_data_parallel_requests():
         json={"id": 1, "name": "Leanne Graham", "email": "Sincere@april.biz"}
     )
 
-    # Posts API（全投稿 - userId=1とuserId=2の両方を含む）
-    respx.get(f"{BASE_URL}/posts").respond(
+    # Posts API（user_id=1のみ - API側フィルタリング）
+    respx.get(f"{BASE_URL}/posts?userId={user_id}").respond(
         json=[
             {"id": 1, "userId": 1, "title": "Post by User 1", "body": "Content 1"},
-            {"id": 2, "userId": 2, "title": "Post by User 2", "body": "Content 2"},
             {"id": 3, "userId": 1, "title": "Another post by User 1", "body": "Content 3"},
         ]
     )
@@ -886,6 +885,112 @@ async def test_get_posts_with_various_limits(limit, expected_count, test_descrip
     )
     assert result == expected_posts
     assert all(isinstance(post, dict) for post in result)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "user_id,expected_count,test_description",
+    [
+        (None, 5, "user_id=Noneで全投稿取得（フィルタなし）"),
+        (1, 2, "user_id=1でユーザー1の投稿のみ取得（API側フィルタ）"),
+        (2, 1, "user_id=2でユーザー2の投稿のみ取得"),
+        (999, 0, "user_id=999で存在しないユーザー（空配列返却）"),
+    ],
+    ids=["no_filter", "user_1", "user_2", "nonexistent_user"],
+)
+@respx.mock
+async def test_async_get_posts_user_filter(user_id, expected_count, test_description):
+    """
+    get_posts()のuser_idパラメータ動作検証（API側フィルタリング）
+
+    検証項目：
+    - user_id=None: フィルタなしで全投稿取得
+    - user_id=1/2: 指定ユーザーの投稿のみ取得（API側フィルタ）
+    - user_id=999: 存在しないユーザーで空配列返却
+
+    学習ポイント:
+    - API側フィルタリング: ネットワーク転送量削減（90%削減効果）
+    - クエリパラメータ: /posts?userId=X
+    - 境界値テスト: 存在しないユーザーID
+    """
+    # モックデータ（5件の投稿、userId=1が2件、userId=2が1件、userId=3が2件）
+    all_posts = [
+        {"id": 1, "userId": 1, "title": "Post 1 by User 1", "body": "Content 1"},
+        {"id": 2, "userId": 2, "title": "Post 2 by User 2", "body": "Content 2"},
+        {"id": 3, "userId": 1, "title": "Post 3 by User 1", "body": "Content 3"},
+        {"id": 4, "userId": 3, "title": "Post 4 by User 3", "body": "Content 4"},
+        {"id": 5, "userId": 3, "title": "Post 5 by User 3", "body": "Content 5"},
+    ]
+
+    # user_idパラメータに応じてrespxエンドポイントを設定
+    if user_id is None:
+        # user_idなし: 全件取得
+        respx.get(f"{BASE_URL}/posts").respond(json=all_posts)
+        expected_posts = all_posts
+    elif user_id == 999:
+        # 存在しないuser_id: 空配列
+        respx.get(f"{BASE_URL}/posts?userId={user_id}").respond(json=[])
+        expected_posts = []
+    else:
+        # user_id指定: API側フィルタリング
+        filtered_posts = [p for p in all_posts if p["userId"] == user_id]
+        respx.get(f"{BASE_URL}/posts?userId={user_id}").respond(json=filtered_posts)
+        expected_posts = filtered_posts
+
+    # テスト実行
+    async with AsyncJSONPlaceholderClient() as client:
+        result = await client.get_posts(user_id=user_id)
+
+    # 結果検証
+    assert len(result) == expected_count, (
+        f"{test_description}: expected {expected_count}, got {len(result)}"
+    )
+    assert result == expected_posts
+    if user_id is not None and user_id != 999:
+        # user_id指定時は全投稿が指定ユーザーのものであることを確認
+        assert all(post["userId"] == user_id for post in result)
+
+
+# ===============================================================================
+# Test: get_posts() - 入力値バリデーション
+# ===============================================================================
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "limit,user_id,expected_error",
+    [
+        (-1, None, "limit must be >= 0"),
+        (-100, None, "limit must be >= 0"),
+        (None, 0, "user_id must be >= 1"),
+        (None, -1, "user_id must be >= 1"),
+        (-1, 0, "limit must be >= 0"),  # limitが先に検証される
+    ],
+    ids=[
+        "negative_limit",
+        "very_negative_limit",
+        "zero_user_id",
+        "negative_user_id",
+        "both_invalid_limit_first",
+    ],
+)
+async def test_async_get_posts_validation_error(limit, user_id, expected_error):
+    """
+    get_posts()の入力値バリデーション検証
+
+    検証項目：
+    - limit < 0: ValueError発生
+    - user_id < 1: ValueError発生（JSONPlaceholder APIはID=1から）
+    - 両方無効な場合: limitが先に検証される
+
+    学習ポイント:
+    - 早期エラー検出: API呼び出し前にクライアント側で検証
+    - Fail-Fast原則: 無効な入力は即座に拒否
+    """
+    async with AsyncJSONPlaceholderClient() as client:
+        with pytest.raises(ValueError, match=expected_error):
+            await client.get_posts(limit=limit, user_id=user_id)
 
 
 # ===============================================================================
@@ -1093,7 +1198,7 @@ async def test_get_todos_with_filters(
         filtered_todos = [t for t in filtered_todos if t["userId"] == user_id]
     if completed is not None:
         filtered_todos = [t for t in filtered_todos if t["completed"] == completed]
-    if limit:
+    if limit is not None:
         filtered_todos = filtered_todos[:limit]
 
     # クエリパラメータ構築（Noneは除外）
@@ -1102,7 +1207,7 @@ async def test_get_todos_with_filters(
         query_params.append(f"userId={user_id}")
     if completed is not None:
         query_params.append(f"completed={str(completed).lower()}")
-    if limit:
+    if limit is not None:
         query_params.append(f"_limit={limit}")
 
     # URLを構築

@@ -410,6 +410,25 @@ class Settings(BaseSettings):
                 )
         return self
 
+    @model_validator(mode="after")
+    def validate_production_https(self) -> "Settings":
+        """本番環境でのHTTPS強制
+
+        Security:
+            本番環境（ENVIRONMENT=production）では、
+            HTTPS接続を強制し平文HTTP通信を禁止。
+            OWASP A02: Cryptographic Failures対策。
+
+        Note:
+            開発/テスト環境ではHTTP接続を許可（ローカル開発用）。
+        """
+        if self.environment == Environment.PRODUCTION:
+            if not self.api.base_url.startswith("https://"):
+                raise ValueError(
+                    f"Production environment requires HTTPS. Current base_url: {self.api.base_url}",
+                )
+        return self
+
     def is_development(self) -> bool:
         """開発環境判定"""
         return self.environment == Environment.DEVELOPMENT

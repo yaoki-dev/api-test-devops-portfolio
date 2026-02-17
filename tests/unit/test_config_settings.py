@@ -250,6 +250,37 @@ class TestProductionSecretValidation:
         assert settings.is_development() is True
 
 
+class TestProductionHTTPSValidation:
+    """本番環境でのHTTPS強制テスト"""
+
+    def test_production_http_raises_error(self):
+        """本番環境でHTTP URLはエラー"""
+        with pytest.raises(ValidationError) as exc_info:
+            Settings(
+                environment=Environment.PRODUCTION,
+                security=SecurityConfig(api_key=SecretStr("test-key")),
+                api=APIConfig(base_url="http://jsonplaceholder.typicode.com"),
+            )
+        assert "requires HTTPS" in str(exc_info.value)
+
+    def test_production_https_valid(self):
+        """本番環境でHTTPS URLは有効"""
+        settings = Settings(
+            environment=Environment.PRODUCTION,
+            security=SecurityConfig(api_key=SecretStr("test-key")),
+            api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),
+        )
+        assert settings.api.base_url == "https://jsonplaceholder.typicode.com"
+
+    def test_development_http_valid(self):
+        """開発環境ではHTTP URLを許可"""
+        settings = Settings(
+            environment=Environment.DEVELOPMENT,
+            api=APIConfig(base_url="http://jsonplaceholder.typicode.com"),
+        )
+        assert settings.api.base_url == "http://jsonplaceholder.typicode.com"
+
+
 class TestSettingsSecretMasking:
     """Settings.to_dict() のシークレットマスキングテスト (lines 214-225)"""
 
