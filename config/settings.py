@@ -391,22 +391,44 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
-        """本番環境でのシークレット存在チェック
+        """本番・ステージング環境でのシークレット存在チェック
 
         Security:
-            本番環境（ENVIRONMENT=production）では、
+            本番環境（ENVIRONMENT=production）およびステージング（ENVIRONMENT=staging）では、
             api_keyまたはjwt_secretの少なくとも一方が必須。
             未設定の場合はValueErrorを発生させ、サイレント失敗を防止。
+            ステージングは本番と同等のインフラ・データを扱うため同一ポリシーを適用。
 
         Note:
             開発/テスト環境ではシークレットなしで動作可能。
 
         """
-        if self.environment == Environment.PRODUCTION:
+        if self.environment in {Environment.PRODUCTION, Environment.STAGING}:
             if self.security.api_key is None and self.security.jwt_secret is None:
                 raise ValueError(
-                    "Production environment requires at least one of: "
+                    f"{self.environment.value.capitalize()} environment requires at least one of: "
                     "SECURITY__API_KEY or SECURITY__JWT_SECRET",
+                )
+        return self
+
+    @model_validator(mode="after")
+    def validate_production_https(self) -> "Settings":
+        """本番・ステージング環境でのHTTPS強制
+
+        Security:
+            本番（ENVIRONMENT=production）およびステージング（ENVIRONMENT=staging）では、
+            HTTPS接続を強制し平文HTTP通信を禁止。
+            OWASP A02: Cryptographic Failures対策。
+            ステージングは本番と同等のインフラ・データを扱うため同一ポリシーを適用。
+
+        Note:
+            開発/テスト環境ではHTTP接続を許可（ローカル開発用）。
+        """
+        if self.environment in {Environment.PRODUCTION, Environment.STAGING}:
+            if not self.api.base_url.startswith("https://"):
+                raise ValueError(
+                    f"{self.environment.value.capitalize()} environment requires HTTPS. "
+                    "Set API__BASE_URL to an https:// URL.",
                 )
         return self
 
