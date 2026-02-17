@@ -1559,7 +1559,7 @@ async def test_get_photos_with_filters(album_id, expected_count, test_descriptio
     ]
 
     # パラメータに応じてフィルタとURL構築
-    if album_id:
+    if album_id is not None:
         filtered_photos = [p for p in all_photos if p["albumId"] == album_id]
         url = f"{BASE_URL}/albums/{album_id}/photos"
     else:
@@ -1581,8 +1581,71 @@ async def test_get_photos_with_filters(album_id, expected_count, test_descriptio
     assert all(isinstance(photo, dict) for photo in result)
 
     # album_idフィルタ検証
-    if album_id:
+    if album_id is not None:
         assert all(p["albumId"] == album_id for p in result)
+
+
+# ===============================================================================
+# get_comments / get_photos 入力バリデーションテスト
+# ===============================================================================
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "post_id",
+    [0, -1, -100],
+    ids=["post_id_zero", "post_id_negative", "post_id_large_negative"],
+)
+@respx.mock
+async def test_async_get_comments_invalid_post_id(post_id: int) -> None:
+    """
+    AsyncJSONPlaceholderClient.get_comments()の無効post_idバリデーション
+
+    検証項目：
+    - post_id=0 は ValueError を発生させる（JSONPlaceholder API は1-based ID）
+    - 負数のpost_idも同様に ValueError を発生させる
+    - HTTP リクエストは発行されない
+
+    学習ポイント:
+    - 境界値テスト: 0 は偽値（falsy）であるため `if post_id:` では検出できないバグ
+    - `if post_id is not None and post_id < 1:` による正確な検証パターン
+    """
+    async with AsyncJSONPlaceholderClient() as client:
+        with pytest.raises(ValueError, match="post_id must be >= 1"):
+            await client.get_comments(post_id=post_id)
+
+    # ValueError が先に発生するため HTTP リクエストは到達しない
+    assert len(respx.calls) == 0
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "album_id",
+    [0, -1, -100],
+    ids=["album_id_zero", "album_id_negative", "album_id_large_negative"],
+)
+@respx.mock
+async def test_async_get_photos_invalid_album_id(album_id: int) -> None:
+    """
+    AsyncJSONPlaceholderClient.get_photos()の無効album_idバリデーション
+
+    検証項目：
+    - album_id=0 は ValueError を発生させる（JSONPlaceholder API は1-based ID）
+    - 負数のalbum_idも同様に ValueError を発生させる
+    - HTTP リクエストは発行されない
+
+    学習ポイント:
+    - album_id=0 を渡すと API は空配列を返すが、正しいエラーではない（サイレント失敗）
+    - 明示的な ValueError により呼び出し側でバグを早期発見できる
+    """
+    async with AsyncJSONPlaceholderClient() as client:
+        with pytest.raises(ValueError, match="album_id must be >= 1"):
+            await client.get_photos(album_id=album_id)
+
+    # ValueError が先に発生するため HTTP リクエストは到達しない
+    assert len(respx.calls) == 0
 
 
 # ===============================================================================

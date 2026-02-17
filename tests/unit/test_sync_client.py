@@ -654,7 +654,7 @@ def test_sync_get_photos(
     ]
 
     # パラメータに応じてフィルタ
-    if album_id:
+    if album_id is not None:
         mock_data = [p for p in all_photos if p["albumId"] == album_id]
     else:
         mock_data = all_photos
@@ -669,3 +669,64 @@ def test_sync_get_photos(
 
     assert len(result) == expected_count
     assert result == mock_data
+
+
+# =============================================================================
+# get_comments / get_photos 入力バリデーションテスト
+# =============================================================================
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "post_id",
+    [0, -1, -100],
+    ids=["post_id_zero", "post_id_negative", "post_id_large_negative"],
+)
+def test_sync_get_comments_invalid_post_id(mock_httpx_sync_client: Mock, post_id: int) -> None:
+    """
+    SyncJSONPlaceholderClient.get_comments()の無効post_idバリデーション
+
+    検証項目：
+    - post_id=0 は ValueError を発生させる（JSONPlaceholder API は1-based ID）
+    - 負数のpost_idも同様に ValueError を発生させる
+    - HTTP リクエストは発行されない
+
+    学習ポイント:
+    - 境界値テスト: 0 は偽値（falsy）であるため `if post_id:` では検出できないバグ
+    - `if post_id is not None and post_id < 1:` による正確な検証パターン
+    """
+    with SyncJSONPlaceholderClient() as client:
+        client._client = mock_httpx_sync_client
+        with pytest.raises(ValueError, match="post_id must be >= 1"):
+            client.get_comments(post_id=post_id)
+
+    # 無効なIDでHTTPリクエストが発行されないことを確認
+    mock_httpx_sync_client.request.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "album_id",
+    [0, -1, -100],
+    ids=["album_id_zero", "album_id_negative", "album_id_large_negative"],
+)
+def test_sync_get_photos_invalid_album_id(mock_httpx_sync_client: Mock, album_id: int) -> None:
+    """
+    SyncJSONPlaceholderClient.get_photos()の無効album_idバリデーション
+
+    検証項目：
+    - album_id=0 は ValueError を発生させる（JSONPlaceholder API は1-based ID）
+    - 負数のalbum_idも同様に ValueError を発生させる
+    - HTTP リクエストは発行されない
+
+    学習ポイント:
+    - album_id=0 を渡すと API は空配列を返すが、正しいエラーではない（サイレント失敗）
+    - 明示的な ValueError により呼び出し側でバグを早期発見できる
+    """
+    with SyncJSONPlaceholderClient() as client:
+        client._client = mock_httpx_sync_client
+        with pytest.raises(ValueError, match="album_id must be >= 1"):
+            client.get_photos(album_id=album_id)
+
+    # 無効なIDでHTTPリクエストが発行されないことを確認
+    mock_httpx_sync_client.request.assert_not_called()

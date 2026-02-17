@@ -489,8 +489,18 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
 
     # Comments API
     def get_comments(self, post_id: int | None = None) -> list[dict[str, Any]]:
-        """コメント一覧の取得"""
-        if post_id:
+        """コメント一覧の取得
+
+        Args:
+            post_id: 投稿IDでフィルタリング（1以上）
+
+        Raises:
+            ValueError: post_id < 1 の場合
+        """
+        if post_id is not None and post_id < 1:
+            raise ValueError("post_id must be >= 1")
+
+        if post_id is not None:
             response = self.get(f"/posts/{post_id}/comments")
         else:
             response = self.get("/comments")
@@ -517,8 +527,18 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         return _safe_parse_json(response)
 
     def get_photos(self, album_id: int | None = None) -> list[dict[str, Any]]:
-        """写真一覧の取得"""
-        if album_id:
+        """写真一覧の取得
+
+        Args:
+            album_id: アルバムIDでフィルタリング（1以上）
+
+        Raises:
+            ValueError: album_id < 1 の場合
+        """
+        if album_id is not None and album_id < 1:
+            raise ValueError("album_id must be >= 1")
+
+        if album_id is not None:
             response = self.get(f"/albums/{album_id}/photos")
         else:
             response = self.get("/photos")
@@ -986,8 +1006,18 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 
     # Comments API
     async def get_comments(self, post_id: int | None = None) -> list[dict[str, Any]]:
-        """コメント一覧の非同期取得"""
-        if post_id:
+        """コメント一覧の非同期取得
+
+        Args:
+            post_id: 投稿IDでフィルタリング（1以上）
+
+        Raises:
+            ValueError: post_id < 1 の場合
+        """
+        if post_id is not None and post_id < 1:
+            raise ValueError("post_id must be >= 1")
+
+        if post_id is not None:
             response = await self.get(f"/posts/{post_id}/comments")
         else:
             response = await self.get("/comments")
@@ -1014,8 +1044,18 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         return _safe_parse_json(response)
 
     async def get_photos(self, album_id: int | None = None) -> list[dict[str, Any]]:
-        """写真一覧の非同期取得"""
-        if album_id:
+        """写真一覧の非同期取得
+
+        Args:
+            album_id: アルバムIDでフィルタリング（1以上）
+
+        Raises:
+            ValueError: album_id < 1 の場合
+        """
+        if album_id is not None and album_id < 1:
+            raise ValueError("album_id must be >= 1")
+
+        if album_id is not None:
             response = await self.get(f"/albums/{album_id}/photos")
         else:
             response = await self.get("/photos")
