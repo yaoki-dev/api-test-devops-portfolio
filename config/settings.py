@@ -11,7 +11,7 @@ import ipaddress
 import logging
 import os
 import socket
-from enum import Enum
+from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -150,7 +150,7 @@ def is_private_ip(hostname: str) -> bool:
 # =============================================================================
 
 
-class Environment(str, Enum):
+class Environment(StrEnum):
     """実行環境の定義"""
 
     DEVELOPMENT = "development"
@@ -159,7 +159,7 @@ class Environment(str, Enum):
     PRODUCTION = "production"
 
 
-class LogLevel(str, Enum):
+class LogLevel(StrEnum):
     """ログレベルの定義"""
 
     DEBUG = "DEBUG"
@@ -169,7 +169,7 @@ class LogLevel(str, Enum):
     CRITICAL = "CRITICAL"
 
 
-class LogFormat(str, Enum):
+class LogFormat(StrEnum):
     """ログフォーマットの定義"""
 
     CONSOLE = "console"

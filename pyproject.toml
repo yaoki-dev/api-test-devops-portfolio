@@ -145,8 +145,6 @@ ignore = [
     "S101",  # Use of assert detected
     "S603",  # subprocess-without-shell-equals-true
     "B008",  # Do not perform function calls in argument defaults
-    "UP035", # Python 3.10互換: typing_extensionsからのimportを維持
-    "UP042", # Python 3.10互換: str+Enumを維持（StrEnumは3.11+）
 ]
 unfixable = ["F841"]  # unused variables
 
