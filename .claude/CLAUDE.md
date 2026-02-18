@@ -245,21 +245,23 @@ git checkout -b feature/<次のタスク> origin/develop
 【実装フェーズ】
 2. コード変更 → security-guidance (hook自動)
 3. 品質ゲート → pytest + ruff + mypy 全合格（※2）
-4. コミット前レビュー → /code-review:review-local-changes (80点閾値)
-5. コミット   → /commit【git commit禁止】
+4. reflect(タスクごとに実施) → /reflexion:reflect "deep reflect if less than 90% confidence. 日本語で簡潔に回答" + 信頼度が90%未満であれば改善とreflectを反復する。
+各反復で信頼度と改善理由を簡潔に示し、信頼度が90%以上に達した時点で終了する。
+5. コミット前レビュー → /code-review:review-local-changes (80点閾値)
+6. コミット   → /commit【git commit禁止】
 
 【レビューフェーズ】
-6. IF (≥200行 OR セキュリティ OR API OR hotfix):
+7. IF (≥200行 OR セキュリティ OR API OR hotfix):
       → /code-review:review-pr（CEK）
     ELSE(Include doc update):
       → /pr-review-toolkit:review-pr
 
 【PUSH/PR/マージフェーズ】
-7. PR前レビュー → 規模判定ルール適用【※3参照】
-8. PR作成     → /push-pr【gh pr create禁止】
-9. レビュー対応 → 修正 → 品質ゲート → /commit → push
-10. マージ実行  → マージ戦略【※4参照】
-11. クリーンアップ → /finishing-a-development-branch
+8. PR前レビュー → 規模判定ルール適用【※3参照】
+9. PR作成     → /push-pr【gh pr create禁止】
+10. レビュー対応 → 修正 → 品質ゲート → /commit → push
+11. マージ実行  → マージ戦略【※4参照】
+12. クリーンアップ → /finishing-a-development-branch
 ```
 
 <!-- preserve-on-compact: Quality Gates -->

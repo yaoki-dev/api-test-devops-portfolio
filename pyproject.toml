@@ -72,7 +72,7 @@ addopts = [
     "--cov-report=term-missing", # 欠損行表示
     "--cov-report=html:reports/htmlcov",  # HTMLレポート
     "--cov-report=xml:reports/coverage.xml",  # XMLレポート
-    "--cov-fail-under=75",       # ローカル目標: 85%
+    "--cov-fail-under=85",       # ローカル/CI目標: 85%(unit, integration)
 ]
 markers = [
     "unit: Unit tests (fast, isolated)",

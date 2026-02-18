@@ -269,7 +269,7 @@ if init_sentry():
 | 種別 | 件数 | CI対象 | 備考 |
 |------|------|--------|------|
 | Unit tests | 377件 | ✅ | ビジネスロジック検証 |
-| Integration tests | 31件 | ✅ | API統合検証（external除外） |
+| Integration tests | 36件（CI対象: 31件） | ✅（external 5件除外） | API統合検証 |
 | **CI合計（カバレッジ計測対象）** | **408件** | | |
 | **カバレッジ** | **86.60%** | | unit+integration条件 |
 

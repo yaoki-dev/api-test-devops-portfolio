@@ -383,21 +383,30 @@ class Settings(BaseSettings):
 
     @field_validator("environment", mode="before")
     @classmethod
-    def validate_environment(cls, v: str | Environment) -> str | Environment:
+    def validate_environment(cls, v: str | Environment) -> Environment:
         """環境設定のバリデーション
 
         Note:
             StrEnumはstrを継承するため isinstance(v, str) はEnumインスタンスにもTrueを返す。
-            型アノテーションの意図（両者を区別）を明示するためEnumインスタンスを先に判定する。
+            Enumインスタンスを先に判定し、strは正規化（strip + lower）してから
+            Environmentコンストラクタで変換する。これにより末尾スペースやタイポを
+            早期検出し、わかりやすいエラーメッセージを提供できる。
 
         Raises:
-            ValueError: str でも Environment でもない型が渡された場合
+            ValueError: 無効な環境名（タイポ・末尾スペース含む）またはstr/Environment以外の型
         """
         # StrEnumはstrを継承するため、Enumインスタンスを先に判定して早期リターン
         if isinstance(v, Environment):
             return v
         if isinstance(v, str):
-            return v.lower()
+            normalized = v.strip().lower()
+            try:
+                return Environment(normalized)
+            except ValueError:
+                valid = [e.value for e in Environment]
+                # from None: PydanticがValidationErrorでラップするため
+                # 元のValueErrorチェーンを隠してエラーメッセージをクリーンに保つ
+                raise ValueError(f"environment の値が無効です: {v!r}。有効な値: {valid}") from None
         raise ValueError(
             f"environment には str または Environment を指定してください。"
             f"受け取った型: {type(v).__name__!r}, 値: {v!r}"
