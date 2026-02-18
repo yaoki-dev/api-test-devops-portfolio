@@ -228,6 +228,8 @@ git checkout -b feature/<次のタスク> origin/develop
 | `/sc:document` | ドキュメント作成時 | コンポーネント/API/ガイド生成 |
 | `/docs:update-docs` | 実装後ドキュメント更新時 | マルチエージェント品質レビュー |
 | `/docs-maintenance` | ドキュメント品質監査時 | リンク検証・スタイル一貫性 |
+| `/decision-helper` | 2+選択肢の比較評価時 | Pros/Cons・Decision Matrix・ICEフレームワーク |
+| `/fact-checker` | 主張・データの事実確認時 | 証拠ベースのファクトチェック・情報信頼性評価 |
 | `/prompt-lookup`, `/skill-lookup` | 検索時 | テンプレート/スキル発見 |
 
 <!-- preserve-on-compact: Development Workflow -->

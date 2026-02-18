@@ -389,13 +389,19 @@ class Settings(BaseSettings):
         Note:
             StrEnumはstrを継承するため isinstance(v, str) はEnumインスタンスにもTrueを返す。
             型アノテーションの意図（両者を区別）を明示するためEnumインスタンスを先に判定する。
+
+        Raises:
+            ValueError: str でも Environment でもない型が渡された場合
         """
         # StrEnumはstrを継承するため、Enumインスタンスを先に判定して早期リターン
         if isinstance(v, Environment):
             return v
         if isinstance(v, str):
-            v = v.lower()
-        return v
+            return v.lower()
+        raise ValueError(
+            f"environment には str または Environment を指定してください。"
+            f"受け取った型: {type(v).__name__!r}, 値: {v!r}"
+        )
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
