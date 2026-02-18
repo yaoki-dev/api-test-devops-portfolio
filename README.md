@@ -7,7 +7,7 @@
 このプロジェクトは、APIテストとDevOps技術を統合した実践的なポートフォリオです。
 
 [![CI/CD Pipeline](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml/badge.svg)](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/badge/coverage-85.46%25-brightgreen)](https://yuta158.github.io/api-test-portfolio/htmlcov/)
+[![Coverage](https://img.shields.io/badge/coverage-86.60%25-brightgreen)](https://yuta158.github.io/api-test-portfolio/htmlcov/)
 ![Python](https://img.shields.io/badge/Python-3.13-blue)
 [![Docker](https://img.shields.io/badge/docker-multi--stage-blue)](./Dockerfile)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
@@ -16,13 +16,13 @@
 [![Security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 [![Dependencies: safety](https://img.shields.io/badge/dependencies-safety--checked-green.svg)](https://safetycli.com/)
 
-> **Python/Docker/CI/CDを統合したAPIテスト自動化ポートフォリオ。415件のテストで品質を保証。**
+> **Python/Docker/CI/CDを統合したAPIテスト自動化ポートフォリオ。498件のテスト（CI品質ゲート: 408件/86.60%）。**
 
 ## 概要
 
-- **415件のテストスイート**: Unit / Integration / e2e / smoke / Performance / external
-- **カバレッジ: 85.46%**: 継続的な品質向上（CI条件: unit+integration, not external）
-- **CI実行テスト: 300件**
+- **498件のテストスイート**: Unit(377) / Integration(36) / Performance(5) / External(5) / Smoke(3) / Slow(1) / E2E(実装予定)
+- **カバレッジ: 86.60%**（unit+integration条件）: 継続的な品質向上
+- **CI実行テスト: 408件**（unit+integration, external除外）
 - **CI/CD自動化**: GitHub Actions による4段階パイプライン
 - **セキュリティ**: CI/CD品質ゲート（pytest + ruff + mypy + Trivy）
 - **GitHub API統合**: 実務的なAPI統合スキルを証明（Rate Limit管理、ETag活用、非同期処理）
@@ -35,20 +35,20 @@
 
 ![Test Demo - pytest実行で19件テスト合格、カバレッジ64%を5秒で確認。テスト自動化スキルを実証](assets/demo-test.gif)
 
-> **📝 デモ内容**: クイック実行例（基本テスト19件、デモ時間短縮のため抽出。全415件は約60秒）
-> **🔍 全415件を今すぐ確認**: [GitHub Actions CI/CD](https://github.com/yuta158/api-test-portfolio/actions) でフルテスト結果＋カバレッジレポートを閲覧
+> **📝 デモ内容**: クイック実行例（基本テスト19件、デモ時間短縮のため抽出。全498件は約60秒）
+> **🔍 全498件を今すぐ確認**: [GitHub Actions CI/CD](https://github.com/yuta158/api-test-portfolio/actions) でフルテスト結果＋カバレッジレポートを閲覧
 
 **何がわかるか**:
 
 - pytest + pytest-covによる自動テスト実行
 - カバレッジレポートによる品質可視化
-- テスト実行: 基本19件 ~5秒、全415件 ~60秒
+- テスト実行: 基本19件 ~5秒、全498件 ~60秒
 
 <details>
-<summary>全テスト実行コマンド（415件、約60秒）</summary>
+<summary>全テスト実行コマンド（498件、約60秒）</summary>
 
 ```bash
-# 全テスト実行（415件）
+# 全テスト実行（498件）
 uv run pytest --cov=. --cov-report=term -q --color=yes
 
 # クイック実行（デモと同じ、19件）
@@ -180,7 +180,7 @@ api-test-devops-portfolio/
 ├── config/              # 設定管理（Pydantic Settings）
 ├── utils/               # ユーティリティ（APIクライアント等）
 ├── models/              # データモデル
-├── tests/               # テストスイート（334関数/415件）
+├── tests/               # テストスイート（334関数/498件）
 │   ├── unit/            # 単体テスト
 │   ├── integration/     # 統合テスト
 │   ├── performance/     # パフォーマンステスト
@@ -264,14 +264,36 @@ if init_sentry():
 
 ## テスト戦略
 
+### テストサマリー
+
+| 種別 | 件数 | CI対象 | 備考 |
+|------|------|--------|------|
+| Unit tests | 377件 | ✅ | ビジネスロジック検証 |
+| Integration tests | 31件 | ✅ | API統合検証（external除外） |
+| **CI合計（カバレッジ計測対象）** | **408件** | | |
+| **カバレッジ** | **86.60%** | | unit+integration条件 |
+
+**カバレッジ計測対象外テスト**
+
+| 種別 | 件数 | 除外理由 |
+|------|------|---------|
+| Performance tests | 5件 | 実API依存・実行時間変動 |
+| External API tests | 5件 | 実ネットワーク依存 |
+| Smoke tests | 3件 | 実環境依存 |
+| Slow tests | 1件 | タイムアウト対象（>3秒） |
+| E2E tests | 実装予定 | — |
+| **全件合計** | **498件** | |
+
+> カバレッジはCI安定性確保のため、決定論的テスト（unit + integration）のみを計測対象としています。
+
 ### テストピラミッド
 
 ```mermaid
 graph TB
-    subgraph "Test Pyramid - 415件"
+    subgraph "Test Pyramid - 498件（CI対象: 408件）"
         E2E["🔝 E2E<br/>0件 → 5%目標"]
-        Integration["🔗 Integration<br/>31件 (8%) → 25%目標"]
-        Unit["🧱 Unit<br/>338件 (92%) → 70%目標"]
+        Integration["🔗 Integration<br/>36件（CI対象: 31件）→ 25%目標"]
+        Unit["🧱 Unit<br/>377件 (75%) → 70%目標"]
     end
     E2E --> Integration --> Unit
 
@@ -286,7 +308,7 @@ graph TB
 - **Integration (25%)**: API・DB接続の検証（中速・実環境近似）
 - **E2E (5%)**: クリティカルパスのみ（低速・高信頼）
 
-> **Note**: pytestパラメータ化テストにより、334個のテスト関数 → pytest収集415件
+> **Note**: pytestパラメータ化テストにより、334個のテスト関数 → pytest収集498件（CI対象: 408件）
 
 ### テスト実行特性（CI最適化）
 
