@@ -207,8 +207,10 @@ class TestSettingsEnvironmentValidation:
 
     def test_environment_validation_invalid_string_raises(self) -> None:
         """validate_environment: タイポなど無効な文字列はValidationErrorを発生させる"""
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValidationError) as exc_info:
             Settings(environment="producton")  # type: ignore[arg-type]
+        # エラーメッセージに有効値リストが含まれることを検証（契約の明示的保護）
+        assert "有効な値" in str(exc_info.value)
 
     def test_environment_validation_invalid_type_raises(self) -> None:
         """validate_environment: str/Environment以外の型はValidationErrorを発生させる"""

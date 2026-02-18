@@ -407,6 +407,9 @@ class Settings(BaseSettings):
                 # from None: PydanticがValidationErrorでラップするため
                 # 元のValueErrorチェーンを隠してエラーメッセージをクリーンに保つ
                 raise ValueError(f"environment の値が無効です: {v!r}。有効な値: {valid}") from None
+        # NOTE: mode="before" のためPydantic型強制前に実行され、int/None等も到達可能。
+        # Pydanticがmode="after"なら非str型は型強制段階で排除されるが、
+        # mode="before"では生の値を受け取るため、この分岐は防御的コードとして機能する。
         raise ValueError(
             f"environment には str または Environment を指定してください。"
             f"受け取った型: {type(v).__name__!r}, 値: {v!r}"
