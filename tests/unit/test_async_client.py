@@ -86,8 +86,8 @@ def sample_users_list():
 # ===============================================================================
 
 
-@pytest.mark.asyncio
-async def test_async_get_user(sample_user_data, mock_response_factory):
+@respx.mock
+async def test_async_get_user(sample_user_data):
     """
     非同期APIクライアントの基本的なGETリクエストをテスト
 
@@ -97,30 +97,21 @@ async def test_async_get_user(sample_user_data, mock_response_factory):
     - JSONレスポンスの正常パーシング
     - ログ出力の確認
     """
-    # モックレスポンス準備
-    mock_resp = mock_response_factory(200, json_data=sample_user_data)
+    # respxでエンドポイントをモック化
+    respx.get(f"{BASE_URL}/users/1").respond(json=sample_user_data)
 
-    # AsyncClientのモック作成
-    with patch("httpx.AsyncClient") as mock_client_class:
-        mock_client_instance = AsyncMock()
-        mock_client_class.return_value = mock_client_instance
-        mock_client_instance.request.return_value = mock_resp
+    # テスト実行
+    async with AsyncJSONPlaceholderClient() as client:
+        result = await client.get_user(1)
 
-        # テスト実行
-        async with AsyncJSONPlaceholderClient() as client:
-            result = await client.get_user(1)
+        # 結果検証
+        assert result == sample_user_data
+        assert result["id"] == 1
+        assert result["name"] == "Leanne Graham"
+        assert result["email"] == "Sincere@april.biz"
 
-            # 結果検証
-            assert result == sample_user_data
-            assert result["id"] == 1
-            assert result["name"] == "Leanne Graham"
-            assert result["email"] == "Sincere@april.biz"
-
-            # モック呼び出し検証
-            mock_client_instance.request.assert_called_once()
-            call_args = mock_client_instance.request.call_args
-            assert call_args[0][0] == "GET"  # HTTPメソッド
-            assert "/users/1" in call_args[0][1]  # URL
+    # リクエストが1回発行されたことを確認
+    assert respx.calls.call_count == 1
 
 
 # ===============================================================================
@@ -128,8 +119,8 @@ async def test_async_get_user(sample_user_data, mock_response_factory):
 # ===============================================================================
 
 
-@pytest.mark.asyncio
-async def test_async_concurrent_requests(sample_users_list, mock_response_factory):
+@respx.mock
+async def test_async_concurrent_requests(sample_users_list):
     """
     複数の非同期リクエストを並行実行するテスト
 
@@ -139,45 +130,38 @@ async def test_async_concurrent_requests(sample_users_list, mock_response_factor
     - パフォーマンス測定（並行実行による高速化）
     - エラー時の適切な例外処理
     """
-    # モックレスポンス準備（複数パターン）
-    mock_responses = [
-        mock_response_factory(200, json_data=sample_users_list[0]),
-        mock_response_factory(200, json_data=sample_users_list[1]),
-        mock_response_factory(200, json_data=sample_users_list[2]),
-    ]
+    # 各ユーザーエンドポイントをrespxでモック化
+    respx.get(f"{BASE_URL}/users/1").respond(json=sample_users_list[0])
+    respx.get(f"{BASE_URL}/users/2").respond(json=sample_users_list[1])
+    respx.get(f"{BASE_URL}/users/3").respond(json=sample_users_list[2])
 
-    with patch("httpx.AsyncClient") as mock_client_class:
-        mock_client_instance = AsyncMock()
-        mock_client_class.return_value = mock_client_instance
-        mock_client_instance.request.side_effect = mock_responses
+    # 並行実行パフォーマンステスト
+    async with AsyncJSONPlaceholderClient() as client:
+        start_time = time.time()
 
-        # 並行実行パフォーマンステスト
-        async with AsyncJSONPlaceholderClient() as client:
-            start_time = time.time()
+        # 3つのリクエストを並行実行
+        user_ids = [1, 2, 3]
+        tasks = [client.get_user(user_id) for user_id in user_ids]
+        results = await asyncio.gather(*tasks)
 
-            # 3つのリクエストを並行実行
-            user_ids = [1, 2, 3]
-            tasks = [client.get_user(user_id) for user_id in user_ids]
-            results = await asyncio.gather(*tasks)
+        end_time = time.time()
+        execution_time = end_time - start_time
 
-            end_time = time.time()
-            execution_time = end_time - start_time
+        # 結果検証
+        assert len(results) == 3
+        assert all(isinstance(result, dict) for result in results)
+        assert results[0]["id"] == 1
+        assert results[1]["id"] == 2
+        assert results[2]["id"] == 3
 
-            # 結果検証
-            assert len(results) == 3
-            assert all(isinstance(result, dict) for result in results)
-            assert results[0]["id"] == 1
-            assert results[1]["id"] == 2
-            assert results[2]["id"] == 3
+        # パフォーマンス検証（並行実行は高速）
+        assert execution_time < 1.0  # 1秒未満で完了することを期待
 
-            # パフォーマンス検証（並行実行は高速）
-            assert execution_time < 1.0  # 1秒未満で完了することを期待
-
-            # モック呼び出し検証（3回実行）
-            assert mock_client_instance.request.call_count == 3
+    # リクエストが3回発行されたことを確認
+    assert respx.calls.call_count == 3
 
 
-@pytest.mark.asyncio
+@respx.mock
 async def test_async_multiple_users_with_semaphore():
     """
     Semaphoreを使用した複数ユーザー並行取得のテスト
@@ -192,39 +176,24 @@ async def test_async_multiple_users_with_semaphore():
     - asyncio.Semaphore: 同時実行数を制限するロック機構
     - Rate Limit対策: GitHub API等の外部API制限への対応
     """
-    with patch("httpx.AsyncClient") as mock_client_class:
-        mock_client_instance = AsyncMock()
-        mock_client_class.return_value = mock_client_instance
+    # 各ユーザーエンドポイントをrespxでモック化
+    for i in [1, 2, 3, 4, 5]:
+        respx.get(f"{BASE_URL}/users/{i}").respond(json={"id": i, "name": f"User {i}"})
 
-        # 各ユーザーのモックレスポンス
-        user_responses = [
-            MagicMock(
-                spec=Response,
-                status_code=200,
-                json=MagicMock(return_value={"id": i, "name": f"User {i}"}),
-                raise_for_status=MagicMock(return_value=None),
-                content=f'{{"id": {i}, "name": "User {i}"}}'.encode(),
-            )
-            for i in [1, 2, 3, 4, 5]
-        ]
+    async with AsyncJSONPlaceholderClient() as client:
+        # max_concurrent=2でSemaphore制御
+        results = await client.get_multiple_users([1, 2, 3, 4, 5], max_concurrent=2)
 
-        mock_client_instance.request.side_effect = user_responses
+        # 結果検証
+        assert len(results) == 5
+        assert all(isinstance(result, dict) for result in results)
+        assert results[0]["id"] == 1
+        assert results[4]["id"] == 5
 
-        async with AsyncJSONPlaceholderClient() as client:
-            # max_concurrent=2でSemaphore制御
-            results = await client.get_multiple_users([1, 2, 3, 4, 5], max_concurrent=2)
-
-            # 結果検証
-            assert len(results) == 5
-            assert all(isinstance(result, dict) for result in results)
-            assert results[0]["id"] == 1
-            assert results[4]["id"] == 5
-
-            # 全ユーザー取得成功確認
-            assert mock_client_instance.request.call_count == 5
+    # 全ユーザー取得成功確認（5回のHTTPリクエスト）
+    assert respx.calls.call_count == 5
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_partial_failure_graceful_degradation():
     """
@@ -260,7 +229,6 @@ async def test_partial_failure_graceful_degradation():
     assert sorted(result_ids) == [1, 3, 5], f"Expected IDs [1,3,5], got {result_ids}"
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_all_requests_fail_returns_empty_list():
     """
@@ -292,7 +260,6 @@ async def test_all_requests_fail_returns_empty_list():
 # ===============================================================================
 
 
-@pytest.mark.asyncio
 async def test_async_error_handling_and_retry():
     """
     非同期エラーハンドリングとリトライ機能のテスト
@@ -372,8 +339,8 @@ async def test_async_error_handling_and_retry():
 # ===============================================================================
 
 
-@pytest.mark.asyncio
-async def test_async_post_create_user(mock_response_factory):
+@respx.mock
+async def test_async_post_create_user():
     """
     非同期POST リクエスト・データ送信のテスト
 
@@ -383,45 +350,37 @@ async def test_async_post_create_user(mock_response_factory):
     - レスポンスの適切な処理
     - 作成されたリソースの確認
     """
-    # 作成成功のモックレスポンス
+    # 作成成功レスポンスをrespxでモック化
     created_user = {
         "id": 101,
         "name": "New Async User",
         "email": "async@example.com",
         "phone": "123-456-7890",
     }
-    mock_resp = mock_response_factory(201, json_data=created_user)
+    respx.post(f"{BASE_URL}/users").respond(status_code=201, json=created_user)
 
-    with patch("httpx.AsyncClient") as mock_client_class:
-        mock_client_instance = AsyncMock()
-        mock_client_class.return_value = mock_client_instance
-        mock_client_instance.request.return_value = mock_resp
+    async with AsyncJSONPlaceholderClient() as client:
+        # ユーザー作成データ
+        user_data = {
+            "name": "New Async User",
+            "email": "async@example.com",
+            "phone": "123-456-7890",
+        }
 
-        async with AsyncJSONPlaceholderClient() as client:
-            # ユーザー作成データ
-            user_data = {
-                "name": "New Async User",
-                "email": "async@example.com",
-                "phone": "123-456-7890",
-            }
+        result = await client.create_user(user_data)
 
-            result = await client.create_user(user_data)
+        # 結果検証
+        assert result["id"] == 101
+        assert result["name"] == "New Async User"
+        assert result["email"] == "async@example.com"
 
-            # 結果検証
-            assert result["id"] == 101
-            assert result["name"] == "New Async User"
-            assert result["email"] == "async@example.com"
-
-            # POST リクエスト呼び出し検証
-            mock_client_instance.request.assert_called_once()
-            call_args = mock_client_instance.request.call_args
-            assert call_args[0][0] == "POST"  # HTTPメソッド
-            assert "/users" in call_args[0][1]  # URL
-            assert "json" in call_args[1]  # JSON データが含まれる
+    # POSTリクエストが1回発行されたことを確認
+    assert respx.calls.call_count == 1
+    assert respx.calls[0].request.method == "POST"
 
 
-@pytest.mark.asyncio
-async def test_async_bulk_create_users(mock_response_factory):
+@respx.mock
+async def test_async_bulk_create_users():
     """
     複数ユーザーの並行作成テスト
 
@@ -429,6 +388,10 @@ async def test_async_bulk_create_users(mock_response_factory):
     - bulk_create_users メソッドの動作
     - 複数POST リクエストの並行実行（asyncio.gather使用）
     - 成功したユーザーのみ返却される動作確認
+
+    注意: bulk_create_users は asyncio.gather で並行POST → 同一URLに複数POST。
+    respx は同一ルートへの複数リクエストに対して同じレスポンスを繰り返し返す。
+    レスポンスを区別するため side_effect パターンを使用。
     """
     # 複数ユーザーのテストデータ
     users_to_create = [
@@ -437,42 +400,29 @@ async def test_async_bulk_create_users(mock_response_factory):
         {"name": "User 3", "email": "user3@test.com"},
     ]
 
-    # 作成成功のモックレスポンス
-    created_responses = [
-        mock_response_factory(
-            201,
-            json_data={"id": 101, "name": "User 1", "email": "user1@test.com"},
-        ),
-        mock_response_factory(
-            201,
-            json_data={"id": 102, "name": "User 2", "email": "user2@test.com"},
-        ),
-        mock_response_factory(
-            201,
-            json_data={"id": 103, "name": "User 3", "email": "user3@test.com"},
-        ),
+    # 各リクエストで異なるレスポンスを返すためside_effectを使用
+    post_route = respx.post(f"{BASE_URL}/users")
+    post_route.side_effect = [
+        Response(201, json={"id": 101, "name": "User 1", "email": "user1@test.com"}),
+        Response(201, json={"id": 102, "name": "User 2", "email": "user2@test.com"}),
+        Response(201, json={"id": 103, "name": "User 3", "email": "user3@test.com"}),
     ]
 
-    with patch("httpx.AsyncClient") as mock_client_class:
-        mock_client_instance = AsyncMock()
-        mock_client_class.return_value = mock_client_instance
-        mock_client_instance.request.side_effect = created_responses
+    async with AsyncJSONPlaceholderClient() as client:
+        results = await client.bulk_create_users(users_to_create)
 
-        async with AsyncJSONPlaceholderClient() as client:
-            results = await client.bulk_create_users(users_to_create)
+    # 結果検証
+    assert len(results) == 3
+    assert all(result["id"] > 100 for result in results)
 
-            # 結果検証
-            assert len(results) == 3
-            assert all(result["id"] > 100 for result in results)
+    # 並行実行確認（3回のPOSTリクエスト）
+    assert respx.calls.call_count == 3
 
-            # 並行実行確認
-            assert mock_client_instance.request.call_count == 3
-
-            # 作成されたユーザー確認
-            created_names = [result["name"] for result in results]
-            assert "User 1" in created_names
-            assert "User 2" in created_names
-            assert "User 3" in created_names
+    # 作成されたユーザー確認
+    created_names = [result["name"] for result in results]
+    assert "User 1" in created_names
+    assert "User 2" in created_names
+    assert "User 3" in created_names
 
 
 # ===============================================================================
@@ -480,7 +430,6 @@ async def test_async_bulk_create_users(mock_response_factory):
 # ===============================================================================
 
 
-@pytest.mark.asyncio
 async def test_async_performance_and_timeout():
     """
     非同期処理のパフォーマンス・タイムアウト・リソース管理テスト
@@ -492,6 +441,7 @@ async def test_async_performance_and_timeout():
 
     Note: タイムアウト時、実装はリトライ後にAPIRetryErrorを発生させる。
           TimeoutExceptionは内部でキャッチされる。
+          TimeoutExceptionシミュレーションとリトライ回数検証のためpatchを使用。
     """
     from httpx import TimeoutException
 
@@ -521,7 +471,6 @@ async def test_async_performance_and_timeout():
             assert elapsed >= 0.05
 
 
-@pytest.mark.asyncio
 async def test_async_context_manager_cleanup():
     """
     コンテキストマネージャーのリソースクリーンアップテスト
@@ -530,6 +479,8 @@ async def test_async_context_manager_cleanup():
     - async with ブロック終了時の自動クリーンアップ
     - httpx.AsyncClient.aclose() の適切な呼び出し
     - エラー発生時でもクリーンアップが実行されること
+
+    Note: aclose()呼び出し検証はhttpxクライアントの内部動作に依存するためpatchを使用。
     """
     with patch("httpx.AsyncClient") as mock_client_class:
         mock_client_instance = AsyncMock()
@@ -559,7 +510,7 @@ async def test_async_context_manager_cleanup():
         mock_client_instance.aclose.assert_called_once()
 
 
-@pytest.mark.asyncio
+@respx.mock
 async def test_async_health_check():
     """
     API ヘルスチェック機能のテスト
@@ -574,30 +525,18 @@ async def test_async_health_check():
     - 軽量クエリ（_limit=1）でサーバー負荷最小化
     - 例外時はFalse返却（サービス継続性）
     """
+    # Test 1: 正常時 → True（_limit=1パラメータ付き）
+    respx.get(f"{BASE_URL}/users", params={"_limit": 1}).respond(json=[{"id": 1, "name": "User 1"}])
+
+    async with AsyncJSONPlaceholderClient() as client:
+        result = await client.health_check()
+        assert result is True
+
+    # Test 2: 接続エラー時 → False（graceful degradation）
+    # respxでAPIConnectionErrorを発生させるためにコネクションエラーをシミュレート
     with patch("httpx.AsyncClient") as mock_client_class:
         mock_client_instance = AsyncMock()
         mock_client_class.return_value = mock_client_instance
-
-        # Test 1: 正常時 → True
-        healthy_response = MagicMock(spec=Response)
-        healthy_response.status_code = 200
-        healthy_response.json.return_value = [{"id": 1, "name": "User 1"}]
-        healthy_response.raise_for_status.return_value = None
-        healthy_response.content = b'[{"id": 1, "name": "User 1"}]'
-
-        mock_client_instance.request.return_value = healthy_response
-
-        async with AsyncJSONPlaceholderClient() as client:
-            result = await client.health_check()
-            assert result is True
-
-            # _limit=1パラメータで軽量クエリ確認
-            call_args = mock_client_instance.request.call_args
-            assert "params" in call_args[1]
-            assert call_args[1]["params"]["_limit"] == 1
-
-        # Test 2: APIClientError時 → False（graceful degradation）
-        mock_client_instance.reset_mock()
         mock_client_instance.request.side_effect = APIConnectionError("Connection refused")
 
         async with AsyncJSONPlaceholderClient() as client:
@@ -611,7 +550,7 @@ async def test_async_health_check():
 
 
 @pytest.mark.slow  # slowマーカー（通常実行では除外可能）
-@pytest.mark.asyncio
+@respx.mock
 async def test_async_performance_benchmark():
     """
     非同期APIクライアントのパフォーマンスベンチマーク
@@ -619,34 +558,24 @@ async def test_async_performance_benchmark():
     注意：このテストは時間がかかるため、slowマーカーを付与
     実行時は pytest -m slow で個別実行を推奨
     """
-    with patch("httpx.AsyncClient") as mock_client_class:
-        mock_client_instance = AsyncMock()
-        mock_client_class.return_value = mock_client_instance
+    # 各ユーザーエンドポイントをrespxでモック化（1〜100）
+    for i in range(1, 101):
+        respx.get(f"{BASE_URL}/users/{i}").respond(json={"id": i, "name": "Test"})
 
-        # 高速レスポンスのモック
-        fast_response = MagicMock(spec=Response)
-        fast_response.status_code = 200
-        fast_response.json.return_value = {"id": 1, "name": "Test"}
-        fast_response.raise_for_status.return_value = None
-        fast_response.content = b'{"id": 1, "name": "Test"}'
-        fast_response.reason_phrase = "OK"
+    async with AsyncJSONPlaceholderClient() as client:
+        # 100回の並行リクエスト実行
+        start_time = time.time()
+        tasks = [client.get(f"/users/{i}") for i in range(1, 101)]
+        results = await asyncio.gather(*tasks)
+        end_time = time.time()
 
-        mock_client_instance.request.return_value = fast_response
+        # パフォーマンス検証
+        assert len(results) == 100
+        execution_time = end_time - start_time
+        print(f"\n100並行リクエスト実行時間: {execution_time:.3f}秒")
 
-        async with AsyncJSONPlaceholderClient() as client:
-            # 100回の並行リクエスト実行
-            start_time = time.time()
-            tasks = [client.get(f"/users/{i}") for i in range(1, 101)]
-            results = await asyncio.gather(*tasks)
-            end_time = time.time()
-
-            # パフォーマンス検証
-            assert len(results) == 100
-            execution_time = end_time - start_time
-            print(f"\n100並行リクエスト実行時間: {execution_time:.3f}秒")
-
-            # 非現実的に高速でない限り成功とする（モック環境では非常に高速）
-            assert execution_time < 5.0  # 5秒以内での完了を期待
+        # 非現実的に高速でない限り成功とする（モック環境では非常に高速）
+        assert execution_time < 5.0  # 5秒以内での完了を期待
 
 
 # ===============================================================================
