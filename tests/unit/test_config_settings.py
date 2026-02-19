@@ -909,3 +909,25 @@ class TestResolveHostname:
             f"gethostbyname should be called again after cache_clear(), "
             f"but total calls were {call_count}"
         )
+
+    def test_resolve_hostname_unicode_decode_error_returns_none(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """非ASCII文字を含む攻撃的なホスト名でUnicodeDecodeErrorが発生してもNoneを返す
+
+        Security Rationale:
+            socket.gethostbyname()に非ASCII文字を含むホスト名を渡すと
+            UnicodeDecodeError（OSErrorのサブクラスではない）が発生しうる。
+            Fail-Closed原則に従い、Noneを返してis_private_ipがブロック判定することを保証。
+            ラッパー関数_resolve_hostnameでcatchするため、lru_cacheへの影響なし。
+        """
+        _resolve_hostname_cached.cache_clear()
+
+        def raise_unicode_error(hostname: str) -> str:
+            raise UnicodeDecodeError("utf-8", b"\xff\xfe", 0, 1, "invalid byte")
+
+        monkeypatch.setattr(socket, "gethostbyname", raise_unicode_error)
+
+        result = _resolve_hostname("\xff\xfe.attacker.example")
+
+        assert result is None, "UnicodeDecodeErrorはFail-Closedとしてブロック（None）すべき"

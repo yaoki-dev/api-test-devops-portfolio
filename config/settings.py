@@ -131,10 +131,19 @@ def _resolve_hostname(hostname: str) -> str | None:
     Note:
         DNS解決成功時のみ _resolve_hostname_cached でキャッシュされる。
         一時的なDNS障害後は次の呼び出しで再試行が行われる。
+
+    Security:
+        UnicodeDecodeError対策:
+        - 非ASCII文字を含む攻撃的なホスト名入力時に発生しうる
+        - ラッパー側でcatchすることでlru_cacheに影響せず（成功値のみキャッシュ維持）
+        - Fail-Closed: Noneを返してis_private_ipがブロック判定する
     """
     try:
         return _resolve_hostname_cached(hostname)
-    except OSError:
+    except (OSError, UnicodeDecodeError):
+        # OSError: DNS解決失敗（socket.herror, socket.gaierror含む）
+        # UnicodeDecodeError: 非ASCII文字を含むホスト名（攻撃的入力）
+        # Fail-Closed: 両ケースともNoneを返してis_private_ipがブロック判定する
         return None
 
 
