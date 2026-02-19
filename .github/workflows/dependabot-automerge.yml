@@ -44,15 +44,16 @@ jobs:
         # トリガー条件:
         # - Dependabotがdocker ecosystemのSHA256更新を検出（週次月曜09:00 JST）
         # - dependabot.yml L103設定により'docker'ラベルを自動付与
-        # - L53条件: contains(github.event.pull_request.labels.*.name, 'docker')でマッチ
+        # - 下記条件: 'docker'ラベル AND package-ecosystem=='docker' でマッチ
         #
-        # セーフガード（3層防御）:
-        # 1. Tag固定: python:3.12-slim（major変更はタグ変更必須→手動レビュー）
-        # 2. Trivy scan: CRITICAL/HIGH脆弱性検出時は自動マージブロック（CI必須）
-        # 3. pytest実行: アプリロジック検証（httpx, Pydantic, structlog等）
+        # セーフガード（4層防御）:
+        # 1. Tag固定: python:3.13-slim（major変更はタグ変更必須→手動レビュー）
+        # 2. package-ecosystem検証: fetch-metadataの出力で'docker'エコシステム限定
+        #    （'docker'ラベルの誤付与・手動付与によるsemver制約バイパスを防止）
+        # 3. Trivy scan: CRITICAL/HIGH脆弱性検出時は自動マージブロック（CI必須）
+        # 4. pytest実行: アプリロジック検証（httpx, Pydantic, structlog等）
         #
-        # Risk assessment: Medium
-        # 理由: OSパッケージ（OpenSSL, libc等）のABI変更可能性、ゼロデイ脆弱性は未検出
+        # Risk assessment: Low-Medium
         # 軽減策: develop-only（本番直撃なし）、CI必須、squash merge（1コマンドrevert可能）
         if: |
           steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
@@ -60,7 +61,8 @@ jobs:
           (steps.metadata.outputs.dependency-type == 'indirect' &&
            steps.metadata.outputs.dependency-group != '' &&
            steps.metadata.outputs.update-type != 'version-update:semver-major') ||
-          contains(github.event.pull_request.labels.*.name, 'docker')
+          (contains(github.event.pull_request.labels.*.name, 'docker') &&
+           steps.metadata.outputs.package-ecosystem == 'docker')
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}

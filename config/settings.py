@@ -11,7 +11,7 @@ import ipaddress
 import logging
 import os
 import socket
-from enum import Enum
+from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -150,7 +150,7 @@ def is_private_ip(hostname: str) -> bool:
 # =============================================================================
 
 
-class Environment(str, Enum):
+class Environment(StrEnum):
     """実行環境の定義"""
 
     DEVELOPMENT = "development"
@@ -159,7 +159,7 @@ class Environment(str, Enum):
     PRODUCTION = "production"
 
 
-class LogLevel(str, Enum):
+class LogLevel(StrEnum):
     """ログレベルの定義"""
 
     DEBUG = "DEBUG"
@@ -169,7 +169,7 @@ class LogLevel(str, Enum):
     CRITICAL = "CRITICAL"
 
 
-class LogFormat(str, Enum):
+class LogFormat(StrEnum):
     """ログフォーマットの定義"""
 
     CONSOLE = "console"
@@ -383,11 +383,37 @@ class Settings(BaseSettings):
 
     @field_validator("environment", mode="before")
     @classmethod
-    def validate_environment(cls, v: str | Environment) -> str | Environment:
-        """環境設定のバリデーション"""
+    def validate_environment(cls, v: str | Environment) -> Environment:
+        """環境設定のバリデーション
+
+        Note:
+            StrEnumはstrを継承するため isinstance(v, str) はEnumインスタンスにもTrueを返す。
+            Enumインスタンスを先に判定し、strは正規化（strip + lower）してから
+            Environmentコンストラクタで変換する。これにより末尾スペースやタイポを
+            早期検出し、わかりやすいエラーメッセージを提供できる。
+
+        Raises:
+            ValueError: 無効な環境名（タイポ・末尾スペース含む）またはstr/Environment以外の型
+        """
+        # StrEnumはstrを継承するため、Enumインスタンスを先に判定して早期リターン
+        if isinstance(v, Environment):
+            return v
         if isinstance(v, str):
-            v = v.lower()
-        return v
+            normalized = v.strip().lower()
+            try:
+                return Environment(normalized)
+            except ValueError:
+                valid = [e.value for e in Environment]
+                # from None: PydanticがValidationErrorでラップするため
+                # 元のValueErrorチェーンを隠してエラーメッセージをクリーンに保つ
+                raise ValueError(f"environment の値が無効です: {v!r}。有効な値: {valid}") from None
+        # NOTE: mode="before" のためPydantic型強制前に実行され、int/None等も到達可能。
+        # Pydanticがmode="after"なら非str型は型強制段階で排除されるが、
+        # mode="before"では生の値を受け取るため、この分岐は防御的コードとして機能する。
+        raise ValueError(
+            f"environment には str または Environment を指定してください。"
+            f"受け取った型: {type(v).__name__!r}, 値: {v!r}"
+        )
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
@@ -516,7 +542,19 @@ def reload_settings() -> Settings:
 
 
 # 便利なエイリアス
-settings = get_settings()
+# NOTE: utils/logger.py は config.settings に依存するため structlog は使用不可（循環インポート回避）
+# モジュールインポート時に ValidationError が発生すると ImportError として連鎖し
+# 根本原因（環境変数のタイポ等）が隠蔽される。logging で根本原因を明示する。
+_logger = logging.getLogger(__name__)
+try:
+    settings = get_settings()
+except Exception as e:  # noqa: BLE001  # ValidationError含む全設定エラーを捕捉（SystemExit等のBaseException除外済み）
+    _logger.critical(
+        "設定の初期化に失敗しました (type=%s)。環境変数を確認してください: %s",
+        type(e).__name__,
+        e,
+    )
+    raise
 
 # =============================================================================
 # 学習ポイント:

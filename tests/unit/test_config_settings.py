@@ -182,6 +182,55 @@ class TestSettingsEnvironmentValidation:
             settings = Settings(environment=env_input)  # type: ignore[arg-type]
         assert settings.environment == expected
 
+    @pytest.mark.parametrize(
+        "env_input",
+        [
+            pytest.param("production ", id="trailing_space"),
+            pytest.param(" development", id="leading_space"),
+            pytest.param("  staging  ", id="both_spaces"),
+        ],
+    )
+    def test_environment_validation_strips_whitespace(self, env_input: str) -> None:
+        """validate_environment: 前後スペースを除去してから正規化する"""
+        stripped = env_input.strip().lower()
+        expected = Environment(stripped)
+        needs_secret = expected in {Environment.PRODUCTION, Environment.STAGING}
+        if needs_secret:
+            settings = Settings(
+                environment=env_input,  # type: ignore[arg-type]
+                security=SecurityConfig(api_key=SecretStr("test-key")),
+                api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),
+            )
+        else:
+            settings = Settings(environment=env_input)  # type: ignore[arg-type]
+        assert settings.environment == expected
+
+    @pytest.mark.parametrize(
+        "empty_input",
+        [
+            pytest.param("", id="empty_string"),
+            pytest.param("  ", id="whitespace_only"),
+            pytest.param("\t", id="tab_only"),
+        ],
+    )
+    def test_environment_validation_empty_raises(self, empty_input: str) -> None:
+        """validate_environment: 空文字列・スペースのみ・タブのみはValidationErrorを発生させる"""
+        with pytest.raises(ValidationError):
+            Settings(environment=empty_input)  # type: ignore[arg-type]
+
+    def test_environment_validation_invalid_string_raises(self) -> None:
+        """validate_environment: タイポなど無効な文字列はValidationErrorを発生させる"""
+        with pytest.raises(ValidationError) as exc_info:
+            Settings(environment="producton")  # type: ignore[arg-type]
+        # エラーメッセージに有効値リストが含まれることを検証（契約の明示的保護）
+        # Pydantic非依存: validate_environment のカスタムメッセージを .errors() で検証
+        assert any("有効な値" in str(e["msg"]) for e in exc_info.value.errors())
+
+    def test_environment_validation_invalid_type_raises(self) -> None:
+        """validate_environment: str/Environment以外の型はValidationErrorを発生させる"""
+        with pytest.raises(ValidationError):
+            Settings(environment=123)  # type: ignore[arg-type]
+
 
 class TestSettingsEnvironmentMethods:
     """Settings環境判定メソッドのテスト (lines 198, 202, 206, 210)"""

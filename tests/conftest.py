@@ -165,7 +165,7 @@ def logger():
 @pytest_asyncio.fixture
 async def async_client(
     test_config: dict[str, Any],
-) -> AsyncGenerator[AsyncAPIClient, None]:
+) -> AsyncGenerator[AsyncAPIClient]:
     """非同期HTTPクライアント（テスト用）- Phase 1統合"""
     async with AsyncAPIClient(
         base_url=test_config["api"]["base_url"],
