@@ -15,6 +15,7 @@ from config.settings import (
     Settings,
     TestConfig,
     _resolve_hostname,
+    _resolve_hostname_cached,
     get_settings,
     is_private_ip,
     reload_settings,
@@ -714,7 +715,7 @@ class TestSSRFPrevention:
         monkeypatch.setattr(socket, "gethostbyname", mock_gethostbyname)
 
         # LRUキャッシュをクリアしてモックが確実に呼ばれるようにする
-        _resolve_hostname.cache_clear()
+        _resolve_hostname_cached.cache_clear()
 
         # 不明なホストはプライベートIPとして扱う（Fail-Closed）
         result = is_private_ip("unknown-host.test")
@@ -817,16 +818,20 @@ class TestSSRFPrevention:
 
 
 class TestResolveHostname:
-    """_resolve_hostname関数のDNS解決テスト
+    """_resolve_hostname/_resolve_hostname_cached関数のDNS解決テスト
 
     Security Rationale:
         DNS解決結果のキャッシュ動作とエラーハンドリングを検証し、
         ネットワーク障害時の安全なフォールバック（None返却）を保証する。
+
+    Design Note:
+        _resolve_hostname: ラッパー関数。失敗時にNoneを返す公開インターフェース。
+        _resolve_hostname_cached: LRUキャッシュ付き内部関数。成功時のみキャッシュ。
     """
 
     def test_resolve_hostname_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """DNS解決成功時に正しいIPアドレス文字列を返す"""
-        _resolve_hostname.cache_clear()
+        _resolve_hostname_cached.cache_clear()
         monkeypatch.setattr(socket, "gethostbyname", lambda _: "93.184.216.34")
 
         result = _resolve_hostname("example.com")
@@ -834,8 +839,8 @@ class TestResolveHostname:
         assert result == "93.184.216.34"
 
     def test_resolve_hostname_failure_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """DNS解決失敗（OSError）時にNoneを返す"""
-        _resolve_hostname.cache_clear()
+        """DNS解決失敗（OSError）時にNoneを返す（キャッシュされないこと含む）"""
+        _resolve_hostname_cached.cache_clear()
 
         def raise_os_error(hostname: str) -> str:
             raise OSError(f"Name resolution failed: {hostname}")
@@ -848,7 +853,7 @@ class TestResolveHostname:
 
     def test_resolve_hostname_cache_hit(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """2回目の呼び出しでキャッシュヒット（socket.gethostbynameが1回しか呼ばれない）"""
-        _resolve_hostname.cache_clear()
+        _resolve_hostname_cached.cache_clear()
         call_count = 0
 
         def counting_resolver(hostname: str) -> str:
@@ -869,7 +874,7 @@ class TestResolveHostname:
 
     def test_resolve_hostname_cache_clear(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """cache_clear()後に再度DNS解決が実行される"""
-        _resolve_hostname.cache_clear()
+        _resolve_hostname_cached.cache_clear()
         call_count = 0
 
         def counting_resolver(hostname: str) -> str:
@@ -882,7 +887,7 @@ class TestResolveHostname:
         _resolve_hostname("cleared.example.com")
         assert call_count == 1
 
-        _resolve_hostname.cache_clear()
+        _resolve_hostname_cached.cache_clear()
         _resolve_hostname("cleared.example.com")
         assert call_count == 2, (
             f"gethostbyname should be called again after cache_clear(), "

@@ -81,14 +81,18 @@ def _check_ip_private(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool
 
 
 @lru_cache(maxsize=256)
-def _resolve_hostname(hostname: str) -> str | None:
-    """ホスト名をDNS解決してIPアドレス文字列を返す（結果をキャッシュ）
+def _resolve_hostname_cached(hostname: str) -> str:
+    """ホスト名をDNS解決してIPアドレス文字列を返す（成功時のみキャッシュ）
 
     Args:
         hostname: 解決対象のホスト名
 
     Returns:
-        解決されたIPアドレス文字列。失敗時はNone。
+        解決されたIPアドレス文字列。
+
+    Raises:
+        OSError: DNS解決失敗時。lru_cacheは例外をキャッシュしないため、
+                 一時的なDNS障害後に再試行が可能。
 
     Note:
         キャッシュサイズ256の根拠:
@@ -98,16 +102,38 @@ def _resolve_hostname(hostname: str) -> str | None:
         - Python標準のlru_cacheデフォルト(128)の2倍で、
           将来的なドメイン追加にも対応
 
+    Design:
+        成功値のみキャッシュする設計:
+        - DNS解決失敗（OSError）は例外として伝播させる
+        - lru_cacheは例外をキャッシュしないため、一時障害後に自動的に再試行される
+        - 従来パターン（失敗時None返却）ではNoneもキャッシュされ、
+          プロセス再起動まで永続ブロックが発生する問題があった
+
     Security:
         キャッシュポイズニングリスク評価:
         - プロセス内キャッシュのため、外部からの直接改ざんは不可能
         - DNS応答自体が汚染されている場合のリスクはキャッシュ有無に関わらず同一
           （初回解決時点で汚染されたIPが返る）
         - プロセス再起動でキャッシュはクリアされる
-        - 長時間稼働サービスでは定期的なcache_clear()を検討
+    """
+    return socket.gethostbyname(hostname)
+
+
+def _resolve_hostname(hostname: str) -> str | None:
+    """ホスト名をDNS解決してIPアドレス文字列を返す（失敗時はNone）
+
+    Args:
+        hostname: 解決対象のホスト名
+
+    Returns:
+        解決されたIPアドレス文字列。失敗時はNone（キャッシュされない）。
+
+    Note:
+        DNS解決成功時のみ _resolve_hostname_cached でキャッシュされる。
+        一時的なDNS障害後は次の呼び出しで再試行が行われる。
     """
     try:
-        return socket.gethostbyname(hostname)
+        return _resolve_hostname_cached(hostname)
     except OSError:
         return None
 
@@ -142,6 +168,14 @@ def is_private_ip(hostname: str) -> bool:
             ip = ipaddress.ip_address(resolved)
             return _check_ip_private(ip)
         except ValueError:
+            # DNS解決結果が有効なIPアドレス形式でない場合（異常なDNS応答）
+            # セキュリティ: 不正な値はプライベートIPとして扱いブロック（Fail-Closed）
+            # ログを残すことでセキュリティインシデントの証拠を保全する
+            logging.getLogger(__name__).warning(
+                "DNS解決結果が不正なIPアドレス形式: hostname=%r, resolved=%r — ブロック扱い",
+                hostname,
+                resolved,
+            )
             return True
 
 

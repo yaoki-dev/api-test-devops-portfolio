@@ -1586,6 +1586,59 @@ async def test_get_photos_with_filters(album_id, expected_count, test_descriptio
 
 
 # ===============================================================================
+# get_comments 正常系テスト
+# ===============================================================================
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "post_id,expected_url_suffix",
+    [
+        (None, "/comments"),
+        (1, "/posts/1/comments"),
+        (100, "/posts/100/comments"),
+    ],
+    ids=["all_comments", "post_id_1", "post_id_100"],
+)
+@respx.mock
+async def test_async_get_comments(post_id: int | None, expected_url_suffix: str) -> None:
+    """
+    AsyncJSONPlaceholderClient.get_comments()の正常系検証
+
+    検証項目：
+    - post_id=None の場合は /comments エンドポイントを使用する
+    - post_id 指定時は /posts/{post_id}/comments エンドポイントを使用する
+    - レスポンスのリストが正しく返却される
+
+    学習ポイント:
+    - respx.mock を使って非同期クライアントのHTTPパスを検証するパターン
+    - 2分岐（post_id指定/未指定）を parametrize で網羅する設計
+    """
+    mock_data = [
+        {"id": 1, "postId": 1, "name": "Reviewer", "email": "r@example.com", "body": "Good"},
+        {"id": 2, "postId": 1, "name": "Author", "email": "a@example.com", "body": "Thanks"},
+    ]
+    # url__regex でエンドポイント末尾にマッチ（$ でパス末尾を固定してパターンを明確化）
+    # /comments または /posts/{id}/comments の末尾に該当するURLのみマッチ
+    mock_route = respx.get(url__regex=r".*/comments$").mock(
+        return_value=Response(200, json=mock_data)
+    )
+
+    async with AsyncJSONPlaceholderClient() as client:
+        result = await client.get_comments(post_id=post_id)
+
+    assert result == mock_data
+    assert len(result) == 2
+    assert mock_route.called
+    # 呼び出されたURLが期待するパスで終わることを確認
+    actual_url = str(mock_route.calls.last.request.url)
+    assert actual_url.endswith(expected_url_suffix), (
+        f"Expected URL to end with '{expected_url_suffix}', got '{actual_url}'"
+    )
+
+
+# ===============================================================================
 # get_comments / get_photos 入力バリデーションテスト
 # ===============================================================================
 

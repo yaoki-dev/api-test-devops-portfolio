@@ -672,6 +672,55 @@ def test_sync_get_photos(
 
 
 # =============================================================================
+# get_comments 正常系テスト
+# =============================================================================
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "post_id,expected_path",
+    [
+        (None, "/comments"),
+        (1, "/posts/1/comments"),
+        (100, "/posts/100/comments"),
+    ],
+    ids=["all_comments", "post_id_1", "post_id_100"],
+)
+def test_sync_get_comments(
+    mock_httpx_sync_client: Mock,
+    post_id: int | None,
+    expected_path: str,
+) -> None:
+    """
+    SyncJSONPlaceholderClient.get_comments()の正常系検証
+
+    検証項目：
+    - post_id=None の場合は /comments エンドポイントを使用する
+    - post_id 指定時は /posts/{post_id}/comments エンドポイントを使用する
+    - レスポンスのリストが正しく返却される
+
+    学習ポイント:
+    - 2分岐（post_id指定/未指定）を parametrize で網羅する設計
+    - HTTPパスの構築ロジックをテストで明示化することによる仕様文書化効果
+    """
+    mock_data = [
+        {"id": 1, "postId": 1, "name": "Reviewer", "email": "r@example.com", "body": "Good"},
+        {"id": 2, "postId": 1, "name": "Author", "email": "a@example.com", "body": "Thanks"},
+    ]
+    mock_response = create_mock_response(200, json_data=mock_data)
+    mock_response.raise_for_status.return_value = None
+    mock_httpx_sync_client.request.return_value = mock_response
+
+    with SyncJSONPlaceholderClient() as client:
+        client._client = mock_httpx_sync_client
+        result = client.get_comments(post_id=post_id)
+
+    assert result == mock_data
+    assert len(result) == 2
+    mock_httpx_sync_client.request.assert_called_once()
+
+
+# =============================================================================
 # get_comments / get_photos 入力バリデーションテスト
 # =============================================================================
 

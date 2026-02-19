@@ -171,10 +171,14 @@ class SyncAPIClient:
 
         """
         # 設定から値を取得（引数で上書き可能）
-        self.base_url = base_url or settings.api.base_url
-        self.timeout = timeout or settings.api.timeout
-        self.retry_count = retry_count or settings.api.retry_count
-        self.retry_delay = retry_delay or settings.api.retry_delay
+        # NOTE: `x or default` ではなく `x if x is not None else default` を使用する。
+        # `or` はFalsy値（0, 0.0）を無視するバグが発生するため。
+        # 例: retry_count=0 を指定しても settings.api.retry_count で上書きされてしまう。
+        # 同PR内のget_posts/limit=0修正と同様の設計方針で統一する。
+        self.base_url = base_url if base_url is not None else settings.api.base_url
+        self.timeout = timeout if timeout is not None else settings.api.timeout
+        self.retry_count = retry_count if retry_count is not None else settings.api.retry_count
+        self.retry_delay = retry_delay if retry_delay is not None else settings.api.retry_delay
 
         # デフォルトヘッダーの設定
         self.default_headers = {
@@ -610,10 +614,14 @@ class AsyncAPIClient:
 
         """
         # 設定から値を取得（引数で上書き可能）
-        self.base_url = base_url or settings.api.base_url
-        self.timeout = timeout or settings.api.timeout
-        self.retry_count = retry_count or settings.api.retry_count
-        self.retry_delay = retry_delay or settings.api.retry_delay
+        # NOTE: `x or default` ではなく `x if x is not None else default` を使用する。
+        # `or` はFalsy値（0, 0.0）を無視するバグが発生するため。
+        # 例: retry_count=0 を指定しても settings.api.retry_count で上書きされてしまう。
+        # 同PR内のget_posts/limit=0修正と同様の設計方針で統一する。
+        self.base_url = base_url if base_url is not None else settings.api.base_url
+        self.timeout = timeout if timeout is not None else settings.api.timeout
+        self.retry_count = retry_count if retry_count is not None else settings.api.retry_count
+        self.retry_delay = retry_delay if retry_delay is not None else settings.api.retry_delay
 
         # デフォルトヘッダーの設定
         self.default_headers = {
