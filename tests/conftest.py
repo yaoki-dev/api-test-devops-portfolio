@@ -13,12 +13,11 @@ import logging
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import Mock
 
 import httpx
 import pytest
 import pytest_asyncio
-from httpx import Response
 
 from config.settings import reload_settings
 from utils.api_client import AsyncAPIClient
@@ -176,39 +175,6 @@ async def async_client(
 
 
 @pytest.fixture
-def mock_httpx_client() -> Mock:
-    """モック化されたHTTPXクライアント（後方互換性用）
-
-    regression/test_template_changes.pyで使用。
-    """
-    mock_client = Mock(spec=httpx.AsyncClient)
-    mock_client.request = AsyncMock()
-    mock_client.get = AsyncMock()
-    mock_client.post = AsyncMock()
-    mock_client.put = AsyncMock()
-    mock_client.delete = AsyncMock()
-    mock_client.patch = AsyncMock()
-    return mock_client
-
-
-@pytest.fixture
-def mock_httpx_async_client() -> Mock:
-    """モック化された非同期HTTPXクライアント
-
-    test_async_client_error_handling.pyで使用。
-    mock_httpx_clientと同一実装、明示的なasync命名。
-    """
-    mock_client = Mock(spec=httpx.AsyncClient)
-    mock_client.request = AsyncMock()
-    mock_client.get = AsyncMock()
-    mock_client.post = AsyncMock()
-    mock_client.put = AsyncMock()
-    mock_client.delete = AsyncMock()
-    mock_client.patch = AsyncMock()
-    return mock_client
-
-
-@pytest.fixture
 def mock_httpx_sync_client() -> Mock:
     """モック化された同期HTTPXクライアント"""
     mock_client = Mock(spec=httpx.Client)
@@ -266,34 +232,6 @@ def mock_response_factory():
 def sample_api_response() -> dict[str, Any]:
     """JSONPlaceholder APIのサンプルレスポンス"""
     return {"userId": 1, "id": 1, "title": "delectus aut autem", "completed": False}
-
-
-@pytest.fixture
-def mock_successful_response(sample_api_response: dict[str, Any]) -> Mock:
-    """成功時のモックレスポンス"""
-    mock_response = Mock(spec=Response)
-    mock_response.status_code = 200
-    mock_response.json.return_value = sample_api_response
-    mock_response.text = json.dumps(sample_api_response)
-    mock_response.headers = {"content-type": "application/json"}
-    mock_response.raise_for_status.return_value = None
-    return mock_response
-
-
-@pytest.fixture
-def mock_error_response() -> Mock:
-    """エラー時のモックレスポンス"""
-    mock_response = Mock(spec=Response)
-    mock_response.status_code = 404
-    mock_response.json.return_value = {"error": "Not Found"}
-    mock_response.text = '{"error": "Not Found"}'
-    mock_response.headers = {"content-type": "application/json"}
-    mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-        "404 Not Found",
-        request=Mock(),
-        response=mock_response,
-    )
-    return mock_response
 
 
 # =============================================================================
