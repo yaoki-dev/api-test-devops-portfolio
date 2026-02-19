@@ -23,48 +23,6 @@ from config.settings import reload_settings
 from utils.api_client import AsyncAPIClient
 
 # =============================================================================
-# ヘルパー関数
-# =============================================================================
-
-
-def create_mock_response(
-    status_code: int,
-    json_data: dict[str, Any] | list[Any] | None = None,
-) -> Mock:
-    """HTTPレスポンスのモックを作成
-
-    テスト用にhttpx.Responseをシミュレートするモックを生成。
-    APIクライアントのエラーハンドリングやリトライロジックのテストに使用。
-
-    Args:
-        status_code: HTTPステータスコード（200, 404, 500など）
-        json_data: レスポンスボディのJSONデータ（オプション）
-
-    Returns:
-        Mock: status_code, json(), raise_for_status()を持つモックオブジェクト
-
-    Example:
-        >>> response = create_mock_response(200, {"id": 1, "name": "test"})
-        >>> response.status_code
-        200
-        >>> response.json()
-        {"id": 1, "name": "test"}
-    """
-    mock_response = Mock(spec=httpx.Response)
-    mock_response.status_code = status_code
-    mock_response.json.return_value = json_data if json_data is not None else {}
-    mock_response.text = json.dumps(json_data) if json_data else ""
-    mock_response.content = mock_response.text.encode("utf-8")
-
-    # HTTPステータスコード判定プロパティ（httpx.Response互換）
-    mock_response.is_client_error = 400 <= status_code < 500
-    mock_response.is_server_error = 500 <= status_code < 600
-    mock_response.is_success = 200 <= status_code < 300
-
-    return mock_response
-
-
-# =============================================================================
 # Pytest設定
 # =============================================================================
 
@@ -172,60 +130,6 @@ async def async_client(
         headers={"User-Agent": "API-Test-Portfolio/0.1.0"},
     ) as client:
         yield client
-
-
-@pytest.fixture
-def mock_httpx_sync_client() -> Mock:
-    """モック化された同期HTTPXクライアント"""
-    mock_client = Mock(spec=httpx.Client)
-    mock_client.request = Mock()
-    mock_client.get = Mock()
-    mock_client.post = Mock()
-    mock_client.put = Mock()
-    mock_client.delete = Mock()
-    mock_client.patch = Mock()
-    return mock_client
-
-
-@pytest.fixture
-def mock_response_factory():
-    """モックレスポンスを生成するファクトリーフィクスチャ
-
-    Usage:
-        mock_resp = mock_response_factory(200, json_data={"id": 1})
-        mock_resp = mock_response_factory(404)
-    """
-
-    def _factory(
-        status_code: int,
-        json_data: dict[str, Any] | list[Any] | None = None,
-        headers: dict[str, str] | None = None,
-    ) -> Mock:
-        mock_response = Mock(spec=httpx.Response)
-        mock_response.status_code = status_code
-        mock_response.json.return_value = json_data if json_data is not None else {}
-        mock_response.text = json.dumps(json_data) if json_data else ""
-        mock_response.content = mock_response.text.encode("utf-8")
-        mock_response.headers = headers or {"content-type": "application/json"}
-
-        # HTTPステータスコード判定プロパティ（httpx.Response互換）
-        mock_response.is_client_error = 400 <= status_code < 500
-        mock_response.is_server_error = 500 <= status_code < 600
-        mock_response.is_success = 200 <= status_code < 300
-
-        # raise_for_status behavior
-        if status_code >= 400:
-            mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-                f"{status_code} Error",
-                request=Mock(spec=httpx.Request),
-                response=mock_response,
-            )
-        else:
-            mock_response.raise_for_status.return_value = None
-
-        return mock_response
-
-    return _factory
 
 
 @pytest.fixture
