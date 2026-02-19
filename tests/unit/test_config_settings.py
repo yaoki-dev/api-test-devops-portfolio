@@ -839,17 +839,33 @@ class TestResolveHostname:
         assert result == "93.184.216.34"
 
     def test_resolve_hostname_failure_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """DNS解決失敗（OSError）時にNoneを返す（キャッシュされないこと含む）"""
+        """DNS解決失敗（OSError）時にNoneを返す（キャッシュされないこと含む）
+
+        設計保証: lru_cacheは例外をキャッシュしないため、一時的なDNS障害後に
+        再試行が可能であることを call_count == 2 で明示的に検証する。
+        これにより「成功のみキャッシュ」設計の回帰防止テストとなる。
+        """
         _resolve_hostname_cached.cache_clear()
+        call_count = 0
 
         def raise_os_error(hostname: str) -> str:
+            nonlocal call_count
+            call_count += 1
             raise OSError(f"Name resolution failed: {hostname}")
 
         monkeypatch.setattr(socket, "gethostbyname", raise_os_error)
 
-        result = _resolve_hostname("nonexistent.invalid")
+        result1 = _resolve_hostname("nonexistent.invalid")
+        result2 = _resolve_hostname("nonexistent.invalid")
 
-        assert result is None
+        assert result1 is None
+        assert result2 is None
+        # 重要: 失敗がキャッシュされていないことを検証（2回とも gethostbyname が呼ばれる）
+        # もし失敗をキャッシュする実装に退行した場合、call_count == 1 になりこのテストで検出できる
+        assert call_count == 2, (
+            f"DNS failure should NOT be cached by lru_cache. "
+            f"gethostbyname should be called twice, but was called {call_count} time(s)."
+        )
 
     def test_resolve_hostname_cache_hit(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """2回目の呼び出しでキャッシュヒット（socket.gethostbynameが1回しか呼ばれない）"""

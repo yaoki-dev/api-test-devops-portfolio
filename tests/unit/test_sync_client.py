@@ -716,8 +716,14 @@ def test_sync_get_comments(
         result = client.get_comments(post_id=post_id)
 
     assert result == mock_data
-    assert len(result) == 2
+    assert len(result) == len(mock_data)  # マジックナンバー回避: モックデータ件数に追従
     mock_httpx_sync_client.request.assert_called_once()
+    # エンドポイントURLパスの分岐ロジックを検証（expected_path変数の活用）
+    # call_args[0][1] = request(method, endpoint, ...) の第2位置引数 (endpoint)
+    actual_endpoint: str = mock_httpx_sync_client.request.call_args[0][1]
+    assert actual_endpoint.endswith(expected_path), (
+        f"Expected endpoint to end with '{expected_path}', got '{actual_endpoint}'"
+    )
 
 
 # =============================================================================

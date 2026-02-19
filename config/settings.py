@@ -171,7 +171,8 @@ def is_private_ip(hostname: str) -> bool:
             # DNS解決結果が有効なIPアドレス形式でない場合（異常なDNS応答）
             # セキュリティ: 不正な値はプライベートIPとして扱いブロック（Fail-Closed）
             # ログを残すことでセキュリティインシデントの証拠を保全する
-            logging.getLogger(__name__).warning(
+            # _logger はモジュールレベル（ファイル末尾付近）で定義済み
+            _logger.warning(
                 "DNS解決結果が不正なIPアドレス形式: hostname=%r, resolved=%r — ブロック扱い",
                 hostname,
                 resolved,
