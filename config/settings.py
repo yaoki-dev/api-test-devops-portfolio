@@ -542,7 +542,19 @@ def reload_settings() -> Settings:
 
 
 # 便利なエイリアス
-settings = get_settings()
+# NOTE: utils/logger.py は config.settings に依存するため structlog は使用不可（循環インポート回避）
+# モジュールインポート時に ValidationError が発生すると ImportError として連鎖し
+# 根本原因（環境変数のタイポ等）が隠蔽される。logging で根本原因を明示する。
+_logger = logging.getLogger(__name__)
+try:
+    settings = get_settings()
+except Exception as e:  # noqa: BLE001  # ValidationError含む全設定エラーを捕捉（SystemExit等のBaseException除外済み）
+    _logger.critical(
+        "設定の初期化に失敗しました (type=%s)。環境変数を確認してください: %s",
+        type(e).__name__,
+        e,
+    )
+    raise
 
 # =============================================================================
 # 学習ポイント:

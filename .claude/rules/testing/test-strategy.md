@@ -4,7 +4,7 @@
 
 ## エグゼクティブサマリー
 
-**現在のカバレッジ**: 86.66%（CI条件: unit+integration, not external） | **目標達成**: ✅
+**現在のカバレッジ**: 86.63%（CI条件: unit+integration, not external） | **目標達成**: ✅
 **テスト資産**: 413件（CI条件）/ 全503件
 **最優先改善領域**: utils/api_client.py (76.01%)
 

@@ -7,7 +7,7 @@
 このプロジェクトは、APIテストとDevOps技術を統合した実践的なポートフォリオです。
 
 [![CI/CD Pipeline](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml/badge.svg)](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/badge/coverage-86.60%25-brightgreen)](https://yuta158.github.io/api-test-portfolio/htmlcov/)
+[![Coverage](https://img.shields.io/badge/coverage-86.63%25-brightgreen)](https://yuta158.github.io/api-test-portfolio/htmlcov/)
 ![Python](https://img.shields.io/badge/Python-3.13-blue)
 [![Docker](https://img.shields.io/badge/docker-multi--stage-blue)](./Dockerfile)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
@@ -16,12 +16,12 @@
 [![Security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 [![Dependencies: safety](https://img.shields.io/badge/dependencies-safety--checked-green.svg)](https://safetycli.com/)
 
-> **Python/Docker/CI/CDを統合したAPIテスト自動化ポートフォリオ。503件のテスト（CI品質ゲート: 413件/86.60%）。**
+> **Python/Docker/CI/CDを統合したAPIテスト自動化ポートフォリオ。503件のテスト（CI品質ゲート: 413件/86.63%）。**
 
 ## 概要
 
 - **503件のテストスイート**: Unit(382) / Integration(36) / Performance(5) / External(5) / Smoke(3) / Slow(1) / マーカーなし(82) / E2E(実装予定)
-- **カバレッジ: 86.60%**（unit+integration条件）: 継続的な品質向上
+- **カバレッジ: 86.63%**（unit+integration条件）: 継続的な品質向上
 - **CI実行テスト: 413件**（unit+integration, external除外）
 - **CI/CD自動化**: GitHub Actions による4段階パイプライン
 - **セキュリティ**: CI/CD品質ゲート（pytest + ruff + mypy + Trivy）
@@ -271,7 +271,7 @@ if init_sentry():
 | Unit tests | 382件 | ✅ | ビジネスロジック検証 |
 | Integration tests | 36件（CI対象: 31件） | ✅（external 5件除外） | API統合検証 |
 | **CI合計（カバレッジ計測対象）** | **413件** | | |
-| **カバレッジ** | **86.60%** | | unit+integration条件 |
+| **カバレッジ** | **86.63%** | | unit+integration条件 |
 
 **カバレッジ計測対象外テスト**
 

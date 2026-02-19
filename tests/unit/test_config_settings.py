@@ -205,12 +205,26 @@ class TestSettingsEnvironmentValidation:
             settings = Settings(environment=env_input)  # type: ignore[arg-type]
         assert settings.environment == expected
 
+    @pytest.mark.parametrize(
+        "empty_input",
+        [
+            pytest.param("", id="empty_string"),
+            pytest.param("  ", id="whitespace_only"),
+            pytest.param("\t", id="tab_only"),
+        ],
+    )
+    def test_environment_validation_empty_raises(self, empty_input: str) -> None:
+        """validate_environment: 空文字列・スペースのみ・タブのみはValidationErrorを発生させる"""
+        with pytest.raises(ValidationError):
+            Settings(environment=empty_input)  # type: ignore[arg-type]
+
     def test_environment_validation_invalid_string_raises(self) -> None:
         """validate_environment: タイポなど無効な文字列はValidationErrorを発生させる"""
         with pytest.raises(ValidationError) as exc_info:
             Settings(environment="producton")  # type: ignore[arg-type]
         # エラーメッセージに有効値リストが含まれることを検証（契約の明示的保護）
-        assert "有効な値" in str(exc_info.value)
+        # Pydantic非依存: validate_environment のカスタムメッセージを .errors() で検証
+        assert any("有効な値" in str(e["msg"]) for e in exc_info.value.errors())
 
     def test_environment_validation_invalid_type_raises(self) -> None:
         """validate_environment: str/Environment以外の型はValidationErrorを発生させる"""
