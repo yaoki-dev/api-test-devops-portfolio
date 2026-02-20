@@ -169,6 +169,9 @@ class SyncAPIClient:
         retry_delay: リトライ間隔（秒）
         headers: 追加HTTPヘッダー
 
+        Raises:
+            ValueError: base_urlが空文字列の場合
+
         """
         # 設定から値を取得（引数で上書き可能）
         # NOTE: `x or default` ではなく `x if x is not None else default` を使用する。
@@ -176,6 +179,8 @@ class SyncAPIClient:
         # 例: retry_count=0 を指定しても settings.api.retry_count で上書きされてしまう。
         # 同PR内のget_posts/limit=0修正と同様の設計方針で統一する。
         self.base_url = base_url if base_url is not None else settings.api.base_url
+        if not self.base_url:
+            raise ValueError(f"base_url に空文字列は指定できません: {base_url!r}")
         self.timeout = timeout if timeout is not None else settings.api.timeout
         self.retry_count = retry_count if retry_count is not None else settings.api.retry_count
         self.retry_delay = retry_delay if retry_delay is not None else settings.api.retry_delay
@@ -612,6 +617,9 @@ class AsyncAPIClient:
         retry_delay: リトライ間隔（秒）
         headers: 追加HTTPヘッダー
 
+        Raises:
+            ValueError: base_urlが空文字列の場合
+
         """
         # 設定から値を取得（引数で上書き可能）
         # NOTE: `x or default` ではなく `x if x is not None else default` を使用する。
@@ -619,6 +627,8 @@ class AsyncAPIClient:
         # 例: retry_count=0 を指定しても settings.api.retry_count で上書きされてしまう。
         # 同PR内のget_posts/limit=0修正と同様の設計方針で統一する。
         self.base_url = base_url if base_url is not None else settings.api.base_url
+        if not self.base_url:
+            raise ValueError(f"base_url に空文字列は指定できません: {base_url!r}")
         self.timeout = timeout if timeout is not None else settings.api.timeout
         self.retry_count = retry_count if retry_count is not None else settings.api.retry_count
         self.retry_delay = retry_delay if retry_delay is not None else settings.api.retry_delay

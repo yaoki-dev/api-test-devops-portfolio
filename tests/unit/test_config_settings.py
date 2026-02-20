@@ -983,3 +983,72 @@ class TestResolveHostname:
         result = _resolve_hostname("evil\x00.internal.corp")
 
         assert result is None, "TypeErrorはFail-Closedとしてブロック（None）すべき"
+
+    def test_resolve_hostname_unicode_error_logs_warning(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """UnicodeError発生時にwarningレベルでSSRF試行の証跡ログが出力される
+
+        Security Rationale:
+            UnicodeError/TypeErrorは攻撃的な入力パターン（SSRF試行）を示すため、
+            セキュリティインシデントの事後調査に必要なwarningレベルログを出力する。
+            一時的なDNS障害（OSError）とはログレベルで明確に区別する。
+        """
+        _resolve_hostname_cached.cache_clear()
+
+        def raise_unicode_error(hostname: str) -> str:
+            raise UnicodeDecodeError("utf-8", b"\xff\xfe", 0, 1, "invalid byte")
+
+        monkeypatch.setattr(socket, "gethostbyname", raise_unicode_error)
+
+        with caplog.at_level(logging.WARNING, logger="config.settings"):
+            result = _resolve_hostname("\xff\xfe.attacker.example")
+
+        assert result is None
+        assert "SSRF試行の可能性" in caplog.text
+        assert "UnicodeDecodeError" in caplog.text
+
+    def test_resolve_hostname_type_error_logs_warning(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """TypeError（NULバイト）発生時にwarningレベルでSSRF証跡ログが出力される
+
+        Security Rationale:
+            NULバイト注入はSSRF攻撃の一手法であり、UnicodeErrorと同様に
+            warningレベルでセキュリティ証跡を残す必要がある。
+        """
+        _resolve_hostname_cached.cache_clear()
+
+        def raise_type_error(hostname: str) -> str:
+            raise TypeError("embedded null byte")
+
+        monkeypatch.setattr(socket, "gethostbyname", raise_type_error)
+
+        with caplog.at_level(logging.WARNING, logger="config.settings"):
+            result = _resolve_hostname("evil\x00.internal.corp")
+
+        assert result is None
+        assert "SSRF試行の可能性" in caplog.text
+        assert "TypeError" in caplog.text
+
+    def test_resolve_hostname_os_error_logs_debug(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """OSError（DNS解決失敗）時にdebugレベルでログが出力される
+
+        Design Rationale:
+            一時的なDNS障害は正常運用でも発生しうるため、debugレベルで記録する。
+            攻撃的な入力パターン（UnicodeError/TypeError → warning）とはレベルで区別。
+        """
+        _resolve_hostname_cached.cache_clear()
+
+        def raise_os_error(hostname: str) -> str:
+            raise OSError(f"Name resolution failed: {hostname}")
+
+        monkeypatch.setattr(socket, "gethostbyname", raise_os_error)
+
+        with caplog.at_level(logging.DEBUG, logger="config.settings"):
+            result = _resolve_hostname("nonexistent.invalid")
+
+        assert result is None
+        assert "DNS解決失敗" in caplog.text

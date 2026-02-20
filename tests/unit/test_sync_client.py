@@ -785,3 +785,20 @@ def test_sync_get_photos_invalid_album_id(mock_httpx_sync_client: Mock, album_id
 
     # 無効なIDでHTTPリクエストが発行されないことを確認
     mock_httpx_sync_client.request.assert_not_called()
+
+
+# =============================================================================
+# Client初期化バリデーション
+# =============================================================================
+
+
+def test_sync_client_empty_base_url_raises_value_error() -> None:
+    """base_url に空文字列を渡すと初期化時に ValueError が発生する
+
+    Security Rationale:
+        空文字列がhttpx.Clientに渡ると、リクエスト実行時に初めて InvalidURL が
+        発生し、原因特定が困難になる。初期化時に早期検証することで、
+        設定ミスを即座に検出する。
+    """
+    with pytest.raises(ValueError, match="base_url に空文字列は指定できません"):
+        SyncAPIClient(base_url="")

@@ -143,12 +143,21 @@ def _resolve_hostname(hostname: str) -> str | None:
     """
     try:
         return _resolve_hostname_cached(hostname)
-    except (OSError, UnicodeError, TypeError):
-        # OSError: DNS解決失敗（socket.herror, socket.gaierror含む）
+    except (UnicodeError, TypeError) as e:
         # UnicodeError: Unicode処理エラー（UnicodeDecodeError/UnicodeEncodeError含む）
-        #   - 非ASCII文字を含む攻撃的なホスト名（SSRF試行）
+        #   - 非ASCII文字を含む攻撃的なホスト名（SSRF試行の可能性）
         # TypeError: NULバイト（\x00）等の不正文字を含むホスト名
-        # Fail-Closed: 全ケースともNoneを返してis_private_ipがブロック判定する
+        # セキュリティ証跡: 攻撃的な入力パターンをwarningレベルで記録
+        _logger.warning(
+            "不正なホスト名形式 — SSRF試行の可能性: hostname=%r, error=%s",
+            hostname[:200],
+            type(e).__name__,
+        )
+        return None
+    except OSError:
+        # DNS解決失敗（socket.herror, socket.gaierror含む）
+        # 一時的なDNS障害は正常運用でも発生しうるためDEBUGレベル
+        _logger.debug("DNS解決失敗: hostname=%r — ブロック扱い", hostname[:200])
         return None
 
 

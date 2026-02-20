@@ -1619,11 +1619,10 @@ async def test_async_get_comments(post_id: int | None, expected_url_suffix: str)
         {"id": 1, "postId": 1, "name": "Reviewer", "email": "r@example.com", "body": "Good"},
         {"id": 2, "postId": 1, "name": "Author", "email": "a@example.com", "body": "Thanks"},
     ]
-    # url__regex でエンドポイント末尾にマッチ（$ でパス末尾を固定してパターンを明確化）
-    # /comments または /posts/{id}/comments の末尾に該当するURLのみマッチ
-    mock_route = respx.get(url__regex=r".*/comments$").mock(
-        return_value=Response(200, json=mock_data)
-    )
+    # 完全URLで指定し、誤ったパス生成をrespxレベルで即座に検出する
+    # （url__regex パターンは過剰にルーズなため不採用）
+    expected_url = f"{BASE_URL}{expected_url_suffix}"
+    mock_route = respx.get(expected_url).mock(return_value=Response(200, json=mock_data))
 
     async with AsyncJSONPlaceholderClient() as client:
         result = await client.get_comments(post_id=post_id)
@@ -1631,11 +1630,6 @@ async def test_async_get_comments(post_id: int | None, expected_url_suffix: str)
     assert result == mock_data
     assert len(result) == 2
     assert mock_route.called
-    # 呼び出されたURLが期待するパスで終わることを確認
-    actual_url = str(mock_route.calls.last.request.url)
-    assert actual_url.endswith(expected_url_suffix), (
-        f"Expected URL to end with '{expected_url_suffix}', got '{actual_url}'"
-    )
 
 
 # ===============================================================================
@@ -1699,6 +1693,24 @@ async def test_async_get_photos_invalid_album_id(album_id: int) -> None:
 
     # ValueError が先に発生するため HTTP リクエストは到達しない
     assert len(respx.calls) == 0
+
+
+# ===============================================================================
+# Client初期化バリデーション
+# ===============================================================================
+
+
+@pytest.mark.asyncio
+async def test_async_client_empty_base_url_raises_value_error() -> None:
+    """base_url に空文字列を渡すと初期化時に ValueError が発生する
+
+    Security Rationale:
+        空文字列がhttpx.AsyncClientに渡ると、リクエスト実行時に初めて InvalidURL が
+        発生し、原因特定が困難になる。初期化時に早期検証することで、
+        設定ミスを即座に検出する。
+    """
+    with pytest.raises(ValueError, match="base_url に空文字列は指定できません"):
+        AsyncAPIClient(base_url="")
 
 
 # ===============================================================================
