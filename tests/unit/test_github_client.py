@@ -29,7 +29,6 @@ GITHUB_API_BASE_URL = "https://api.github.com"
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 @respx.mock
 async def test_get_user_success():
     """ユーザー情報取得成功
@@ -58,7 +57,6 @@ async def test_get_user_success():
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 @respx.mock
 async def test_get_repos_success():
     """リポジトリ一覧取得成功"""
@@ -80,7 +78,6 @@ async def test_get_repos_success():
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 @respx.mock
 async def test_get_repo_success():
     """リポジトリ詳細取得成功"""
@@ -108,7 +105,6 @@ async def test_get_repo_success():
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 @respx.mock
 async def test_get_user_not_found():
     """ユーザーが存在しない（404 Not Found）
@@ -131,7 +127,6 @@ async def test_get_user_not_found():
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 @respx.mock
 async def test_rate_limit_exceeded():
     """Rate Limit超過（403 Forbidden）
@@ -157,7 +152,6 @@ async def test_rate_limit_exceeded():
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 @respx.mock
 async def test_retry_on_server_error():
     """5xxエラーで3回リトライ後、GitHubServerError発生
@@ -184,7 +178,6 @@ async def test_retry_on_server_error():
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 @respx.mock
 async def test_timeout_handling():
     """タイムアウト時にGitHubAPIError発生
@@ -214,7 +207,6 @@ async def test_timeout_handling():
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 @respx.mock
 async def test_rate_limit_warning_log():
     """Rate Limit残数が10未満の場合、警告ログ出力
@@ -249,7 +241,6 @@ async def test_rate_limit_warning_log():
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 @respx.mock
 async def test_etag_cache_hit():
     """ETagキャッシュヒット時304 Not Modified処理
@@ -291,7 +282,6 @@ async def test_etag_cache_hit():
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 async def test_context_manager_initialization():
     """async withコンテキストマネージャーの初期化・終了処理"""
     client = AsyncGitHubClient()
@@ -309,7 +299,6 @@ async def test_context_manager_initialization():
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 async def test_request_without_context_manager():
     """コンテキストマネージャー未使用時にRuntimeError発生"""
     client = AsyncGitHubClient()
@@ -322,7 +311,6 @@ async def test_request_without_context_manager():
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 @respx.mock
 async def test_httpx_timeout_exception():
     """httpx.TimeoutException処理の検証"""
@@ -339,7 +327,6 @@ async def test_httpx_timeout_exception():
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 @respx.mock
 async def test_httpx_status_error_4xx():
     """httpx.HTTPStatusError（4xx）処理の検証"""
@@ -355,7 +342,6 @@ async def test_httpx_status_error_4xx():
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 @respx.mock
 async def test_httpx_status_error_5xx():
     """httpx.HTTPStatusError（5xx）処理の検証"""
@@ -375,7 +361,6 @@ async def test_httpx_status_error_5xx():
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 @respx.mock
 async def test_unexpected_exception():
     """予期しない例外処理の検証"""
@@ -397,7 +382,6 @@ async def test_unexpected_exception():
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 async def test_username_validation_invalid():
     """無効なユーザー名でValueError発生（Path Traversal防止）"""
     async with AsyncGitHubClient() as client:
@@ -415,7 +399,6 @@ async def test_username_validation_invalid():
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 @respx.mock
 async def test_403_non_rate_limit():
     """403エラー（Rate Limit以外）でGitHubAPIError発生"""
@@ -447,7 +430,6 @@ async def test_403_non_rate_limit():
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 @respx.mock
 async def test_json_decode_error():
     """JSONパース失敗時にGitHubAPIError発生"""

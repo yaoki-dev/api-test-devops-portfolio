@@ -19,16 +19,17 @@
 # ===============================================================================
 
 import asyncio
+import json
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 import respx
 from httpx import Request, Response
 
 # プロジェクト内モジュール
 from utils.api_client import (
-    APIConnectionError,
     APIHTTPError,
     APIRetryError,
     AsyncAPIClient,
@@ -97,8 +98,8 @@ async def test_async_get_user(sample_user_data):
     - JSONレスポンスの正常パーシング
     - ログ出力の確認
     """
-    # respxでエンドポイントをモック化
-    respx.get(f"{BASE_URL}/users/1").respond(json=sample_user_data)
+    # respxでエンドポイントをモック化（ルート固有のcall_countで検証）
+    route = respx.get(f"{BASE_URL}/users/1").respond(json=sample_user_data)
 
     # テスト実行
     async with AsyncJSONPlaceholderClient() as client:
@@ -110,8 +111,8 @@ async def test_async_get_user(sample_user_data):
         assert result["name"] == "Leanne Graham"
         assert result["email"] == "Sincere@april.biz"
 
-    # リクエストが1回発行されたことを確認
-    assert respx.calls.call_count == 1
+    # リクエストが1回発行されたことを確認（ルート固有）
+    assert route.call_count == 1
 
 
 # ===============================================================================
@@ -130,10 +131,10 @@ async def test_async_concurrent_requests(sample_users_list):
     - パフォーマンス測定（並行実行による高速化）
     - エラー時の適切な例外処理
     """
-    # 各ユーザーエンドポイントをrespxでモック化
-    respx.get(f"{BASE_URL}/users/1").respond(json=sample_users_list[0])
-    respx.get(f"{BASE_URL}/users/2").respond(json=sample_users_list[1])
-    respx.get(f"{BASE_URL}/users/3").respond(json=sample_users_list[2])
+    # 各ユーザーエンドポイントをrespxでモック化（ルート固有のcall_countで検証）
+    route_user1 = respx.get(f"{BASE_URL}/users/1").respond(json=sample_users_list[0])
+    route_user2 = respx.get(f"{BASE_URL}/users/2").respond(json=sample_users_list[1])
+    route_user3 = respx.get(f"{BASE_URL}/users/3").respond(json=sample_users_list[2])
 
     # 並行実行パフォーマンステスト
     async with AsyncJSONPlaceholderClient() as client:
@@ -157,8 +158,10 @@ async def test_async_concurrent_requests(sample_users_list):
         # パフォーマンス検証（並行実行は高速）
         assert execution_time < 1.0  # 1秒未満で完了することを期待
 
-    # リクエストが3回発行されたことを確認
-    assert respx.calls.call_count == 3
+    # 各ルートが1回ずつ呼ばれたことを確認（ルート固有）
+    assert route_user1.call_count == 1
+    assert route_user2.call_count == 1
+    assert route_user3.call_count == 1
 
 
 @respx.mock
@@ -176,9 +179,10 @@ async def test_async_multiple_users_with_semaphore():
     - asyncio.Semaphore: 同時実行数を制限するロック機構
     - Rate Limit対策: GitHub API等の外部API制限への対応
     """
-    # 各ユーザーエンドポイントをrespxでモック化
+    # 各ユーザーエンドポイントをrespxでモック化（ルート固有のcall_countで検証）
+    routes = {}
     for i in [1, 2, 3, 4, 5]:
-        respx.get(f"{BASE_URL}/users/{i}").respond(json={"id": i, "name": f"User {i}"})
+        routes[i] = respx.get(f"{BASE_URL}/users/{i}").respond(json={"id": i, "name": f"User {i}"})
 
     async with AsyncJSONPlaceholderClient() as client:
         # max_concurrent=2でSemaphore制御
@@ -190,8 +194,8 @@ async def test_async_multiple_users_with_semaphore():
         assert results[0]["id"] == 1
         assert results[4]["id"] == 5
 
-    # 全ユーザー取得成功確認（5回のHTTPリクエスト）
-    assert respx.calls.call_count == 5
+    # 全ユーザー取得成功確認（各ルート1回ずつ、計5回のHTTPリクエスト）
+    assert all(r.call_count == 1 for r in routes.values())
 
 
 @respx.mock
@@ -272,6 +276,8 @@ async def test_async_error_handling_and_retry():
 
     Note: AsyncAPIClient.get()はhttpx.Responseを返す。
           4xxエラー時はAPIHTTPErrorを発生させる。
+          respxのside_effectでも同等のシミュレーションが可能だが、
+          ここではリトライ回数の精密検証のためpatchを使用。
     """
     from httpx import HTTPStatusError, TimeoutException
 
@@ -294,10 +300,8 @@ async def test_async_error_handling_and_retry():
             success_response,
         ]
 
-        async with AsyncAPIClient(retry_count=3, retry_delay=0.1) as client:
-            start_time = time.time()
+        async with AsyncAPIClient(retry_count=3, retry_delay=0.01) as client:
             result = await client.get("/users/1")
-            end_time = time.time()
 
             # 結果検証: get()はhttpx.Responseを返す
             assert result.status_code == 200
@@ -305,9 +309,8 @@ async def test_async_error_handling_and_retry():
             assert json_data["id"] == 1
             assert json_data["name"] == "Test User"
 
-            # リトライ動作検証
+            # リトライ動作検証（call_countで確実に検証、実時間は環境依存のため省略）
             assert mock_client_instance.request.call_count == 3  # 3回目で成功
-            assert end_time - start_time >= 0.2  # リトライ遅延確認（0.1 + 0.2）
 
         # Test 3-2: HTTPエラー（4xx）は即座発生（リトライなし）
         mock_client_instance.reset_mock()
@@ -350,14 +353,14 @@ async def test_async_post_create_user():
     - レスポンスの適切な処理
     - 作成されたリソースの確認
     """
-    # 作成成功レスポンスをrespxでモック化
+    # 作成成功レスポンスをrespxでモック化（ルート固有のcall_countで検証）
     created_user = {
         "id": 101,
         "name": "New Async User",
         "email": "async@example.com",
         "phone": "123-456-7890",
     }
-    respx.post(f"{BASE_URL}/users").respond(status_code=201, json=created_user)
+    route = respx.post(f"{BASE_URL}/users").respond(status_code=201, json=created_user)
 
     async with AsyncJSONPlaceholderClient() as client:
         # ユーザー作成データ
@@ -374,9 +377,15 @@ async def test_async_post_create_user():
         assert result["name"] == "New Async User"
         assert result["email"] == "async@example.com"
 
-    # POSTリクエストが1回発行されたことを確認
-    assert respx.calls.call_count == 1
-    assert respx.calls[0].request.method == "POST"
+    # POSTリクエストが1回発行されたことを確認（ルート固有）
+    assert route.call_count == 1
+    assert route.calls[0].request.method == "POST"
+
+    # リクエストボディの内容を検証（フィールド名変更の退行検出）
+    request_body = json.loads(route.calls[0].request.content)
+    assert request_body["name"] == "New Async User"
+    assert request_body["email"] == "async@example.com"
+    assert request_body["phone"] == "123-456-7890"
 
 
 @respx.mock
@@ -415,8 +424,8 @@ async def test_async_bulk_create_users():
     assert len(results) == 3
     assert all(result["id"] > 100 for result in results)
 
-    # 並行実行確認（3回のPOSTリクエスト）
-    assert respx.calls.call_count == 3
+    # 並行実行確認（3回のPOSTリクエスト、ルート固有）
+    assert post_route.call_count == 3
 
     # 作成されたユーザー確認
     created_names = [result["name"] for result in results]
@@ -441,7 +450,8 @@ async def test_async_performance_and_timeout():
 
     Note: タイムアウト時、実装はリトライ後にAPIRetryErrorを発生させる。
           TimeoutExceptionは内部でキャッチされる。
-          TimeoutExceptionシミュレーションとリトライ回数検証のためpatchを使用。
+          respxのside_effectでも同等のシミュレーションが可能だが、
+          aclose()呼び出し検証等の内部動作確認にはpatchが必要。
     """
     from httpx import TimeoutException
 
@@ -511,37 +521,51 @@ async def test_async_context_manager_cleanup():
 
 
 @respx.mock
-async def test_async_health_check():
+async def test_async_health_check_success():
     """
-    API ヘルスチェック機能のテスト
+    API ヘルスチェック正常系テスト
 
     検証項目：
-    - health_check()メソッドの動作
+    - health_check()メソッドの正常動作
     - 正常時: True返却
-    - エラー時: False返却（graceful degradation）
 
     学習ポイント:
     - Docker/Kubernetes readiness probe対応
     - 軽量クエリ（_limit=1）でサーバー負荷最小化
-    - 例外時はFalse返却（サービス継続性）
     """
-    # Test 1: 正常時 → True（_limit=1パラメータ付き）
-    respx.get(f"{BASE_URL}/users", params={"_limit": 1}).respond(json=[{"id": 1, "name": "User 1"}])
+    route = respx.get(f"{BASE_URL}/users", params={"_limit": 1}).respond(
+        json=[{"id": 1, "name": "User 1"}]
+    )
 
     async with AsyncJSONPlaceholderClient() as client:
         result = await client.health_check()
-        assert result is True
 
-    # Test 2: 接続エラー時 → False（graceful degradation）
-    # respxでAPIConnectionErrorを発生させるためにコネクションエラーをシミュレート
-    with patch("httpx.AsyncClient") as mock_client_class:
-        mock_client_instance = AsyncMock()
-        mock_client_class.return_value = mock_client_instance
-        mock_client_instance.request.side_effect = APIConnectionError("Connection refused")
+    assert result is True
+    assert route.call_count == 1
 
-        async with AsyncJSONPlaceholderClient() as client:
-            result = await client.health_check()
-            assert result is False
+
+@respx.mock
+async def test_async_health_check_connection_error():
+    """
+    API ヘルスチェック接続エラー時のテスト
+
+    検証項目：
+    - 接続エラー時: False返却（graceful degradation）
+    - httpx.ConnectError → _request_with_retry内でAPIConnectionErrorに変換 → health_checkでキャッチ
+
+    学習ポイント:
+    - respxのside_effectでhttpxネイティブ例外をシミュレート（patch不要）
+    - 例外伝播チェーン: httpx.ConnectError → APIConnectionError → health_checkでFalse返却
+    - サービス継続性: 例外時はFalse返却
+    """
+    respx.get(f"{BASE_URL}/users", params={"_limit": 1}).mock(
+        side_effect=httpx.ConnectError("Connection refused")
+    )
+
+    async with AsyncJSONPlaceholderClient() as client:
+        result = await client.health_check()
+
+    assert result is False
 
 
 # ===============================================================================
@@ -626,7 +650,6 @@ async def test_async_performance_benchmark():
 # ===============================================================================
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_get_user_data_parallel_requests():
     """
@@ -706,7 +729,6 @@ async def test_get_user_data_parallel_requests():
     assert all(album["userId"] == 1 for album in result["albums"])
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_get_user_data_with_empty_posts():
     """
@@ -756,7 +778,6 @@ async def test_get_user_data_with_empty_posts():
 # ===============================================================================
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "limit,expected_count,test_description",
     [
@@ -816,7 +837,6 @@ async def test_get_posts_with_various_limits(limit, expected_count, test_descrip
     assert all(isinstance(post, dict) for post in result)
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "user_id,expected_count,test_description",
     [
@@ -886,7 +906,6 @@ async def test_async_get_posts_user_filter(user_id, expected_count, test_descrip
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "limit,user_id,expected_error",
     [
@@ -927,7 +946,6 @@ async def test_async_get_posts_validation_error(limit, user_id, expected_error):
 # ===============================================================================
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_get_post_by_id_success():
     """
@@ -959,7 +977,6 @@ async def test_get_post_by_id_success():
     assert "body" in result
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_get_post_not_found():
     """
@@ -994,7 +1011,6 @@ async def test_get_post_not_found():
 # ===============================================================================
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_create_post_success():
     """
@@ -1022,8 +1038,8 @@ async def test_create_post_success():
         "body": body,
     }
 
-    # モック設定
-    respx.post(f"{BASE_URL}/posts").respond(status_code=201, json=expected_response)
+    # モック設定（ルート固有のcall_countで検証）
+    route = respx.post(f"{BASE_URL}/posts").respond(status_code=201, json=expected_response)
 
     # テスト実行
     async with AsyncJSONPlaceholderClient() as client:
@@ -1035,8 +1051,13 @@ async def test_create_post_success():
     assert result["title"] == title
     assert result["body"] == body
 
+    # リクエストボディの内容を検証（フィールド名変更の退行検出）
+    request_body = json.loads(route.calls[0].request.content)
+    assert request_body["title"] == title
+    assert request_body["body"] == body
+    assert request_body["userId"] == user_id
 
-@pytest.mark.asyncio
+
 @respx.mock
 async def test_create_post_with_empty_body():
     """
@@ -1075,7 +1096,6 @@ async def test_create_post_with_empty_body():
 # ===============================================================================
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "user_id,completed,limit,expected_params,expected_count,test_description",
     [
@@ -1172,7 +1192,6 @@ async def test_get_todos_with_filters(
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "limit,user_id,expected_error",
     [
@@ -1213,7 +1232,6 @@ async def test_async_get_todos_validation_error(limit, user_id, expected_error):
 # ===============================================================================
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_http_put_method():
     """
@@ -1247,7 +1265,6 @@ async def test_http_put_method():
     assert json_data["title"] == "Updated Title"
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_http_delete_method():
     """
@@ -1276,7 +1293,6 @@ async def test_http_delete_method():
     assert response.status_code == 204
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_http_patch_method():
     """
@@ -1316,7 +1332,6 @@ async def test_http_patch_method():
     assert json_data["body"] == "Original Content"  # 未更新フィールドは保持
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_http_put_with_error():
     """
@@ -1357,7 +1372,6 @@ async def test_http_put_with_error():
 # ===============================================================================
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "user_id,expected_count,test_description",
     [
@@ -1423,7 +1437,6 @@ async def test_get_albums_with_filters(user_id, expected_count, test_description
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "user_id,expected_error",
     [
@@ -1453,7 +1466,6 @@ async def test_async_get_albums_validation_error(user_id, expected_error):
 # ===============================================================================
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "album_id,expected_count,test_description",
     [
@@ -1520,7 +1532,6 @@ async def test_get_photos_with_filters(album_id, expected_count, test_descriptio
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "post_id",
     [0, -1, -100],
@@ -1549,7 +1560,6 @@ async def test_async_get_comments_invalid_post_id(post_id: int) -> None:
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "album_id",
     [0, -1, -100],

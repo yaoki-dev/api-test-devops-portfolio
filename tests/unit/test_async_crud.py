@@ -263,10 +263,11 @@ async def test_async_delete_post_500_error():
     検証項目：
     - サーバーエラー時の500エラー
     - APIClientError 例外の発生
-    - リトライロジックの動作（5xxはサーバーエラー）
+    - リトライロジックの動作（5xxはサーバーエラー → リトライ対象）
+    - リトライ回数の正確性（デフォルトretry_count=3 → 計4回）
     - エラーレスポンスの適切な処理
     """
-    respx.delete(f"{BASE_URL}/posts/1").respond(
+    route = respx.delete(f"{BASE_URL}/posts/1").respond(
         status_code=500,
         json={"error": "Internal server error"},
     )
@@ -275,3 +276,6 @@ async def test_async_delete_post_500_error():
         # 500エラーが発生することを確認
         with pytest.raises(APIClientError):
             await client.delete_post(1)
+
+    # リトライ回数検証: 初回 + リトライ3回 = 計4回（デフォルトretry_count=3）
+    assert route.call_count == 4
