@@ -1628,7 +1628,7 @@ async def test_async_get_comments(post_id: int | None, expected_url_suffix: str)
         result = await client.get_comments(post_id=post_id)
 
     assert result == mock_data
-    assert len(result) == 2
+    assert len(result) == len(mock_data)  # マジックナンバー回避: モックデータ件数に追従
     assert mock_route.called
 
 
@@ -1700,8 +1700,7 @@ async def test_async_get_photos_invalid_album_id(album_id: int) -> None:
 # ===============================================================================
 
 
-@pytest.mark.asyncio
-async def test_async_client_empty_base_url_raises_value_error() -> None:
+def test_async_client_empty_base_url_raises_value_error() -> None:
     """base_url に空文字列を渡すと初期化時に ValueError が発生する
 
     Security Rationale:
