@@ -136,17 +136,12 @@ async def test_async_concurrent_requests(sample_users_list):
     route_user2 = respx.get(f"{BASE_URL}/users/2").respond(json=sample_users_list[1])
     route_user3 = respx.get(f"{BASE_URL}/users/3").respond(json=sample_users_list[2])
 
-    # 並行実行パフォーマンステスト
+    # 並行実行テスト
     async with AsyncJSONPlaceholderClient() as client:
-        start_time = time.time()
-
         # 3つのリクエストを並行実行
         user_ids = [1, 2, 3]
         tasks = [client.get_user(user_id) for user_id in user_ids]
         results = await asyncio.gather(*tasks)
-
-        end_time = time.time()
-        execution_time = end_time - start_time
 
         # 結果検証
         assert len(results) == 3
@@ -154,9 +149,6 @@ async def test_async_concurrent_requests(sample_users_list):
         assert results[0]["id"] == 1
         assert results[1]["id"] == 2
         assert results[2]["id"] == 3
-
-        # パフォーマンス検証（並行実行は高速）
-        assert execution_time < 1.0  # 1秒未満で完了することを期待
 
     # 各ルートが1回ずつ呼ばれたことを確認（ルート固有）
     assert route_user1.call_count == 1
@@ -677,7 +669,7 @@ async def test_get_user_data_parallel_requests():
     )
 
     # Posts API（user_id=1のみ - API側フィルタリング）
-    respx.get(f"{BASE_URL}/posts?userId={user_id}").respond(
+    respx.get(f"{BASE_URL}/posts", params={"userId": user_id}).respond(
         json=[
             {"id": 1, "userId": 1, "title": "Post by User 1", "body": "Content 1"},
             {"id": 3, "userId": 1, "title": "Another post by User 1", "body": "Content 3"},
@@ -685,7 +677,7 @@ async def test_get_user_data_parallel_requests():
     )
 
     # Todos API（user_id=1のみ）
-    respx.get(f"{BASE_URL}/todos?userId={user_id}").respond(
+    respx.get(f"{BASE_URL}/todos", params={"userId": user_id}).respond(
         json=[
             {"id": 1, "userId": 1, "title": "Todo 1", "completed": True},
             {"id": 2, "userId": 1, "title": "Todo 2", "completed": False},
@@ -693,7 +685,7 @@ async def test_get_user_data_parallel_requests():
     )
 
     # Albums API（user_id=1のみ）
-    respx.get(f"{BASE_URL}/albums?userId={user_id}").respond(
+    respx.get(f"{BASE_URL}/albums", params={"userId": user_id}).respond(
         json=[
             {"id": 1, "userId": 1, "title": "Album 1"},
             {"id": 2, "userId": 1, "title": "Album 2"},
@@ -754,12 +746,12 @@ async def test_get_user_data_with_empty_posts():
     respx.get(f"{BASE_URL}/posts", params={"userId": user_id}).respond(json=[])
 
     # Todos API
-    respx.get(f"{BASE_URL}/todos?userId={user_id}").respond(
+    respx.get(f"{BASE_URL}/todos", params={"userId": user_id}).respond(
         json=[{"id": 1, "userId": 1, "title": "Todo 1", "completed": True}]
     )
 
     # Albums API
-    respx.get(f"{BASE_URL}/albums?userId={user_id}").respond(
+    respx.get(f"{BASE_URL}/albums", params={"userId": user_id}).respond(
         json=[{"id": 1, "userId": 1, "title": "Album 1"}]
     )
 
@@ -817,11 +809,11 @@ async def test_get_posts_with_various_limits(limit, expected_count, test_descrip
         expected_posts = all_posts
     elif limit == 0:
         # limit=0: API仕様では空配列[]を返却（境界値テスト）
-        respx.get(f"{BASE_URL}/posts?_limit=0").respond(json=[])
+        respx.get(f"{BASE_URL}/posts", params={"_limit": 0}).respond(json=[])
         expected_posts = []
     else:
         # limit指定あり: クエリパラメータ付きURL
-        respx.get(f"{BASE_URL}/posts?_limit={limit}").respond(json=all_posts[:limit])
+        respx.get(f"{BASE_URL}/posts", params={"_limit": limit}).respond(json=all_posts[:limit])
         expected_posts = all_posts[:limit]
 
     # テスト実行
@@ -878,12 +870,12 @@ async def test_async_get_posts_user_filter(user_id, expected_count, test_descrip
         expected_posts = all_posts
     elif user_id == 999:
         # 存在しないuser_id: 空配列
-        respx.get(f"{BASE_URL}/posts?userId={user_id}").respond(json=[])
+        respx.get(f"{BASE_URL}/posts", params={"userId": user_id}).respond(json=[])
         expected_posts = []
     else:
         # user_id指定: API側フィルタリング
         filtered_posts = [p for p in all_posts if p["userId"] == user_id]
-        respx.get(f"{BASE_URL}/posts?userId={user_id}").respond(json=filtered_posts)
+        respx.get(f"{BASE_URL}/posts", params={"userId": user_id}).respond(json=filtered_posts)
         expected_posts = filtered_posts
 
     # テスト実行

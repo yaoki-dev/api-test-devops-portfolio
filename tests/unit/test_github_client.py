@@ -420,13 +420,10 @@ async def test_403_non_rate_limit():
         with pytest.raises(GitHubAPIError, match="Access forbidden"):
             await client.get_user("octocat")
 
-        # RateLimitErrorではないことを確認
-        try:
+        # 2回目: GitHubAPIErrorが発生し、RateLimitErrorではないことを確認
+        with pytest.raises(GitHubAPIError, match="Access forbidden") as exc_info:
             await client.get_user("octocat")
-        except RateLimitError:
-            pytest.fail("Should not raise RateLimitError for non-rate-limit 403")
-        except GitHubAPIError:
-            pass  # 期待通り
+        assert not isinstance(exc_info.value, RateLimitError)
 
 
 @pytest.mark.unit

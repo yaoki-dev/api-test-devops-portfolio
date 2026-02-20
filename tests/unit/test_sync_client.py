@@ -148,31 +148,45 @@ def test_sync_boundary_user_id(user_id: int) -> None:
 
 
 @respx.mock
-def test_sync_health_check() -> None:
+def test_sync_health_check_success() -> None:
     """
-    API ヘルスチェック機能のテスト（同期版）
+    API ヘルスチェック正常系テスト（同期版）
 
     検証項目：
-    - health_check()メソッドの動作
+    - health_check()メソッドの正常動作
     - 正常時: True返却
-    - エラー時: False返却（graceful degradation）
 
     学習ポイント:
     - Docker/Kubernetes readiness probe対応
-    - Sync/Async両対応の統一インターフェース設計
+    - 軽量クエリ（_limit=1）でサーバー負荷最小化
     """
-    # Test 1: 正常時 → True
-    respx.get(f"{BASE_URL}/users").respond(json=[{"id": 1, "name": "User 1"}])
+    route = respx.get(f"{BASE_URL}/users", params={"_limit": 1}).respond(
+        json=[{"id": 1, "name": "User 1"}]
+    )
 
     with SyncJSONPlaceholderClient() as client:
         result = client.health_check()
 
     assert result is True
+    assert route.call_count == 1
 
-    # Test 2: httpx接続エラー時 → False（graceful degradation）
-    # retry_count=0でリトライを無効化し、テスト実行時間を最小化
-    # APIConnectionErrorはhttpxの例外をラップするため、httpxエラーで発生させる
-    respx.get(f"{BASE_URL}/users").mock(side_effect=httpx.ConnectError("Connection refused"))
+
+@respx.mock
+def test_sync_health_check_connection_error() -> None:
+    """
+    API ヘルスチェック接続エラー時のテスト（同期版）
+
+    検証項目：
+    - 接続エラー時: False返却（graceful degradation）
+    - httpx.ConnectError → APIConnectionErrorに変換 → health_checkでキャッチ
+
+    学習ポイント:
+    - respxのside_effectでhttpxネイティブ例外をシミュレート（patch不要）
+    - サービス継続性: 例外時はFalse返却
+    """
+    respx.get(f"{BASE_URL}/users", params={"_limit": 1}).mock(
+        side_effect=httpx.ConnectError("Connection refused")
+    )
 
     with SyncJSONPlaceholderClient(retry_count=0) as client:
         result = client.health_check()
