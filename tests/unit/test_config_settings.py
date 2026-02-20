@@ -1035,6 +1035,48 @@ class TestResolveHostname:
         assert "SSRF試行の可能性" in caplog.text
         assert "TypeError" in caplog.text
 
+    def test_resolve_hostname_overflow_error_returns_none(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """極端に長いホスト名でOverflowErrorが発生してもNoneを返す
+
+        Security Rationale:
+            socket.gethostbyname() はプラットフォームによっては極端に長い
+            ホスト名に対して OverflowError を発生させる。
+            Fail-Closed原則に従い、Noneを返してis_private_ipがブロック判定する。
+        """
+
+        def raise_overflow_error(hostname: str) -> str:
+            raise OverflowError("host name is too long")
+
+        monkeypatch.setattr(socket, "gethostbyname", raise_overflow_error)
+
+        result = _resolve_hostname("a" * 100000 + ".example.com")
+
+        assert result is None, "OverflowErrorはFail-Closedとしてブロック（None）すべき"
+
+    def test_resolve_hostname_overflow_error_logs_warning(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """OverflowError発生時にwarningレベルでSSRF証跡ログが出力される
+
+        Security Rationale:
+            極端に長いホスト名はSSRF攻撃によるキャッシュ枯渇試行の兆候となりうるため、
+            UnicodeError/TypeErrorと同様にwarningレベルでセキュリティ証跡を残す。
+        """
+
+        def raise_overflow_error(hostname: str) -> str:
+            raise OverflowError("host name is too long")
+
+        monkeypatch.setattr(socket, "gethostbyname", raise_overflow_error)
+
+        with caplog.at_level(logging.WARNING, logger="config.settings"):
+            result = _resolve_hostname("a" * 100000 + ".example.com")
+
+        assert result is None
+        assert "SSRF試行の可能性" in caplog.text
+        assert "OverflowError" in caplog.text
+
     def test_resolve_hostname_os_error_logs_warning(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
     ) -> None:
