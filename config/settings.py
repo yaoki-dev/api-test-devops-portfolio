@@ -154,10 +154,15 @@ def _resolve_hostname(hostname: str) -> str | None:
             type(e).__name__,
         )
         return None
-    except OSError:
+    except OSError as e:
         # DNS解決失敗（socket.herror, socket.gaierror含む）
-        # 一時的なDNS障害は正常運用でも発生しうるためDEBUGレベル
-        _logger.debug("DNS解決失敗: hostname=%r — ブロック扱い", hostname[:200])
+        # Fail-Closed: サービスへの影響（正当リクエストのブロック）が発生するためWARNINGレベル
+        _logger.warning(
+            "DNS解決失敗: hostname=%r — ブロック扱い (error_type=%s, errno=%s)",
+            hostname[:200],
+            type(e).__name__,
+            getattr(e, "errno", "N/A"),
+        )
         return None
 
 
@@ -197,7 +202,7 @@ def is_private_ip(hostname: str) -> bool:
             # _logger はモジュールレベル（ファイル末尾付近）で定義済み
             _logger.warning(
                 "DNS解決結果が不正なIPアドレス形式: hostname=%r, resolved=%r — ブロック扱い",
-                hostname,
+                hostname[:200],
                 resolved,
             )
             return True

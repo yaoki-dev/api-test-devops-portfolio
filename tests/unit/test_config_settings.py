@@ -1,5 +1,6 @@
 import logging
 import socket
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
@@ -829,9 +830,20 @@ class TestResolveHostname:
         _resolve_hostname_cached: LRUキャッシュ付き内部関数。成功時のみキャッシュ。
     """
 
+    @pytest.fixture(autouse=True)
+    def clear_dns_cache(self) -> Generator[None]:
+        """各テスト前後にDNS解決キャッシュをクリアする
+
+        Design Note:
+            TestSettingsSingleton.reset_singleton と同じ autouse パターンで一元管理。
+            テスト追加時の cache_clear() 呼び忘れを防止する。
+        """
+        _resolve_hostname_cached.cache_clear()
+        yield
+        _resolve_hostname_cached.cache_clear()
+
     def test_resolve_hostname_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """DNS解決成功時に正しいIPアドレス文字列を返す"""
-        _resolve_hostname_cached.cache_clear()
         monkeypatch.setattr(socket, "gethostbyname", lambda _: "93.184.216.34")
 
         result = _resolve_hostname("example.com")
@@ -845,7 +857,6 @@ class TestResolveHostname:
         再試行が可能であることを call_count == 2 で明示的に検証する。
         これにより「成功のみキャッシュ」設計の回帰防止テストとなる。
         """
-        _resolve_hostname_cached.cache_clear()
         call_count = 0
 
         def raise_os_error(hostname: str) -> str:
@@ -869,7 +880,6 @@ class TestResolveHostname:
 
     def test_resolve_hostname_cache_hit(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """2回目の呼び出しでキャッシュヒット（socket.gethostbynameが1回しか呼ばれない）"""
-        _resolve_hostname_cached.cache_clear()
         call_count = 0
 
         def counting_resolver(hostname: str) -> str:
@@ -890,7 +900,6 @@ class TestResolveHostname:
 
     def test_resolve_hostname_cache_clear(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """cache_clear()後に再度DNS解決が実行される"""
-        _resolve_hostname_cached.cache_clear()
         call_count = 0
 
         def counting_resolver(hostname: str) -> str:
@@ -921,7 +930,6 @@ class TestResolveHostname:
             Fail-Closed原則に従い、Noneを返してis_private_ipがブロック判定することを保証。
             ラッパー関数_resolve_hostnameでcatchするため、lru_cacheへの影響なし。
         """
-        _resolve_hostname_cached.cache_clear()
 
         def raise_unicode_error(hostname: str) -> str:
             raise UnicodeDecodeError("utf-8", b"\xff\xfe", 0, 1, "invalid byte")
@@ -942,7 +950,6 @@ class TestResolveHostname:
             UnicodeError（親クラス）でまとめて捕捉することで、実装差異を吸収する。
             Fail-Closed原則に従い、Noneを返してis_private_ipがブロック判定することを保証。
         """
-        _resolve_hostname_cached.cache_clear()
 
         def raise_encode_error(hostname: str) -> str:
             raise UnicodeEncodeError(
@@ -971,7 +978,6 @@ class TestResolveHostname:
             urlparseがNULバイトをそのまま通すため、hostname='evil\\x00.internal'
             となり、socket.gethostbyname()がTypeErrorを発生させる。
         """
-        _resolve_hostname_cached.cache_clear()
 
         def raise_type_error(hostname: str) -> str:
             raise TypeError(
@@ -994,7 +1000,6 @@ class TestResolveHostname:
             セキュリティインシデントの事後調査に必要なwarningレベルログを出力する。
             一時的なDNS障害（OSError）とはログレベルで明確に区別する。
         """
-        _resolve_hostname_cached.cache_clear()
 
         def raise_unicode_error(hostname: str) -> str:
             raise UnicodeDecodeError("utf-8", b"\xff\xfe", 0, 1, "invalid byte")
@@ -1017,7 +1022,6 @@ class TestResolveHostname:
             NULバイト注入はSSRF攻撃の一手法であり、UnicodeErrorと同様に
             warningレベルでセキュリティ証跡を残す必要がある。
         """
-        _resolve_hostname_cached.cache_clear()
 
         def raise_type_error(hostname: str) -> str:
             raise TypeError("embedded null byte")
@@ -1031,23 +1035,23 @@ class TestResolveHostname:
         assert "SSRF試行の可能性" in caplog.text
         assert "TypeError" in caplog.text
 
-    def test_resolve_hostname_os_error_logs_debug(
+    def test_resolve_hostname_os_error_logs_warning(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """OSError（DNS解決失敗）時にdebugレベルでログが出力される
+        """OSError（DNS解決失敗）時にwarningレベルでログが出力される
 
         Design Rationale:
-            一時的なDNS障害は正常運用でも発生しうるため、debugレベルで記録する。
-            攻撃的な入力パターン（UnicodeError/TypeError → warning）とはレベルで区別。
+            DNS解決失敗はFail-Closedを発動し正当なリクエストをブロックするため、
+            サービス影響度に基づきwarningレベルで記録する。
+            本番環境（INFO以上）でも可視化され、運用チームによる障害検知が可能。
         """
-        _resolve_hostname_cached.cache_clear()
 
         def raise_os_error(hostname: str) -> str:
             raise OSError(f"Name resolution failed: {hostname}")
 
         monkeypatch.setattr(socket, "gethostbyname", raise_os_error)
 
-        with caplog.at_level(logging.DEBUG, logger="config.settings"):
+        with caplog.at_level(logging.WARNING, logger="config.settings"):
             result = _resolve_hostname("nonexistent.invalid")
 
         assert result is None
