@@ -917,7 +917,7 @@ class TestResolveHostname:
 
         Security Rationale:
             socket.gethostbyname()に非ASCII文字を含むホスト名を渡すと
-            UnicodeDecodeError（OSErrorのサブクラスではない）が発生しうる。
+            UnicodeError（OSErrorのサブクラスではない）が発生しうる。
             Fail-Closed原則に従い、Noneを返してis_private_ipがブロック判定することを保証。
             ラッパー関数_resolve_hostnameでcatchするため、lru_cacheへの影響なし。
         """
@@ -931,3 +931,55 @@ class TestResolveHostname:
         result = _resolve_hostname("\xff\xfe.attacker.example")
 
         assert result is None, "UnicodeDecodeErrorはFail-Closedとしてブロック（None）すべき"
+
+    def test_resolve_hostname_unicode_encode_error_returns_none(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """非ASCII文字を含むホスト名でUnicodeEncodeErrorが発生してもNoneを返す
+
+        Security Rationale:
+            プラットフォーム・Python実装によってはUnicodeEncodeErrorが発生しうる。
+            UnicodeError（親クラス）でまとめて捕捉することで、実装差異を吸収する。
+            Fail-Closed原則に従い、Noneを返してis_private_ipがブロック判定することを保証。
+        """
+        _resolve_hostname_cached.cache_clear()
+
+        def raise_encode_error(hostname: str) -> str:
+            raise UnicodeEncodeError(
+                "ascii", "ÿþ.attacker.example", 0, 1, "ordinal not in range(128)"
+            )
+
+        monkeypatch.setattr(socket, "gethostbyname", raise_encode_error)
+
+        result = _resolve_hostname("ÿþ.attacker.example")
+
+        assert result is None, "UnicodeEncodeErrorはFail-Closedとしてブロック（None）すべき"
+
+    def test_resolve_hostname_type_error_returns_none(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """NULバイトを含むホスト名でTypeErrorが発生してもNoneを返す
+
+        Security Rationale:
+            socket.gethostbyname() はNULバイト（\\x00）を含む文字列に対して
+            TypeError を発生させる。これはOSErrorでもUnicodeErrorでもないため、
+            明示的に捕捉が必要。
+            Fail-Closed原則に従い、Noneを返してis_private_ipがブロック判定することを保証。
+
+        Example attack vector:
+            'http://evil\\x00.internal.corp/admin' のようなSSRF試行において、
+            urlparseがNULバイトをそのまま通すため、hostname='evil\\x00.internal'
+            となり、socket.gethostbyname()がTypeErrorを発生させる。
+        """
+        _resolve_hostname_cached.cache_clear()
+
+        def raise_type_error(hostname: str) -> str:
+            raise TypeError(
+                "gethostbyname() argument 1 must be encoded string without null bytes, not str"
+            )
+
+        monkeypatch.setattr(socket, "gethostbyname", raise_type_error)
+
+        result = _resolve_hostname("evil\x00.internal.corp")
+
+        assert result is None, "TypeErrorはFail-Closedとしてブロック（None）すべき"

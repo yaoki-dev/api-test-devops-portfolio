@@ -133,17 +133,22 @@ def _resolve_hostname(hostname: str) -> str | None:
         一時的なDNS障害後は次の呼び出しで再試行が行われる。
 
     Security:
-        UnicodeDecodeError対策:
-        - 非ASCII文字を含む攻撃的なホスト名入力時に発生しうる
+        不正ホスト名入力に対するSSRF防止:
+        - UnicodeDecodeError: DNS応答の不正バイト列デコード失敗
+        - UnicodeEncodeError: 非ASCII文字を含むホスト名のエンコード失敗
+        - UnicodeError（親クラス）でまとめて捕捉し、実装・プラットフォーム差を吸収
+        - TypeError: NULバイト（\x00）等の不正文字を含むホスト名
         - ラッパー側でcatchすることでlru_cacheに影響せず（成功値のみキャッシュ維持）
         - Fail-Closed: Noneを返してis_private_ipがブロック判定する
     """
     try:
         return _resolve_hostname_cached(hostname)
-    except (OSError, UnicodeDecodeError):
+    except (OSError, UnicodeError, TypeError):
         # OSError: DNS解決失敗（socket.herror, socket.gaierror含む）
-        # UnicodeDecodeError: 非ASCII文字を含むホスト名（攻撃的入力）
-        # Fail-Closed: 両ケースともNoneを返してis_private_ipがブロック判定する
+        # UnicodeError: Unicode処理エラー（UnicodeDecodeError/UnicodeEncodeError含む）
+        #   - 非ASCII文字を含む攻撃的なホスト名（SSRF試行）
+        # TypeError: NULバイト（\x00）等の不正文字を含むホスト名
+        # Fail-Closed: 全ケースともNoneを返してis_private_ipがブロック判定する
         return None
 
 
