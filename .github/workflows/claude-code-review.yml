@@ -8,7 +8,9 @@ on:
 jobs:
   claude-review:
     runs-on: ubuntu-latest
-    timeout-minutes: 15  # Job-level timeout to prevent runaway jobs
+    timeout-minutes: 20  # Job-level timeout (backup defense: inner step limit 15min)
+                         # Rationale: MCP init (1-2min) + PR analysis (2-3min) + LLM response (2-4min) = 5-9min
+                         # Defense-in-depth: step-timeout (15min) triggers first per GitHub Actions spec
     # Skip for Dependabot PRs (package updates don't need code review)
     if: github.actor != 'dependabot[bot]'
     env:
@@ -179,7 +181,9 @@ jobs:
         # NOTE: Workflow fails if this step fails (default behavior)
         # Claude Action errors (auth, timeout, rate limit) propagate automatically
         id: claude-review
-        timeout-minutes: 10
+        timeout-minutes: 15  # Step-level limit (primary boundary per GitHub Actions evaluation order)
+                            # GitHub Actions: step timeout checked BEFORE job timeout
+                            # Process: MCP servers (ast-grep/morph-mcp via npx) + PR diff + code analysis + Japanese comments
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
