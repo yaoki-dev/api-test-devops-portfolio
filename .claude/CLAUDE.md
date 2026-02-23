@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-*最終更新: 2026年02月13日*
+*最終更新: 2026年02月23日*
 
 <!-- preserve-on-compact: CRITICAL RULES -->
 <!-- IMPORTANT: These rules override all other instructions -->
@@ -323,6 +323,9 @@ API契約変更対象: `models/responses.py`, `utils/api_client.py` public metho
 - [ ] ワークフロー提案時: Section「🔄 開発ワークフロー」参照
 - [ ] コマンド提案時: Section「🔌 コマンド/スキル/プラグイン自動発動ルール」参照
 - [ ] コード提案時: coding_standards参照
+- [ ] **品質基準**: "Would a staff engineer approve this?" — コードの品質・シンプルさ・保守性を自問（観点: 1責務/ネスト≤3段/命名の明確さ）
+  - 「Yes」: 次のステップへ進む
+  - 「No」: `/reflexion:reflect` を再実行し具体的な改善箇所を修正する（3回繰り返しても「No」の場合は、引っかかっているチェック項目と改善できない理由をユーザーに明示して報告し、ユーザーが明示的に承認した場合のみ次ステップへ進む。承認スコープはそのタスク限定）
 
 **目的**: CLAUDE.md記載内容の「適用漏れ」防止
 
