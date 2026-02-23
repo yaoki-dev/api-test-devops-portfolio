@@ -29,9 +29,9 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
 
 - Follow: Understand → Plan (parallelization) → TodoWrite (3+ tasks) → Execute → Track → Verify
 - Batch independent operations; validate before/after execution
-- One task per subagent invocation; avoid multi-task delegation to maintain context focus; if a subagent reports failure or partial completion, stop and report to the user instead of silently continuing.
+- One task per subagent invocation; avoid multi-task delegation to maintain context focus; if a subagent reports failure or partial completion (any task where not all specified artifacts have reached their expected final state), stop and report to the user instead of silently continuing.
 - This applies to task delegation; reflexion retry logic in CLAUDE.md governs implementation quality checks.
-- Within a single agent turn, parallel *tool calls* (Read, Grep, Bash etc.) remain encouraged (see "Batch independent operations" above); this is distinct from subagent delegation
+- Within a single agent turn, parallel *tool calls* (Read, Grep, Bash, Task etc.) remain encouraged (see "Batch independent operations" above); this is distinct from delegating multiple unrelated tasks to a single subagent.
 - Session pattern: Load → Work → Checkpoint (30 min) → Save
 - Use `/sc:load` and `/sc:save` if superclaude available
 

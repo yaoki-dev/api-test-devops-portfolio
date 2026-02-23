@@ -325,7 +325,7 @@ API契約変更対象: `models/responses.py`, `utils/api_client.py` public metho
 - [ ] コード提案時: coding_standards参照
 - [ ] **品質基準**: "Would a staff engineer approve this?" — コードの品質・シンプルさ・保守性を自問（観点: 1責務/ネスト≤3段/命名の明確さ）
   - 「Yes」: 次のステップへ進む
-  - 「No」: `/reflexion:reflect` を再実行し具体的な改善箇所を修正する（3回繰り返しても「No」の場合はユーザーに報告して承認を求める）
+  - 「No」: `/reflexion:reflect` を再実行し具体的な改善箇所を修正する（3回繰り返しても「No」の場合は、引っかかっているチェック項目と改善できない理由をユーザーに明示して報告し、ユーザーが明示的に承認した場合のみ次ステップへ進む。承認スコープはそのタスク限定）
 
 **目的**: CLAUDE.md記載内容の「適用漏れ」防止
 
@@ -360,4 +360,3 @@ uv run mypy --show-error-codes --pretty utils/ config/ models/
 1. 公式ドキュメントを再確認（仕様変更/誤解の可能性）
 2. GitHub Issuesで既知の問題を検索
 3. 削除/代替案を検討（機能の必要性を再評価）
-
