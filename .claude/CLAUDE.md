@@ -323,7 +323,7 @@ API契約変更対象: `models/responses.py`, `utils/api_client.py` public metho
 - [ ] ワークフロー提案時: Section「🔄 開発ワークフロー」参照
 - [ ] コマンド提案時: Section「🔌 コマンド/スキル/プラグイン自動発動ルール」参照
 - [ ] コード提案時: coding_standards参照
-- [ ] **品質基準**: "Would a staff engineer approve this?" — コードの品質・シンプルさ・保守性を自問
+- [ ] **品質基準**: "Would a staff engineer approve this?" — コードの品質・シンプルさ・保守性を自問（観点: 1責務/ネスト≤3段/命名の明確さ。否決時は `/reflexion:reflect` を再実行）
 
 **目的**: CLAUDE.md記載内容の「適用漏れ」防止
 
