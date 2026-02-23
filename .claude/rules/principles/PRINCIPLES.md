@@ -55,7 +55,7 @@
 
 ### Quality Standards
 - **Automated Enforcement**: Use tooling for consistent quality
-- **Preventive Measures**: Catch issues early when cheaper to fix; if a solution feels hacky, ask: "Knowing everything I know now, implement the elegant solution"
+- **Preventive Measures**: Catch issues early when cheaper to fix; if complexity metrics increase or tests become harder to maintain, ask: "Given current requirements, is there a simpler approach?" — YAGNI applies, do NOT expand scope.
 - **Human-Centered Design**: Prioritize user welfare and autonomy
 
 ## Violation Signals (Self-Check)
