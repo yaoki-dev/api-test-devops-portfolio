@@ -55,7 +55,7 @@
 
 ### Quality Standards
 - **Automated Enforcement**: Use tooling for consistent quality
-- **Preventive Measures**: Catch issues early when cheaper to fix
+- **Preventive Measures**: Catch issues early when cheaper to fix; if a solution feels hacky, ask: "Knowing everything I know now, implement the elegant solution" — skip for obvious simple fixes
 - **Human-Centered Design**: Prioritize user welfare and autonomy
 
 ## Violation Signals (Self-Check)
