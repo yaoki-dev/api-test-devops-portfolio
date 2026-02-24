@@ -35,34 +35,6 @@ pytestmark = pytest.mark.unit
 BASE_URL = "https://jsonplaceholder.typicode.com"
 
 
-class TestAsyncClientExceptions:
-    """カスタム例外クラスのテスト"""
-
-    def test_api_client_error_hierarchy(self):
-        """例外クラスの継承関係確認"""
-        # APIClientError が基底クラス
-        assert issubclass(APIConnectionError, APIClientError)
-        assert issubclass(APITimeoutError, APIClientError)
-        assert issubclass(APIHTTPError, APIClientError)
-        assert issubclass(APIRetryError, APIClientError)
-
-    def test_api_http_error_with_status_code(self):
-        """APIHTTPError がステータスコードを保持することを確認"""
-        mock_response = Mock(spec=httpx.Response)
-        mock_response.status_code = 404
-
-        error = APIHTTPError("Not Found", status_code=404, response=mock_response)
-
-        assert error.status_code == 404
-        assert error.response == mock_response
-        assert str(error) == "Not Found"
-
-    def test_api_retry_error_message(self):
-        """APIRetryError のメッセージ確認"""
-        error = APIRetryError("Max retries exceeded")
-        assert str(error) == "Max retries exceeded"
-
-
 def test_async_exception_hierarchy() -> None:
     """例外クラスの継承関係確認"""
     assert issubclass(APIConnectionError, APIClientError)

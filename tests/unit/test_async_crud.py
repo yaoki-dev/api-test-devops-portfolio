@@ -15,10 +15,15 @@
 #
 # ===============================================================================
 
+import json
+from typing import TypedDict
+
 import pytest
 import respx
 
 from utils.api_client import APIClientError, AsyncJSONPlaceholderClient
+
+pytestmark = pytest.mark.unit
 
 BASE_URL = "https://jsonplaceholder.typicode.com"
 
@@ -27,8 +32,17 @@ BASE_URL = "https://jsonplaceholder.typicode.com"
 # ===============================================================================
 
 
+class PostData(TypedDict):
+    """投稿データの型定義（Dict構造を明確化）"""
+
+    id: int
+    title: str
+    body: str
+    userId: int
+
+
 @pytest.fixture
-def sample_post_data():
+def sample_post_data() -> PostData:
     """テスト用投稿データ"""
     return {
         "id": 101,
@@ -44,7 +58,7 @@ def sample_post_data():
 
 
 @respx.mock
-async def test_async_create_post(sample_post_data):
+async def test_async_create_post(sample_post_data: PostData) -> None:
     """
     非同期投稿作成（POST /posts）のテスト
 
@@ -54,15 +68,22 @@ async def test_async_create_post(sample_post_data):
     - リクエストボディの正確性（title, body, userId）
     - レスポンスJSONの正常パーシング
     """
-    respx.post(f"{BASE_URL}/posts").respond(
+    route = respx.post(f"{BASE_URL}/posts").respond(
         status_code=201,
-        json=sample_post_data,
+        json=dict(sample_post_data),
     )
 
     async with AsyncJSONPlaceholderClient() as client:
         post = await client.create_post("Test Title", "Test Body", 1)
 
-    # 結果検証
+    # リクエストボディ検証: create_post()が正しいフィールドを送信しているか確認
+    assert route.call_count == 1
+    request_body = json.loads(route.calls[0].request.content)
+    assert request_body["title"] == "Test Title"
+    assert request_body["body"] == "Test Body"
+    assert request_body["userId"] == 1
+
+    # レスポンス検証
     assert post["title"] == "Test Title"
     assert post["body"] == "Test Body"
     assert post["userId"] == 1
@@ -75,7 +96,7 @@ async def test_async_create_post(sample_post_data):
 
 
 @respx.mock
-async def test_async_update_post():
+async def test_async_update_post() -> None:
     """
     非同期投稿更新（PUT /posts/{id}）のテスト
 
@@ -91,7 +112,7 @@ async def test_async_update_post():
         "body": "Updated Body",
         "userId": 1,
     }
-    respx.put(f"{BASE_URL}/posts/1").respond(
+    route = respx.put(f"{BASE_URL}/posts/1").respond(
         status_code=200,
         json=updated_data,
     )
@@ -99,7 +120,15 @@ async def test_async_update_post():
     async with AsyncJSONPlaceholderClient() as client:
         post = await client.update_post(1, "Updated Title", "Updated Body")
 
-    # 結果検証
+    # リクエストボディ検証: update_post()が正しいフィールドを送信しているか確認
+    # update_post は title と body のみ送信（create_post の userId とは異なり含まない）
+    assert route.call_count == 1
+    request_body = json.loads(route.calls[0].request.content)
+    assert request_body["title"] == "Updated Title"
+    assert request_body["body"] == "Updated Body"
+    assert "userId" not in request_body  # PUT は部分更新: userId は送信しない
+
+    # レスポンス検証
     assert post["id"] == 1
     assert post["title"] == "Updated Title"
     assert post["body"] == "Updated Body"
@@ -111,7 +140,7 @@ async def test_async_update_post():
 
 
 @respx.mock
-async def test_async_delete_post():
+async def test_async_delete_post() -> None:
     """
     非同期投稿削除（DELETE /posts/{id}）のテスト
 
@@ -124,10 +153,10 @@ async def test_async_delete_post():
     respx.delete(f"{BASE_URL}/posts/1").respond(status_code=200)
 
     async with AsyncJSONPlaceholderClient() as client:
-        # delete_post() は None を返すので、例外が発生しないことを確認
+        # delete_post() は None を返す: 型宣言はランタイム動作を保証しないため
+        # 実際の戻り値を明示的に検証する（204 No Content → None 変換の保証）
         result = await client.delete_post(1)
 
-    # 結果検証（Noneが返ることを確認）
     assert result is None
 
 
@@ -137,7 +166,7 @@ async def test_async_delete_post():
 
 
 @respx.mock
-async def test_async_crud_integration(sample_post_data):
+async def test_async_crud_integration(sample_post_data: PostData) -> None:
     """
     CRUD操作の統合フローテスト（respxモック使用）
 
@@ -150,13 +179,13 @@ async def test_async_crud_integration(sample_post_data):
     # Create: 新規投稿作成（POST /posts）
     respx.post(f"{BASE_URL}/posts").respond(
         status_code=201,
-        json=sample_post_data,
+        json=dict(sample_post_data),
     )
 
     # Read: 投稿一覧取得（GET /posts）
     respx.get(f"{BASE_URL}/posts").respond(
         status_code=200,
-        json=[sample_post_data],
+        json=[dict(sample_post_data)],
     )
 
     # Update: 投稿更新（PUT /posts/101）
@@ -191,9 +220,9 @@ async def test_async_crud_integration(sample_post_data):
         assert updated["id"] == post_id
         assert updated["title"] == "Updated"
 
-        # Delete: 投稿削除
-        result = await client.delete_post(post_id)
-        assert result is None
+        # Delete: 投稿削除（型ヒントだけでなく実際の戻り値も検証）
+        delete_result = await client.delete_post(post_id)
+        assert delete_result is None
 
 
 # ===============================================================================
@@ -202,7 +231,7 @@ async def test_async_crud_integration(sample_post_data):
 
 
 @respx.mock
-async def test_async_create_post_400_error():
+async def test_async_create_post_400_error() -> None:
     """
     400 Bad Request エラー時の挙動テスト
 
@@ -229,7 +258,7 @@ async def test_async_create_post_400_error():
 
 
 @respx.mock
-async def test_async_update_post_404_error():
+async def test_async_update_post_404_error() -> None:
     """
     404 Not Found エラー時の挙動テスト
 
@@ -256,7 +285,7 @@ async def test_async_update_post_404_error():
 
 
 @respx.mock
-async def test_async_delete_post_500_error():
+async def test_async_delete_post_500_error() -> None:
     """
     500 Internal Server Error 時の挙動テスト
 

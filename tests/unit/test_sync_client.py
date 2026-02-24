@@ -11,7 +11,9 @@ Note:
     - DevOps (1件): health_check
 """
 
+import json
 import sys
+from typing import Any
 
 import httpx
 import pytest
@@ -22,6 +24,19 @@ from utils.api_client import SyncAPIClient, SyncJSONPlaceholderClient
 pytestmark = pytest.mark.unit
 
 BASE_URL = "https://jsonplaceholder.typicode.com"
+
+
+def _mock_get(url: str, params: dict[str, Any] | None, json_data: Any) -> None:
+    """respx GETルートのparams有無対応ヘルパー
+
+    respxのparams=はsubset match（指定キーが存在し値が一致すれば通過）。
+    paramsがNoneの場合はパラメータなしのURLとしてモック。
+    """
+    if params is not None:
+        respx.get(url, params=params).respond(json=json_data)
+    else:
+        respx.get(url).respond(json=json_data)
+
 
 # =============================================================================
 # Basic Operations (4件)
@@ -257,7 +272,8 @@ def test_sync_get_posts(limit: int | None, expected_count: int) -> None:
     else:
         mock_data = all_posts[:limit]
 
-    respx.get(f"{BASE_URL}/posts").respond(json=mock_data)
+    # クエリパラメータ検証: limitが指定された場合はparams=でマッチ
+    _mock_get(f"{BASE_URL}/posts", {"_limit": limit} if limit is not None else None, mock_data)
 
     with SyncJSONPlaceholderClient() as client:
         result = client.get_posts(limit=limit)
@@ -308,7 +324,8 @@ def test_sync_get_posts_user_filter(user_id: int | None, expected_count: int) ->
     else:
         mock_data = [p for p in all_posts if p["userId"] == user_id]
 
-    respx.get(f"{BASE_URL}/posts").respond(json=mock_data)
+    # クエリパラメータ検証: user_idが指定された場合はparams=でマッチ
+    _mock_get(f"{BASE_URL}/posts", {"userId": user_id} if user_id is not None else None, mock_data)
 
     with SyncJSONPlaceholderClient() as client:
         result = client.get_posts(user_id=user_id)
@@ -390,12 +407,12 @@ def test_sync_create_post() -> None:
 
     検証項目：
     - title/body/user_id指定で投稿作成
+    - リクエストボディの正確性（title, body, userId）
     - レスポンスにidが付与される（サーバー生成）
-    - POSTリクエストが正しく送信される
 
     学習ポイント:
     - RESTful POST: リソース作成操作
-    - レスポンスデータ: サーバー生成フィールド（id）の確認
+    - respx route.calls でリクエストボディを直接検証するパターン
     """
     title = "New Post"
     body = "This is a new post content"
@@ -408,11 +425,19 @@ def test_sync_create_post() -> None:
         "body": body,
     }
 
-    respx.post(f"{BASE_URL}/posts").respond(status_code=201, json=expected_response)
+    route = respx.post(f"{BASE_URL}/posts").respond(status_code=201, json=expected_response)
 
     with SyncJSONPlaceholderClient() as client:
         result = client.create_post(title=title, body=body, user_id=user_id)
 
+    # リクエストボディ検証: create_post()が正しいフィールドを送信しているか確認
+    assert route.call_count == 1
+    request_body = json.loads(route.calls[0].request.content)
+    assert request_body["title"] == title
+    assert request_body["body"] == body
+    assert request_body["userId"] == user_id
+
+    # レスポンス検証
     assert result["id"] == 101
     assert result["userId"] == user_id
     assert result["title"] == title
@@ -471,7 +496,14 @@ def test_sync_get_todos(
     if limit is not None:
         filtered_todos = filtered_todos[:limit]
 
-    respx.get(f"{BASE_URL}/todos").respond(json=filtered_todos)
+    # クエリパラメータ検証: 指定されたパラメータのみparams=でマッチ
+    # dict comprehensionでNoneを除外（completed=Falseは有効なパラメータとして保持）
+    params = {
+        k: v
+        for k, v in {"userId": user_id, "completed": completed, "_limit": limit}.items()
+        if v is not None
+    } or None
+    _mock_get(f"{BASE_URL}/todos", params, filtered_todos)
 
     with SyncJSONPlaceholderClient() as client:
         result = client.get_todos(user_id=user_id, completed=completed, limit=limit)
@@ -562,7 +594,8 @@ def test_sync_get_albums(user_id: int | None, expected_count: int) -> None:
     else:
         mock_data = all_albums
 
-    respx.get(f"{BASE_URL}/albums").respond(json=mock_data)
+    # クエリパラメータ検証: user_idが指定された場合はparams=でマッチ
+    _mock_get(f"{BASE_URL}/albums", {"userId": user_id} if user_id is not None else None, mock_data)
 
     with SyncJSONPlaceholderClient() as client:
         result = client.get_albums(user_id=user_id)
@@ -657,6 +690,7 @@ def test_sync_get_photos(album_id: int | None, expected_count: int) -> None:
 
 
 @pytest.mark.unit
+@respx.mock
 @pytest.mark.parametrize(
     "post_id",
     [0, -1, -100],
@@ -679,8 +713,12 @@ def test_sync_get_comments_invalid_post_id(post_id: int) -> None:
         with pytest.raises(ValueError, match="post_id must be >= 1"):
             client.get_comments(post_id=post_id)
 
+    # HTTPリクエストが発行されていないことを確認
+    assert len(respx.calls) == 0
+
 
 @pytest.mark.unit
+@respx.mock
 @pytest.mark.parametrize(
     "album_id",
     [0, -1, -100],
@@ -702,3 +740,6 @@ def test_sync_get_photos_invalid_album_id(album_id: int) -> None:
     with SyncJSONPlaceholderClient() as client:
         with pytest.raises(ValueError, match="album_id must be >= 1"):
             client.get_photos(album_id=album_id)
+
+    # HTTPリクエストが発行されていないことを確認
+    assert len(respx.calls) == 0

@@ -34,6 +34,8 @@ from utils.api_client import (
     _safe_parse_json,
 )
 
+pytestmark = pytest.mark.unit
+
 BASE_URL = "https://jsonplaceholder.typicode.com"
 
 # =============================================================================

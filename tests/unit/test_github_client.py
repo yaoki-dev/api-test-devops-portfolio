@@ -21,6 +21,8 @@ from utils.github_client import (
     RateLimitError,
 )
 
+pytestmark = pytest.mark.unit
+
 GITHUB_API_BASE_URL = "https://api.github.com"
 
 # =============================================================================
