@@ -21,7 +21,7 @@
 import asyncio
 import json
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import httpx
 import pytest
@@ -256,7 +256,8 @@ async def test_all_requests_fail_returns_empty_list():
 # ===============================================================================
 
 
-async def test_async_error_handling_and_retry():
+@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
+async def test_async_error_handling_and_retry(mock_backoff: Mock):
     """
     非同期エラーハンドリングとリトライ機能のテスト
 
@@ -270,6 +271,8 @@ async def test_async_error_handling_and_retry():
           4xxエラー時はAPIHTTPErrorを発生させる。
           respxのside_effectでも同等のシミュレーションが可能だが、
           ここではリトライ回数の精密検証のためpatchを使用。
+          exponential_backoff_with_jitter をパッチして即時リターンにすることで
+          max(0.1, delay) の最小値制約を回避し、CI実行時間を短縮。
     """
     from httpx import HTTPStatusError, TimeoutException
 
@@ -292,7 +295,7 @@ async def test_async_error_handling_and_retry():
             success_response,
         ]
 
-        async with AsyncAPIClient(retry_count=3, retry_delay=0.01) as client:
+        async with AsyncAPIClient(retry_count=3) as client:
             result = await client.get("/users/1")
 
             # 結果検証: get()はhttpx.Responseを返す
@@ -554,7 +557,7 @@ async def test_async_health_check_connection_error():
         side_effect=httpx.ConnectError("Connection refused")
     )
 
-    async with AsyncJSONPlaceholderClient() as client:
+    async with AsyncJSONPlaceholderClient(retry_count=0) as client:
         result = await client.health_check()
 
     assert result is False
