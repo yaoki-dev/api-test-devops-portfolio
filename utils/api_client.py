@@ -171,10 +171,11 @@ class SyncAPIClient:
 
         """
         # 設定から値を取得（引数で上書き可能）
+        # NOTE: retry_count=0, retry_delay=0.0 は有効な設定値のため is not None で判定
         self.base_url = base_url or settings.api.base_url
         self.timeout = timeout or settings.api.timeout
-        self.retry_count = retry_count or settings.api.retry_count
-        self.retry_delay = retry_delay or settings.api.retry_delay
+        self.retry_count = retry_count if retry_count is not None else settings.api.retry_count
+        self.retry_delay = retry_delay if retry_delay is not None else settings.api.retry_delay
 
         # デフォルトヘッダーの設定
         self.default_headers = {
@@ -610,10 +611,11 @@ class AsyncAPIClient:
 
         """
         # 設定から値を取得（引数で上書き可能）
+        # NOTE: retry_count=0, retry_delay=0.0 は有効な設定値のため is not None で判定
         self.base_url = base_url or settings.api.base_url
         self.timeout = timeout or settings.api.timeout
-        self.retry_count = retry_count or settings.api.retry_count
-        self.retry_delay = retry_delay or settings.api.retry_delay
+        self.retry_count = retry_count if retry_count is not None else settings.api.retry_count
+        self.retry_delay = retry_delay if retry_delay is not None else settings.api.retry_delay
 
         # デフォルトヘッダーの設定
         self.default_headers = {

@@ -1538,8 +1538,9 @@ async def test_get_photos_with_filters(album_id, expected_count, test_descriptio
     [0, -1, -100],
     ids=["post_id_zero", "post_id_negative", "post_id_large_negative"],
 )
-@respx.mock
-async def test_async_get_comments_invalid_post_id(post_id: int) -> None:
+async def test_async_get_comments_invalid_post_id(
+    post_id: int, respx_mock: respx.MockRouter
+) -> None:
     """
     AsyncJSONPlaceholderClient.get_comments()の無効post_idバリデーション
 
@@ -1557,7 +1558,7 @@ async def test_async_get_comments_invalid_post_id(post_id: int) -> None:
             await client.get_comments(post_id=post_id)
 
     # ValueError が先に発生するため HTTP リクエストは到達しない
-    assert len(respx.calls) == 0
+    assert len(respx_mock.calls) == 0
 
 
 @pytest.mark.unit
@@ -1566,8 +1567,9 @@ async def test_async_get_comments_invalid_post_id(post_id: int) -> None:
     [0, -1, -100],
     ids=["album_id_zero", "album_id_negative", "album_id_large_negative"],
 )
-@respx.mock
-async def test_async_get_photos_invalid_album_id(album_id: int) -> None:
+async def test_async_get_photos_invalid_album_id(
+    album_id: int, respx_mock: respx.MockRouter
+) -> None:
     """
     AsyncJSONPlaceholderClient.get_photos()の無効album_idバリデーション
 
@@ -1585,7 +1587,7 @@ async def test_async_get_photos_invalid_album_id(album_id: int) -> None:
             await client.get_photos(album_id=album_id)
 
     # ValueError が先に発生するため HTTP リクエストは到達しない
-    assert len(respx.calls) == 0
+    assert len(respx_mock.calls) == 0
 
 
 # ===============================================================================
