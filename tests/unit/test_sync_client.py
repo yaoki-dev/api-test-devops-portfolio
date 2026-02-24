@@ -690,12 +690,12 @@ def test_sync_get_photos(album_id: int | None, expected_count: int) -> None:
 
 
 @pytest.mark.unit
-@respx.mock
 @pytest.mark.parametrize(
     "post_id",
     [0, -1, -100],
     ids=["post_id_zero", "post_id_negative", "post_id_large_negative"],
 )
+@respx.mock
 def test_sync_get_comments_invalid_post_id(post_id: int) -> None:
     """
     SyncJSONPlaceholderClient.get_comments()の無効post_idバリデーション
@@ -718,12 +718,12 @@ def test_sync_get_comments_invalid_post_id(post_id: int) -> None:
 
 
 @pytest.mark.unit
-@respx.mock
 @pytest.mark.parametrize(
     "album_id",
     [0, -1, -100],
     ids=["album_id_zero", "album_id_negative", "album_id_large_negative"],
 )
+@respx.mock
 def test_sync_get_photos_invalid_album_id(album_id: int) -> None:
     """
     SyncJSONPlaceholderClient.get_photos()の無効album_idバリデーション
