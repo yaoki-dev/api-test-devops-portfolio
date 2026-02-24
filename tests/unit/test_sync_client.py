@@ -695,8 +695,7 @@ def test_sync_get_photos(album_id: int | None, expected_count: int) -> None:
     [0, -1, -100],
     ids=["post_id_zero", "post_id_negative", "post_id_large_negative"],
 )
-@respx.mock
-def test_sync_get_comments_invalid_post_id(post_id: int) -> None:
+def test_sync_get_comments_invalid_post_id(post_id: int, respx_mock: respx.MockRouter) -> None:
     """
     SyncJSONPlaceholderClient.get_comments()の無効post_idバリデーション
 
@@ -713,8 +712,8 @@ def test_sync_get_comments_invalid_post_id(post_id: int) -> None:
         with pytest.raises(ValueError, match="post_id must be >= 1"):
             client.get_comments(post_id=post_id)
 
-    # HTTPリクエストが発行されていないことを確認
-    assert len(respx.calls) == 0
+    # HTTPリクエストが発行されていないことを確認（スコープ付きルーター使用）
+    assert len(respx_mock.calls) == 0
 
 
 @pytest.mark.unit
@@ -723,8 +722,7 @@ def test_sync_get_comments_invalid_post_id(post_id: int) -> None:
     [0, -1, -100],
     ids=["album_id_zero", "album_id_negative", "album_id_large_negative"],
 )
-@respx.mock
-def test_sync_get_photos_invalid_album_id(album_id: int) -> None:
+def test_sync_get_photos_invalid_album_id(album_id: int, respx_mock: respx.MockRouter) -> None:
     """
     SyncJSONPlaceholderClient.get_photos()の無効album_idバリデーション
 
@@ -741,5 +739,5 @@ def test_sync_get_photos_invalid_album_id(album_id: int) -> None:
         with pytest.raises(ValueError, match="album_id must be >= 1"):
             client.get_photos(album_id=album_id)
 
-    # HTTPリクエストが発行されていないことを確認
-    assert len(respx.calls) == 0
+    # HTTPリクエストが発行されていないことを確認（スコープ付きルーター使用）
+    assert len(respx_mock.calls) == 0

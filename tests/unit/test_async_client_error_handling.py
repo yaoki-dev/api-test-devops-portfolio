@@ -73,9 +73,11 @@ async def test_async_retry_on_server_error_then_success(mock_backoff: Mock) -> N
     """サーバーエラー後に成功するケース（5xxはリトライ対象）"""
     route = respx.get(f"{BASE_URL}/posts/1")
     route.side_effect = [
-        httpx.Response(500),
-        httpx.Response(500),
-        httpx.Response(200, json={"id": 1, "title": "test"}),
+        httpx.Response(500),  # 初回: 失敗
+        httpx.Response(500),  # リトライ1回目: 失敗
+        httpx.Response(200, json={"id": 1, "title": "test"}),  # リトライ2回目: 成功
+        # Note: retry_count=3（最大4回呼び出し可能）だが、
+        # 2回目のリトライで成功するためリストは3要素で十分
     ]
 
     async with AsyncAPIClient(retry_count=3) as client:

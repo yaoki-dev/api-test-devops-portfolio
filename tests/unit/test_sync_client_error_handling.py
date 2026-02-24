@@ -16,7 +16,7 @@ Note:
 """
 
 import json
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import httpx
 import pytest
@@ -74,14 +74,17 @@ def test_sync_retry_error_message() -> None:
 # =============================================================================
 
 
+@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 @respx.mock
-def test_sync_retry_with_exponential_backoff() -> None:
+def test_sync_retry_with_exponential_backoff(mock_backoff: Mock) -> None:
     """サーバーエラー後に成功するケース（5xxはリトライ対象）"""
     route = respx.get(f"{BASE_URL}/posts/1")
     route.side_effect = [
-        httpx.Response(500),
-        httpx.Response(500),
-        httpx.Response(200, json={"id": 1}),
+        httpx.Response(500),  # 初回: 失敗
+        httpx.Response(500),  # リトライ1回目: 失敗
+        httpx.Response(200, json={"id": 1}),  # リトライ2回目: 成功
+        # Note: retry_count=3（最大4回呼び出し可能）だが、
+        # 2回目のリトライで成功するためリストは3要素で十分
     ]
 
     with SyncAPIClient(retry_count=3, retry_delay=0.01) as client:
@@ -113,8 +116,9 @@ def test_sync_4xx_error_no_retry() -> None:
 # =============================================================================
 
 
+@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 @respx.mock
-def test_sync_timeout_error_retry() -> None:
+def test_sync_timeout_error_retry(mock_backoff: Mock) -> None:
     """タイムアウト時にAPIRetryErrorが発生することを確認"""
     route = respx.get(f"{BASE_URL}/posts/1")
     route.side_effect = [
@@ -136,8 +140,9 @@ def test_sync_timeout_error_retry() -> None:
 # =============================================================================
 
 
+@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 @respx.mock
-def test_sync_connection_error_retry() -> None:
+def test_sync_connection_error_retry(mock_backoff: Mock) -> None:
     """接続エラー時にAPIRetryErrorが発生することを確認"""
     route = respx.get(f"{BASE_URL}/posts/1")
     route.side_effect = [

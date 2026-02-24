@@ -1074,16 +1074,22 @@ async def test_create_post_with_empty_body():
 
     expected_response = {"id": 102, "userId": user_id, "title": title, "body": body}
 
-    # モック設定
-    respx.post(f"{BASE_URL}/posts").respond(status_code=201, json=expected_response)
+    # モック設定（route変数に保存してリクエスト内容を後で検証できるようにする）
+    route = respx.post(f"{BASE_URL}/posts").respond(status_code=201, json=expected_response)
 
     # テスト実行
     async with AsyncJSONPlaceholderClient() as client:
         result = await client.create_post(title=title, body=body, user_id=user_id)
 
-    # 結果検証
+    # レスポンス検証
     assert result["id"] == 102
     assert result["body"] == ""  # 空文字列が保持される
+
+    # リクエストボディ検証: 空文字列が実際に送信されているか確認
+    request_body = json.loads(route.calls[0].request.content)
+    assert request_body["body"] == ""  # 空文字列が送信されていることを確認
+    assert request_body["title"] == title
+    assert request_body["userId"] == user_id
 
 
 # ===============================================================================
