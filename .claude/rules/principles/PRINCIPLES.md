@@ -55,7 +55,7 @@
 
 ### Quality Standards
 - **Automated Enforcement**: Use tooling for consistent quality
-- **Preventive Measures**: Catch issues early when cheaper to fix
+- **Preventive Measures**: Catch issues early when cheaper to fix; when tests become harder to maintain, ask: "Given current requirements, is there a simpler approach?"
 - **Human-Centered Design**: Prioritize user welfare and autonomy
 
 ## Violation Signals (Self-Check)
