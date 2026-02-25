@@ -63,7 +63,7 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
 | Review | `code-review:*`, `pr-review-toolkit:*` (parallel) |
 | Design | `system-architect`, `backend-architect`, `devops-architect` |
 
-**Dispatch Automation**: When 2+ independent tasks exist post-classification, invoke `superpowers:dispatching-parallel-agents` skill via Skill tool. After all agents complete, explicitly invoke `/reflexion:reflect` skill (CLAUDE.md Rule 12).
+**Dispatch Automation**: When 2+ independent tasks exist post-classification, invoke `superpowers:dispatching-parallel-agents` skill via Skill tool. After all agents complete and all TodoWrite tasks are marked done, `/reflexion:reflect` runs per CLAUDE.md Rule 12 (no additional call needed here).
 
 **Good:** Plan → TodoWrite → Execute → Verify | **Bad:** Jump to implementation
 
