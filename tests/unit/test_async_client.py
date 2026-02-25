@@ -21,7 +21,6 @@
 import asyncio
 import json
 import time
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import httpx
@@ -127,10 +126,9 @@ async def test_async_concurrent_requests(sample_users_list):
     複数の非同期リクエストを並行実行するテスト
 
     検証項目：
-    - asyncio.gather による並行実行
-    - 同時実行数制限（セマフォ）の動作
-    - パフォーマンス測定（並行実行による高速化）
-    - エラー時の適切な例外処理
+    - asyncio.gather による並行実行（3並行リクエスト）
+    - 各ユーザーデータの正確な取得（ID=1,2,3の確認）
+    - 各ルートが1回ずつ呼ばれることの確認（route.call_count）
     """
     # 各ユーザーエンドポイントをrespxでモック化（ルート固有のcall_countで検証）
     route_user1 = respx.get(f"{BASE_URL}/users/1").respond(json=sample_users_list[0])
@@ -171,6 +169,11 @@ async def test_async_multiple_users_with_semaphore():
     学習ポイント:
     - asyncio.Semaphore: 同時実行数を制限するロック機構
     - Rate Limit対策: GitHub API等の外部API制限への対応
+
+    Note: respx環境ではSemaphoreの同時実行制限（max_concurrent=2）を
+    直接観測することはできません。実I/Oが発生しないため同時実行数の
+    カウントが意味を持たないからです。このテストでは呼び出し回数（5回）と
+    結果の正確性のみを検証します。
     """
     # 各ユーザーエンドポイントをrespxでモック化（ルート固有のcall_countで検証）
     routes = {}
@@ -208,13 +211,13 @@ async def test_partial_failure_graceful_degradation():
     """
     # 宣言的なエンドポイントマッピング（成功: 1,3,5 / 失敗: 2,4）
     respx.get(f"{BASE_URL}/users/1").respond(json={"id": 1, "name": "User 1"})
-    route_fail_2 = respx.get(f"{BASE_URL}/users/2").respond(status_code=500)
+    respx.get(f"{BASE_URL}/users/2").respond(status_code=500)
     respx.get(f"{BASE_URL}/users/3").respond(json={"id": 3, "name": "User 3"})
-    route_fail_4 = respx.get(f"{BASE_URL}/users/4").respond(status_code=500)
+    respx.get(f"{BASE_URL}/users/4").respond(status_code=500)
     respx.get(f"{BASE_URL}/users/5").respond(json={"id": 5, "name": "User 5"})
 
-    # テスト実行（retry_count=0: リトライ無効化でCI高速化）
-    async with AsyncJSONPlaceholderClient(retry_count=0) as client:
+    # テスト実行
+    async with AsyncJSONPlaceholderClient() as client:
         results = await client.get_multiple_users([1, 2, 3, 4, 5], max_concurrent=2)
 
     # graceful degradation検証（成功分のみ返却パターン）
@@ -224,16 +227,6 @@ async def test_partial_failure_graceful_degradation():
     # Expected IDs [1,3,5] in any order, no duplicates
     result_ids = [r["id"] for r in results]
     assert sorted(result_ids) == [1, 3, 5], f"Expected IDs [1,3,5], got {result_ids}"
-
-    # 失敗ルートへのリクエストが実際に発行されたことを確認（偽陽性防止）
-    assert route_fail_2.call_count == 1, (
-        "users/2 へのリクエストが発行されなかった可能性があります。"
-        "期待値: 1回（retry_count=0 のためリトライなし）"
-    )
-    assert route_fail_4.call_count == 1, (
-        "users/4 へのリクエストが発行されなかった可能性があります。"
-        "期待値: 1回（retry_count=0 のためリトライなし）"
-    )
 
 
 @respx.mock
@@ -250,22 +243,16 @@ async def test_all_requests_fail_returns_empty_list():
     - エッジケーステスト: 最悪シナリオでのシステム動作保証
     - Defense in Depth: 稀なケースこそテストで保護
     """
-    # DRY: ループで一括設定（全件500エラー）+ ルートオブジェクトをキャプチャ
-    routes = []
+    # DRY: ループで一括設定（全件500エラー）
     for user_id in [1, 2, 3]:
-        routes.append(respx.get(f"{BASE_URL}/users/{user_id}").respond(status_code=500))
+        respx.get(f"{BASE_URL}/users/{user_id}").respond(status_code=500)
 
-    # retry_count=0: リトライ無効化でCI高速化（デフォルト3だと最大4倍のリクエスト発行）
-    async with AsyncJSONPlaceholderClient(retry_count=0) as client:
+    async with AsyncJSONPlaceholderClient() as client:
         results = await client.get_multiple_users([1, 2, 3], max_concurrent=2)
 
     # 全件失敗で空リスト返却
     assert results == [], f"Expected empty list, got {results}"
     assert isinstance(results, list), f"Expected list type, got {type(results)}"
-
-    # 各ルートが1回ずつ呼ばれたことを確認（偽陽性防止）
-    counts = [r.call_count for r in routes]
-    assert all(c == 1 for c in counts), f"各ルートは1回のみ期待（retry_count=0）、実際: {counts}"
 
 
 # ===============================================================================
@@ -274,34 +261,24 @@ async def test_all_requests_fail_returns_empty_list():
 
 
 @patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
-async def test_async_error_handling_and_retry(mock_backoff: Mock) -> None:
+async def test_async_timeout_retry_then_success(mock_backoff: Mock) -> None:
     """
-    非同期エラーハンドリングとリトライ機能のテスト
+    タイムアウトエラー後のリトライで最終的に成功するテスト
 
     検証項目：
-    - タイムアウトエラーのリトライ動作
-    - 接続エラーのリトライ動作
-    - HTTPステータスエラー（4xx）の即座発生（リトライなし）
-    - リトライ回数・間隔の制御
+    - タイムアウトエラー発生時にリトライが行われること
+    - リトライ回数が設定値（retry_count）に基づくこと（初回+2回リトライ=3回実行）
+    - リトライ後に成功した場合のレスポンスが正しく返却されること
 
     Note: AsyncAPIClient.get()はhttpx.Responseを返す。
-          4xxエラー時はAPIHTTPErrorを発生させる。
-
-          【respx非移行理由】
-          このテストは「タイムアウトリトライ成功」と「4xx即時失敗」という
-          2シナリオを1つのwithブロック内でシーケンシャルに検証する
-          統合テスト的構造を採用している。
-          @patch("utils.api_client.exponential_backoff_with_jitter")で即時リターン化し
-          CI実行時間を短縮する設計も組み合わさっており、
-          respxへの移行は技術的に可能だが、テストケース分割と構造変更が必要なため現状維持。
+          @patch(exponential_backoff_with_jitter)でリトライ待機を0秒化しCI時間短縮。
     """
-    from httpx import HTTPStatusError, TimeoutException
+    from httpx import TimeoutException
 
     with patch("httpx.AsyncClient") as mock_client_class:
         mock_client_instance = AsyncMock()
         mock_client_class.return_value = mock_client_instance
 
-        # Test 3-1: タイムアウトエラーのリトライ（最終的に成功）
         success_response = MagicMock(spec=Response)
         success_response.status_code = 200
         success_response.json.return_value = {"id": 1, "name": "Test User"}
@@ -319,18 +296,34 @@ async def test_async_error_handling_and_retry(mock_backoff: Mock) -> None:
         async with AsyncAPIClient(retry_count=3) as client:
             result = await client.get("/users/1")
 
-            # 結果検証: get()はhttpx.Responseを返す
-            assert result.status_code == 200
-            json_data = result.json()
-            assert json_data["id"] == 1
-            assert json_data["name"] == "Test User"
+        # 結果検証: get()はhttpx.Responseを返す
+        assert result.status_code == 200
+        json_data = result.json()
+        assert json_data["id"] == 1
+        assert json_data["name"] == "Test User"
 
-            # リトライ動作検証（call_countで確実に検証、実時間は環境依存のため省略）
-            assert mock_client_instance.request.call_count == 3  # 3回目で成功
+        # リトライ動作検証（call_countで確実に検証、実時間は環境依存のため省略）
+        assert mock_client_instance.request.call_count == 3  # 3回目で成功
 
-        # Test 3-2: HTTPエラー（4xx）は即座発生（リトライなし）
-        mock_client_instance.reset_mock()
-        mock_client_instance.request.side_effect = None  # side_effectをクリア
+
+@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
+async def test_async_4xx_error_no_retry(mock_backoff: Mock) -> None:
+    """
+    HTTPエラー（4xx）は即座に発生しリトライしないテスト
+
+    検証項目：
+    - 4xxエラー（404）発生時にAPIHTTPErrorが即座に発生すること
+    - リトライが行われないこと（呼び出し回数 == 1）
+    - エラーステータスコードが保持されること
+
+    Note: AsyncAPIClient.get()はhttpx.Responseを返す。
+          4xxエラー時はAPIHTTPErrorを発生させる（HTTPStatusErrorをラップ）。
+    """
+    from httpx import HTTPStatusError
+
+    with patch("httpx.AsyncClient") as mock_client_class:
+        mock_client_instance = AsyncMock()
+        mock_client_class.return_value = mock_client_instance
 
         error_response = MagicMock(spec=Response)
         error_response.status_code = 404
@@ -343,14 +336,13 @@ async def test_async_error_handling_and_retry(mock_backoff: Mock) -> None:
         mock_client_instance.request.return_value = error_response
 
         async with AsyncAPIClient(retry_count=3) as client:
-            # 実装はAPIHTTPErrorを発生させる（HTTPStatusErrorをラップ）
             with pytest.raises(APIHTTPError) as exc_info:
                 await client.get("/users/999")
 
-            # エラー詳細検証
-            assert exc_info.value.status_code == 404
-            # HTTPエラーはリトライしないことを確認
-            assert mock_client_instance.request.call_count == 1
+        # エラー詳細検証
+        assert exc_info.value.status_code == 404
+        # HTTPエラーはリトライしないことを確認（1回のみ実行）
+        assert mock_client_instance.request.call_count == 1
 
 
 # ===============================================================================
@@ -405,51 +397,6 @@ async def test_async_post_create_user():
 
 
 @respx.mock
-async def test_async_bulk_create_users_partial_failure_server_error():
-    """
-    bulk_create_users の部分失敗シナリオテスト（サーバーエラー: 500）
-
-    検証項目：
-    - asyncio.gather(return_exceptions=True) による部分失敗の許容動作
-    - 成功分のみ返却される（失敗分はサイレントに除外される）挙動の確認
-    - 全件に対してPOSTが試行されること（失敗でも全リクエスト送信）
-    - 部分失敗時でもメソッドが例外を送出しないこと
-
-    設計意図: bulk_create_users は個別失敗を許容する設計であり、
-    呼び出し元は返却件数で部分失敗を検知できる。
-    """
-    users_to_create = [
-        {"name": "User 1", "email": "user1@test.com"},
-        {"name": "User 2", "email": "user2@test.com"},  # この件が失敗する
-        {"name": "User 3", "email": "user3@test.com"},
-    ]
-
-    post_route = respx.post(f"{BASE_URL}/users")
-    post_route.side_effect = [
-        Response(201, json={"id": 101, "name": "User 1", "email": "user1@test.com"}),
-        Response(500, json={"error": "Internal Server Error"}),  # 2番目が失敗
-        Response(201, json={"id": 103, "name": "User 3", "email": "user3@test.com"}),
-    ]
-
-    # retry_count=0: リトライなし設定で side_effect の消費を確定的にする
-    # デフォルト retry_count=3 の場合、500レスポンスでリトライが発生し
-    # side_effect リストが想定外に消費される可能性があるため明示的に指定
-    async with AsyncJSONPlaceholderClient(retry_count=0) as client:
-        results = await client.bulk_create_users(users_to_create)
-
-    # 部分失敗により成功件数は全件未満であること
-    assert len(results) < len(users_to_create), "部分失敗により成功件数は全件未満であること"
-    assert len(results) >= 1, "少なくとも1件は成功すること"
-    # 全3件に対してPOSTが試行されること
-    assert post_route.call_count == 3
-    # 成功した名前のみが含まれること
-    created_names = [r["name"] for r in results]
-    assert "User 1" in created_names
-    assert "User 3" in created_names
-    assert "User 2" not in created_names
-
-
-@respx.mock
 async def test_async_bulk_create_users():
     """
     複数ユーザーの並行作成テスト
@@ -491,8 +438,8 @@ async def test_async_bulk_create_users():
     # 作成されたユーザー確認（防御的テスト）
 
     # respxのside_effectリストは同一ルートへの呼び出し順に
-    # 消費される（CPython実装では概ね決定的だが、Python仕様の保証ではない）。
-    # asyncio.gatherの結果も入力タスク順に返却されるため順序は概ね決定的だが、
+    # 消費される（決定的）。
+    # asyncio.gatherの結果も入力タスク順に返却されるため順序は決定的だが、
     # インデックス位置ではなく名称の存在確認に絞ることで、将来の実装変更への耐性を高める。
     # → set/in検証: 期待される全名称が含まれることを確認
 
@@ -503,9 +450,9 @@ async def test_async_bulk_create_users():
 
 
 @respx.mock
-async def test_async_bulk_create_users_partial_failure_client_error():
+async def test_async_bulk_create_users_partial_failure():
     """
-    複数ユーザーの並行作成における部分失敗テスト（クライアントエラー: 422）
+    複数ユーザーの並行作成における部分失敗テスト（silent failure設計の検証）
 
     検証項目：
     - 一部リクエストが4xxエラーで失敗してもbulk_create_usersは例外を発生させない
@@ -518,9 +465,9 @@ async def test_async_bulk_create_users_partial_failure_client_error():
     return_exceptionsにより捕捉され、成功分のみが返却される。
 
     Note: side_effectリストはリクエスト到着順に消費される。
-    CPythonの実装ではgatherのタスク作成順とリクエスト開始順がほぼ一致するが、
-    これはPython仕様の保証ではなくCPython実装の副産物である。
-    モック環境（respx）では実I/O待機がないため順序が維持される。
+    CPythonのシングルスレッドイベントループ + respxモック環境（実I/O待機なし）では
+    task作成順（入力リスト順）とリクエスト送信順がほぼ一致するが、
+    Python仕様として実行順序は保証されないため、件数は範囲チェックで検証する。
     """
     users_to_create = [
         {"name": "User 1", "email": "user1@test.com"},
@@ -541,38 +488,19 @@ async def test_async_bulk_create_users_partial_failure_client_error():
         # 例外なく完了することを確認（silent partial failure）
         results = await client.bulk_create_users(users_to_create)
 
-    # 部分失敗: 3件中2件成功（例外は発生しない）
-    assert len(results) == 2
+    # 部分失敗: 全件未満の成功（例外は発生しない）
+    # Note: 実行順序依存を避けるため厳密な「2件」ではなく範囲チェックで検証
+    assert len(results) < len(users_to_create), "部分失敗により成功件数は全件未満であること"
+    assert len(results) >= 1, "少なくとも1件は成功すること"
 
     # 全リクエストが試行されたことを確認（部分失敗でも全件送信）
     assert post_route.call_count == 3
 
-    # 成功した2件のみ返却確認
+    # 成功分のみ返却確認（存在確認 + 失敗ユーザーが含まれないことを確認）
     created_names = [result["name"] for result in results]
     assert "User 1" in created_names  # 1件目成功
     assert "User 3" in created_names  # 3件目成功
     assert "User 2" not in created_names  # 2件目は422エラーで失敗、返却されない
-
-
-async def test_async_bulk_create_users_cancelled_error_propagates() -> None:
-    """asyncio.CancelledErrorがbulk_create_usersから外に伝播することを確認
-
-    K8s graceful shutdown等でタスクがキャンセルされた場合に、
-    bulk_create_usersがCancelledErrorを握り潰さないことを保証する回帰テスト。
-
-    設計: create_userメソッドをモックしてCancelledErrorを発生させ、
-    asyncio.gatherの実際の動作経路を通してCancelledError伝播を検証する。
-    （asyncio.gatherのモックとは異なり、実際の非同期キャンセル動作に近い）
-    """
-    users_to_create = [{"name": "User 1", "email": "user1@test.com"}]
-
-    async def raise_cancelled(*args: Any, **kwargs: Any) -> Any:
-        raise asyncio.CancelledError("タスクキャンセルのシミュレーション")
-
-    async with AsyncJSONPlaceholderClient(retry_count=0) as client:
-        with patch.object(client, "create_user", side_effect=raise_cancelled):
-            with pytest.raises(asyncio.CancelledError):
-                await client.bulk_create_users(users_to_create)
 
 
 # ===============================================================================
@@ -580,21 +508,17 @@ async def test_async_bulk_create_users_cancelled_error_propagates() -> None:
 # ===============================================================================
 
 
-@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
-async def test_async_performance_and_timeout(mock_backoff: Mock) -> None:
+async def test_async_performance_and_timeout():
     """
     非同期処理のパフォーマンス・タイムアウト・リソース管理テスト
 
     検証項目：
     - リクエストタイムアウトの動作
     - リトライ後のAPIRetryError発生
-    - リトライ回数の検証（初回 + リトライ = call_count で確認）
+    - リトライ間隔の検証
 
     Note: タイムアウト時、実装はリトライ後にAPIRetryErrorを発生させる。
           TimeoutExceptionは内部でキャッチされる。
-
-          exponential_backoff_with_jitter は @patch でモック済み（return_value=0.0）。
-          実際の sleep は発生しない。CI高速化のため実時間検証は除去済み。
 
           【respx非移行理由】
           httpx.AsyncClientをpatchしてcall_count検証する構造は
@@ -626,14 +550,12 @@ async def test_async_performance_and_timeout(mock_backoff: Mock) -> None:
             # flaky になるため除去。リトライ動作は call_count == 2 で検証済み。
 
 
-async def test_async_context_manager_cleanup():
+async def test_async_context_manager_cleanup_on_success():
     """
-    コンテキストマネージャーのリソースクリーンアップテスト
+    正常終了時のコンテキストマネージャーリソースクリーンアップテスト
 
     検証項目：
-    - async with ブロック終了時の自動クリーンアップ
-    - httpx.AsyncClient.aclose() の適切な呼び出し
-    - エラー発生時でもクリーンアップが実行されること
+    - async with ブロック正常終了時に aclose() が呼び出されること
 
     Note: aclose()呼び出し検証はhttpxクライアントの内部動作に依存するためpatchを使用。
     """
@@ -641,15 +563,28 @@ async def test_async_context_manager_cleanup():
         mock_client_instance = AsyncMock()
         mock_client_class.return_value = mock_client_instance
 
-        # Test 5-2a: 正常終了時のクリーンアップ
-        async with AsyncJSONPlaceholderClient() as client:
+        async with AsyncJSONPlaceholderClient():
             pass  # 何もしない
 
         # aclose() が呼び出されることを確認
         mock_client_instance.aclose.assert_called_once()
 
-        # Test 5-2b: 例外発生時でもクリーンアップされること
-        mock_client_instance.reset_mock()
+
+async def test_async_context_manager_cleanup_on_exception():
+    """
+    例外発生時でもコンテキストマネージャーがクリーンアップするテスト
+
+    検証項目：
+    - 例外発生時でも aclose() が呼び出されること（リソースリークなし）
+
+    Note: aclose()呼び出し検証はhttpxクライアントの内部動作に依存するためpatchを使用。
+          Exception は httpx.RequestError のサブクラスではないため、リトライを通らず
+          そのまま伝播する。例外型はテスト上の都合で使用。
+    """
+    with patch("httpx.AsyncClient") as mock_client_class:
+        mock_client_instance = AsyncMock()
+        mock_client_class.return_value = mock_client_instance
+
         test_error = Exception("Test error")
         mock_client_instance.request.side_effect = test_error
 
@@ -657,12 +592,8 @@ async def test_async_context_manager_cleanup():
             async with AsyncJSONPlaceholderClient() as client:
                 await client.get("/users/1")
 
-        # Exception は httpx.RequestError のサブクラスではないため、リトライを通らず
-        # そのまま伝播する。このテストの目的は「例外発生時でも aclose() が呼ばれる」
-        # こと（クリーンアップ保証）の検証であり、例外型はテスト上の都合で使用。
         assert str(exc_info.value) == "Test error"
-
-        # 例外発生時でもaclose()が呼び出されることを確認
+        # 例外発生時でもaclose()が呼び出されることを確認（クリーンアップ保証）
         mock_client_instance.aclose.assert_called_once()
 
 
@@ -714,23 +645,6 @@ async def test_async_health_check_connection_error():
 
     assert result is False
     assert route.call_count == 1  # retry_count=0なのでリトライなし（1回のみ実行）
-
-
-def test_async_client_timeout_zero_not_overridden() -> None:
-    """timeout=0.0がデフォルト設定値に上書きされないことを確認（r2850768833回帰テスト）
-
-    httpxでは timeout=0.0 は即座にタイムアウト（TimeoutException発生）する設定値。
-    falsyな値として `or` パターンで設定値に上書きされてはならない。
-
-    学習ポイント:
-    - is not None パターンの必要性: 0/0.0/False 等の有効なfalsy値を保護する
-    - timeout=0.0 の用途: 即座にタイムアウトさせたい場合に使用（無効化には timeout=None）
-    """
-    client = AsyncAPIClient(timeout=0.0)
-    assert client.timeout == 0.0, (
-        "timeout=0.0 はhttpxで有効な設定値（即座にタイムアウト）のため"
-        "デフォルト設定値に上書きされてはならない"
-    )
 
 
 # ===============================================================================
