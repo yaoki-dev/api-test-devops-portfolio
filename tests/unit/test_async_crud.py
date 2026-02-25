@@ -17,6 +17,7 @@
 
 import json
 from typing import TypedDict
+from unittest.mock import Mock, patch
 
 import pytest
 import respx
@@ -284,8 +285,9 @@ async def test_async_update_post_404_error() -> None:
 # ===============================================================================
 
 
+@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 @respx.mock
-async def test_async_delete_post_500_error() -> None:
+async def test_async_delete_post_500_error(mock_backoff: Mock) -> None:
     """
     500 Internal Server Error 時の挙動テスト
 
