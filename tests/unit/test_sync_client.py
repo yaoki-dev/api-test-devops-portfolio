@@ -199,7 +199,7 @@ def test_sync_health_check_connection_error() -> None:
     - respxのside_effectでhttpxネイティブ例外をシミュレート（patch不要）
     - サービス継続性: 例外時はFalse返却
     """
-    respx.get(f"{BASE_URL}/users", params={"_limit": 1}).mock(
+    route = respx.get(f"{BASE_URL}/users", params={"_limit": 1}).mock(
         side_effect=httpx.ConnectError("Connection refused")
     )
 
@@ -207,6 +207,7 @@ def test_sync_health_check_connection_error() -> None:
         result = client.health_check()
 
     assert result is False
+    assert route.call_count == 1  # retry_count=0なのでリトライなし（1回のみ実行）
 
 
 # =============================================================================

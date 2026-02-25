@@ -257,7 +257,7 @@ async def test_all_requests_fail_returns_empty_list():
 
 
 @patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
-async def test_async_error_handling_and_retry(mock_backoff: Mock):
+async def test_async_error_handling_and_retry(mock_backoff: Mock) -> None:
     """
     非同期エラーハンドリングとリトライ機能のテスト
 
@@ -269,10 +269,14 @@ async def test_async_error_handling_and_retry(mock_backoff: Mock):
 
     Note: AsyncAPIClient.get()はhttpx.Responseを返す。
           4xxエラー時はAPIHTTPErrorを発生させる。
-          respxのside_effectでも同等のシミュレーションが可能だが、
-          ここではリトライ回数の精密検証のためpatchを使用。
-          exponential_backoff_with_jitter をパッチして即時リターンにすることで
-          max(0.1, delay) の最小値制約を回避し、CI実行時間を短縮。
+
+          【respx非移行理由】
+          このテストは「タイムアウトリトライ成功」と「4xx即時失敗」という
+          2シナリオを1つのwithブロック内でシーケンシャルに検証する
+          統合テスト的構造を採用している。
+          @patch("utils.api_client.exponential_backoff_with_jitter")で即時リターン化し
+          CI実行時間を短縮する設計も組み合わさっており、
+          respxへの移行は技術的に可能だが、テストケース分割と構造変更が必要なため現状維持。
     """
     from httpx import HTTPStatusError, TimeoutException
 
@@ -422,10 +426,14 @@ async def test_async_bulk_create_users():
     # 並行実行確認（3回のPOSTリクエスト、ルート固有）
     assert post_route.call_count == 3
 
-    # 作成されたユーザー確認（順序非依存）
-    # asyncio.gather は結果を入力 task 順に返すが、並行実行時に各タスクが
-    # 消費する side_effect レスポンスは実行スケジュールに依存するため
-    # name の対応関係が確定しない → in で存在確認
+    # 作成されたユーザー確認（防御的テスト）
+
+    # respxのside_effectリストは同一ルートへの呼び出し順に
+    # 消費される（決定的）。
+    # asyncio.gatherの結果も入力タスク順に返却されるため順序は決定的だが、
+    # インデックス位置ではなく名称の存在確認に絞ることで、将来の実装変更への耐性を高める。
+    # → set/in検証: 期待される全名称が含まれることを確認
+
     created_names = [result["name"] for result in results]
     assert "User 1" in created_names
     assert "User 2" in created_names
@@ -448,8 +456,13 @@ async def test_async_performance_and_timeout():
 
     Note: タイムアウト時、実装はリトライ後にAPIRetryErrorを発生させる。
           TimeoutExceptionは内部でキャッチされる。
-          respxのside_effectでも同等のシミュレーションが可能だが、
-          aclose()呼び出し検証等の内部動作確認にはpatchが必要。
+
+          【respx非移行理由】
+          httpx.AsyncClientをpatchしてcall_count検証する構造は
+          respxのroute.call_count検証と機能的に等価。
+          ただし実時間遅延検証（elapsed >= retry_delay）はCI環境でflakeyなため除去済みで
+          respxへの移行によるテスト品質向上が限定的なため現状維持。
+          ※aclose()検証はtest_async_context_manager_cleanupが担う（別責務）。
     """
     from httpx import TimeoutException
 
@@ -553,7 +566,7 @@ async def test_async_health_check_connection_error():
     - 例外伝播チェーン: httpx.ConnectError → APIConnectionError → health_checkでFalse返却
     - サービス継続性: 例外時はFalse返却
     """
-    respx.get(f"{BASE_URL}/users", params={"_limit": 1}).mock(
+    route = respx.get(f"{BASE_URL}/users", params={"_limit": 1}).mock(
         side_effect=httpx.ConnectError("Connection refused")
     )
 
@@ -561,6 +574,7 @@ async def test_async_health_check_connection_error():
         result = await client.health_check()
 
     assert result is False
+    assert route.call_count == 1  # retry_count=0なのでリトライなし（1回のみ実行）
 
 
 # ===============================================================================

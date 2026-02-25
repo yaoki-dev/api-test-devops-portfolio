@@ -5,15 +5,19 @@ Note:
     test_sync_client_error_handling.py と対称構造で設計。
     責務: リトライロジック + 例外ハンドリングの検証
 
-テストケース一覧（15件）:
+テストケース一覧（23件）:
     - Exception (3件): hierarchy, http_error_status_preservation, retry_error_message
     - Retry (3件): server_error_then_success, exhausted, 4xx_no_retry
     - Timeout (2件): timeout_error_retry, timeout_then_success
     - Connection (2件): connection_error_retry, connection_then_success
     - Mixed Errors (2件): mixed_then_success, mixed_exhaust_retries
     - HTTP Methods (3件): post_with_retry, put_4xx_no_retry, delete_with_retry
+    - JSON Parsing (3件): invalid_json, json_error_init, json_error_without_response
+    - Request Error Mapping (5件): too_many_redirects, invalid_url, timeout,
+      connect_error, network_error
 """
 
+import json
 from unittest.mock import Mock, patch
 
 import httpx
@@ -24,9 +28,12 @@ from utils.api_client import (
     APIClientError,
     APIConnectionError,
     APIHTTPError,
+    APIJSONDecodeError,
     APIRetryError,
     APITimeoutError,
     AsyncAPIClient,
+    _map_request_error,
+    _safe_parse_json,
 )
 
 # Module-level marker: All tests in this file are unit tests
@@ -41,6 +48,7 @@ def test_async_exception_hierarchy() -> None:
     assert issubclass(APITimeoutError, APIClientError)
     assert issubclass(APIHTTPError, APIClientError)
     assert issubclass(APIRetryError, APIClientError)
+    assert issubclass(APIJSONDecodeError, APIClientError)
     assert issubclass(APIClientError, Exception)
 
 
@@ -67,8 +75,8 @@ def test_async_retry_error_message() -> None:
 # =============================================================================
 
 
-@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 @respx.mock
+@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_retry_on_server_error_then_success(mock_backoff: Mock) -> None:
     """サーバーエラー後に成功するケース（5xxはリトライ対象）"""
     route = respx.get(f"{BASE_URL}/posts/1")
@@ -87,8 +95,8 @@ async def test_async_retry_on_server_error_then_success(mock_backoff: Mock) -> N
     assert response.status_code == 200
 
 
-@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 @respx.mock
+@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_retry_exhausted(mock_backoff: Mock) -> None:
     """リトライ上限でAPIRetryErrorが発生することを確認（5xxのみリトライ）"""
     route = respx.get(f"{BASE_URL}/posts/1")
@@ -107,8 +115,8 @@ async def test_async_retry_exhausted(mock_backoff: Mock) -> None:
     assert "failed after" in str(exc_info.value)
 
 
-@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 @respx.mock
+@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_4xx_error_no_retry(mock_backoff: Mock) -> None:
     """4xxクライアントエラーはリトライせず即座にAPIHTTPErrorを発生"""
     route = respx.get(f"{BASE_URL}/posts/999")
@@ -130,8 +138,8 @@ async def test_async_4xx_error_no_retry(mock_backoff: Mock) -> None:
 # =============================================================================
 
 
-@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 @respx.mock
+@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_timeout_error_retry(mock_backoff: Mock) -> None:
     """タイムアウト時にAPIRetryErrorが発生することを確認"""
     route = respx.get(f"{BASE_URL}/posts/1")
@@ -149,8 +157,8 @@ async def test_async_timeout_error_retry(mock_backoff: Mock) -> None:
     assert isinstance(exc_info.value.__cause__, APITimeoutError)
 
 
-@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 @respx.mock
+@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_timeout_then_success(mock_backoff: Mock) -> None:
     """タイムアウト後に成功するケース"""
     route = respx.get(f"{BASE_URL}/posts/1")
@@ -171,8 +179,8 @@ async def test_async_timeout_then_success(mock_backoff: Mock) -> None:
 # =============================================================================
 
 
-@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 @respx.mock
+@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_connection_error_retry(mock_backoff: Mock) -> None:
     """接続エラー時にAPIRetryErrorが発生することを確認"""
     route = respx.get(f"{BASE_URL}/posts/1")
@@ -189,8 +197,8 @@ async def test_async_connection_error_retry(mock_backoff: Mock) -> None:
     assert isinstance(exc_info.value.__cause__, APIConnectionError)
 
 
-@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 @respx.mock
+@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_connection_then_success(mock_backoff: Mock) -> None:
     """接続エラー後に成功するケース"""
     route = respx.get(f"{BASE_URL}/posts/1")
@@ -212,8 +220,8 @@ async def test_async_connection_then_success(mock_backoff: Mock) -> None:
 # =============================================================================
 
 
-@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 @respx.mock
+@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_mixed_errors_then_success(mock_backoff: Mock) -> None:
     """タイムアウト→サーバーエラー→成功のシナリオ"""
     route = respx.get(f"{BASE_URL}/posts/1")
@@ -230,8 +238,8 @@ async def test_async_mixed_errors_then_success(mock_backoff: Mock) -> None:
     assert response.status_code == 200
 
 
-@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 @respx.mock
+@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_mixed_errors_exhaust_retries(mock_backoff: Mock) -> None:
     """複数のエラータイプでリトライ上限に達するケース"""
     route = respx.get(f"{BASE_URL}/posts/1")
@@ -253,8 +261,8 @@ async def test_async_mixed_errors_exhaust_retries(mock_backoff: Mock) -> None:
 # =============================================================================
 
 
-@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 @respx.mock
+@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_post_with_retry(mock_backoff: Mock) -> None:
     """POSTリクエストのリトライ動作確認（5xxはリトライ対象）"""
     route = respx.post(f"{BASE_URL}/posts")
@@ -273,8 +281,8 @@ async def test_async_post_with_retry(mock_backoff: Mock) -> None:
     assert response.status_code == 201
 
 
-@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 @respx.mock
+@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_put_4xx_no_retry(mock_backoff: Mock) -> None:
     """PUTリクエストで4xxエラーはリトライせず即座にAPIHTTPErrorを発生"""
     route = respx.put(f"{BASE_URL}/posts/1")
@@ -291,8 +299,8 @@ async def test_async_put_4xx_no_retry(mock_backoff: Mock) -> None:
     assert exc_info.value.status_code == 400
 
 
-@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 @respx.mock
+@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_delete_with_retry(mock_backoff: Mock) -> None:
     """DELETEリクエストのリトライ動作確認"""
     route = respx.delete(f"{BASE_URL}/posts/1")
@@ -306,6 +314,92 @@ async def test_async_delete_with_retry(mock_backoff: Mock) -> None:
 
     assert route.call_count == 2
     assert response.status_code == 200
+
+
+# =============================================================================
+# JSON Parsing Tests（条件2: エラーパス）
+# =============================================================================
+
+
+def test_async_safe_parse_json_invalid_json() -> None:
+    """不正なJSONでAPIJSONDecodeErrorが発生（エラーパス）"""
+    mock_response = Mock(spec=httpx.Response)
+    mock_response.json.side_effect = json.JSONDecodeError("Invalid JSON", "doc", 0)
+
+    with pytest.raises(APIJSONDecodeError) as exc_info:
+        _safe_parse_json(mock_response)
+
+    assert "Failed to parse JSON" in str(exc_info.value)
+    assert exc_info.value.response == mock_response
+
+
+def test_async_api_json_decode_error_init() -> None:
+    """APIJSONDecodeErrorのコンストラクタテスト"""
+    mock_response = Mock(spec=httpx.Response)
+    error = APIJSONDecodeError("Parse error", response=mock_response)
+
+    assert str(error) == "Parse error"
+    assert error.response == mock_response
+
+
+def test_async_api_json_decode_error_without_response() -> None:
+    """APIJSONDecodeError: responseなしでも動作"""
+    error = APIJSONDecodeError("Parse error")
+
+    assert str(error) == "Parse error"
+    assert error.response is None
+
+
+# =============================================================================
+# Request Error Mapping Tests（条件2: エラーパス）
+# =============================================================================
+
+
+def test_async_map_request_error_too_many_redirects() -> None:
+    """TooManyRedirectsで非リトライエラー発生"""
+    error = httpx.TooManyRedirects("Max redirects exceeded")
+
+    with pytest.raises(APIClientError) as exc_info:
+        _map_request_error(error)
+
+    assert "Non-retryable" in str(exc_info.value)
+
+
+def test_async_map_request_error_invalid_url() -> None:
+    """InvalidURLで非リトライエラー発生"""
+    error = httpx.InvalidURL("Invalid URL format")
+
+    with pytest.raises(APIClientError) as exc_info:
+        _map_request_error(error)
+
+    assert "Non-retryable" in str(exc_info.value)
+
+
+def test_async_map_request_error_timeout() -> None:
+    """TimeoutExceptionでAPITimeoutError返却"""
+    error = httpx.TimeoutException("Request timed out")
+    result = _map_request_error(error)
+
+    assert isinstance(result, APITimeoutError)
+    assert "timeout" in str(result).lower()
+
+
+def test_async_map_request_error_connect_error() -> None:
+    """ConnectErrorでAPIConnectionError返却"""
+    error = httpx.ConnectError("Connection refused")
+    result = _map_request_error(error)
+
+    assert isinstance(result, APIConnectionError)
+    assert "connection" in str(result).lower()
+
+
+def test_async_map_request_error_network_error() -> None:
+    """NetworkError（else分岐）でAPIConnectionError返却"""
+    error = httpx.NetworkError("Network unreachable")
+    result = _map_request_error(error)
+
+    assert isinstance(result, APIConnectionError)
+    assert "network" in str(result).lower()
 
 
 # =============================================================================
