@@ -34,11 +34,13 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
 - Within a single agent turn, parallel *tool calls* (Read, Grep, Bash, Task etc.) remain encouraged (see "Batch independent operations" above); this is distinct from delegating multiple unrelated tasks to a single subagent.
 - Session pattern: Load → Work → Checkpoint (30 min) → Save
 - Use `/sc:load` and `/sc:save` if superclaude available
-- **Parallel Dispatch Rule**: When 2+ independent TodoList tasks exist, dispatch each as a separate Task tool invocation (parallel recommended)
-  - Independence criteria (all must be satisfied): 1. No output dependency between tasks (no A→B ordering constraint) 2. No simultaneous edits to the same file 3. No conflicting writes to shared resources (conftest.py, pyproject.toml, config files)
+- **Parallel Dispatch Rule** (extension of "One task per subagent invocation" above — each agent still handles exactly one task): When 2+ independent TodoList tasks exist, dispatch each as a separate Task tool invocation (parallel recommended)
+  - Independence criteria (all must be satisfied): 1. No output dependency between tasks (no A→B ordering constraint) 2. No simultaneous edits to the same file 3. No conflicting writes to shared resources (examples: conftest.py, pyproject.toml, uv.lock, config files, .env files — when in doubt, treat as shared)
   - Worktree isolation: instruct each agent to invoke `/using-git-worktrees` skill in their prompt
   - Exception: if one task is 3x+ larger than the other, sequential execution is acceptable
-  - On failure: apply existing rule "stop and report to the user"
+  - On failure: if **any** agent reports failure or partial completion, the parent agent must (1) stop remaining parallel invocations, (2) collect and log status of all agents (success/failure/unknown), and (3) report complete status summary to the user before further action
+  - Silent continuation after ambiguous/empty results is prohibited
+  - On completion: after all parallel agents complete, the parent agent must explicitly verify that each artifact exists in its expected final state before marking the parent task complete
 
 **Good:** Plan → TodoWrite → Execute → Verify | **Bad:** Jump to implementation
 
