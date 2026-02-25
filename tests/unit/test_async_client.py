@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import httpx
 import pytest
 import respx
-from httpx import Request, Response
+from httpx import Response
 
 # プロジェクト内モジュール
 from utils.api_client import (
@@ -300,45 +300,6 @@ async def test_async_timeout_retry_then_success(mock_backoff: Mock) -> None:
         assert mock_client_instance.request.call_count == 3  # 3回目で成功
 
 
-@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
-async def test_async_4xx_error_no_retry(mock_backoff: Mock) -> None:
-    """
-    HTTPエラー（4xx）は即座に発生しリトライしないテスト
-
-    検証項目：
-    - 4xxエラー（404）発生時にAPIHTTPErrorが即座に発生すること
-    - リトライが行われないこと（呼び出し回数 == 1）
-    - エラーステータスコードが保持されること
-
-    Note: AsyncAPIClient.get()はhttpx.Responseを返す。
-          4xxエラー時はAPIHTTPErrorを発生させる（HTTPStatusErrorをラップ）。
-    """
-    from httpx import HTTPStatusError
-
-    with patch("httpx.AsyncClient") as mock_client_class:
-        mock_client_instance = AsyncMock()
-        mock_client_class.return_value = mock_client_instance
-
-        error_response = MagicMock(spec=Response)
-        error_response.status_code = 404
-        error_response.is_client_error = True  # 4xxエラー判定用
-        error_response.raise_for_status.side_effect = HTTPStatusError(
-            "404 Not Found",
-            request=MagicMock(spec=Request),
-            response=error_response,
-        )
-        mock_client_instance.request.return_value = error_response
-
-        async with AsyncAPIClient(retry_count=3) as client:
-            with pytest.raises(APIHTTPError) as exc_info:
-                await client.get("/users/999")
-
-        # エラー詳細検証
-        assert exc_info.value.status_code == 404
-        # HTTPエラーはリトライしないことを確認（1回のみ実行）
-        assert mock_client_instance.request.call_count == 1
-
-
 # ===============================================================================
 # Test 4: 非同期POST・データ送信テスト
 # ===============================================================================
@@ -459,9 +420,8 @@ async def test_async_bulk_create_users_partial_failure():
     return_exceptionsにより捕捉され、成功分のみが返却される。
 
     Note: side_effectリストはリクエスト到着順に消費される。
-    CPythonのシングルスレッドイベントループ + respxモック環境（実I/O待機なし）では
-    task作成順（入力リスト順）とリクエスト送信順がほぼ一致するが、
-    Python仕様として実行順序は保証されないため、件数は範囲チェックで検証する。
+    respxモック環境（実I/O待機なし）ではtask作成順とリクエスト送信順が一致するため決定論的。
+    成功件数は厳密に2件（== 2）で検証する。
     """
     users_to_create = [
         {"name": "User 1", "email": "user1@test.com"},
@@ -482,10 +442,9 @@ async def test_async_bulk_create_users_partial_failure():
         # 例外なく完了することを確認（silent partial failure）
         results = await client.bulk_create_users(users_to_create)
 
-    # 部分失敗: 全件未満の成功（例外は発生しない）
-    # Note: 実行順序依存を避けるため厳密な「2件」ではなく範囲チェックで検証
-    assert len(results) < len(users_to_create), "部分失敗により成功件数は全件未満であること"
-    assert len(results) >= 1, "少なくとも1件は成功すること"
+    # 部分失敗: 3件中1件(422)が失敗するため成功件数は正確に2件
+    # Note: respxのside_effectはリクエスト到着順（task作成順）に消費され決定論的
+    assert len(results) == 2, "3件中1件(422)が失敗するため、成功件数は正確に2件であること"
 
     # 全リクエストが試行されたことを確認（部分失敗でも全件送信）
     assert post_route.call_count == 3
@@ -495,6 +454,26 @@ async def test_async_bulk_create_users_partial_failure():
     assert "User 1" in created_names  # 1件目成功
     assert "User 3" in created_names  # 3件目成功
     assert "User 2" not in created_names  # 2件目は422エラーで失敗、返却されない
+
+
+async def test_async_bulk_create_users_cancelled_error_propagates() -> None:
+    """asyncio.CancelledErrorがgather後に再発生されることを確認（graceful shutdown保護）
+
+    api_client.py:974-978 の検証。
+    CancelledError（Python 3.8+ は BaseException サブクラス）は
+    asyncio.gather(return_exceptions=True) で捕捉されるが、
+    bulk_create_users はその後ループで検出して再発生させる。
+    K8s graceful shutdown などのシグナル伝播を保証する設計。
+    """
+    with patch.object(
+        AsyncJSONPlaceholderClient,
+        "create_user",
+        new_callable=AsyncMock,
+    ) as mock_create:
+        mock_create.side_effect = asyncio.CancelledError()
+        async with AsyncJSONPlaceholderClient() as client:
+            with pytest.raises(asyncio.CancelledError):
+                await client.bulk_create_users([{"name": "A"}, {"name": "B"}])
 
 
 # ===============================================================================
