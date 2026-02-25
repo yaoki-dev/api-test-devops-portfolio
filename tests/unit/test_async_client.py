@@ -388,6 +388,50 @@ async def test_async_post_create_user():
 
 
 @respx.mock
+async def test_async_bulk_create_users_partial_failure():
+    """
+    bulk_create_users の部分失敗シナリオテスト
+
+    検証項目：
+    - asyncio.gather(return_exceptions=True) による部分失敗の許容動作
+    - 成功分のみ返却される（失敗分はサイレントに除外される）挙動の確認
+    - 全件に対してPOSTが試行されること（失敗でも全リクエスト送信）
+    - 部分失敗時でもメソッドが例外を送出しないこと
+
+    設計意図: bulk_create_users は個別失敗を許容する設計であり、
+    呼び出し元は返却件数で部分失敗を検知できる。
+    """
+    users_to_create = [
+        {"name": "User 1", "email": "user1@test.com"},
+        {"name": "User 2", "email": "user2@test.com"},  # この件が失敗する
+        {"name": "User 3", "email": "user3@test.com"},
+    ]
+
+    post_route = respx.post(f"{BASE_URL}/users")
+    post_route.side_effect = [
+        Response(201, json={"id": 101, "name": "User 1", "email": "user1@test.com"}),
+        Response(500, json={"error": "Internal Server Error"}),  # 2番目が失敗
+        Response(201, json={"id": 103, "name": "User 3", "email": "user3@test.com"}),
+    ]
+
+    # retry_count=0: リトライなし設定で side_effect の消費を確定的にする
+    # デフォルト retry_count=3 の場合、500レスポンスでリトライが発生し
+    # side_effect リストが想定外に消費される可能性があるため明示的に指定
+    async with AsyncJSONPlaceholderClient(retry_count=0) as client:
+        results = await client.bulk_create_users(users_to_create)
+
+    # 成功した2件のみ返却されること
+    assert len(results) == 2
+    # 全3件に対してPOSTが試行されること
+    assert post_route.call_count == 3
+    # 成功した名前のみが含まれること
+    created_names = [r["name"] for r in results]
+    assert "User 1" in created_names
+    assert "User 3" in created_names
+    assert "User 2" not in created_names
+
+
+@respx.mock
 async def test_async_bulk_create_users():
     """
     複数ユーザーの並行作成テスト
