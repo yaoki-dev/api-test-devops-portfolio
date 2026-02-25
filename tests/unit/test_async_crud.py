@@ -155,7 +155,7 @@ async def test_async_delete_post() -> None:
     async with AsyncJSONPlaceholderClient() as client:
         # delete_post() は None を返す: 型宣言はランタイム動作を保証しないため
         # 実際の戻り値を明示的に検証する（204 No Content → None 変換の保証）
-        result = await client.delete_post(1)
+        result = await client.delete_post(1)  # type: ignore[func-returns-value]
 
     assert result is None
 
@@ -221,7 +221,7 @@ async def test_async_crud_integration(sample_post_data: PostData) -> None:
         assert updated["title"] == "Updated"
 
         # Delete: 投稿削除（型ヒントだけでなく実際の戻り値も検証）
-        delete_result = await client.delete_post(post_id)
+        delete_result = await client.delete_post(post_id)  # type: ignore[func-returns-value]
         assert delete_result is None
 
 

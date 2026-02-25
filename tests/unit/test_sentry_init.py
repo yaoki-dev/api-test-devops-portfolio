@@ -12,11 +12,12 @@ utils/sentry_init.py の単体テスト。
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
 from pydantic import SecretStr
+from sentry_sdk.types import Event
 
 from utils.sentry_init import (
     MAX_SCRUB_DEPTH,
@@ -37,7 +38,7 @@ class TestScrubSensitiveData:
 
     def test_scrub_password_field(self) -> None:
         """パスワードフィールドがREDACTEDされる"""
-        data = {"password": "secret123", "username": "user"}
+        data = {"password": "dummy", "username": "user"}
         result = _scrub_sensitive_data(data)
         assert result["password"] == "[REDACTED]"  # noqa: S105
         assert result["username"] == "user"
@@ -96,9 +97,9 @@ class TestScrubSensitiveData:
 
     def test_scrub_preserves_original(self) -> None:
         """元データは変更されない（イミュータビリティ）"""
-        original = {"password": "secret123"}
+        original = {"password": "dummy"}
         _scrub_sensitive_data(original)
-        assert original["password"] == "secret123"  # noqa: S105
+        assert original["password"] == "dummy"  # noqa: S105
 
     def test_scrub_max_depth_exceeded(self) -> None:
         """再帰制限を超えると[MAX_DEPTH_EXCEEDED]を返す（循環参照対策）"""
@@ -182,41 +183,46 @@ class TestSensitiveKeysCompleteness:
 class TestBeforeSend:
     """Sentry送信前フックのテスト"""
 
+    def _call_before_send(self, event: Event) -> dict[str, Any]:
+        """_before_send を呼び出し、非Noneを保証して dict として返すヘルパー。
+
+        全テストメソッドで共通の「None検証 + キャスト」パターンを集約。
+        Noneチェック漏れによる偽陽性を防ぐ。
+        """
+        result = _before_send(event, {})
+        assert result is not None, "_before_send が None を返しました（イベントが破棄されました）"
+        return cast(dict[str, Any], result)
+
     def test_scrub_request_headers(self) -> None:
         """リクエストヘッダーがスクラブされる"""
-        event: dict[str, Any] = {"request": {"headers": {"Cookie": "session=abc123"}}}
-        result = _before_send(event, {})
-        assert result is not None
-        assert result["request"]["headers"]["Cookie"] == "[REDACTED]"
+        event = cast(Event, {"request": {"headers": {"Cookie": "session=abc123"}}})
+        result_dict = self._call_before_send(event)
+        assert result_dict["request"]["headers"]["Cookie"] == "[REDACTED]"
 
     def test_scrub_request_data(self) -> None:
         """リクエストボディがスクラブされる"""
-        event: dict[str, Any] = {"request": {"data": {"password": "secret", "username": "user"}}}
-        result = _before_send(event, {})
-        assert result is not None
-        assert result["request"]["data"]["password"] == "[REDACTED]"  # noqa: S105
-        assert result["request"]["data"]["username"] == "user"
+        event = cast(Event, {"request": {"data": {"password": "secret", "username": "user"}}})
+        result_dict = self._call_before_send(event)
+        assert result_dict["request"]["data"]["password"] == "[REDACTED]"  # noqa: S105
+        assert result_dict["request"]["data"]["username"] == "user"
 
     def test_scrub_extra_data(self) -> None:
         """extraデータがスクラブされる"""
-        event: dict[str, Any] = {"extra": {"token": "secret_token"}}
-        result = _before_send(event, {})
-        assert result is not None
-        assert result["extra"]["token"] == "[REDACTED]"  # noqa: S105
+        event = cast(Event, {"extra": {"token": "secret_token"}})
+        result_dict = self._call_before_send(event)
+        assert result_dict["extra"]["token"] == "[REDACTED]"  # noqa: S105
 
     def test_scrub_tags(self) -> None:
         """タグがスクラブされる"""
-        event: dict[str, Any] = {"tags": {"api_key": "key123"}}
-        result = _before_send(event, {})
-        assert result is not None
-        assert result["tags"]["api_key"] == "[REDACTED]"
+        event = cast(Event, {"tags": {"api_key": "key123"}})
+        result_dict = self._call_before_send(event)
+        assert result_dict["tags"]["api_key"] == "[REDACTED]"
 
     def test_returns_event(self) -> None:
         """イベントオブジェクトを返す（Noneではない）"""
-        event: dict[str, Any] = {"message": "test"}
-        result = _before_send(event, {})
-        assert result is not None
-        assert result["message"] == "test"
+        event = cast(Event, {"message": "test"})
+        result_dict = self._call_before_send(event)
+        assert result_dict["message"] == "test"
 
 
 class TestInitSentry:

@@ -207,13 +207,13 @@ async def test_partial_failure_graceful_degradation():
     """
     # 宣言的なエンドポイントマッピング（成功: 1,3,5 / 失敗: 2,4）
     respx.get(f"{BASE_URL}/users/1").respond(json={"id": 1, "name": "User 1"})
-    respx.get(f"{BASE_URL}/users/2").respond(status_code=500)
+    route_fail_2 = respx.get(f"{BASE_URL}/users/2").respond(status_code=500)
     respx.get(f"{BASE_URL}/users/3").respond(json={"id": 3, "name": "User 3"})
-    respx.get(f"{BASE_URL}/users/4").respond(status_code=500)
+    route_fail_4 = respx.get(f"{BASE_URL}/users/4").respond(status_code=500)
     respx.get(f"{BASE_URL}/users/5").respond(json={"id": 5, "name": "User 5"})
 
-    # テスト実行
-    async with AsyncJSONPlaceholderClient() as client:
+    # テスト実行（retry_count=0: リトライ無効化でCI高速化）
+    async with AsyncJSONPlaceholderClient(retry_count=0) as client:
         results = await client.get_multiple_users([1, 2, 3, 4, 5], max_concurrent=2)
 
     # graceful degradation検証（成功分のみ返却パターン）
@@ -223,6 +223,16 @@ async def test_partial_failure_graceful_degradation():
     # Expected IDs [1,3,5] in any order, no duplicates
     result_ids = [r["id"] for r in results]
     assert sorted(result_ids) == [1, 3, 5], f"Expected IDs [1,3,5], got {result_ids}"
+
+    # 失敗ルートへのリクエストが実際に発行されたことを確認（偽陽性防止）
+    assert route_fail_2.call_count == 1, (
+        "users/2 へのリクエストが発行されなかった可能性があります。"
+        "期待値: 1回（retry_count=0 のためリトライなし）"
+    )
+    assert route_fail_4.call_count == 1, (
+        "users/4 へのリクエストが発行されなかった可能性があります。"
+        "期待値: 1回（retry_count=0 のためリトライなし）"
+    )
 
 
 @respx.mock
@@ -239,16 +249,22 @@ async def test_all_requests_fail_returns_empty_list():
     - エッジケーステスト: 最悪シナリオでのシステム動作保証
     - Defense in Depth: 稀なケースこそテストで保護
     """
-    # DRY: ループで一括設定（全件500エラー）
+    # DRY: ループで一括設定（全件500エラー）+ ルートオブジェクトをキャプチャ
+    routes = []
     for user_id in [1, 2, 3]:
-        respx.get(f"{BASE_URL}/users/{user_id}").respond(status_code=500)
+        routes.append(respx.get(f"{BASE_URL}/users/{user_id}").respond(status_code=500))
 
-    async with AsyncJSONPlaceholderClient() as client:
+    # retry_count=0: リトライ無効化でCI高速化（デフォルト3だと最大4倍のリクエスト発行）
+    async with AsyncJSONPlaceholderClient(retry_count=0) as client:
         results = await client.get_multiple_users([1, 2, 3], max_concurrent=2)
 
     # 全件失敗で空リスト返却
     assert results == [], f"Expected empty list, got {results}"
     assert isinstance(results, list), f"Expected list type, got {type(results)}"
+
+    # 各ルートが1回ずつ呼ばれたことを確認（偽陽性防止）
+    counts = [r.call_count for r in routes]
+    assert all(c == 1 for c in counts), f"各ルートは1回のみ期待（retry_count=0）、実際: {counts}"
 
 
 # ===============================================================================
@@ -541,17 +557,21 @@ async def test_async_bulk_create_users_partial_failure_client_error():
 # ===============================================================================
 
 
-async def test_async_performance_and_timeout():
+@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
+async def test_async_performance_and_timeout(mock_backoff: Mock) -> None:
     """
     非同期処理のパフォーマンス・タイムアウト・リソース管理テスト
 
     検証項目：
     - リクエストタイムアウトの動作
     - リトライ後のAPIRetryError発生
-    - リトライ間隔の検証
+    - リトライ回数の検証（初回 + リトライ = call_count で確認）
 
     Note: タイムアウト時、実装はリトライ後にAPIRetryErrorを発生させる。
           TimeoutExceptionは内部でキャッチされる。
+
+          exponential_backoff_with_jitter は @patch でモック済み（return_value=0.0）。
+          実際の sleep は発生しない。CI高速化のため実時間検証は除去済み。
 
           【respx非移行理由】
           httpx.AsyncClientをpatchしてcall_count検証する構造は
