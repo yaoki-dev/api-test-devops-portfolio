@@ -161,19 +161,13 @@ async def test_async_multiple_users_with_semaphore():
     Semaphoreを使用した複数ユーザー並行取得のテスト
 
     検証項目：
-    - get_multiple_users()メソッドの動作
-    - Semaphoreによる同時実行数制限
-    - 一部失敗時の graceful degradation
-    - Rate Limit対策の実装確認
+    - get_multiple_users()が全件（5件）を正常返却すること
+    - 各ユーザーエンドポイントが1回ずつ呼ばれること（重複リクエストなし）
+    - max_concurrent パラメータを受け付けること
 
     学習ポイント:
     - asyncio.Semaphore: 同時実行数を制限するロック機構
     - Rate Limit対策: GitHub API等の外部API制限への対応
-
-    Note: respx環境ではSemaphoreの同時実行制限（max_concurrent=2）を
-    直接観測することはできません。実I/Oが発生しないため同時実行数の
-    カウントが意味を持たないからです。このテストでは呼び出し回数（5回）と
-    結果の正確性のみを検証します。
     """
     # 各ユーザーエンドポイントをrespxでモック化（ルート固有のcall_countで検証）
     routes = {}
