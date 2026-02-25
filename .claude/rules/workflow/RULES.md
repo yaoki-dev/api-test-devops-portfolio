@@ -45,6 +45,26 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
   - Silent continuation after ambiguous/empty results is prohibited
   - On completion: after all parallel agents complete, the parent agent must explicitly verify that each artifact exists in its expected final state before marking the parent task complete
 
+**Task Classification**: Before dispatching, classify the task type:
+- **Implementation** (実装): code writing, feature development, bug fixes, test authoring
+- **Investigation** (調査): research, analysis, debugging, codebase exploration
+- **Review** (レビュー): code review, PR review, security audit, documentation review
+- **Design** (設計): architecture design, API spec, system planning
+
+**Agent Selection**: Map task type to agents (reference: `~/.claude/docs/AGENTS_CATALOG.md`):
+
+| Task Type | Recommended Agents |
+|-----------|-------------------|
+| Implementation: Python/Test | `python-expert`, `debugger`, `api-testing` |
+| Implementation: Refactoring | `refactoring-expert`, `debugger` |
+| Implementation: Docker/Infra | `docker-devops`, `devops-engineer` |
+| Implementation: CI/CD | `ci/cd-pipeline`, `ci/cd-github-engineer`, `devops-engineer` |
+| Investigation | `researcher`, `Explore` (built-in Task subagent) |
+| Review | `code-review:*`, `pr-review-toolkit:*` (parallel) |
+| Design | `system-architect`, `backend-architect`, `devops-architect` |
+
+**Dispatch Automation**: When 2+ independent tasks exist post-classification, invoke `superpowers:dispatching-parallel-agents` skill via Skill tool. After all agents complete, explicitly invoke `/reflexion:reflect` skill (CLAUDE.md Rule 12).
+
 **Good:** Plan → TodoWrite → Execute → Verify | **Bad:** Jump to implementation
 
 **Reference:** `api-specification-check.md`, `execution-efficiency.md`
