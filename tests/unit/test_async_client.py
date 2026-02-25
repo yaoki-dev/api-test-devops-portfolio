@@ -484,6 +484,57 @@ async def test_async_bulk_create_users():
     assert "User 3" in created_names
 
 
+@respx.mock
+async def test_async_bulk_create_users_partial_failure():
+    """
+    複数ユーザーの並行作成における部分失敗テスト（silent failure設計の検証）
+
+    検証項目：
+    - 一部リクエストが4xxエラーで失敗してもbulk_create_usersは例外を発生させない
+    - 成功したユーザーのみが返却される（失敗分は除外）
+    - 全リクエストが試行される（部分失敗でも中断しない）
+
+    設計根拠：
+    bulk_create_usersはasyncio.gather(return_exceptions=True)で部分失敗を吸収する。
+    4xxエラー（422）は即失敗（リトライなし）のため、APIHTTPErrorが
+    return_exceptionsにより捕捉され、成功分のみが返却される。
+
+    Note: side_effectリストはリクエスト到着順に消費される。
+    asyncio.gatherのtask作成順（入力リスト順）とリクエスト送信順が一致するため、
+    User 2が422を受け取ることが保証される（決定的）。
+    """
+    users_to_create = [
+        {"name": "User 1", "email": "user1@test.com"},
+        {"name": "User 2", "email": "user2@test.com"},  # この1件を422エラーで失敗させる
+        {"name": "User 3", "email": "user3@test.com"},
+    ]
+
+    # 2件目のリクエストを422（Unprocessable Entity）で失敗させる
+    # 4xxはリトライなし即失敗 → APIHTTPError を return_exceptions が捕捉
+    post_route = respx.post(f"{BASE_URL}/users")
+    post_route.side_effect = [
+        Response(201, json={"id": 101, "name": "User 1", "email": "user1@test.com"}),
+        Response(422, json={"error": "Unprocessable Entity"}),  # 2件目: 422で即失敗
+        Response(201, json={"id": 103, "name": "User 3", "email": "user3@test.com"}),
+    ]
+
+    async with AsyncJSONPlaceholderClient() as client:
+        # 例外なく完了することを確認（silent partial failure）
+        results = await client.bulk_create_users(users_to_create)
+
+    # 部分失敗: 3件中2件成功（例外は発生しない）
+    assert len(results) == 2
+
+    # 全リクエストが試行されたことを確認（部分失敗でも全件送信）
+    assert post_route.call_count == 3
+
+    # 成功した2件のみ返却確認
+    created_names = [result["name"] for result in results]
+    assert "User 1" in created_names  # 1件目成功
+    assert "User 3" in created_names  # 3件目成功
+    assert "User 2" not in created_names  # 2件目は422エラーで失敗、返却されない
+
+
 # ===============================================================================
 # Test 5: パフォーマンス・タイムアウト・リソース管理テスト
 # ===============================================================================
