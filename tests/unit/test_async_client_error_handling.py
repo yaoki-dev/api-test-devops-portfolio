@@ -75,8 +75,8 @@ def test_async_retry_error_message() -> None:
 # =============================================================================
 
 
-@respx.mock
 @patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
+@respx.mock
 async def test_async_retry_on_server_error_then_success(mock_backoff: Mock) -> None:
     """サーバーエラー後に成功するケース（5xxはリトライ対象）"""
     route = respx.get(f"{BASE_URL}/posts/1")
@@ -95,8 +95,8 @@ async def test_async_retry_on_server_error_then_success(mock_backoff: Mock) -> N
     assert response.status_code == 200
 
 
-@respx.mock
 @patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
+@respx.mock
 async def test_async_retry_exhausted(mock_backoff: Mock) -> None:
     """リトライ上限でAPIRetryErrorが発生することを確認（5xxのみリトライ）"""
     route = respx.get(f"{BASE_URL}/posts/1")
@@ -115,8 +115,8 @@ async def test_async_retry_exhausted(mock_backoff: Mock) -> None:
     assert "failed after" in str(exc_info.value)
 
 
-@respx.mock
 @patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
+@respx.mock
 async def test_async_4xx_error_no_retry(mock_backoff: Mock) -> None:
     """4xxクライアントエラーはリトライせず即座にAPIHTTPErrorを発生"""
     route = respx.get(f"{BASE_URL}/posts/999")
@@ -138,8 +138,8 @@ async def test_async_4xx_error_no_retry(mock_backoff: Mock) -> None:
 # =============================================================================
 
 
-@respx.mock
 @patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
+@respx.mock
 async def test_async_timeout_error_retry(mock_backoff: Mock) -> None:
     """タイムアウト時にAPIRetryErrorが発生することを確認"""
     route = respx.get(f"{BASE_URL}/posts/1")
@@ -157,8 +157,8 @@ async def test_async_timeout_error_retry(mock_backoff: Mock) -> None:
     assert isinstance(exc_info.value.__cause__, APITimeoutError)
 
 
-@respx.mock
 @patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
+@respx.mock
 async def test_async_timeout_then_success(mock_backoff: Mock) -> None:
     """タイムアウト後に成功するケース"""
     route = respx.get(f"{BASE_URL}/posts/1")
@@ -179,8 +179,8 @@ async def test_async_timeout_then_success(mock_backoff: Mock) -> None:
 # =============================================================================
 
 
-@respx.mock
 @patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
+@respx.mock
 async def test_async_connection_error_retry(mock_backoff: Mock) -> None:
     """接続エラー時にAPIRetryErrorが発生することを確認"""
     route = respx.get(f"{BASE_URL}/posts/1")
@@ -197,8 +197,8 @@ async def test_async_connection_error_retry(mock_backoff: Mock) -> None:
     assert isinstance(exc_info.value.__cause__, APIConnectionError)
 
 
-@respx.mock
 @patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
+@respx.mock
 async def test_async_connection_then_success(mock_backoff: Mock) -> None:
     """接続エラー後に成功するケース"""
     route = respx.get(f"{BASE_URL}/posts/1")
@@ -220,8 +220,8 @@ async def test_async_connection_then_success(mock_backoff: Mock) -> None:
 # =============================================================================
 
 
-@respx.mock
 @patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
+@respx.mock
 async def test_async_mixed_errors_then_success(mock_backoff: Mock) -> None:
     """タイムアウト→サーバーエラー→成功のシナリオ"""
     route = respx.get(f"{BASE_URL}/posts/1")
@@ -238,8 +238,8 @@ async def test_async_mixed_errors_then_success(mock_backoff: Mock) -> None:
     assert response.status_code == 200
 
 
-@respx.mock
 @patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
+@respx.mock
 async def test_async_mixed_errors_exhaust_retries(mock_backoff: Mock) -> None:
     """複数のエラータイプでリトライ上限に達するケース"""
     route = respx.get(f"{BASE_URL}/posts/1")
@@ -261,8 +261,8 @@ async def test_async_mixed_errors_exhaust_retries(mock_backoff: Mock) -> None:
 # =============================================================================
 
 
-@respx.mock
 @patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
+@respx.mock
 async def test_async_post_with_retry(mock_backoff: Mock) -> None:
     """POSTリクエストのリトライ動作確認（5xxはリトライ対象）"""
     route = respx.post(f"{BASE_URL}/posts")
@@ -281,8 +281,8 @@ async def test_async_post_with_retry(mock_backoff: Mock) -> None:
     assert response.status_code == 201
 
 
-@respx.mock
 @patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
+@respx.mock
 async def test_async_put_4xx_no_retry(mock_backoff: Mock) -> None:
     """PUTリクエストで4xxエラーはリトライせず即座にAPIHTTPErrorを発生"""
     route = respx.put(f"{BASE_URL}/posts/1")
@@ -299,8 +299,8 @@ async def test_async_put_4xx_no_retry(mock_backoff: Mock) -> None:
     assert exc_info.value.status_code == 400
 
 
-@respx.mock
 @patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
+@respx.mock
 async def test_async_delete_with_retry(mock_backoff: Mock) -> None:
     """DELETEリクエストのリトライ動作確認"""
     route = respx.delete(f"{BASE_URL}/posts/1")

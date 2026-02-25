@@ -388,9 +388,9 @@ async def test_async_post_create_user():
 
 
 @respx.mock
-async def test_async_bulk_create_users_partial_failure():
+async def test_async_bulk_create_users_partial_failure_server_error():
     """
-    bulk_create_users の部分失敗シナリオテスト
+    bulk_create_users の部分失敗シナリオテスト（サーバーエラー: 500）
 
     検証項目：
     - asyncio.gather(return_exceptions=True) による部分失敗の許容動作
@@ -485,9 +485,9 @@ async def test_async_bulk_create_users():
 
 
 @respx.mock
-async def test_async_bulk_create_users_partial_failure():
+async def test_async_bulk_create_users_partial_failure_client_error():
     """
-    複数ユーザーの並行作成における部分失敗テスト（silent failure設計の検証）
+    複数ユーザーの並行作成における部分失敗テスト（クライアントエラー: 422）
 
     検証項目：
     - 一部リクエストが4xxエラーで失敗してもbulk_create_usersは例外を発生させない
@@ -500,8 +500,9 @@ async def test_async_bulk_create_users_partial_failure():
     return_exceptionsにより捕捉され、成功分のみが返却される。
 
     Note: side_effectリストはリクエスト到着順に消費される。
-    asyncio.gatherのtask作成順（入力リスト順）とリクエスト送信順が一致するため、
-    User 2が422を受け取ることが保証される（決定的）。
+    CPythonの実装ではgatherのタスク作成順とリクエスト開始順がほぼ一致するが、
+    これはPython仕様の保証ではなくCPython実装の副産物である。
+    モック環境（respx）では実I/O待機がないため順序が維持される。
     """
     users_to_create = [
         {"name": "User 1", "email": "user1@test.com"},
@@ -670,6 +671,23 @@ async def test_async_health_check_connection_error():
 
     assert result is False
     assert route.call_count == 1  # retry_count=0なのでリトライなし（1回のみ実行）
+
+
+def test_async_client_timeout_zero_not_overridden() -> None:
+    """timeout=0.0がデフォルト設定値に上書きされないことを確認（r2850768833回帰テスト）
+
+    httpxでは timeout=0.0 はタイムアウト無効（無制限待機）を意味する有効な設定値。
+    falsyな値として `or` パターンで設定値に上書きされてはならない。
+
+    学習ポイント:
+    - is not None パターンの必要性: 0/0.0/False 等の有効なfalsy値を保護する
+    - timeout=0.0 の用途: 大容量ファイルDL等でタイムアウト無効が必要な場合に使用
+    """
+    client = AsyncAPIClient(timeout=0.0)
+    assert client.timeout == 0.0, (
+        "timeout=0.0 はhttpxで有効な設定値（タイムアウト無効）のため"
+        "デフォルト設定値に上書きされてはならない"
+    )
 
 
 # ===============================================================================

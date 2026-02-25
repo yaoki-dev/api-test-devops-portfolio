@@ -210,6 +210,23 @@ def test_sync_health_check_connection_error() -> None:
     assert route.call_count == 1  # retry_count=0なのでリトライなし（1回のみ実行）
 
 
+def test_sync_client_timeout_zero_not_overridden() -> None:
+    """timeout=0.0がデフォルト設定値に上書きされないことを確認（r2850768833回帰テスト）
+
+    httpxでは timeout=0.0 はタイムアウト無効（無制限待機）を意味する有効な設定値。
+    falsyな値として `or` パターンで設定値に上書きされてはならない。
+
+    学習ポイント:
+    - is not None パターンの必要性: 0/0.0/False 等の有効なfalsy値を保護する
+    - timeout=0.0 の用途: 大容量ファイルDL等でタイムアウト無効が必要な場合に使用
+    """
+    client = SyncAPIClient(timeout=0.0)
+    assert client.timeout == 0.0, (
+        "timeout=0.0 はhttpxで有効な設定値（タイムアウト無効）のため"
+        "デフォルト設定値に上書きされてはならない"
+    )
+
+
 # =============================================================================
 # 学習ポイント:
 #

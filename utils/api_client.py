@@ -171,9 +171,10 @@ class SyncAPIClient:
 
         """
         # 設定から値を取得（引数で上書き可能）
-        # NOTE: retry_count=0, retry_delay=0.0 は有効な設定値のため is not None で判定
+        # NOTE: retry_count=0, retry_delay=0.0, timeout=0.0 は有効な設定値のため is not None で判定
+        # timeout=0.0 は httpx でタイムアウト無効（無制限待機）を意味する有効な値
         self.base_url = base_url or settings.api.base_url
-        self.timeout = timeout or settings.api.timeout
+        self.timeout = timeout if timeout is not None else settings.api.timeout
         self.retry_count = retry_count if retry_count is not None else settings.api.retry_count
         self.retry_delay = retry_delay if retry_delay is not None else settings.api.retry_delay
 
@@ -611,9 +612,10 @@ class AsyncAPIClient:
 
         """
         # 設定から値を取得（引数で上書き可能）
-        # NOTE: retry_count=0, retry_delay=0.0 は有効な設定値のため is not None で判定
+        # NOTE: retry_count=0, retry_delay=0.0, timeout=0.0 は有効な設定値のため is not None で判定
+        # timeout=0.0 は httpx でタイムアウト無効（無制限待機）を意味する有効な値
         self.base_url = base_url or settings.api.base_url
-        self.timeout = timeout or settings.api.timeout
+        self.timeout = timeout if timeout is not None else settings.api.timeout
         self.retry_count = retry_count if retry_count is not None else settings.api.retry_count
         self.retry_delay = retry_delay if retry_delay is not None else settings.api.retry_delay
 

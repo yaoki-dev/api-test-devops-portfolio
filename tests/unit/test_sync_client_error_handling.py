@@ -75,8 +75,8 @@ def test_sync_retry_error_message() -> None:
 # =============================================================================
 
 
-@respx.mock
 @patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
+@respx.mock
 def test_sync_retry_with_exponential_backoff(mock_backoff: Mock) -> None:
     """サーバーエラー後に成功するケース（5xxはリトライ対象）"""
     route = respx.get(f"{BASE_URL}/posts/1")
@@ -117,8 +117,8 @@ def test_sync_4xx_error_no_retry() -> None:
 # =============================================================================
 
 
-@respx.mock
 @patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
+@respx.mock
 def test_sync_timeout_error_retry(mock_backoff: Mock) -> None:
     """タイムアウト時にAPIRetryErrorが発生することを確認"""
     route = respx.get(f"{BASE_URL}/posts/1")
@@ -141,8 +141,8 @@ def test_sync_timeout_error_retry(mock_backoff: Mock) -> None:
 # =============================================================================
 
 
-@respx.mock
 @patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
+@respx.mock
 def test_sync_connection_error_retry(mock_backoff: Mock) -> None:
     """接続エラー時にAPIRetryErrorが発生することを確認"""
     route = respx.get(f"{BASE_URL}/posts/1")
