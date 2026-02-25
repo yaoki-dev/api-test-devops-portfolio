@@ -34,6 +34,11 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
 - Within a single agent turn, parallel *tool calls* (Read, Grep, Bash, Task etc.) remain encouraged (see "Batch independent operations" above); this is distinct from delegating multiple unrelated tasks to a single subagent.
 - Session pattern: Load → Work → Checkpoint (30 min) → Save
 - Use `/sc:load` and `/sc:save` if superclaude available
+- **Parallel Dispatch Rule**: When 2+ independent TodoList tasks exist, dispatch each as a separate Task tool invocation (parallel recommended)
+  - Independence criteria (all must be satisfied): 1. No output dependency between tasks (no A→B ordering constraint) 2. No simultaneous edits to the same file 3. No conflicting writes to shared resources (conftest.py, pyproject.toml, config files)
+  - Worktree isolation: instruct each agent to invoke `/using-git-worktrees` skill in their prompt
+  - Exception: if one task is 3x+ larger than the other, sequential execution is acceptable
+  - On failure: apply existing rule "stop and report to the user"
 
 **Good:** Plan → TodoWrite → Execute → Verify | **Bad:** Jump to implementation
 
