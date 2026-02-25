@@ -172,7 +172,7 @@ class SyncAPIClient:
         """
         # 設定から値を取得（引数で上書き可能）
         # NOTE: retry_count=0, retry_delay=0.0, timeout=0.0 は有効な設定値のため is not None で判定
-        # timeout=0.0 は httpx でタイムアウト無効（無制限待機）を意味する有効な値
+        # timeout=0.0: 即座にタイムアウト（無効化は timeout=None）
         self.base_url = base_url or settings.api.base_url
         self.timeout = timeout if timeout is not None else settings.api.timeout
         self.retry_count = retry_count if retry_count is not None else settings.api.retry_count
@@ -613,7 +613,7 @@ class AsyncAPIClient:
         """
         # 設定から値を取得（引数で上書き可能）
         # NOTE: retry_count=0, retry_delay=0.0, timeout=0.0 は有効な設定値のため is not None で判定
-        # timeout=0.0 は httpx でタイムアウト無効（無制限待機）を意味する有効な値
+        # timeout=0.0: 即座にタイムアウト（無効化は timeout=None）
         self.base_url = base_url or settings.api.base_url
         self.timeout = timeout if timeout is not None else settings.api.timeout
         self.retry_count = retry_count if retry_count is not None else settings.api.retry_count
@@ -970,6 +970,12 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         # 並行してユーザー作成（個別失敗許容）
         tasks = [self.create_user(user_data) for user_data in users_data]
         results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # システム例外はgather後に再発生させる（graceful shutdown保護）
+        # asyncio.CancelledError（Python 3.8+ は BaseException サブクラス）を吸収しない
+        for r in results:
+            if isinstance(r, (KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError)):
+                raise r
 
         # 成功・失敗を分離（型安全なフィルタリング）
         successful: list[dict[str, Any]] = [r for r in results if isinstance(r, dict)]

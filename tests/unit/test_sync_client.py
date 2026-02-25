@@ -26,16 +26,18 @@ pytestmark = pytest.mark.unit
 BASE_URL = "https://jsonplaceholder.typicode.com"
 
 
-def _mock_get(url: str, params: dict[str, Any] | None, json_data: Any) -> None:
+def _mock_get(url: str, params: dict[str, Any] | None, json_data: Any) -> respx.Route:
     """respx GETルートのparams有無対応ヘルパー
 
     respxのparams=はsubset match（指定キーが存在し値が一致すれば通過）。
     paramsがNoneの場合はパラメータなしのURLとしてモック。
+
+    Returns:
+        respx.Route: call_count等の検証に使用可能なルートオブジェクト
     """
     if params is not None:
-        respx.get(url, params=params).respond(json=json_data)
-    else:
-        respx.get(url).respond(json=json_data)
+        return respx.get(url, params=params).respond(json=json_data)
+    return respx.get(url).respond(json=json_data)
 
 
 # =============================================================================
@@ -213,16 +215,16 @@ def test_sync_health_check_connection_error() -> None:
 def test_sync_client_timeout_zero_not_overridden() -> None:
     """timeout=0.0がデフォルト設定値に上書きされないことを確認（r2850768833回帰テスト）
 
-    httpxでは timeout=0.0 はタイムアウト無効（無制限待機）を意味する有効な設定値。
+    httpxでは timeout=0.0 は即座にタイムアウト（TimeoutException発生）する設定値。
     falsyな値として `or` パターンで設定値に上書きされてはならない。
 
     学習ポイント:
     - is not None パターンの必要性: 0/0.0/False 等の有効なfalsy値を保護する
-    - timeout=0.0 の用途: 大容量ファイルDL等でタイムアウト無効が必要な場合に使用
+    - timeout=0.0 の用途: 即座にタイムアウトさせたい場合に使用（無効化には timeout=None）
     """
     client = SyncAPIClient(timeout=0.0)
     assert client.timeout == 0.0, (
-        "timeout=0.0 はhttpxで有効な設定値（タイムアウト無効）のため"
+        "timeout=0.0 はhttpxで有効な設定値（即座にタイムアウト）のため"
         "デフォルト設定値に上書きされてはならない"
     )
 
@@ -291,13 +293,15 @@ def test_sync_get_posts(limit: int | None, expected_count: int) -> None:
         mock_data = all_posts[:limit]
 
     # クエリパラメータ検証: limitが指定された場合はparams=でマッチ
-    _mock_get(f"{BASE_URL}/posts", {"_limit": limit} if limit is not None else None, mock_data)
+    params = {"_limit": limit} if limit is not None else None
+    route = _mock_get(f"{BASE_URL}/posts", params, mock_data)
 
     with SyncJSONPlaceholderClient() as client:
         result = client.get_posts(limit=limit)
 
     assert len(result) == expected_count
     assert result == mock_data
+    assert route.call_count == 1  # GETリクエストが1回のみ発行されたことを確認
 
 
 @pytest.mark.unit
@@ -343,13 +347,15 @@ def test_sync_get_posts_user_filter(user_id: int | None, expected_count: int) ->
         mock_data = [p for p in all_posts if p["userId"] == user_id]
 
     # クエリパラメータ検証: user_idが指定された場合はparams=でマッチ
-    _mock_get(f"{BASE_URL}/posts", {"userId": user_id} if user_id is not None else None, mock_data)
+    params = {"userId": user_id} if user_id is not None else None
+    route = _mock_get(f"{BASE_URL}/posts", params, mock_data)
 
     with SyncJSONPlaceholderClient() as client:
         result = client.get_posts(user_id=user_id)
 
     assert len(result) == expected_count
     assert result == mock_data
+    assert route.call_count == 1  # GETリクエストが1回のみ発行されたことを確認
     if user_id is not None and user_id != 999:
         assert all(post["userId"] == user_id for post in result)
 
@@ -521,13 +527,14 @@ def test_sync_get_todos(
         for k, v in {"userId": user_id, "completed": completed, "_limit": limit}.items()
         if v is not None
     } or None
-    _mock_get(f"{BASE_URL}/todos", params, filtered_todos)
+    route = _mock_get(f"{BASE_URL}/todos", params, filtered_todos)
 
     with SyncJSONPlaceholderClient() as client:
         result = client.get_todos(user_id=user_id, completed=completed, limit=limit)
 
     assert len(result) == expected_count
     assert result == filtered_todos
+    assert route.call_count == 1  # GETリクエストが1回のみ発行されたことを確認
 
 
 # =============================================================================
@@ -613,13 +620,15 @@ def test_sync_get_albums(user_id: int | None, expected_count: int) -> None:
         mock_data = all_albums
 
     # クエリパラメータ検証: user_idが指定された場合はparams=でマッチ
-    _mock_get(f"{BASE_URL}/albums", {"userId": user_id} if user_id is not None else None, mock_data)
+    params = {"userId": user_id} if user_id is not None else None
+    route = _mock_get(f"{BASE_URL}/albums", params, mock_data)
 
     with SyncJSONPlaceholderClient() as client:
         result = client.get_albums(user_id=user_id)
 
     assert len(result) == expected_count
     assert result == mock_data
+    assert route.call_count == 1  # GETリクエストが1回のみ発行されたことを確認
 
 
 # =============================================================================

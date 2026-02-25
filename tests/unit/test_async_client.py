@@ -552,6 +552,34 @@ async def test_async_bulk_create_users_partial_failure_client_error():
     assert "User 2" not in created_names  # 2件目は422エラーで失敗、返却されない
 
 
+@pytest.mark.asyncio
+async def test_async_bulk_create_users_cancelled_error_propagates() -> None:
+    """asyncio.CancelledErrorがbulk_create_usersから外に伝播することを確認
+
+    背景: BaseExceptionによる無差別フィルタリングの修正（指摘5）の回帰テスト。
+    asyncio.CancelledError（Python 3.8+ では BaseException のサブクラス）が
+    gather結果に含まれる場合、failed/successfulリストに吸収せず再発生させること。
+
+    検証項目:
+    - gather結果にCancelledErrorが含まれる場合、例外が伝播すること
+    - graceful shutdown（K8s等）でCancelledErrorが握り潰されないこと
+
+    設計: asyncio.gatherを直接AsyncMockで差し替え、CancelledErrorが
+    results内に存在するシナリオを確実に再現（Python バージョン依存を排除）。
+    """
+    users_to_create = [{"name": "User 1", "email": "user1@test.com"}]
+
+    # asyncio.gatherがCancelledErrorを結果に含む状況をシミュレート
+    # （例: K8s Pod終了シグナルによるタスクキャンセル）
+    cancelled = asyncio.CancelledError("タスクキャンセルのシミュレーション")
+
+    async with AsyncJSONPlaceholderClient(retry_count=0) as client:
+        with patch("utils.api_client.asyncio.gather", new_callable=AsyncMock) as mock_gather:
+            mock_gather.return_value = [cancelled]
+            with pytest.raises(asyncio.CancelledError):
+                await client.bulk_create_users(users_to_create)
+
+
 # ===============================================================================
 # Test 5: パフォーマンス・タイムアウト・リソース管理テスト
 # ===============================================================================
@@ -696,16 +724,16 @@ async def test_async_health_check_connection_error():
 def test_async_client_timeout_zero_not_overridden() -> None:
     """timeout=0.0がデフォルト設定値に上書きされないことを確認（r2850768833回帰テスト）
 
-    httpxでは timeout=0.0 はタイムアウト無効（無制限待機）を意味する有効な設定値。
+    httpxでは timeout=0.0 は即座にタイムアウト（TimeoutException発生）する設定値。
     falsyな値として `or` パターンで設定値に上書きされてはならない。
 
     学習ポイント:
     - is not None パターンの必要性: 0/0.0/False 等の有効なfalsy値を保護する
-    - timeout=0.0 の用途: 大容量ファイルDL等でタイムアウト無効が必要な場合に使用
+    - timeout=0.0 の用途: 即座にタイムアウトさせたい場合に使用（無効化には timeout=None）
     """
     client = AsyncAPIClient(timeout=0.0)
     assert client.timeout == 0.0, (
-        "timeout=0.0 はhttpxで有効な設定値（タイムアウト無効）のため"
+        "timeout=0.0 はhttpxで有効な設定値（即座にタイムアウト）のため"
         "デフォルト設定値に上書きされてはならない"
     )
 
