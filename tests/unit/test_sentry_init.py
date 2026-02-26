@@ -48,7 +48,7 @@ class TestScrubSensitiveData:
         data = {"user": {"api_key": "key123", "email": "user@example.com"}}
         result = _scrub_sensitive_data(data)
         assert result["user"]["api_key"] == "[REDACTED]"
-        assert result["user"]["email"] == "user@example.com"
+        assert result["user"]["email"] == "[REDACTED]"  # email はPII（GDPR対応）でスクラブ対象
 
     def test_scrub_list_of_dicts(self) -> None:
         """リスト内辞書の機密データもスクラブ"""
@@ -132,8 +132,8 @@ class TestSensitiveKeysCompleteness:
         assert isinstance(SENSITIVE_KEYS, frozenset)
 
     def test_sensitive_keys_count(self) -> None:
-        """29種類の機密キーが定義されている"""
-        assert len(SENSITIVE_KEYS) == 29
+        """30種類の機密キーが定義されている（email追加後）"""
+        assert len(SENSITIVE_KEYS) == 30
 
     @pytest.mark.parametrize(
         "key",
@@ -168,6 +168,7 @@ class TestSensitiveKeysCompleteness:
             "mfa",
             "totp",
             # 個人情報
+            "email",
             "database_url",
             "ssn",
             "credit_card",

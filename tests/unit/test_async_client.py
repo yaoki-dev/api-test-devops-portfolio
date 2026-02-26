@@ -164,6 +164,11 @@ async def test_async_multiple_users_with_semaphore():
     - 各ユーザーエンドポイントが1回ずつ呼ばれること（重複リクエストなし）
     - max_concurrent パラメータを受け付けること
 
+    注意（テスト設計上の制限）:
+    - respxモック環境ではHTTPリクエストのタイミング情報が記録されないため、
+      「max_concurrent=2の同時実行数制限が機能している」ことは観測不可能
+      （実装上はSemaphoreが機能しているが、このテストでは検証できない）
+
     学習ポイント:
     - asyncio.Semaphore: 同時実行数を制限するロック機構
     - Rate Limit対策: GitHub API等の外部API制限への対応
