@@ -966,6 +966,20 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 
         個別失敗を許容し、成功したユーザーのみ返却。
         失敗時はwarningログを出力（最初の5件まで詳細表示）。
+        K8s SIGTERM等で複数タスクが同時キャンセルされた場合はerrorログを出力後、
+        CancelledError等のfatal例外を再発生させる（graceful shutdown保護）。
+
+        Args:
+            users_data: 作成するユーザーデータのリスト（各要素はname/emailを含むdict）
+
+        Returns:
+            成功したユーザーデータのリスト（失敗した分は除外される）
+
+        Raises:
+            asyncio.CancelledError: タスクがキャンセルされた場合（K8s graceful shutdown等）
+            KeyboardInterrupt: Ctrl+C等の割り込みシグナルを受けた場合
+            SystemExit: sys.exit()が呼ばれた場合
+            MemoryError: メモリ不足が発生した場合
         """
         # 並行してユーザー作成（個別失敗許容）
         tasks = [self.create_user(user_data) for user_data in users_data]
@@ -973,9 +987,22 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 
         # システム例外はgather後に再発生させる（graceful shutdown保護）
         # asyncio.CancelledError（Python 3.8+ は BaseException サブクラス）を吸収しない
-        for r in results:
-            if isinstance(r, (KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError)):
-                raise r
+        # 複数タスクが同時キャンセルされる場合（K8s SIGTERM等）に全件収集してログ出力
+        fatal_exceptions = [
+            r
+            for r in results
+            if isinstance(r, (KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError))
+        ]
+        if fatal_exceptions:
+            if len(fatal_exceptions) > 1:
+                self.logger.error(
+                    "bulk_create_multiple_fatal_errors",
+                    count=len(fatal_exceptions),
+                    types=[type(e).__name__ for e in fatal_exceptions],
+                )
+            # 変数束縛後にraiseすることで元の__tracebackを明示的に保持
+            exc = fatal_exceptions[0]
+            raise exc
 
         # 成功・失敗を分離（型安全なフィルタリング）
         successful: list[dict[str, Any]] = [r for r in results if isinstance(r, dict)]

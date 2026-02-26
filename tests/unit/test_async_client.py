@@ -456,13 +456,68 @@ async def test_async_bulk_create_users_partial_failure():
     assert "User 2" not in created_names  # 2件目は422エラーで失敗、返却されない
 
 
+@respx.mock
+async def test_async_bulk_create_users_partial_failure_5xx() -> None:
+    """
+    5xxエラー（サーバーエラー）時の部分失敗テスト（APIRetryError経路の検証）
+
+    検証項目：
+    - 一部リクエストが5xxエラーで失敗してもbulk_create_usersは例外を発生させない
+    - 成功したユーザーのみが返却される（失敗分は除外）
+    - 全リクエストが試行される（部分失敗でも中断しない）
+
+    設計根拠：
+    4xx（APIHTTPError即発生）と5xx（APIRetryError）では例外型が異なる別コードパス。
+    5xx: request → 500 → last_exception=APIHTTPError → retry → 上限でAPIRetryError発生
+    どちらもreturn_exceptions=Trueで捕捉され、isinstance(r, dict)フィルタで除外される。
+
+    Note: retry_count=0で5xxリトライを無効化し、side_effectを3件に固定する（決定論的）。
+    respxのside_effectはHTTPリクエストの受信順に消費される（asyncio.gatherのタスク作成順と
+    概ね一致するが厳密保証なし）。retry_count=0で各タスクは1リクエストのみ発行するため安定。
+    成功件数は厳密に2件（== 2）で検証する。
+    """
+    users_to_create = [
+        {"name": "User 1", "email": "user1@test.com"},
+        {"name": "User 2", "email": "user2@test.com"},  # この1件を500エラーで失敗させる
+        {"name": "User 3", "email": "user3@test.com"},
+    ]
+
+    # 2件目のリクエストを500（Internal Server Error）で失敗させる
+    # 5xxはリトライ対象だが、retry_count=0でリトライを無効化 → 即APIRetryErrorに変換
+    # → return_exceptionsで捕捉され、成功分のみ返却される
+    post_route = respx.post(f"{BASE_URL}/users")
+    post_route.side_effect = [
+        Response(201, json={"id": 101, "name": "User 1", "email": "user1@test.com"}),
+        Response(500, json={"error": "Internal Server Error"}),  # 2件目: 500で失敗
+        Response(201, json={"id": 103, "name": "User 3", "email": "user3@test.com"}),
+    ]
+
+    # retry_count=0: 5xxリトライなし → 即APIRetryError → side_effectは3件で決定論的
+    async with AsyncJSONPlaceholderClient(retry_count=0) as client:
+        # 例外なく完了することを確認（silent partial failure）
+        results = await client.bulk_create_users(users_to_create)
+
+    # 部分失敗: 3件中1件(500→APIRetryError)が失敗するため成功件数は正確に2件
+    assert len(results) == 2, (
+        "3件中1件(5xx→APIRetryError)が失敗するため、成功件数は正確に2件であること"
+    )
+
+    # 全リクエストが試行されたことを確認（部分失敗でも全件送信）
+    assert post_route.call_count == 3
+
+    # 成功分のみ返却確認（存在確認 + 失敗ユーザーが含まれないことを確認）
+    created_names = [result["name"] for result in results]
+    assert "User 1" in created_names  # 1件目成功
+    assert "User 3" in created_names  # 3件目成功
+    assert "User 2" not in created_names  # 2件目は500エラーで失敗、返却されない
+
+
 async def test_async_bulk_create_users_cancelled_error_propagates() -> None:
     """asyncio.CancelledErrorがgather後に再発生されることを確認（graceful shutdown保護）
 
-    api_client.py:974-978 の検証。
     CancelledError（Python 3.8+ は BaseException サブクラス）は
     asyncio.gather(return_exceptions=True) で捕捉されるが、
-    bulk_create_users はその後ループで検出して再発生させる。
+    bulk_create_users はその後 fatal_exceptions として収集して再発生させる。
     K8s graceful shutdown などのシグナル伝播を保証する設計。
     """
     with patch.object(
@@ -474,6 +529,81 @@ async def test_async_bulk_create_users_cancelled_error_propagates() -> None:
         async with AsyncJSONPlaceholderClient() as client:
             with pytest.raises(asyncio.CancelledError):
                 await client.bulk_create_users([{"name": "A"}, {"name": "B"}])
+
+
+async def test_async_bulk_create_users_single_cancelled_error_no_log() -> None:
+    """単一タスクキャンセル時は logger.error を呼ばずに CancelledError を再発生させることを確認
+
+    len(fatal_exceptions) == 1 のコードパス（ログなし・raise のみ）を検証。
+    len > 1 時のみ logger.error が呼ばれる設計であり、単一キャンセルはログ対象外。
+
+    設計根拠: 単一タスクのキャンセルは通常の graceful shutdown シーケンスであり、
+    ログノイズを避けるため意図的にログ出力しない設計になっている。
+    """
+    with patch.object(
+        AsyncJSONPlaceholderClient,
+        "create_user",
+        new_callable=AsyncMock,
+    ) as mock_create:
+        mock_create.side_effect = asyncio.CancelledError()
+        async with AsyncJSONPlaceholderClient() as client:
+            with patch.object(client, "logger") as mock_logger:
+                with pytest.raises(asyncio.CancelledError):
+                    # 1タスクのみ → len(fatal_exceptions) == 1 → ログなし
+                    await client.bulk_create_users([{"name": "A"}])
+                # 単一キャンセルでは logger.error は呼ばれない
+                mock_logger.error.assert_not_called()
+
+
+async def test_async_bulk_create_users_multiple_cancelled_errors_logged() -> None:
+    """複数タスク同時キャンセル時にerrorログが出力されることを確認
+
+    K8s SIGTERM等で全タスクが同時キャンセルされると、
+    asyncio.gather(return_exceptions=True) が複数の CancelledError を収集する。
+    bulk_create_users は len(fatal_exceptions) > 1 の場合に
+    logger.error("bulk_create_multiple_fatal_errors", ...) を呼び出す。
+    """
+    with patch.object(
+        AsyncJSONPlaceholderClient,
+        "create_user",
+        new_callable=AsyncMock,
+    ) as mock_create:
+        mock_create.side_effect = asyncio.CancelledError()
+        async with AsyncJSONPlaceholderClient() as client:
+            with patch.object(client, "logger") as mock_logger:
+                with pytest.raises(asyncio.CancelledError):
+                    await client.bulk_create_users([{"name": "A"}, {"name": "B"}])
+                # patch.objectスコープ内でassert（モックが有効な期間中に検証）
+                # 2ユーザー両方がキャンセル → len > 1 → logger.error 呼び出し確認
+                mock_logger.error.assert_called_once_with(
+                    "bulk_create_multiple_fatal_errors",
+                    count=2,
+                    types=["CancelledError", "CancelledError"],
+                )
+
+
+async def test_async_bulk_create_users_memory_error_propagates() -> None:
+    """MemoryError が gather 後に再発生されることを確認
+
+    bulk_create_users は asyncio.CancelledError だけでなく MemoryError も
+    fatal_exceptions として収集して再発生させる（OOM 保護）。
+
+    実装の isinstance チェック対象4種:
+    - asyncio.CancelledError: test_async_bulk_create_users_cancelled_error_propagates でカバー
+    - MemoryError: 本テストでカバー
+    - KeyboardInterrupt: pytest がシグナルとして処理するため unit test 内での再現が困難。
+      pytest.raises(KeyboardInterrupt) を使っても pytest 自体のシグナルハンドラが先に捕捉する。
+    - SystemExit: 同様の理由で unit test での再現が困難。
+    """
+    with patch.object(
+        AsyncJSONPlaceholderClient,
+        "create_user",
+        new_callable=AsyncMock,
+    ) as mock_create:
+        mock_create.side_effect = MemoryError("OOM")
+        async with AsyncJSONPlaceholderClient() as client:
+            with pytest.raises(MemoryError):
+                await client.bulk_create_users([{"name": "A"}])
 
 
 # ===============================================================================
