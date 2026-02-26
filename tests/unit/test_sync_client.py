@@ -699,16 +699,17 @@ def test_sync_get_photos(album_id: int | None, expected_count: int) -> None:
     # パラメータに応じてフィルタとエンドポイントを設定
     if album_id is not None:
         mock_data = [p for p in all_photos if p["albumId"] == album_id]
-        respx.get(f"{BASE_URL}/albums/{album_id}/photos").respond(json=mock_data)
+        route = respx.get(f"{BASE_URL}/albums/{album_id}/photos").respond(json=mock_data)
     else:
         mock_data = all_photos
-        respx.get(f"{BASE_URL}/photos").respond(json=mock_data)
+        route = respx.get(f"{BASE_URL}/photos").respond(json=mock_data)
 
     with SyncJSONPlaceholderClient() as client:
         result = client.get_photos(album_id=album_id)
 
     assert len(result) == expected_count
     assert result == mock_data
+    assert route.call_count == 1
 
 
 # =============================================================================

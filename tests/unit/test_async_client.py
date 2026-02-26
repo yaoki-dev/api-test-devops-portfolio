@@ -20,7 +20,6 @@
 
 import asyncio
 import json
-import time
 from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
@@ -204,14 +203,14 @@ async def test_partial_failure_graceful_degradation():
     - URL-to-Responseマッピングによる明確なテスト意図表現
     """
     # 宣言的なエンドポイントマッピング（成功: 1,3,5 / 失敗: 2,4）
-    respx.get(f"{BASE_URL}/users/1").respond(json={"id": 1, "name": "User 1"})
-    respx.get(f"{BASE_URL}/users/2").respond(status_code=500)
-    respx.get(f"{BASE_URL}/users/3").respond(json={"id": 3, "name": "User 3"})
-    respx.get(f"{BASE_URL}/users/4").respond(status_code=500)
-    respx.get(f"{BASE_URL}/users/5").respond(json={"id": 5, "name": "User 5"})
+    route1 = respx.get(f"{BASE_URL}/users/1").respond(json={"id": 1, "name": "User 1"})
+    route2 = respx.get(f"{BASE_URL}/users/2").respond(status_code=500)
+    route3 = respx.get(f"{BASE_URL}/users/3").respond(json={"id": 3, "name": "User 3"})
+    route4 = respx.get(f"{BASE_URL}/users/4").respond(status_code=500)
+    route5 = respx.get(f"{BASE_URL}/users/5").respond(json={"id": 5, "name": "User 5"})
 
-    # テスト実行
-    async with AsyncJSONPlaceholderClient() as client:
+    # retry_count=0: リトライなし設定でgraceful degradationのみ検証（リトライ挙動は別テストで担保）
+    async with AsyncJSONPlaceholderClient(retry_count=0, retry_delay=0.0) as client:
         results = await client.get_multiple_users([1, 2, 3, 4, 5], max_concurrent=2)
 
     # graceful degradation検証（成功分のみ返却パターン）
@@ -221,6 +220,13 @@ async def test_partial_failure_graceful_degradation():
     # Expected IDs [1,3,5] in any order, no duplicates
     result_ids = [r["id"] for r in results]
     assert sorted(result_ids) == [1, 3, 5], f"Expected IDs [1,3,5], got {result_ids}"
+
+    # 全5エンドポイントが各1回ずつ呼ばれたことを確認（retry_count=0のため決定論的に==1）
+    assert route1.call_count == 1
+    assert route2.call_count == 1
+    assert route3.call_count == 1
+    assert route4.call_count == 1
+    assert route5.call_count == 1
 
 
 @respx.mock
@@ -237,16 +243,19 @@ async def test_all_requests_fail_returns_empty_list():
     - エッジケーステスト: 最悪シナリオでのシステム動作保証
     - Defense in Depth: 稀なケースこそテストで保護
     """
-    # DRY: ループで一括設定（全件500エラー）
-    for user_id in [1, 2, 3]:
-        respx.get(f"{BASE_URL}/users/{user_id}").respond(status_code=500)
+    # DRY: リスト内包表記で一括設定（全件500エラー）
+    routes = [respx.get(f"{BASE_URL}/users/{uid}").respond(status_code=500) for uid in [1, 2, 3]]
 
-    async with AsyncJSONPlaceholderClient() as client:
+    # retry_count=0: リトライなし設定でgraceful degradationのみ検証（リトライ挙動は別テストで担保）
+    async with AsyncJSONPlaceholderClient(retry_count=0, retry_delay=0.0) as client:
         results = await client.get_multiple_users([1, 2, 3], max_concurrent=2)
 
     # 全件失敗で空リスト返却
     assert results == [], f"Expected empty list, got {results}"
     assert isinstance(results, list), f"Expected list type, got {type(results)}"
+
+    # 全3エンドポイントが各1回ずつ呼ばれたことを確認（retry_count=0のため決定論的に==1）
+    assert all(r.call_count == 1 for r in routes)
 
 
 # ===============================================================================
@@ -766,29 +775,29 @@ async def test_async_health_check_connection_error():
 @respx.mock
 async def test_async_performance_benchmark():
     """
-    非同期APIクライアントのパフォーマンスベンチマーク
+    非同期APIクライアントの並行処理パターン検証（100並行リクエスト）
+
+    NOTE: respxはネットワークI/Oをバイパスするため、実行時間の計測は意味がない。
+    このテストは100並行リクエストが正しく処理されることを検証する。
 
     注意：このテストは時間がかかるため、slowマーカーを付与
     実行時は pytest -m slow で個別実行を推奨
     """
     # 各ユーザーエンドポイントをrespxでモック化（1〜100）
-    for i in range(1, 101):
+    routes = [
         respx.get(f"{BASE_URL}/users/{i}").respond(json={"id": i, "name": "Test"})
+        for i in range(1, 101)
+    ]
 
     async with AsyncJSONPlaceholderClient() as client:
         # 100回の並行リクエスト実行
-        start_time = time.time()
         tasks = [client.get(f"/users/{i}") for i in range(1, 101)]
         results = await asyncio.gather(*tasks)
-        end_time = time.time()
 
-        # パフォーマンス検証
-        assert len(results) == 100
-        execution_time = end_time - start_time
-        print(f"\n100並行リクエスト実行時間: {execution_time:.3f}秒")
-
-        # 非現実的に高速でない限り成功とする（モック環境では非常に高速）
-        assert execution_time < 5.0  # 5秒以内での完了を期待
+    # 全100リクエストが成功したことを検証
+    assert len(results) == 100
+    # 全ルートが各1回ずつ呼ばれたことを確認（並行実行の証明）
+    assert all(r.call_count == 1 for r in routes)
 
 
 # ===============================================================================
@@ -861,12 +870,12 @@ async def test_get_user_data_parallel_requests():
 
     # 4つのAPIエンドポイントをモック化
     # User API
-    respx.get(f"{BASE_URL}/users/{user_id}").respond(
+    route_user = respx.get(f"{BASE_URL}/users/{user_id}").respond(
         json={"id": 1, "name": "Leanne Graham", "email": "Sincere@april.biz"}
     )
 
     # Posts API（user_id=1のみ - API側フィルタリング）
-    respx.get(f"{BASE_URL}/posts", params={"userId": user_id}).respond(
+    route_posts = respx.get(f"{BASE_URL}/posts", params={"userId": user_id}).respond(
         json=[
             {"id": 1, "userId": 1, "title": "Post by User 1", "body": "Content 1"},
             {"id": 3, "userId": 1, "title": "Another post by User 1", "body": "Content 3"},
@@ -874,7 +883,7 @@ async def test_get_user_data_parallel_requests():
     )
 
     # Todos API（user_id=1のみ）
-    respx.get(f"{BASE_URL}/todos", params={"userId": user_id}).respond(
+    route_todos = respx.get(f"{BASE_URL}/todos", params={"userId": user_id}).respond(
         json=[
             {"id": 1, "userId": 1, "title": "Todo 1", "completed": True},
             {"id": 2, "userId": 1, "title": "Todo 2", "completed": False},
@@ -882,7 +891,7 @@ async def test_get_user_data_parallel_requests():
     )
 
     # Albums API（user_id=1のみ）
-    respx.get(f"{BASE_URL}/albums", params={"userId": user_id}).respond(
+    route_albums = respx.get(f"{BASE_URL}/albums", params={"userId": user_id}).respond(
         json=[
             {"id": 1, "userId": 1, "title": "Album 1"},
             {"id": 2, "userId": 1, "title": "Album 2"},
@@ -917,6 +926,12 @@ async def test_get_user_data_parallel_requests():
     assert len(result["albums"]) == 2
     assert all(album["userId"] == 1 for album in result["albums"])
 
+    # 4つのAPIが各1回ずつ呼ばれたことを確認（asyncio.gatherによる並行実行の証明）
+    assert route_user.call_count == 1
+    assert route_posts.call_count == 1
+    assert route_todos.call_count == 1
+    assert route_albums.call_count == 1
+
 
 @respx.mock
 async def test_get_user_data_with_empty_posts():
@@ -935,20 +950,20 @@ async def test_get_user_data_with_empty_posts():
     user_id = 1
 
     # User API
-    respx.get(f"{BASE_URL}/users/{user_id}").respond(
+    route_user = respx.get(f"{BASE_URL}/users/{user_id}").respond(
         json={"id": 1, "name": "Leanne Graham", "email": "Sincere@april.biz"}
     )
 
     # Posts API: userId=1 でフィルタされた結果が空
-    respx.get(f"{BASE_URL}/posts", params={"userId": user_id}).respond(json=[])
+    route_posts = respx.get(f"{BASE_URL}/posts", params={"userId": user_id}).respond(json=[])
 
     # Todos API
-    respx.get(f"{BASE_URL}/todos", params={"userId": user_id}).respond(
+    route_todos = respx.get(f"{BASE_URL}/todos", params={"userId": user_id}).respond(
         json=[{"id": 1, "userId": 1, "title": "Todo 1", "completed": True}]
     )
 
     # Albums API
-    respx.get(f"{BASE_URL}/albums", params={"userId": user_id}).respond(
+    route_albums = respx.get(f"{BASE_URL}/albums", params={"userId": user_id}).respond(
         json=[{"id": 1, "userId": 1, "title": "Album 1"}]
     )
 
@@ -960,6 +975,12 @@ async def test_get_user_data_with_empty_posts():
     assert result["posts"] == []
     assert len(result["todos"]) == 1
     assert len(result["albums"]) == 1
+
+    # 4つのAPIが各1回ずつ呼ばれたことを確認（asyncio.gatherによる並行実行の証明）
+    assert route_user.call_count == 1
+    assert route_posts.call_count == 1
+    assert route_todos.call_count == 1
+    assert route_albums.call_count == 1
 
 
 # ===============================================================================
