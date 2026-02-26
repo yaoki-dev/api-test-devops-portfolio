@@ -27,8 +27,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 15. **ALWAYS** enforce worktree boundary:
     - At conversation start: run `pwd` → store as **WORKTREE_ROOT** (immutable for this session)
     - Run `git worktree list`:
-      - If command fails OR output is empty: **STOP immediately and report to user**
+      - If command fails (non-zero exit code) : **STOP immediately and report to user**
       - If WORKTREE_ROOT not in output: **STOP and report mismatch to user**
+        - Suggested checks (do not auto-run):
+          - Confirm current directory is inside a git repository
+          - Run `git rev-parse --is-inside-work-tree`
+          - If not initialized, user may run `git init`
       - If 1 entry: notify user "single-worktree mode, boundary protection active (WORKTREE_ROOT: {absolute path})"
       - If 2+ entries: notify user "multi-worktree mode detected, boundary protection active"
     - For files outside WORKTREE_ROOT:
