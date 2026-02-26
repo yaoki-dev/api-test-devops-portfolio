@@ -24,12 +24,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 12. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `/reflexion:reflect`
 13. **ALWAYS** when 2+ independent tasks identified (after task classification, per RULES.md exception conditions) → invoke `superpowers:dispatching-parallel-agents` skill
 14. **ALWAYS** verify file content with Read/Grep tool BEFORE making any claim about line numbers, file structure, or code content
-15. **ALWAYS** enforce worktree boundary (applies when `git worktree list` shows 2+ entries):
-    - At conversation start: run `pwd` → store output as **WORKTREE_ROOT** (immutable for this session)
-    - Run `git worktree list` → confirm WORKTREE_ROOT matches an active worktree path
-    - **NEVER** autonomously edit/write files whose absolute path does not start with WORKTREE_ROOT
-    - If user explicitly requests editing a file outside WORKTREE_ROOT: **ALLOW** (user request = implicit approval)
-    - If AI infers/decides on its own to edit a file outside WORKTREE_ROOT: **REFUSE** and report to user
+15. **ALWAYS** enforce worktree boundary:
+    - At conversation start: run `pwd` → store as **WORKTREE_ROOT** (immutable for this session)
+    - Run `git worktree list`:
+      - If command fails: **STOP immediately and report to user**
+      - If WORKTREE_ROOT not in output: **STOP and report mismatch to user**
+      - If 1 entry: notify user "single-worktree mode, boundary protection active"
+      - If 2+ entries: notify user "multi-worktree mode detected, boundary protection active"
+    - For files outside WORKTREE_ROOT:
+      - Autonomous edit: **NEVER**
+      - User-requested edit: **STOP**, show exact absolute path, require explicit confirmation before proceeding
 
 ## プロジェクト概要
 
@@ -368,4 +372,3 @@ uv run mypy --show-error-codes --pretty utils/ config/ models/
 1. 公式ドキュメントを再確認（仕様変更/誤解の可能性）
 2. GitHub Issuesで既知の問題を検索
 3. 削除/代替案を検討（機能の必要性を再評価）
-
