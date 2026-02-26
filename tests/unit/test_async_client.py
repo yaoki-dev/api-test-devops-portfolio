@@ -21,7 +21,7 @@
 import asyncio
 import json
 import time
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 import pytest
@@ -255,49 +255,40 @@ async def test_all_requests_fail_returns_empty_list():
 
 
 @patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
+@respx.mock
 async def test_async_timeout_retry_then_success(mock_backoff: Mock) -> None:
     """
     タイムアウトエラー後のリトライで最終的に成功するテスト
 
     検証項目：
-    - タイムアウトエラー発生時にリトライが行われること
-    - リトライ回数が設定値（retry_count）に基づくこと（初回+2回リトライ=3回実行）
+    - タイムアウトエラー発生時にリトライが行われること（2回連続タイムアウト）
+    - リトライ回数が設定値（retry_count=3）に基づくこと（初回+2回リトライ=3回実行）
     - リトライ後に成功した場合のレスポンスが正しく返却されること
 
-    Note: AsyncAPIClient.get()はhttpx.Responseを返す。
+    Note: test_async_client_error_handling.py の test_async_timeout_then_success（1回タイムアウト）
+          と対をなすテスト。こちらは「2回連続タイムアウト → 3回目で成功」を検証する。
           @patch(exponential_backoff_with_jitter)でリトライ待機を0秒化しCI時間短縮。
+          respxトランスポートモックにより実際のhttpxコードパスを通じて検証する。
     """
-    from httpx import TimeoutException
+    # respxルート: 最初の2回はタイムアウト、3回目で成功
+    route = respx.get(f"{BASE_URL}/users/1")
+    route.side_effect = [
+        httpx.TimeoutException("Timeout 1"),
+        httpx.TimeoutException("Timeout 2"),
+        httpx.Response(200, json={"id": 1, "name": "Test User"}),
+    ]
 
-    with patch("httpx.AsyncClient") as mock_client_class:
-        mock_client_instance = AsyncMock()
-        mock_client_class.return_value = mock_client_instance
+    async with AsyncAPIClient(retry_count=3) as client:
+        result = await client.get("/users/1")
 
-        success_response = MagicMock(spec=Response)
-        success_response.status_code = 200
-        success_response.json.return_value = {"id": 1, "name": "Test User"}
-        success_response.raise_for_status.return_value = None
-        success_response.content = b'{"id": 1, "name": "Test User"}'
-        success_response.reason_phrase = "OK"
+    # リトライ動作検証: 3回目で成功（call_countで決定論的に検証）
+    assert route.call_count == 3
 
-        # 最初の2回はタイムアウト、3回目で成功
-        mock_client_instance.request.side_effect = [
-            TimeoutException("Timeout 1"),
-            TimeoutException("Timeout 2"),
-            success_response,
-        ]
-
-        async with AsyncAPIClient(retry_count=3) as client:
-            result = await client.get("/users/1")
-
-        # 結果検証: get()はhttpx.Responseを返す
-        assert result.status_code == 200
-        json_data = result.json()
-        assert json_data["id"] == 1
-        assert json_data["name"] == "Test User"
-
-        # リトライ動作検証（call_countで確実に検証、実時間は環境依存のため省略）
-        assert mock_client_instance.request.call_count == 3  # 3回目で成功
+    # レスポンス検証: get()はhttpx.Responseを返す
+    assert result.status_code == 200
+    json_data = result.json()
+    assert json_data["id"] == 1
+    assert json_data["name"] == "Test User"
 
 
 # ===============================================================================
