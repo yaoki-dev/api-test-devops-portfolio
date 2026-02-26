@@ -33,8 +33,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
           - Confirm current directory is inside a git repository
           - Run `git rev-parse --is-inside-work-tree`
           - If not initialized, user may run `git init`
-      - If 1 entry: notify user "single-worktree mode, boundary protection active (WORKTREE_ROOT: {absolute path})"
+      - If 1 entry: notify user "single-worktree mode, boundary protection active (WORKTREE_ROOT: {absolute path}) → proceed only within WORKTREE_ROOT"
       - If 2+ entries: notify user "multi-worktree mode detected, boundary protection active"
+        - Verify WORKTREE_ROOT appears in output with exact line match (pattern: `^{WORKTREE_ROOT}(\s|$)`)
+        - If not found: STOP and report which worktrees are listed vs. stored WORKTREE_ROOT
+        - Confirm with user which worktree is the intended working scope before proceeding
     - For files outside WORKTREE_ROOT:
       - Autonomous edit: **NEVER**
       - User-requested edit: **STOP**, show exact absolute path, require explicit confirmation before proceeding
