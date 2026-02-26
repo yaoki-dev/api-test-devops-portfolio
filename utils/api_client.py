@@ -976,7 +976,8 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             成功したユーザーデータのリスト（失敗した分は除外される）
 
         Raises:
-            asyncio.CancelledError: タスクがキャンセルされた場合（K8s graceful shutdown等）
+            asyncio.CancelledError: 単一タスクがキャンセルされた場合（K8s graceful shutdown等）
+            BaseExceptionGroup: 複数タスクが同時にfatal例外を発生させた場合（Python convention準拠）
             KeyboardInterrupt: Ctrl+C等の割り込みシグナルを受けた場合
             SystemExit: sys.exit()が呼ばれた場合
             MemoryError: メモリ不足が発生した場合
@@ -995,12 +996,20 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         ]
         if fatal_exceptions:
             if len(fatal_exceptions) > 1:
+                # Python convention: 複数同時例外はBaseExceptionGroupで伝播（TaskGroup同パターン）
+                # ログとraise件数の一貫性を保証（count=N → N件をBaseExceptionGroupで伝播）
+                # NOTE: CancelledError/KeyboardInterrupt/SystemExitはBaseExceptionサブクラスのため
+                #       ExceptionGroup（Exception限定）ではなくBaseExceptionGroupを使用
                 self.logger.error(
                     "bulk_create_multiple_fatal_errors",
                     count=len(fatal_exceptions),
                     types=[type(e).__name__ for e in fatal_exceptions],
                 )
-            # 変数束縛後にraiseすることで元の__tracebackを明示的に保持
+                raise BaseExceptionGroup(
+                    "bulk_create_users: multiple fatal errors occurred",
+                    fatal_exceptions,
+                )
+            # 単一例外は直接raise（Python convention: asyncio.TaskGroupと同パターン）
             exc = fatal_exceptions[0]
             raise exc
 

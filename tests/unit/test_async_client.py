@@ -504,12 +504,18 @@ async def test_async_bulk_create_users_partial_failure_5xx() -> None:
 
 
 async def test_async_bulk_create_users_cancelled_error_propagates() -> None:
-    """asyncio.CancelledErrorがgather後に再発生されることを確認（graceful shutdown保護）
+    """複数タスク同時キャンセル時にBaseExceptionGroupで伝播されることを確認（graceful shutdown保護）
 
-    CancelledError（Python 3.8+ は BaseException サブクラス）は
-    asyncio.gather(return_exceptions=True) で捕捉されるが、
-    bulk_create_users はその後 fatal_exceptions として収集して再発生させる。
-    K8s graceful shutdown などのシグナル伝播を保証する設計。
+    K8s SIGTERM等で複数タスクが同時にキャンセルされた場合、
+    bulk_create_users は BaseExceptionGroup に全件を格納して呼び出し元に伝播させる。
+    「ログに count=N と記録された件数と、伝播する例外件数の一貫性」を保証する設計。
+
+    Python convention（asyncio.TaskGroup と同パターン）:
+    - 1件 → 直接 raise（test_async_bulk_create_users_single_cancelled_error_no_log でカバー）
+    - 複数件 → BaseExceptionGroup で伝播（本テスト）
+
+    NOTE: ExceptionGroup ではなく BaseExceptionGroup を使用する理由:
+          CancelledError は BaseException サブクラスのため ExceptionGroup に格納不可。
     """
     with patch.object(
         AsyncJSONPlaceholderClient,
@@ -518,8 +524,12 @@ async def test_async_bulk_create_users_cancelled_error_propagates() -> None:
     ) as mock_create:
         mock_create.side_effect = asyncio.CancelledError()
         async with AsyncJSONPlaceholderClient() as client:
-            with pytest.raises(asyncio.CancelledError):
+            # 2タスク同時キャンセル → BaseExceptionGroup で伝播
+            with pytest.raises(BaseExceptionGroup) as exc_info:
                 await client.bulk_create_users([{"name": "A"}, {"name": "B"}])
+    # 格納された例外がすべて CancelledError であることを確認（graceful shutdown 伝播保証）
+    assert len(exc_info.value.exceptions) == 2
+    assert all(isinstance(e, asyncio.CancelledError) for e in exc_info.value.exceptions)
 
 
 async def test_async_bulk_create_users_single_cancelled_error_no_log() -> None:
@@ -562,7 +572,10 @@ async def test_async_bulk_create_users_multiple_cancelled_errors_logged() -> Non
         mock_create.side_effect = asyncio.CancelledError()
         async with AsyncJSONPlaceholderClient() as client:
             with patch.object(client, "logger") as mock_logger:
-                with pytest.raises(asyncio.CancelledError):
+                # 複数タスク同時キャンセル → BaseExceptionGroup で伝播（Python convention）
+                # ログの count=2 と伝播する例外件数の一貫性を保証する設計
+                # NOTE: CancelledError は BaseException サブクラスのため BaseExceptionGroup を使用
+                with pytest.raises(BaseExceptionGroup) as exc_info:
                     await client.bulk_create_users([{"name": "A"}, {"name": "B"}])
                 # patch.objectスコープ内でassert（モックが有効な期間中に検証）
                 # 2ユーザー両方がキャンセル → len > 1 → logger.error 呼び出し確認
@@ -571,6 +584,9 @@ async def test_async_bulk_create_users_multiple_cancelled_errors_logged() -> Non
                     count=2,
                     types=["CancelledError", "CancelledError"],
                 )
+        # BaseExceptionGroup の中身が CancelledError であることを確認
+        assert len(exc_info.value.exceptions) == 2
+        assert all(isinstance(e, asyncio.CancelledError) for e in exc_info.value.exceptions)
 
 
 async def test_async_bulk_create_users_memory_error_propagates() -> None:
