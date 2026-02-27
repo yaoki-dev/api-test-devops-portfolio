@@ -561,6 +561,7 @@ async def test_async_bulk_create_users_partial_failure_5xx() -> None:
     assert "User 2" not in created_names  # 2件目は500エラーで失敗、返却されない
 
 
+@respx.mock
 async def test_async_bulk_create_users_cancelled_error_propagates() -> None:
     """複数タスク同時キャンセル時にBaseExceptionGroupで伝播されることを確認（graceful shutdown保護）
 
@@ -590,6 +591,7 @@ async def test_async_bulk_create_users_cancelled_error_propagates() -> None:
     assert all(isinstance(e, asyncio.CancelledError) for e in exc_info.value.exceptions)
 
 
+@respx.mock
 async def test_async_bulk_create_users_single_cancelled_error_no_log() -> None:
     """単一タスクキャンセル時は logger.error を呼ばずに CancelledError を再発生させることを確認
 
@@ -614,6 +616,7 @@ async def test_async_bulk_create_users_single_cancelled_error_no_log() -> None:
                 mock_logger.error.assert_not_called()
 
 
+@respx.mock
 async def test_async_bulk_create_users_multiple_cancelled_errors_logged() -> None:
     """複数タスク同時キャンセル時にerrorログが出力されることを確認
 
@@ -647,6 +650,7 @@ async def test_async_bulk_create_users_multiple_cancelled_errors_logged() -> Non
         assert all(isinstance(e, asyncio.CancelledError) for e in exc_info.value.exceptions)
 
 
+@respx.mock
 async def test_async_bulk_create_users_memory_error_propagates() -> None:
     """MemoryError が gather 後に再発生されることを確認
 
