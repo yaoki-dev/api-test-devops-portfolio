@@ -8,14 +8,11 @@ pytest共通設定とフィクスチャ定義
 - テスト環境分離の実現
 """
 
-import json
 import logging
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
-from unittest.mock import Mock
 
-import httpx
 import pytest
 import pytest_asyncio
 
@@ -246,26 +243,6 @@ def performance_timer():
                 )
 
     return Timer()
-
-
-# =============================================================================
-# エラーハンドリング用フィクスチャ
-# =============================================================================
-
-
-@pytest.fixture
-def error_scenarios():
-    """各種エラーシナリオ"""
-    return {
-        "timeout": httpx.TimeoutException("Request timed out"),
-        "connection_error": httpx.ConnectError("Connection failed"),
-        "http_error": httpx.HTTPStatusError(
-            "500 Internal Server Error",
-            request=Mock(),
-            response=Mock(status_code=500),
-        ),
-        "json_decode_error": json.JSONDecodeError("Invalid JSON", "doc", 0),
-    }
 
 
 # =============================================================================

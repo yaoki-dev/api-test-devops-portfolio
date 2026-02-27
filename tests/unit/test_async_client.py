@@ -192,6 +192,44 @@ async def test_async_multiple_users_with_semaphore():
     assert all(r.call_count == 1 for r in routes.values())
 
 
+@pytest.mark.asyncio
+@respx.mock
+async def test_semaphore_initialized_with_correct_max_concurrent():
+    """asyncio.Semaphoreがmax_concurrent値で正しく初期化されることを検証するテスト
+
+    検証項目：
+    - Semaphoreがget_multiple_users()内で一度だけ初期化されること
+    - 初期化時にmax_concurrent=2が渡されること（設計上の制約が実装に反映されている）
+
+    注意（テスト設計の意図）:
+    - このテストは「Semaphoreが設定値通りに初期化される」ことを検証する
+    - 実際の同時実行数制限はrespxモック環境では観測不可能のため別途注記
+    - patch.object(asyncio, 'Semaphore', wraps=asyncio.Semaphore)で実動作を維持しつつスパイ
+
+    学習ポイント:
+    - wrapsパラメータ: 実際の動作を維持しつつ呼び出し記録を有効化
+    - call_args: モックが最後に呼び出された際の引数にアクセス
+    """
+    # Semaphoreの初期化引数を検証するためpatch.objectでスパイ
+    # wraps=asyncio.Semaphoreで実際のSemaphore動作を維持
+    with patch.object(asyncio, "Semaphore", wraps=asyncio.Semaphore) as mock_semaphore:
+        for i in [1, 2, 3]:
+            respx.get(f"{BASE_URL}/users/{i}").respond(json={"id": i, "name": f"User {i}"})
+
+        async with AsyncJSONPlaceholderClient() as client:
+            await client.get_multiple_users([1, 2, 3], max_concurrent=2)
+
+        # Semaphoreが1回だけ初期化されたことを確認
+        assert mock_semaphore.call_count == 1, (
+            f"Semaphoreは1回だけ初期化されるはず（実際: {mock_semaphore.call_count}回）"
+        )
+        # max_concurrent=2が正しく渡されたことを確認
+        actual_value = mock_semaphore.call_args[0][0]
+        assert actual_value == 2, (
+            f"Semaphore初期化値はmax_concurrent=2のはず（実際: {actual_value}）"
+        )
+
+
 @respx.mock
 async def test_partial_failure_graceful_degradation():
     """
@@ -285,6 +323,10 @@ async def test_async_timeout_retry_then_success(mock_backoff: Mock) -> None:
           respxトランスポートモックにより実際のhttpxコードパスを通じて検証する。
     """
     # respxルート: 最初の2回はタイムアウト、3回目で成功
+    # side_effectリスト要素数はリクエスト総数と一致させること。
+    # retry_count=3 の場合: 初回(1) + リトライ(2) = 3リクエスト。
+    # リスト要素は3個で一致（TimeoutException 2個 + Response 1個）。
+    # 不一致時はStopIterationが発生しデバッグが困難になる。
     route = respx.get(f"{BASE_URL}/users/1")
     route.side_effect = [
         httpx.TimeoutException("Timeout 1"),
@@ -490,6 +532,9 @@ async def test_async_bulk_create_users_partial_failure_5xx() -> None:
     # 2件目のリクエストを500（Internal Server Error）で失敗させる
     # 5xxはリトライ対象だが、retry_count=0でリトライを無効化 → 即APIRetryErrorに変換
     # → return_exceptionsで捕捉され、成功分のみ返却される
+    # side_effectリスト要素数は並行タスク数と一致させること。
+    # retry_count=0 の場合: 各タスクは初回(1) のみ = 3タスク × 1リクエスト = 3要素。
+    # 不一致時はStopIterationが発生しデバッグが困難になる。
     post_route = respx.post(f"{BASE_URL}/users")
     post_route.side_effect = [
         Response(201, json={"id": 101, "name": "User 1", "email": "user1@test.com"}),
