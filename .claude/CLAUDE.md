@@ -25,9 +25,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 13. **ALWAYS** when 2+ independent tasks identified (after task classification, per RULES.md exception conditions) → invoke `superpowers:dispatching-parallel-agents` skill
 14. **ALWAYS** verify file content with Read/Grep tool BEFORE making any claim about line numbers, file structure, or code content
 15. **ALWAYS** enforce worktree boundary:
-    - At conversation start: run `pwd` → store as **WORKTREE_ROOT** (immutable for this session)
+    - At conversation start: run `git rev-parse --show-toplevel` → store as **WORKTREE_ROOT** (immutable for this session)
     - Run `git worktree list`:
       - If command fails (non-zero exit code) : **STOP immediately and report to user**
+      - If output is empty or cannot be parsed: **STOP immediately and report to user**
       - If WORKTREE_ROOT not in output: **STOP and report mismatch to user**
         - Suggested checks (do not auto-run):
           - Confirm current directory is inside a git repository
@@ -35,7 +36,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
           - If not initialized, user may run `git init`
       - If 1 entry: notify user "single-worktree mode, boundary protection active (WORKTREE_ROOT: {absolute path}) → proceed only within WORKTREE_ROOT"
       - If 2+ entries: notify user "multi-worktree mode detected, boundary protection active"
-        - Verify WORKTREE_ROOT appears in output with exact line match (pattern: `^{WORKTREE_ROOT}(\s|$)`)
+        - Verify WORKTREE_ROOT appears in output with exact line match (use `grep -F` for literal string matching to avoid metacharacter interpretation)
         - If not found: STOP and report which worktrees are listed vs. stored WORKTREE_ROOT
         - Confirm with user which worktree is the intended working scope before proceeding
     - For files outside WORKTREE_ROOT:
@@ -138,10 +139,6 @@ SECURITY__API_KEY=your-secret-key
 ## 開発時の注意事項
 
 **基本規約**: @memory:coding_standards, @memory:implementation_quality_gates
-
-**作業前の自動セットアップ**: `/using-git-worktrees` スキルが自動発動
-- 発動条件: 機能実装開始時（Issue作成後、設計承認後）
-- develop/mainへの直接作業: 禁止（Protected Branch設定）
 
 <!-- preserve-on-compact: Git Flow -->
 **Git運用** (Git Flow):
@@ -280,7 +277,7 @@ git checkout -b feature/<次のタスク> origin/develop
 9. PR作成     → /push-pr【gh pr create禁止】
 10. レビュー対応 → 修正 → 品質ゲート → /commit → push
 11. マージ実行  → マージ戦略【※4参照】
-12. クリーンアップ → /finishing-a-development-branch
+12. クリーンアップ → Skill(superpowers:finishing-a-development-branch)
 ```
 
 <!-- preserve-on-compact: Quality Gates -->
@@ -308,12 +305,15 @@ API契約変更対象: `models/responses.py`, `utils/api_client.py` public metho
 
 ## 🔄 reflexion使用時の必須チェック
 
-**CRITICAL**: reflexion実行時（/reflexion:reflect, /reflexion:critique）は以下を必ず確認:
+**CRITICAL**: reflexion実行時（Skill(reflexion:reflect), Skill(reflexion:critique):
 
 ### 1. CLAUDE.md標準ルール参照
 
 - [ ] **開発ワークフロー**（Section「🔄 開発ワークフロー」）
-  - /using-git-worktrees
+  - Skill(superpowers:using-git-worktrees)
+  - plan
+  - Skill(superpowers:dispatching-parallel-agents) 実装
+
   - プロジェクト固有スキル使用（/commit, /push-pr）
   - 生コマンド（git commit, gh pr create）使用禁止
 
@@ -344,7 +344,7 @@ API契約変更対象: `models/responses.py`, `utils/api_client.py` public metho
 - [ ] コード提案時: coding_standards参照
 - [ ] **品質基準**: "Would a staff engineer approve this?" — コードの品質・シンプルさ・保守性を自問（観点: 1責務/ネスト≤3段/命名の明確さ）
   - 「Yes」: 次のステップへ進む
-  - 「No」: `/reflexion:reflect` を再実行し具体的な改善箇所を修正する（3回繰り返しても「No」の場合は、引っかかっているチェック項目と改善できない理由をユーザーに明示して報告し、ユーザーが明示的に承認した場合のみ次ステップへ進む。承認スコープはそのタスク限定）
+  - 「No」: `Skill(reflexion:reflect)` を再実行し具体的な改善箇所を修正する（3回繰り返しても「No」の場合は、引っかかっているチェック項目と改善できない理由をユーザーに明示して報告し、ユーザーが明示的に承認した場合のみ次ステップへ進む。承認スコープはそのタスク限定）
 
 **目的**: CLAUDE.md記載内容の「適用漏れ」防止
 
@@ -379,3 +379,9 @@ uv run mypy --show-error-codes --pretty utils/ config/ models/
 1. 公式ドキュメントを再確認（仕様変更/誤解の可能性）
 2. GitHub Issuesで既知の問題を検索
 3. 削除/代替案を検討（機能の必要性を再評価）
+
+
+
+
+
+
