@@ -313,7 +313,8 @@ async def test_async_timeout_retry_then_success(mock_backoff: Mock) -> None:
 
     検証項目：
     - タイムアウトエラー発生時にリトライが行われること（2回連続タイムアウト）
-    - リトライ回数が設定値（retry_count=3）に基づくこと（初回+2回リトライ=3回実行）
+    - リトライ回数が設定値（retry_count=3）に基づくこと
+      （初回+最大3回リトライ=最大4回実行、本テストは3回目で成功）
     - リトライ後に成功した場合のレスポンスが正しく返却されること
 
     Note: test_async_client_error_handling.py の test_async_timeout_then_success（1回タイムアウト）
@@ -323,9 +324,10 @@ async def test_async_timeout_retry_then_success(mock_backoff: Mock) -> None:
     """
     # respxルート: 最初の2回はタイムアウト、3回目で成功
     # side_effectリスト要素数はリクエスト総数と一致させること。
-    # retry_count=3 の場合: 初回(1) + リトライ(2) = 3リクエスト。
-    # リスト要素は3個で一致（TimeoutException 2個 + Response 1個）。
-    # 不一致時はStopIterationが発生しデバッグが困難になる。
+    # retry_count=3 の場合: 初回(1) + 最大リトライ(3) = 最大4リクエスト。
+    # 本テストは3回目で成功するためリスト要素は3個（TimeoutException 2個 + Response 1個）。
+    # 注意: side_effect 要素数はリクエスト総数（初回+リトライ数）と一致させること。
+    # 不一致はStopIteration→RuntimeErrorになる。
     route = respx.get(f"{BASE_URL}/users/1")
     route.side_effect = [
         httpx.TimeoutException("Timeout 1"),
@@ -358,7 +360,6 @@ async def test_async_post_create_user():
 
     検証項目：
     - JSON データの送信
-    - Content-Type ヘッダーの自動設定
     - レスポンスの適切な処理
     - 作成されたリソースの確認
     """
