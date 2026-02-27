@@ -249,7 +249,7 @@ async def test_async_create_post_400_error() -> None:
     - エラーレスポンスの適切な処理
     - リトライが実行されないこと（4xxはクライアントエラー）
     """
-    respx.post(f"{BASE_URL}/posts").respond(
+    route = respx.post(f"{BASE_URL}/posts").respond(
         status_code=400,
         json={"error": "Invalid request body"},
     )
@@ -258,6 +258,8 @@ async def test_async_create_post_400_error() -> None:
         # 400エラーが発生することを確認
         with pytest.raises(APIClientError):
             await client.create_post("", "", 0)  # 不正なデータ
+
+    assert route.call_count == 1  # 4xxはリトライなし
 
 
 # ===============================================================================
@@ -276,7 +278,7 @@ async def test_async_update_post_404_error() -> None:
     - APIClientError 例外の発生
     - リトライが実行されないこと
     """
-    respx.put(f"{BASE_URL}/posts/99999").respond(
+    route = respx.put(f"{BASE_URL}/posts/99999").respond(
         status_code=404,
         json={"error": "Post not found"},
     )
@@ -285,6 +287,8 @@ async def test_async_update_post_404_error() -> None:
         # 404エラーが発生することを確認
         with pytest.raises(APIClientError):
             await client.update_post(99999, "Title", "Body")  # 存在しないID
+
+    assert route.call_count == 1  # 4xxはリトライなし
 
 
 # ===============================================================================
