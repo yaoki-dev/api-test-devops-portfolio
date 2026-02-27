@@ -192,7 +192,6 @@ async def test_async_multiple_users_with_semaphore():
     assert all(r.call_count == 1 for r in routes.values())
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_semaphore_initialized_with_correct_max_concurrent():
     """asyncio.Semaphoreがmax_concurrent値で正しく初期化されることを検証するテスト
@@ -253,7 +252,7 @@ async def test_partial_failure_graceful_degradation():
     route5 = respx.get(f"{BASE_URL}/users/5").respond(json={"id": 5, "name": "User 5"})
 
     # retry_count=0: リトライなし設定でgraceful degradationのみ検証（リトライ挙動は別テストで担保）
-    async with AsyncJSONPlaceholderClient(retry_count=0, retry_delay=0.0) as client:
+    async with AsyncJSONPlaceholderClient(retry_count=0) as client:
         results = await client.get_multiple_users([1, 2, 3, 4, 5], max_concurrent=2)
 
     # graceful degradation検証（成功分のみ返却パターン）
@@ -290,7 +289,7 @@ async def test_all_requests_fail_returns_empty_list():
     routes = [respx.get(f"{BASE_URL}/users/{uid}").respond(status_code=500) for uid in [1, 2, 3]]
 
     # retry_count=0: リトライなし設定でgraceful degradationのみ検証（リトライ挙動は別テストで担保）
-    async with AsyncJSONPlaceholderClient(retry_count=0, retry_delay=0.0) as client:
+    async with AsyncJSONPlaceholderClient(retry_count=0) as client:
         results = await client.get_multiple_users([1, 2, 3], max_concurrent=2)
 
     # 全件失敗で空リスト返却

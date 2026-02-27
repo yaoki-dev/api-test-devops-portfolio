@@ -112,9 +112,9 @@ SECURITY__API_KEY=your-secret-key
 
 **詳細**: @memory:coding_standards 各セクション参照
 
-1. **非同期プログラミング**: `utils/api_client.py:399-762` - async/await、asyncio.gather()
-2. **エラーハンドリング**: `api_client.py:24-57`, `132-219` - 階層的例外、リトライロジック
-3. **テスト設計パターン**: `conftest.py:123-164`, `172-238` - fixtureスコープ、ファクトリーパターン
+1. **非同期プログラミング**: `utils/api_client.py:589-1012` - async/await、asyncio.gather()
+2. **エラーハンドリング**: `api_client.py:23-88`, `222-390` - 階層的例外、リトライロジック
+3. **テスト設計パターン**: `conftest.py:90-132`, `143-220` - fixtureスコープ、ファクトリーパターン
 4. **設定管理**: `config/settings.py` - Pydantic Settings、SecretStr
 
 ## 開発時の注意事項
@@ -361,6 +361,7 @@ uv run mypy --show-error-codes --pretty utils/ config/ models/
 1. 公式ドキュメントを再確認（仕様変更/誤解の可能性）
 2. GitHub Issuesで既知の問題を検索
 3. 削除/代替案を検討（機能の必要性を再評価）
+
 
 
 <claude-mem-context>

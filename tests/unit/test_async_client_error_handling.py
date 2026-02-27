@@ -250,10 +250,12 @@ async def test_async_mixed_errors_exhaust_retries(mock_backoff: Mock) -> None:
     ]
 
     async with AsyncAPIClient(retry_count=2) as client:
-        with pytest.raises(APIRetryError):
+        with pytest.raises(APIRetryError) as exc_info:
             await client.get("/posts/1")
 
     assert route.call_count == 3
+    # 最後のエラー（500 Server Error）が__causeとして記録されていることを確認
+    assert isinstance(exc_info.value.__cause__, APIHTTPError)
 
 
 # =============================================================================

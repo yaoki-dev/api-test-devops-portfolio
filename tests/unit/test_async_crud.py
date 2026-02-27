@@ -151,13 +151,14 @@ async def test_async_delete_post() -> None:
     - 例外が発生しないことの確認
     - 200 ステータスの処理
     """
-    respx.delete(f"{BASE_URL}/posts/1").respond(status_code=200)
+    route = respx.delete(f"{BASE_URL}/posts/1").respond(status_code=200)
 
     async with AsyncJSONPlaceholderClient() as client:
         # delete_post() は None を返す: 型宣言はランタイム動作を保証しないため
         # 実際の戻り値を明示的に検証する（204 No Content → None 変換の保証）
         result = await client.delete_post(1)  # type: ignore[func-returns-value]
 
+    assert route.call_count == 1  # DELETEリクエストが1回発行されたことを確認
     assert result is None
 
 
@@ -178,13 +179,13 @@ async def test_async_crud_integration(sample_post_data: PostData) -> None:
     - 各HTTPメソッドの正確な呼び出し
     """
     # Create: 新規投稿作成（POST /posts）
-    respx.post(f"{BASE_URL}/posts").respond(
+    post_route = respx.post(f"{BASE_URL}/posts").respond(
         status_code=201,
         json=dict(sample_post_data),
     )
 
     # Read: 投稿一覧取得（GET /posts）
-    respx.get(f"{BASE_URL}/posts").respond(
+    get_route = respx.get(f"{BASE_URL}/posts").respond(
         status_code=200,
         json=[dict(sample_post_data)],
     )
@@ -196,13 +197,13 @@ async def test_async_crud_integration(sample_post_data: PostData) -> None:
         "body": "Updated Body",
         "userId": 1,
     }
-    respx.put(f"{BASE_URL}/posts/101").respond(
+    put_route = respx.put(f"{BASE_URL}/posts/101").respond(
         status_code=200,
         json=updated_data,
     )
 
     # Delete: 投稿削除（DELETE /posts/101）
-    respx.delete(f"{BASE_URL}/posts/101").respond(status_code=200)
+    delete_route = respx.delete(f"{BASE_URL}/posts/101").respond(status_code=200)
 
     async with AsyncJSONPlaceholderClient() as client:
         # Create: 新規投稿作成
@@ -224,6 +225,12 @@ async def test_async_crud_integration(sample_post_data: PostData) -> None:
         # Delete: 投稿削除（型ヒントだけでなく実際の戻り値も検証）
         delete_result = await client.delete_post(post_id)  # type: ignore[func-returns-value]
         assert delete_result is None
+
+    # 各HTTPメソッドが1回ずつ発行されたことをトランスポート層で確認
+    assert post_route.call_count == 1
+    assert get_route.call_count == 1
+    assert put_route.call_count == 1
+    assert delete_route.call_count == 1
 
 
 # ===============================================================================
