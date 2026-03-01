@@ -1,7 +1,7 @@
 # 軽量版: コミット時の最小限チェック (実行時間 < 3秒)
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.14              # pyproject.toml[dev]と整合（v0.15の2026 Style Guide回避）
+    rev: v0.15.4              # pyproject.toml[dev]と整合（v0.15の2026 Style Guide回避）
     hooks:
       - id: ruff
         args: [--fix]         # 自動修正で即座に問題解決
