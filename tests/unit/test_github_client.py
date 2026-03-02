@@ -39,7 +39,7 @@ async def test_get_user_success():
     - HTTPXクライアントのリクエスト実行
     - JSONレスポンスの正常パーシング
     """
-    respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=200,
         json={
             "login": "octocat",
@@ -55,12 +55,15 @@ async def test_get_user_success():
     assert user["login"] == "octocat"
     assert user["name"] == "The Octocat"
     assert user["public_repos"] == 8
+    assert route.call_count == 1  # GETリクエストが1回発行されたことを確認
 
 
 @respx.mock
 async def test_get_repos_success():
     """リポジトリ一覧取得成功"""
-    respx.get(f"{GITHUB_API_BASE_URL}/users/octocat/repos").respond(
+    route = respx.get(
+        f"{GITHUB_API_BASE_URL}/users/octocat/repos", params={"sort": "updated", "per_page": 2}
+    ).respond(
         status_code=200,
         json=[
             {"name": "Hello-World", "stargazers_count": 100},
@@ -75,12 +78,13 @@ async def test_get_repos_success():
     assert len(repos) == 2
     assert repos[0]["name"] == "Hello-World"
     assert repos[1]["stargazers_count"] == 50
+    assert route.call_count == 1  # GETリクエストが1回発行されたことを確認
 
 
 @respx.mock
 async def test_get_repo_success():
     """リポジトリ詳細取得成功"""
-    respx.get(f"{GITHUB_API_BASE_URL}/repos/octocat/Hello-World").respond(
+    route = respx.get(f"{GITHUB_API_BASE_URL}/repos/octocat/Hello-World").respond(
         status_code=200,
         json={
             "name": "Hello-World",
@@ -96,6 +100,7 @@ async def test_get_repo_success():
 
     assert repo["name"] == "Hello-World"
     assert repo["stargazers_count"] == 100
+    assert route.call_count == 1  # GETリクエストが1回発行されたことを確認
 
 
 # =============================================================================
@@ -111,7 +116,7 @@ async def test_get_user_not_found():
     - 404ステータスコードでNotFoundError例外発生
     - エラーメッセージにエンドポイント含む
     """
-    respx.get(f"{GITHUB_API_BASE_URL}/users/nonexistent-user-12345").respond(
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/nonexistent-user-12345").respond(
         status_code=404,
         headers={"X-RateLimit-Remaining": "60"},
     )
@@ -122,6 +127,7 @@ async def test_get_user_not_found():
 
     assert "Resource not found" in str(exc_info.value)
     assert "/users/nonexistent-user-12345" in str(exc_info.value)
+    assert route.call_count == 1  # GETリクエストが1回発行されたことを確認
 
 
 @respx.mock
@@ -132,7 +138,7 @@ async def test_rate_limit_exceeded():
     - 403ステータスコードでRateLimitError例外発生
     - reset_time属性が正しく設定される
     """
-    respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=403,
         headers={
             "X-RateLimit-Remaining": "0",
@@ -146,6 +152,7 @@ async def test_rate_limit_exceeded():
 
     assert exc_info.value.reset_time == 1640000000
     assert "Rate limit exceeded" in str(exc_info.value)
+    assert route.call_count == 1  # GETリクエストが1回発行されたことを確認
 
 
 @respx.mock
@@ -209,7 +216,7 @@ async def test_rate_limit_warning_log():
     - X-RateLimit-Remaining < 10で警告ログ
     - reset_time情報をログに含む
     """
-    respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=200,
         json={"login": "octocat"},
         headers={
@@ -227,6 +234,8 @@ async def test_rate_limit_warning_log():
             call_args = mock_warning.call_args
             assert call_args[0][0] == "rate_limit_low"
             assert call_args[1]["remaining"] == 5
+
+    assert route.call_count == 1  # GETリクエストが1回発行されたことを確認
 
 
 # =============================================================================
@@ -414,7 +423,7 @@ async def test_403_non_rate_limit():
 @respx.mock
 async def test_json_decode_error():
     """JSONパース失敗時にGitHubAPIError発生"""
-    respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=200,
         content=b"invalid json content",
         headers={
@@ -426,3 +435,5 @@ async def test_json_decode_error():
     async with AsyncGitHubClient() as client:
         with pytest.raises(GitHubAPIError, match="Invalid JSON"):
             await client.get_user("octocat")
+
+    assert route.call_count == 1  # GETリクエストが1回発行されたことを確認

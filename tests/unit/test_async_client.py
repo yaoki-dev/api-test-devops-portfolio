@@ -704,14 +704,12 @@ async def test_async_performance_and_timeout():
           respxへの移行によるテスト品質向上が限定的なため現状維持。
           ※aclose()検証はtest_async_context_manager_cleanupが担う（別責務）。
     """
-    from httpx import TimeoutException
-
     with patch("httpx.AsyncClient") as mock_client_class:
         mock_client_instance = AsyncMock()
         mock_client_class.return_value = mock_client_instance
 
         # Test 5-1: タイムアウト動作テスト（全リトライ後にAPIRetryError）
-        mock_client_instance.request.side_effect = TimeoutException("Request timeout")
+        mock_client_instance.request.side_effect = httpx.TimeoutException("Request timeout")
 
         async with AsyncAPIClient(timeout=1.0, retry_count=1, retry_delay=0.05) as client:
             # 実装はリトライ失敗後にAPIRetryErrorを発生させる

@@ -522,6 +522,13 @@ def test_sync_get_todos(
     assert result == filtered_todos
     assert route.call_count == 1  # GETリクエストが1回のみ発行されたことを確認
 
+    # completed パラメータのエンコード検証
+    # httpxはFalseを"false"、Trueを"true"にエンコードする（小文字）
+    if completed is not None:
+        assert route.calls[0].request.url.params.get("completed") == str(completed).lower(), (
+            f"completed={completed} はhttpxにより '{str(completed).lower()}' にエンコードされるべき"
+        )
+
 
 # =============================================================================
 # Issue #173: get_todos() 入力値バリデーション
@@ -755,3 +762,146 @@ def test_sync_get_photos_invalid_album_id(album_id: int, respx_mock: respx.MockR
 
     # HTTPリクエストが発行されていないことを確認（スコープ付きルーター使用）
     assert len(respx_mock.calls) == 0
+
+
+# =============================================================================
+# SyncAPIClient基底クラス: HTTP PATCHメソッド
+# =============================================================================
+
+
+@pytest.mark.unit
+@respx.mock
+def test_sync_patch_method() -> None:
+    """SyncAPIClient.patch() HTTP PATCHメソッドの動作確認
+
+    検証項目:
+    - PATCHリクエストが正しく送信される
+    - HTTPメソッドが "PATCH" である
+    - リクエストボディが正確に送信される
+
+    学習ポイント:
+    - HTTP PATCH: リソースの部分更新操作
+    - PUT vs PATCH: PUTは全体更新、PATCHは部分更新
+    """
+    endpoint = "/todos/1"
+    patch_data = {"completed": True}
+    full_response = {"id": 1, "title": "Test Todo", "completed": True, "userId": 1}
+
+    # PATCHレスポンスをモック化
+    route = respx.patch(f"{BASE_URL}{endpoint}").respond(status_code=200, json=full_response)
+
+    with SyncJSONPlaceholderClient() as client:
+        result = client.update_todo(1, completed=True)
+
+    # レスポンス検証
+    assert result == full_response
+    assert result["completed"] is True
+
+    # リクエスト検証
+    assert route.call_count == 1
+    assert route.calls[0].request.method == "PATCH"
+
+    # リクエストボディ検証
+    import json as json_module
+
+    request_body = json_module.loads(route.calls[0].request.content)
+    assert request_body == patch_data
+
+
+# =============================================================================
+# SyncJSONPlaceholderClient: 未テストメソッド
+# =============================================================================
+
+
+@pytest.mark.unit
+@respx.mock
+def test_sync_get_users() -> None:
+    """SyncJSONPlaceholderClient.get_users() ユーザー一覧取得の動作確認
+
+    検証項目:
+    - GET /users リクエストが送信される
+    - ユーザーリストが正しく返される
+    - call_count で1回のリクエストを確認
+
+    学習ポイント:
+    - respx: パラメータなしのGETリクエストモック
+    """
+    mock_users = [
+        {"id": 1, "name": "Leanne Graham", "email": "sincere@april.biz"},
+        {"id": 2, "name": "Ervin Howell", "email": "shanna@melissa.tv"},
+    ]
+
+    route = respx.get(f"{BASE_URL}/users").respond(json=mock_users)
+
+    with SyncJSONPlaceholderClient() as client:
+        result = client.get_users()
+
+    assert len(result) == 2
+    assert result[0]["name"] == "Leanne Graham"
+    assert result[1]["id"] == 2
+    assert route.call_count == 1
+
+
+@pytest.mark.unit
+@respx.mock
+def test_sync_get_todo() -> None:
+    """SyncJSONPlaceholderClient.get_todo() 特定TODO取得の動作確認
+
+    検証項目:
+    - GET /todos/{id} リクエストが送信される
+    - 正しいTODOデータが返される
+
+    学習ポイント:
+    - respx: パスパラメータを含むURLのモック
+    """
+    mock_todo = {"id": 1, "userId": 1, "title": "delectus aut autem", "completed": False}
+
+    route = respx.get(f"{BASE_URL}/todos/1").respond(json=mock_todo)
+
+    with SyncJSONPlaceholderClient() as client:
+        result = client.get_todo(1)
+
+    assert result["id"] == 1
+    assert result["title"] == "delectus aut autem"
+    assert result["completed"] is False
+    assert route.call_count == 1
+
+
+@pytest.mark.unit
+@respx.mock
+def test_sync_create_todo() -> None:
+    """SyncJSONPlaceholderClient.create_todo() 新規TODO作成の動作確認
+
+    検証項目:
+    - POST /todos リクエストが送信される
+    - リクエストボディに title/userId/completed が含まれる
+    - 201 Created レスポンスが正しく処理される
+
+    学習ポイント:
+    - respx: POSTリクエストのボディ検証
+    - respx: route.calls[0].request.content でボディ確認
+    """
+    import json as json_module
+
+    new_todo_response = {
+        "id": 201,
+        "title": "Buy groceries",
+        "userId": 1,
+        "completed": False,
+    }
+
+    route = respx.post(f"{BASE_URL}/todos").respond(status_code=201, json=new_todo_response)
+
+    with SyncJSONPlaceholderClient() as client:
+        result = client.create_todo(title="Buy groceries", user_id=1, completed=False)
+
+    # レスポンス検証
+    assert result["id"] == 201
+    assert result["title"] == "Buy groceries"
+    assert route.call_count == 1
+
+    # リクエストボディ検証: title/userId/completedが正しく送信されたか
+    request_body = json_module.loads(route.calls[0].request.content)
+    assert request_body["title"] == "Buy groceries"
+    assert request_body["userId"] == 1
+    assert request_body["completed"] is False
