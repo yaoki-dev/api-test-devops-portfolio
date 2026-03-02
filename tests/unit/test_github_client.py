@@ -326,7 +326,7 @@ async def test_httpx_status_error_4xx():
     )
 
     async with AsyncGitHubClient() as client:
-        with pytest.raises(httpx.HTTPStatusError):
+        with pytest.raises(GitHubAPIError):
             await client.get_user("octocat")
 
 

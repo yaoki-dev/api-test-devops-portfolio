@@ -194,39 +194,43 @@ async def test_async_multiple_users_with_semaphore():
 
 @respx.mock
 async def test_semaphore_initialized_with_correct_max_concurrent():
-    """asyncio.Semaphoreがmax_concurrent値で正しく初期化されることを検証するテスト
+    """Semaphoreがmax_concurrent=2の同時実行数制限を実際に機能させることを検証するテスト
 
     検証項目：
-    - Semaphoreがget_multiple_users()内で一度だけ初期化されること
-    - 初期化時にmax_concurrent=2が渡されること（設計上の制約が実装に反映されている）
-
-    注意（テスト設計の意図）:
-    - このテストは「Semaphoreが設定値通りに初期化される」ことを検証する
-    - 実際の同時実行数制限はrespxモック環境では観測不可能のため別途注記
-    - patch.object(asyncio, 'Semaphore', wraps=asyncio.Semaphore)で実動作を維持しつつスパイ
+    - get_multiple_users()が同時に実行するタスク数がmax_concurrent=2以下に抑えられること
+    - asyncio.sleep(0)でevent loopにyieldし、並行実行を観測可能にする
 
     学習ポイント:
-    - wrapsパラメータ: 実際の動作を維持しつつ呼び出し記録を有効化
-    - call_args: モックが最後に呼び出された際の引数にアクセス
+    - nonlocal変数で並行実行カウンターを実装するスパイパターン
+    - asyncio.sleep(0): 実際の遅延なしにevent loopへyieldし、並行実行を許容
+    - patch.object: メソッドを差し替えて内部動作を観測する
     """
-    # Semaphoreの初期化引数を検証するためpatch.objectでスパイ
-    # wraps=asyncio.Semaphoreで実際のSemaphore動作を維持
-    with patch.object(asyncio, "Semaphore", wraps=asyncio.Semaphore) as mock_semaphore:
-        for i in [1, 2, 3]:
-            respx.get(f"{BASE_URL}/users/{i}").respond(json={"id": i, "name": f"User {i}"})
+    max_concurrent_observed = 0
+    current_concurrent = 0
 
+    original_get_user = AsyncJSONPlaceholderClient.get_user
+
+    async def spy_get_user(self, user_id: int) -> dict:  # type: ignore[override]
+        nonlocal max_concurrent_observed, current_concurrent
+        current_concurrent += 1
+        max_concurrent_observed = max(max_concurrent_observed, current_concurrent)
+        # event loopにyieldして他タスクの並行実行を許容する（実際の遅延なし）
+        await asyncio.sleep(0)
+        result = await original_get_user(self, user_id)
+        current_concurrent -= 1
+        return result
+
+    # respxルート設定（5ユーザー分）
+    for i in [1, 2, 3, 4, 5]:
+        respx.get(f"{BASE_URL}/users/{i}").respond(json={"id": i, "name": f"User {i}"})
+
+    with patch.object(AsyncJSONPlaceholderClient, "get_user", spy_get_user):
         async with AsyncJSONPlaceholderClient() as client:
-            await client.get_multiple_users([1, 2, 3], max_concurrent=2)
+            await client.get_multiple_users([1, 2, 3, 4, 5], max_concurrent=2)
 
-        # Semaphoreが1回だけ初期化されたことを確認
-        assert mock_semaphore.call_count == 1, (
-            f"Semaphoreは1回だけ初期化されるはず（実際: {mock_semaphore.call_count}回）"
-        )
-        # max_concurrent=2が正しく渡されたことを確認
-        actual_value = mock_semaphore.call_args[0][0]
-        assert actual_value == 2, (
-            f"Semaphore初期化値はmax_concurrent=2のはず（実際: {actual_value}）"
-        )
+    assert max_concurrent_observed <= 2, (
+        f"同時実行数がmax_concurrent=2を超えた（実際: {max_concurrent_observed}）"
+    )
 
 
 @respx.mock

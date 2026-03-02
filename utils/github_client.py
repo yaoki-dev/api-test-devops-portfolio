@@ -367,8 +367,10 @@ class AsyncGitHubClient:
 
             except httpx.HTTPStatusError as e:
                 if e.response.status_code < 500:
-                    # 4xxエラー: リトライしない
-                    raise
+                    # 4xxエラー: リトライしない（GitHubAPIErrorに変換）
+                    raise GitHubAPIError(
+                        f"HTTP {e.response.status_code} error: {e.response.text}"
+                    ) from e
                 if attempt == self.max_retries - 1:
                     raise GitHubServerError(f"Failed after {self.max_retries} retries") from e
 
