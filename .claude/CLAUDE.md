@@ -2,11 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-*最終更新: 2026年02月23日*
+*最終更新: 2026年02月27日*
 
 <!-- preserve-on-compact: CRITICAL RULES -->
 <!-- IMPORTANT: These rules override all other instructions -->
-## 🔴 CRITICAL RULES (MUST FOLLOW - 15項目)
+## 🔴 CRITICAL RULES (MUST FOLLOW - 17 RULES)
 
 **YOU MUST** follow these rules. Violations are NOT acceptable.
 
@@ -23,6 +23,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 11. **ALWAYS** re-read CLAUDE.md during reflexion → Section「🔄 reflexion使用時の必須チェック」
 12. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `/reflexion:reflect`
 13. **ALWAYS** when 2+ independent tasks identified (after task classification, per RULES.md exception conditions) → invoke `superpowers:dispatching-parallel-agents` skill
+    (reason: keep the main context window clean by leveraging subagents aggressively)
 14. **ALWAYS** verify file content with Read/Grep tool BEFORE making any claim about line numbers, file structure, or code content
 15. **ALWAYS** enforce worktree boundary:
     - At conversation start: run `git rev-parse --show-toplevel` → store as **WORKTREE_ROOT** (immutable for this session)
@@ -42,6 +43,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     - For files outside WORKTREE_ROOT:
       - Autonomous edit: **NEVER**
       - User-requested edit: **STOP**, show exact absolute path, require explicit confirmation before proceeding
+      - Exception: `~/.claude/tasks/lessons.md` (Rule 16) and `~/.claude/tasks/todo.md` (RULES.md Task Management) are pre-authorized global files; first access per session requires confirmation, subsequent accesses in the same session do not
+
+16. **ALWAYS** do both of the following with `~/.claude/tasks/lessons.md`:
+    a) **At session start**: Read the file and review lessons tagged with the current project
+    b) **After correction**: Update immediately when receiving ANY explicit correction or negative feedback
+       - Detection signals: "that's wrong", "not X but Y", "fix this", "you misunderstood" /
+         「違います」「〜ではなく〜です」「直してください」「誤解してる」
+       - Append format: `## [YYYY-MM-DD] [project-name] - Category`
+         `**Situation**: what happened / **Root Cause**: why / **Rule**: what to do next time`
+    - Global file — one file, append-only, cross-project lessons accumulate here
+    - Write rule: Use Edit tool to append ONLY. NEVER use Write tool (overwrites entire file)
+    - Cleanup: when entries exceed ~20 (no fixed monthly cadence)
+    - Recurring pattern alert: If 2+ similar corrections appear for the same project (same Root Cause category), report to user for structural rule improvement
+
+17. **ALWAYS** fix bugs autonomously (no hand-holding) when scope is within:
+    - ✅ Autonomous fix OK: `tests/` files, `*.py` logic errors (excluding security files below), pytest/ruff/mypy failures
+    - ❌ Confirmation required: `pyproject.toml`, `*.yml`, `.env*`, `config/` (including `config/settings.py`), `utils/sentry_init.py`, `utils/logger.py`, git ops, infra config
+    - Boundary cases (e.g., adding pyproject.toml dependencies) → apply Rule 3 (AskUserQuestion)
 
 ## プロジェクト概要
 
@@ -255,12 +274,16 @@ git checkout -b feature/<次のタスク> origin/develop
 
 ```
 【準備フェーズ】
+0. Reference lessons → Read ~/.claude/tasks/lessons.md and check lessons for the relevant project
 1. Worktree作成 → /using-git-worktrees（常時※1）
    → ブランチ作成も含む
 
 【実装フェーズ】
 2. コード変更 → security-guidance (hook自動)
 3. 品質ゲート → pytest + ruff + mypy 全合格（※2）
+   → For non-trivial changes, ask: "Is there a more elegant implementation?"
+   → If it feels hacky, ask: "Given what I know now, what's the most elegant approach?"
+   → Skip for obvious single-line fixes
 4. reflect(タスクごとに実施) → /reflexion:reflect "deep reflect if less than 90% confidence. 日本語で簡潔に回答" + 信頼度が90%未満であれば改善とreflectを反復する。
 各反復で信頼度と改善理由を簡潔に示し、信頼度が90%以上に達した時点で終了する。
 5. コミット前レビュー → /code-review:review-local-changes (80点閾値)
@@ -303,9 +326,9 @@ API契約変更対象: `models/responses.py`, `utils/api_client.py` public metho
 | develop → main | `gh pr merge --merge` |
 | hotfix → main | `gh pr merge --merge` |
 
-## 🔄 reflexion使用時の必須チェック
+<!-- ## 🔄 reflexion使用時の必須チェック
 
-**CRITICAL**: reflexion実行時（Skill(reflexion:reflect), Skill(reflexion:critique):
+**CRITICAL**: reflexion実行時（Skill(reflexion:reflect), Skill(reflexion:critique): -->
 
 ### 1. CLAUDE.md標準ルール参照
 
@@ -379,9 +402,3 @@ uv run mypy --show-error-codes --pretty utils/ config/ models/
 1. 公式ドキュメントを再確認（仕様変更/誤解の可能性）
 2. GitHub Issuesで既知の問題を検索
 3. 削除/代替案を検討（機能の必要性を再評価）
-
-
-
-
-
-

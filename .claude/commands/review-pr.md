@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(mgrep:*)
+allowed-tools: Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(mgrep:*),mcp__ast-grep__find_code,mcp__ast-grep__find_code_by_rule,mcp__morph-mcp__warpgrep_codebase_search
 description: Review a pull request
 ---
 
@@ -7,13 +7,13 @@ Perform a comprehensive code review using subagents for key areas:
 
 ## Execution Strategy
 
-**IMPORTANT: Launch all 6 agents in PARALLEL using a single message with multiple Task tool calls.**
+**IMPORTANT: Launch all 7 agents in PARALLEL using a single message with multiple Task tool calls.**
 
 Do NOT run agents sequentially. All agents are independent and can run simultaneously.
 
 ## Agents to Launch (ALL IN PARALLEL)
 
-Launch these 6 agents in a single message:
+Launch these 7 agents in a single message:
 
 - code-quality-reviewer
 - performance-reviewer
@@ -21,6 +21,7 @@ Launch these 6 agents in a single message:
 - documentation-accuracy-reviewer
 - security-code-reviewer
 - silent-failure-hunter
+- code-simplicity-reviewer
 
 ## Quality Threshold
 

@@ -1,8 +1,8 @@
 ---
 name: documentation-accuracy-reviewer
 description: Use this agent when you need to verify that code documentation is accurate, complete, and up-to-date.
-tools: Glob, Grep, Read, WebFetch, TodoWrite, WebSearch, BashOutput, KillBash
-model: inherit
+tools: Glob, Grep, Bash(mgrep:*), Read, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__find_code, mcp__ast-grep__find_code_by_rule, mcp__morph-mcp__warpgrep_codebase_search
+model: sonnet
 ---
 
 You are an expert technical documentation reviewer with deep expertise in code documentation standards and technical writing.

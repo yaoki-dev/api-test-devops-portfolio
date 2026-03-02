@@ -46,10 +46,10 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
   - On completion: after all parallel agents complete, the parent agent must explicitly verify that each artifact exists in its expected final state before marking the parent task complete
 
 **Task Classification**: Before dispatching, classify the task type:
-- **Implementation** (実装): code writing, feature development, bug fixes, test authoring
-- **Investigation** (調査): research, analysis, debugging, codebase exploration
-- **Review** (レビュー): code review, PR review, security audit, documentation review
-- **Design** (設計): architecture design, API spec, system planning
+- **Implementation** : code writing, feature development, bug fixes, test authoring
+- **Investigation** : research, analysis, debugging, codebase exploration
+- **Review** : code review, PR review, security audit, documentation review
+- **Design** : architecture design, API spec, system planning
 
 **Agent Selection**: Map task type to agents (reference: `~/.claude/docs/AGENTS_CATALOG.md`):
 
@@ -68,6 +68,23 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
 **Good:** Plan → TodoWrite → Execute → Verify | **Bad:** Jump to implementation
 
 **Reference:** `api-specification-check.md`, `execution-efficiency.md`
+
+---
+
+## Category: Task Management (Persistent Layer)
+**Trigger:** Multi-session or large-scale tasks | **Priority:** Important
+
+For large-scale or multi-session tasks,
+record plans in `~/.claude/tasks/todo.md` (complements the ephemeral TodoWrite tool):
+1. **Plan First**: Write a checkable item list before starting
+2. **Verify Plan**: Align with the user before implementation
+3. **Track Progress**: Mark items as complete
+4. **Document Results**: Append review section after completion
+5. **Capture Lessons**: Update `lessons.md` after any corrections
+
+Usage distinction:
+- TodoWrite = in-session UI display (unchanged)
+- `~/.claude/tasks/todo.md` = persistent record for large tasks spanning sessions
 
 ---
 
