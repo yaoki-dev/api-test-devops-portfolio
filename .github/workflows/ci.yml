@@ -150,7 +150,7 @@ jobs:
       # Step 1: Filesystem scan (both develop and main)
       - name: Trivy filesystem scan (dependencies)
         id: fs-scan
-        uses: aquasecurity/trivy-action@0.34.0
+        uses: aquasecurity/trivy-action@0.34.1
         env:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
         with:
@@ -217,7 +217,7 @@ jobs:
       - name: Trivy image scan (main PRs + docker label)
         id: image-scan
         if: steps.docker-build.outcome == 'success'
-        uses: aquasecurity/trivy-action@0.34.0
+        uses: aquasecurity/trivy-action@0.34.1
         env:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
         with:
@@ -319,7 +319,7 @@ jobs:
 
       - name: Trivy image scan (CRITICAL + HIGH)
         id: trivy-scan
-        uses: aquasecurity/trivy-action@0.34.0
+        uses: aquasecurity/trivy-action@0.34.1
         env:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
         with:
