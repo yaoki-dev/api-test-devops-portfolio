@@ -13,31 +13,17 @@ Note:
 
 import json
 import sys
-from typing import Any
 
 import httpx
 import pytest
 import respx
 
+from tests.unit.helpers import mock_get_route
 from utils.api_client import SyncAPIClient, SyncJSONPlaceholderClient
 
 pytestmark = pytest.mark.unit
 
 BASE_URL = "https://jsonplaceholder.typicode.com"
-
-
-def _mock_get(url: str, params: dict[str, Any] | None, json_data: Any) -> respx.Route:
-    """respx GETルートのparams有無対応ヘルパー
-
-    respxのparams=はsubset match（指定キーが存在し値が一致すれば通過）。
-    paramsがNoneの場合はパラメータなしのURLとしてモック。
-
-    Returns:
-        respx.Route: call_count等の検証に使用可能なルートオブジェクト
-    """
-    if params is not None:
-        return respx.get(url, params=params).respond(json=json_data)
-    return respx.get(url).respond(json=json_data)
 
 
 # =============================================================================
@@ -294,7 +280,7 @@ def test_sync_get_posts(limit: int | None, expected_count: int) -> None:
 
     # クエリパラメータ検証: limitが指定された場合はparams=でマッチ
     params = {"_limit": limit} if limit is not None else None
-    route = _mock_get(f"{BASE_URL}/posts", params, mock_data)
+    route = mock_get_route(f"{BASE_URL}/posts", params, mock_data)
 
     with SyncJSONPlaceholderClient() as client:
         result = client.get_posts(limit=limit)
@@ -348,7 +334,7 @@ def test_sync_get_posts_user_filter(user_id: int | None, expected_count: int) ->
 
     # クエリパラメータ検証: user_idが指定された場合はparams=でマッチ
     params = {"userId": user_id} if user_id is not None else None
-    route = _mock_get(f"{BASE_URL}/posts", params, mock_data)
+    route = mock_get_route(f"{BASE_URL}/posts", params, mock_data)
 
     with SyncJSONPlaceholderClient() as client:
         result = client.get_posts(user_id=user_id)
@@ -527,7 +513,7 @@ def test_sync_get_todos(
         for k, v in {"userId": user_id, "completed": completed, "_limit": limit}.items()
         if v is not None
     } or None
-    route = _mock_get(f"{BASE_URL}/todos", params, filtered_todos)
+    route = mock_get_route(f"{BASE_URL}/todos", params, filtered_todos)
 
     with SyncJSONPlaceholderClient() as client:
         result = client.get_todos(user_id=user_id, completed=completed, limit=limit)
@@ -621,7 +607,7 @@ def test_sync_get_albums(user_id: int | None, expected_count: int) -> None:
 
     # クエリパラメータ検証: user_idが指定された場合はparams=でマッチ
     params = {"userId": user_id} if user_id is not None else None
-    route = _mock_get(f"{BASE_URL}/albums", params, mock_data)
+    route = mock_get_route(f"{BASE_URL}/albums", params, mock_data)
 
     with SyncJSONPlaceholderClient() as client:
         result = client.get_albums(user_id=user_id)
