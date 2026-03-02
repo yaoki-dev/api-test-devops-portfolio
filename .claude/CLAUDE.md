@@ -2,11 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-*最終更新: 2026年02月27日*
+*最終更新: 2026年03月02日*
 
 <!-- preserve-on-compact: CRITICAL RULES -->
 <!-- IMPORTANT: These rules override all other instructions -->
-## 🔴 CRITICAL RULES (MUST FOLLOW - 17 RULES)
+## 🔴 CRITICAL RULES (MUST FOLLOW - 16 RULES)
 
 **YOU MUST** follow these rules. Violations are NOT acceptable.
 
@@ -20,46 +20,47 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 8. **NEVER** push to protected branches (main/develop) directly
 9. **ALWAYS** invoke `/xxx` skills via Skill tool when user requests
 10. **ALWAYS** follow development workflow order → Section「🔄 開発ワークフロー」
-11. **ALWAYS** re-read CLAUDE.md during reflexion → Section「🔄 reflexion使用時の必須チェック」
-12. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `/reflexion:reflect`
-13. **ALWAYS** when 2+ independent tasks identified (after task classification, per RULES.md exception conditions) → invoke `superpowers:dispatching-parallel-agents` skill
+11. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `/reflexion:reflect`
+12. **ALWAYS** when 2+ independent tasks identified (after task classification, per RULES.md exception conditions) → invoke `superpowers:dispatching-parallel-agents` skill
     (reason: keep the main context window clean by leveraging subagents aggressively)
-14. **ALWAYS** verify file content with Read/Grep tool BEFORE making any claim about line numbers, file structure, or code content
-15. **ALWAYS** enforce worktree boundary:
-    - At conversation start: run `git rev-parse --show-toplevel` → store as **WORKTREE_ROOT** (immutable for this session)
-    - Run `git worktree list`:
-      - If command fails (non-zero exit code) : **STOP immediately and report to user**
-      - If output is empty or cannot be parsed: **STOP immediately and report to user**
-      - If WORKTREE_ROOT not in output: **STOP and report mismatch to user**
-        - Suggested checks (do not auto-run):
-          - Confirm current directory is inside a git repository
-          - Run `git rev-parse --is-inside-work-tree`
-          - If not initialized, user may run `git init`
-      - If 1 entry: notify user "single-worktree mode, boundary protection active (WORKTREE_ROOT: {absolute path}) → proceed only within WORKTREE_ROOT"
-      - If 2+ entries: notify user "multi-worktree mode detected, boundary protection active"
-        - Verify WORKTREE_ROOT appears in output with exact line match (use `grep -F` for literal string matching to avoid metacharacter interpretation)
-        - If not found: STOP and report which worktrees are listed vs. stored WORKTREE_ROOT
-        - Confirm with user which worktree is the intended working scope before proceeding
+13. **ALWAYS** verify file content with Read/Grep tool BEFORE making any claim about line numbers, file structure, or code content
+14. **ALWAYS** enforce worktree boundary:
+    - At conversation start: run `git rev-parse --show-toplevel`:
+      - If command fails (non-zero exit code): **STOP immediately and report to user**
+      - If output is empty: **STOP immediately and report to user**
+      - Store non-empty result as **WORKTREE_ROOT** (immutable for this session)
+    - Run `git worktree list` and check result:
+
+      | `git worktree list` 結果 | 対応 |
+      |--------------------------|------|
+      | コマンド失敗（非ゼロ終了） | **STOP** + ユーザー報告 |
+      | 空 / パース不可 | **STOP** + ユーザー報告 |
+      | WORKTREE_ROOT 未含有 | **STOP** + ミスマッチ報告 |
+      | 1エントリ | 「single-worktreeモード（WORKTREE_ROOT: {絶対パス}）」通知 + 続行 |
+      | 2+エントリ | 「multi-worktreeモード」通知 → WORKTREE_ROOT確認 → ユーザーとスコープ確認 |
+
+      > **WORKTREE_ROOT確認**: `git worktree list | cut -d' ' -f1 | grep -Fx "${WORKTREE_ROOT}"` (`-F`: literal string, `-x`: full-line match — prevents `/project` matching `/project-extra`; note: paths with spaces are not supported by this command)
+      > **「パース不可」の定義**: 各行が `<absolute-path>` の形式を満たさない / 出力が空白のみ
+      > **WORKTREE_ROOT未含有時のチェック**（do not auto-run）: `git rev-parse --is-inside-work-tree` / 未初期化の場合 `git init`
+
     - For files outside WORKTREE_ROOT:
       - Autonomous edit: **NEVER**
       - User-requested edit: **STOP**, show exact absolute path, require explicit confirmation before proceeding
-      - Exception: `~/.claude/tasks/lessons.md` (Rule 16) and `~/.claude/tasks/todo.md` (RULES.md Task Management) are pre-authorized global files; first access per session requires confirmation, subsequent accesses in the same session do not
-
-16. **ALWAYS** do both of the following with `~/.claude/tasks/lessons.md`:
+      - Exception: `~/.claude/tasks/lessons.md` (Rule 15) and `~/.claude/tasks/todo.md` (RULES.md Task Management) are pre-authorized global files; no confirmation required for any access
+15. **ALWAYS** do both of the following with `~/.claude/tasks/lessons.md`:
     a) **At session start**: Read the file and review lessons tagged with the current project
     b) **After correction**: Update immediately when receiving ANY explicit correction or negative feedback
        - Detection signals: "that's wrong", "not X but Y", "fix this", "you misunderstood" /
          「違います」「〜ではなく〜です」「直してください」「誤解してる」
        - Append format: `## [YYYY-MM-DD] [project-name] - Category`
          `**Situation**: what happened / **Root Cause**: why / **Rule**: what to do next time`
-    - Global file — one file, append-only, cross-project lessons accumulate here
-    - Write rule: Use Edit tool to append ONLY. NEVER use Write tool (overwrites entire file)
-    - Cleanup: when entries exceed ~20 (no fixed monthly cadence)
-    - Recurring pattern alert: If 2+ similar corrections appear for the same project (same Root Cause category), report to user for structural rule improvement
-
-17. **ALWAYS** fix bugs autonomously (no hand-holding) when scope is within:
-    - ✅ Autonomous fix OK: `tests/` files, `*.py` logic errors (excluding security files below), pytest/ruff/mypy failures
-    - ❌ Confirmation required: `pyproject.toml`, `*.yml`, `.env*`, `config/` (including `config/settings.py`), `utils/sentry_init.py`, `utils/logger.py`, git ops, infra config
+       - Global file — one file, append-only, cross-project lessons accumulate here
+       - Write rule: Use Edit tool to append ONLY. NEVER use Write tool (overwrites entire file)
+       - Cleanup: when entries exceed ~20 (no fixed monthly cadence)
+       - Recurring pattern alert: If 2+ similar corrections appear for the same project (same Root Cause category), report to user for structural rule improvement
+16. **ALWAYS** fix bugs autonomously (no hand-holding) when scope is within:
+    - ✅ Autonomous fix OK: `tests/**/test_*.py`, `*.py` logic errors (excluding security files below), pytest/ruff/mypy failures
+    - ❌ Confirmation required: `tests/conftest.py`, `pyproject.toml`, `*.yml`, `.env*`, `config/` (including `config/settings.py`), `utils/sentry_init.py`, `utils/logger.py`, git ops / infra config
     - Boundary cases (e.g., adding pyproject.toml dependencies) → apply Rule 3 (AskUserQuestion)
 
 ## プロジェクト概要
@@ -275,6 +276,7 @@ git checkout -b feature/<次のタスク> origin/develop
 ```
 【準備フェーズ】
 0. Reference lessons → Read ~/.claude/tasks/lessons.md and check lessons for the relevant project
+   → 大規模タスク（複数セッション）: `.claude/rules/workflow/RULES.md` 「Task Management (Persistent Layer)」参照（todo.md活用）
 1. Worktree作成 → /using-git-worktrees（常時※1）
    → ブランチ作成も含む
 
@@ -286,6 +288,9 @@ git checkout -b feature/<次のタスク> origin/develop
    → Skip for obvious single-line fixes
 4. reflect(タスクごとに実施) → /reflexion:reflect "deep reflect if less than 90% confidence. 日本語で簡潔に回答" + 信頼度が90%未満であれば改善とreflectを反復する。
 各反復で信頼度と改善理由を簡潔に示し、信頼度が90%以上に達した時点で終了する。
+   reflexion時確認: コマンドルール（Section「🔌」のCritical/High/Medium優先度・発動条件）/ 2h+セッション時はCLAUDE.md主要セクション再読込
+   "Would a staff engineer approve this?"（観点: 1責務/ネスト≤3段/命名の明確さ）
+   → No: reflexion再実行。3回でもNoなら理由をユーザー報告 → 明示承認後のみ続行（承認スコープはそのタスク限定）
 5. コミット前レビュー → /code-review:review-local-changes (80点閾値)
 6. コミット   → /commit【git commit禁止】
 
@@ -326,51 +331,6 @@ API契約変更対象: `models/responses.py`, `utils/api_client.py` public metho
 | develop → main | `gh pr merge --merge` |
 | hotfix → main | `gh pr merge --merge` |
 
-<!-- ## 🔄 reflexion使用時の必須チェック
-
-**CRITICAL**: reflexion実行時（Skill(reflexion:reflect), Skill(reflexion:critique): -->
-
-### 1. CLAUDE.md標準ルール参照
-
-- [ ] **開発ワークフロー**（Section「🔄 開発ワークフロー」）
-  - Skill(superpowers:using-git-worktrees)
-  - plan
-  - Skill(superpowers:dispatching-parallel-agents) 実装
-
-  - プロジェクト固有スキル使用（/commit, /push-pr）
-  - 生コマンド（git commit, gh pr create）使用禁止
-
-- [ ] **コマンド/スキル/プラグイン自動発動ルール**（Section「🔌」）
-  - Critical/High/Mediumの優先度確認
-  - 発動条件の確認
-
-- [ ] **コーディング規約**（@memory:coding_standards）
-  - 命名規則、型ヒント、テスト規約の確認
-
-- [ ] **品質ゲート**（@memory:implementation_quality_gates）
-  - 4段階品質チェック（pytest/ruff/mypy/git）の確認
-
-- [ ] **ワークフロー効率化ガイド**（.claude/rules/workflow/）
-  - api-specification-check.md: API仕様事前確認プロセス
-  - execution-efficiency.md: 3段階ワークフロー、並列実行判定
-
-### 2. コンテキスト再確認（長時間セッション時）
-
-- [ ] セッション時間2h+の場合、CLAUDE.md主要セクション再読込
-- [ ] プロジェクト固有ルール > 一般的ベストプラクティス
-- [ ] 「知っている ≠ 思い出す」を意識
-
-### 3. 提案前の確認
-
-- [ ] ワークフロー提案時: Section「🔄 開発ワークフロー」参照
-- [ ] コマンド提案時: Section「🔌 コマンド/スキル/プラグイン自動発動ルール」参照
-- [ ] コード提案時: coding_standards参照
-- [ ] **品質基準**: "Would a staff engineer approve this?" — コードの品質・シンプルさ・保守性を自問（観点: 1責務/ネスト≤3段/命名の明確さ）
-  - 「Yes」: 次のステップへ進む
-  - 「No」: `Skill(reflexion:reflect)` を再実行し具体的な改善箇所を修正する（3回繰り返しても「No」の場合は、引っかかっているチェック項目と改善できない理由をユーザーに明示して報告し、ユーザーが明示的に承認した場合のみ次ステップへ進む。承認スコープはそのタスク限定）
-
-**目的**: CLAUDE.md記載内容の「適用漏れ」防止
-
 ## トラブルシューティング
 
 **詳細**: @memory:test_strategy_details トラブルシューティングFAQ参照
@@ -402,3 +362,100 @@ uv run mypy --show-error-codes --pretty utils/ config/ models/
 1. 公式ドキュメントを再確認（仕様変更/誤解の可能性）
 2. GitHub Issuesで既知の問題を検索
 3. 削除/代替案を検討（機能の必要性を再評価）
+
+
+
+<claude-mem-context>
+# Recent Activity
+
+<!-- This section is auto-generated by claude-mem. Edit content outside the tags. -->
+
+### Feb 1, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #2490 | 8:40 PM | 🔵 | Claude-Flow Hooks Configure Custom Status Line Display | ~492 |
+| #2488 | " | 🔵 | Project uses Claude MCP servers and custom hooks configuration | ~337 |
+| #2433 | 6:53 PM | 🟣 | Four Security and Safety Hooks Deployed to Production | ~548 |
+| #2431 | " | ✅ | Settings Validation - JSON Syntax Confirmed Valid | ~252 |
+| #2430 | " | 🔵 | Current Project Settings Configuration Review | ~496 |
+| #2407 | 6:34 PM | 🔵 | Project Active Hook Configuration in settings.local.json | ~399 |
+
+### Feb 2, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #2897 | 6:58 PM | 🔵 | Project Settings Configuration Analysis | ~653 |
+| #2646 | 12:47 PM | ✅ | Removed Project-Level Helpers Directory After Successful Migration | ~280 |
+| #2645 | " | ✅ | Verified Successful Helper Files Migration | ~247 |
+| #2644 | " | ✅ | Migrated Helpers Directory to Global Claude Configuration | ~292 |
+| #2642 | " | 🔵 | Project-Level Helpers Directory Contains 40 Helper Scripts | ~344 |
+| #2563 | 10:11 AM | 🔵 | Hooks Migration from Project-Local to Global Configuration | ~417 |
+
+### Feb 3, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #3109 | 11:58 AM | 🔵 | Project Settings.json Claude Flow Configuration | ~579 |
+
+### Feb 4, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #3651 | 5:20 PM | ✅ | Removed All Hookify Rule Files from Project | ~501 |
+| #3630 | 4:05 PM | ⚖️ | Hookify Rule Files Analysis and Architecture Decision | ~554 |
+| #3625 | 4:04 PM | 🔵 | Hookify Block Protected Branch Push Configuration | ~365 |
+| #3624 | " | 🔵 | Hookify Warn console.log Configuration | ~399 |
+| #3623 | " | 🔵 | Hookify Warn Dangerous rm Configuration | ~379 |
+| #3622 | " | 🔵 | Hookify Block Direct git commit Configuration | ~313 |
+| #3621 | " | 🔵 | Hookify Block Hardcoded Secrets Configuration | ~421 |
+| #3620 | 4:03 PM | 🔵 | Hookify Block gh issue create Configuration | ~341 |
+
+### Feb 9, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #5476 | 3:33 PM | 🔵 | Project CLAUDE.md Configuration and Development Standards | ~970 |
+
+### Feb 10, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #5693 | 9:42 AM | 🟣 | Step 2 technical validation completed with 87% score identifying accurate specifications and improvement areas | ~828 |
+
+### Feb 11, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #6423 | 4:12 PM | ✅ | Phase 1 Critical Fixes Committed to fix/pr#170-review-issues Branch | ~440 |
+| #6424 | " | 🔵 | Coverage Value Inconsistencies Identified Across Project Documentation | ~328 |
+
+### Feb 18, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #9601 | 1:31 PM | ✅ | CLAUDE.md への decision-helper・fact-checker 追記を最終確認 | ~212 |
+| #9598 | " | ✅ | SKILLS_CATALOG.md と CLAUDE.md に decision-helper・fact-checker を Medium tier 追加 | ~295 |
+| #9593 | 1:30 PM | ✅ | CLAUDE.md に /decision-helper と /fact-checker を Medium 自動発動ルールに追加 | ~290 |
+| #9592 | " | 🔵 | CLAUDE.md Medium セクションの正確な挿入位置確定 | ~203 |
+| #9591 | " | 🔵 | CLAUDE.md の Medium セクション現状確認 | ~229 |
+| #9590 | " | 🔵 | CLAUDE.md の Medium セクション構造確認 | ~246 |
+| #9580 | 1:28 PM | 🔵 | プロジェクトの CLAUDE.md 構造確認 | ~187 |
+
+### Feb 25, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #11598 | 2:31 PM | 🔵 | Technical Validation of Dispatch Automation Plan - Critical Issues Identified | ~1028 |
+| #11596 | 2:30 PM | 🔵 | Plan AI Executability Assessment - Critical Implementation Readiness Gaps Identified | ~873 |
+| #11590 | 2:27 PM | 🔵 | Project Guidance Infrastructure and Critical Rules Baseline | ~893 |
+
+### Feb 27, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #12166 | 2:42 PM | ✅ | Refined English Translation Scope for CLAUDE.md Rules | ~304 |
+| #12165 | 2:37 PM | ✅ | Created refined Boris Cherny integration plan with confidence-driven task breakdown | ~643 |
+| #12164 | 2:36 PM | 🔵 | Extended CLAUDE.md content verification including project overview | ~247 |
+| #12163 | 2:35 PM | 🔵 | Baseline read of CLAUDE.md before modifications | ~334 |
+</claude-mem-context>

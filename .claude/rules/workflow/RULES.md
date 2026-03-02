@@ -63,7 +63,7 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
 | Review | `code-review:*`, `pr-review-toolkit:*` (parallel) |
 | Design | `system-architect`, `backend-architect`, `devops-architect` |
 
-**Dispatch Automation**: When 2+ independent tasks exist post-classification, invoke `superpowers:dispatching-parallel-agents` skill via Skill tool. After all agents complete and all TodoWrite tasks are marked done, `/reflexion:reflect` runs per CLAUDE.md Rule 12 (no additional call needed here).
+**Dispatch Automation**: When 2+ independent tasks exist post-classification, invoke `superpowers:dispatching-parallel-agents` skill via Skill tool. After all agents complete and all TodoWrite tasks are marked done, `/reflexion:reflect` runs per CLAUDE.md Rule 11 (no additional call needed here).
 
 **Good:** Plan → TodoWrite → Execute → Verify | **Bad:** Jump to implementation
 
@@ -85,6 +85,8 @@ record plans in `~/.claude/tasks/todo.md` (complements the ephemeral TodoWrite t
 Usage distinction:
 - TodoWrite = in-session UI display (unchanged)
 - `~/.claude/tasks/todo.md` = persistent record for large tasks spanning sessions
+
+**Reference:** CLAUDE.md Section「🔄 開発ワークフロー」Step 0（全体開発ワークフローとの統合コンテキスト）
 
 ---
 
