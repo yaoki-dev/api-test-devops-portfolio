@@ -21,3 +21,5 @@ obsidian-vault-local/**
 .serena/**
 # Claude Code working documents (local only)
 claudedocs/**
+# Claude agent definitions (technical specs, not Japanese documentation)
+.claude/**

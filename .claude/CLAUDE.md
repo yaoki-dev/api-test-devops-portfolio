@@ -48,15 +48,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
       - User-requested edit: **STOP**, show exact absolute path, require explicit confirmation before proceeding
       - Exception: `~/.claude/tasks/lessons.md` (Rule 15) and `~/.claude/tasks/todo.md` (RULES.md Task Management) are pre-authorized global files; no confirmation required for any access
 15. **ALWAYS** do both of the following with `~/.claude/tasks/lessons.md`:
-    a) **At session start**: Read the file and review lessons tagged with the current project（ファイル不在時はエラーを無視して続行、レッスンなしと見なす）
+    a) **At session start**: Read the file and review lessons tagged with the current project
+       (file not found / ENOENT: silently ignore and continue, treat as no lessons;
+        other errors (permissions, corruption, broken symlink): report to user, then continue)
     b) **After correction**: Update immediately when receiving ANY explicit correction or negative feedback
-       - Detection signals: "that's wrong", "not X but Y", "fix this", "you misunderstood" /
-         「違います」「〜ではなく〜です」「直してください」「誤解してる」
+       - Detection signals: "that's wrong", "not X but Y", "fix this", "you misunderstood"
+         (Japanese equivalents: 「違います」「〜ではなく〜です」「直してください」「誤解してる」)
        - Append format: `## [YYYY-MM-DD] [project-name] - Category`
          `**Situation**: what happened / **Root Cause**: why / **Rule**: what to do next time`
        - Global file — one file, append-only, cross-project lessons accumulate here
        - Write rule: Use Edit tool to append ONLY. NEVER use Write tool (overwrites entire file)
-         **ファイル不在時の例外**: Write tool で空ファイルを新規作成後 Edit で追記（初回のみ Write 許可）；追記失敗時はユーザーに報告しチャットに内容出力（サイレント続行禁止）
+         **Exception (file absent)**: Use Write tool to create empty file first, then Edit to append (Write permitted for initial creation only); on append failure: report to user and output content in chat (silent continuation prohibited)
        - Cleanup: when entries exceed ~20 (no fixed monthly cadence)
        - Recurring pattern alert: If 2+ similar corrections appear for the same project (same Root Cause category), report to user for structural rule improvement
 16. **ALWAYS** fix bugs autonomously (no hand-holding) when scope is within:
