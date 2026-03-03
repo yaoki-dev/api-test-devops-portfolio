@@ -1861,6 +1861,27 @@ async def test_async_get_photos_invalid_album_id(
     assert len(respx_mock.calls) == 0
 
 
+async def test_async_client_timeout_zero_not_overridden() -> None:
+    """timeout=0.0がデフォルト設定値に上書きされないことを確認（r2850768833回帰テスト）
+
+    httpxでは timeout=0.0 は即座にタイムアウト（TimeoutException発生）する設定値。
+    falsyな値として `or` パターンで設定値に上書きされてはならない。
+
+    AsyncAPIClientは非同期コンテキストマネージャーのため async with で使用するが、
+    timeout属性は __init__ で設定されるため、エントリー直後に検証可能。
+
+    学習ポイント:
+    - is not None パターンの必要性: 0/0.0/False 等の有効なfalsy値を保護する
+    - timeout=0.0 の用途: 即座にタイムアウトさせたい場合に使用（無効化には timeout=None）
+    - 非同期クライアントでも同期クライアントと同じコンストラクタ挙動を持つ
+    """
+    async with AsyncAPIClient(timeout=0.0) as client:
+        assert client.timeout == 0.0, (
+            "timeout=0.0 はhttpxで有効な設定値（即座にタイムアウト）のため"
+            "デフォルト設定値に上書きされてはならない"
+        )
+
+
 # ===============================================================================
 # 【学習用】テスト実行とデバッグ方法
 # ===============================================================================
