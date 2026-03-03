@@ -32,6 +32,9 @@
     },
     {
       "pattern": "https://github\\.com/anthropics/claude-code-plugins"
+    },
+    {
+      "pattern": "https://jsonplaceholder\\.typicode\\.com"
     }
   ],
   "replacementPatterns": [

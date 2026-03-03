@@ -28,7 +28,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     - At conversation start: run `git rev-parse --show-toplevel`:
       - If command fails (non-zero exit code): **STOP immediately and report to user**
       - If output is empty: **STOP immediately and report to user**
-      - Store non-empty result as **WORKTREE_ROOT** (immutable for this session)
+      - Store non-empty result as **WORKTREE_ROOT** (immutable for this session; "non-empty" = contains at least one non-whitespace character after stripping trailing newlines; whitespace-only output is treated as empty)
     - Run `git worktree list` and check result:
 
       | `git worktree list` 結果 | 対応 |
@@ -58,11 +58,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
          `**Situation**: what happened / **Root Cause**: why / **Rule**: what to do next time`
        - Global file — one file, append-only, cross-project lessons accumulate here
        - Write rule: Use Edit tool to append ONLY. NEVER use Write tool (overwrites entire file)
-         **Exception (file absent)**: Use Write tool to create empty file first, then Edit to append (Write permitted for initial creation only); on append failure: report to user and output content in chat (silent continuation prohibited)
+         **Exception (file absent)**: Use Write tool to create empty file first, then Edit to append (Write permitted for initial creation only); on append failure: report to user and output content in chat, then await explicit confirmation before continuing (silent continuation prohibited)
        - Cleanup: when entries exceed ~20 (no fixed monthly cadence)
        - Recurring pattern alert: If 2+ similar corrections appear for the same project (same Root Cause category), report to user for structural rule improvement
 16. **ALWAYS** fix bugs autonomously (no hand-holding) when scope is within:
-    - ❌ Confirmation required: `tests/conftest.py`, `scripts/*.py`, `models/responses.py`, `pyproject.toml`, `*.yml`/`.env*`, `config/`, `utils/sentry_init.py`/`utils/logger.py`, git ops / infra config
+    - ❌ Confirmation required: `tests/**/conftest.py`, `scripts/*.py`, `models/responses.py`, `pyproject.toml`, `*.yml`/`.env*`, `config/`, `utils/sentry_init.py`/`utils/logger.py`/`utils/github_client.py`, git ops / infra config
     - ✅ Autonomous fix OK: `tests/**/test_*.py`, 上記❌リスト以外の `*.py` ロジックエラー, pytest/ruff/mypy failures
     - Boundary cases (e.g., adding pyproject.toml dependencies) → apply Rule 3 (AskUserQuestion)
 
