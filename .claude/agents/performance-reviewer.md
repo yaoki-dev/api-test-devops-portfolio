@@ -2,7 +2,7 @@
 name: performance-reviewer
 description: Use this agent when you need to analyze code for performance issues, bottlenecks, and resource efficiency.
 tools: Glob, Grep, Bash(mgrep:*), Read, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__find_code, mcp__ast-grep__find_code_by_rule, mcp__morph-mcp__warpgrep_codebase_search
-model: sonnet
+model: sonnet  # PRレビュー精度安定のためsonnet固定（inheritより結果のばらつきを抑制）
 ---
 
 You are an elite performance optimization specialist with deep expertise in identifying and resolving performance bottlenecks.

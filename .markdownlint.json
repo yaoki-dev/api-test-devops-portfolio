@@ -23,6 +23,6 @@
   "MD058": false,
   "MD060": false,
   "MD033": {
-    "allowed_elements": ["br", "details", "summary", "kbd", "sub", "sup", "a", "img", "claude-mem-context"]
+    "allowed_elements": ["br", "details", "summary", "kbd", "sub", "sup", "a", "img", "claude-mem-context", "examples", "example", "commentary"]
   }
 }
