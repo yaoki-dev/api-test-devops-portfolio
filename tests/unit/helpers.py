@@ -16,11 +16,11 @@ def mock_get_route(url: str, params: dict[str, Any] | None, json_data: Any) -> r
     """respx GETルートのparams有無対応ヘルパー
 
     respxのparams=はsubset match（指定キーが存在し値が一致すれば通過）。
-    paramsがNoneの場合はパラメータなしのURLとしてモック。
+    paramsがNoneの場合はparams={}で厳密一致マッチ（クエリパラメータなしのリクエストのみ許可）。
 
     Args:
         url: モック対象のURL
-        params: クエリパラメータ（Noneの場合はパラメータなしでマッチ）
+        params: クエリパラメータ（Noneの場合はクエリパラメータなしのリクエストのみ厳密マッチ）
         json_data: レスポンスとして返すJSONデータ
 
     Returns:
@@ -28,4 +28,4 @@ def mock_get_route(url: str, params: dict[str, Any] | None, json_data: Any) -> r
     """
     if params is not None:
         return respx.get(url, params=params).respond(json=json_data)
-    return respx.get(url).respond(json=json_data)
+    return respx.get(url, params={}).respond(json=json_data)

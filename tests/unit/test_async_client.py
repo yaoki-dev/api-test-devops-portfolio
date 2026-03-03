@@ -228,8 +228,8 @@ async def test_semaphore_initialized_with_correct_max_concurrent():
         async with AsyncJSONPlaceholderClient() as client:
             await client.get_multiple_users([1, 2, 3, 4, 5], max_concurrent=2)
 
-    assert max_concurrent_observed <= 2, (
-        f"同時実行数がmax_concurrent=2を超えた（実際: {max_concurrent_observed}）"
+    assert 1 <= max_concurrent_observed <= 2, (
+        f"同時実行数が期待範囲外（期待: 1-2, 実際: {max_concurrent_observed}）"
     )
 
 

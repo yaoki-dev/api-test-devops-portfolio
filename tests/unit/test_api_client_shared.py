@@ -1,7 +1,7 @@
-"""Shared tests for module-level pure functions in api_client.py (non-async-specific).
+"""Shared tests for module-level utility functions in api_client.py (non-async-specific).
 
 These tests verify exception hierarchy, _safe_parse_json(), and _map_request_error()
-which are pure functions independent of AsyncAPIClient/SyncAPIClient.
+which are module-level utility functions independent of AsyncAPIClient/SyncAPIClient.
 
 Consolidated from test_async_client_error_handling.py and
 test_sync_client_error_handling.py to eliminate duplication.

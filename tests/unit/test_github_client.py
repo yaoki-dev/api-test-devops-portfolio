@@ -7,7 +7,7 @@ GitHub API非同期クライアントのUnit Tests
 - カバレッジ目標: 80%以上
 """
 
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 import httpx
 import pytest
@@ -229,11 +229,12 @@ async def test_rate_limit_warning_log():
         with patch.object(client.logger, "warning") as mock_warning:
             await client.get_user("octocat")
 
-            # 警告ログ呼び出し確認
-            mock_warning.assert_called_once()
-            call_args = mock_warning.call_args
-            assert call_args[0][0] == "rate_limit_low"
-            assert call_args[1]["remaining"] == 5
+            # 警告ログ呼び出し確認（引数順序変更に強い形式）
+            mock_warning.assert_called_once_with(
+                "rate_limit_low",
+                remaining=5,
+                reset_time=ANY,
+            )
 
     assert route.call_count == 1  # GETリクエストが1回発行されたことを確認
 

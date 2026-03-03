@@ -802,9 +802,7 @@ def test_sync_patch_method() -> None:
     assert route.calls[0].request.method == "PATCH"
 
     # リクエストボディ検証
-    import json as json_module
-
-    request_body = json_module.loads(route.calls[0].request.content)
+    request_body = json.loads(route.calls[0].request.content)
     assert request_body == patch_data
 
 
@@ -881,8 +879,6 @@ def test_sync_create_todo() -> None:
     - respx: POSTリクエストのボディ検証
     - respx: route.calls[0].request.content でボディ確認
     """
-    import json as json_module
-
     new_todo_response = {
         "id": 201,
         "title": "Buy groceries",
@@ -901,7 +897,7 @@ def test_sync_create_todo() -> None:
     assert route.call_count == 1
 
     # リクエストボディ検証: title/userId/completedが正しく送信されたか
-    request_body = json_module.loads(route.calls[0].request.content)
+    request_body = json.loads(route.calls[0].request.content)
     assert request_body["title"] == "Buy groceries"
     assert request_body["userId"] == 1
     assert request_body["completed"] is False
