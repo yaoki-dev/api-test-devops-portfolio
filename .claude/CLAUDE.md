@@ -112,7 +112,7 @@ SECURITY__API_KEY=your-secret-key
 
 **詳細**: @memory:coding_standards 各セクション参照
 
-1. **非同期プログラミング**: `utils/api_client.py:589-1012` - async/await、asyncio.gather()
+1. **非同期プログラミング**: `utils/api_client.py:589-1319` - async/await、asyncio.gather()
 2. **エラーハンドリング**: `api_client.py:23-88`, `222-376` - 階層的例外、リトライロジック
 3. **テスト設計パターン**: `conftest.py:90-132`, `143-220` - fixtureスコープ、ファクトリーパターン
 4. **設定管理**: `config/settings.py` - Pydantic Settings、SecretStr
