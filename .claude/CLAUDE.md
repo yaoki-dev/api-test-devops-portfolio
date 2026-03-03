@@ -25,7 +25,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     (reason: keep the main context window clean by leveraging subagents aggressively)
 13. **ALWAYS** verify file content with Read/Grep tool BEFORE making any claim about line numbers, file structure, or code content
 14. **ALWAYS** enforce worktree boundary:
-    - At conversation start: run `git rev-parse --show-toplevel`:
+    - At conversation start (including post-compact context reload): run `git rev-parse --show-toplevel`:
       - If command fails (non-zero exit code): **STOP immediately and report to user**
       - If output is empty: **STOP immediately and report to user**
       - Store non-empty result as **WORKTREE_ROOT** (immutable for this session; "non-empty" = contains at least one non-whitespace character after stripping trailing newlines; whitespace-only output is treated as empty)
@@ -39,6 +39,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
       | 1エントリ | 「single-worktreeモード（WORKTREE_ROOT: {絶対パス}）」通知 + 続行 |
       | 2+エントリ | 「multi-worktreeモード」通知 → WORKTREE_ROOT確認 → **確認失敗時: STOP + ミスマッチ報告** / 確認成功時: ユーザーとスコープ確認 |
 
+      > **評価順序（必須）**: テーブル行を上から順に評価すること（エントリ数チェックより先に WORKTREE_ROOT 含有確認を行う）: ①コマンド失敗 → STOP ②空/パース不可 → STOP ③ WORKTREE_ROOT 含有確認（含まれない場合はエントリ数に関わらず STOP + ミスマッチ報告） ④エントリ数確認（1 or 2+エントリ）
       > **WORKTREE_ROOT確認**: `git worktree list | cut -d' ' -f1 | grep -Fx "${WORKTREE_ROOT}"` (`-F`: literal string, `-x`: full-line match — prevents `/project` matching `/project-extra`; note: paths with spaces are not supported by this command)
       > **「パース不可」の定義**: 各行が `<absolute-path>` の形式を満たさない / 出力が空白のみ
       > **WORKTREE_ROOT未含有時のチェック**（ユーザー手動実行 — AI自動実行禁止）: `git rev-parse --is-inside-work-tree`（true → 正しいWORKTREE_ROOTをユーザーが再確認後にセッション再開 / false → 正しいプロジェクトディレクトリに移動後にセッション再開。⚠️ `git init` 実行禁止 — 既存リポジトリを破壊する危険がある）
@@ -64,7 +65,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
        - Recurring pattern alert: If 2+ similar corrections appear for the same project (same Root Cause category), report to user for structural rule improvement
 16. **ALWAYS** fix bugs autonomously (no hand-holding) when scope is within:
     - ❌ Confirmation required: `tests/**/conftest.py`, `scripts/*.py`, `models/responses.py`, `pyproject.toml`, `*.yml`/`.env*`, `config/`, `utils/sentry_init.py`/`utils/logger.py`/`utils/github_client.py`/`utils/api_client.py`, git ops / infra config
-    - ✅ Autonomous fix OK: `tests/**/test_*.py`, 上記❌リスト以外の `*.py` ロジックエラー, pytest/ruff/mypy failures
+    - ✅ Autonomous fix OK: `tests/**/test_*.py`, 上記❌リスト以外の `*.py` ロジックエラー, pytest/ruff/mypy failures（ただし修正が❌リストファイルへの変更を要する場合はRule 3適用）
     - Boundary cases (e.g., adding pyproject.toml dependencies) → apply Rule 3 (AskUserQuestion)
 
 ## プロジェクト概要
@@ -366,3 +367,4 @@ uv run mypy --show-error-codes --pretty utils/ config/ models/
 1. 公式ドキュメントを再確認（仕様変更/誤解の可能性）
 2. GitHub Issuesで既知の問題を検索
 3. 削除/代替案を検討（機能の必要性を再評価）
+

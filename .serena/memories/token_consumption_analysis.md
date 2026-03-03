@@ -74,7 +74,7 @@ Permissions allowed:
 - WebFetch (6 domain whitelist)
 
 Additional directories:
-- `/Users/yuta/.claude` (Global Claude config)
+- `~/.claude` (Global Claude config)
 
 **TOKEN COST**: Each settings.local.json load adds ~20 tokens for permissions checking
 
@@ -101,7 +101,7 @@ Additional directories:
 
 **TOTAL RULES**: ~888 lines across 8 files
 
-### Agent Files (6 agents)
+### Agent Files (7 agents)
 
 Located in `.claude/agents/`:
 1. code-quality-reviewer.md
@@ -110,6 +110,7 @@ Located in `.claude/agents/`:
 4. security-code-reviewer.md
 5. silent-failure-hunter.md
 6. test-coverage-reviewer.md
+7. code-simplicity-reviewer.md
 
 **TOKEN COST**: Each PR review spawns 6 agents in parallel, each loading their full context
 
