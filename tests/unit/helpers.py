@@ -15,12 +15,16 @@ import respx
 def mock_get_route(url: str, params: dict[str, Any] | None, json_data: Any) -> respx.Route:
     """respx GETルートのparams有無対応ヘルパー
 
-    respxのparams=はsubset match（指定キーが存在し値が一致すれば通過）。
-    paramsがNoneの場合はparams={}で厳密一致マッチ（クエリパラメータなしのリクエストのみ許可）。
+    respxのparams=はcontains match（サブセットマッチ）。
+    paramsがNoneの場合はparams={}を使用する。
+    params={}はcontains lookupのため空集合はすべての集合のサブセットとなり、
+    クエリパラメータの有無にかかわらず任意のリクエストにマッチする点に注意。
+    クエリパラメータなしのリクエストのみに限定するには params__eq={} が必要だが、
+    現在のユースケース（単一ルート登録）では実質的な問題はない。
 
     Args:
         url: モック対象のURL
-        params: クエリパラメータ（Noneの場合はクエリパラメータなしのリクエストのみ厳密マッチ）
+        params: クエリパラメータ（Noneの場合はparams={}を使用 - 任意リクエストにマッチ）
         json_data: レスポンスとして返すJSONデータ
 
     Returns:

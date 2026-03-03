@@ -59,6 +59,8 @@ async def test_async_retry_on_server_error_then_success(mock_backoff: Mock) -> N
 
     assert route.call_count == 3
     assert response.status_code == 200
+    # バックオフが2回呼ばれることを確認（attempt 0, 1で失敗→backoff、attempt 2で成功）
+    assert mock_backoff.call_count == 2
 
 
 @patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
@@ -79,6 +81,8 @@ async def test_async_retry_exhausted(mock_backoff: Mock) -> None:
     # リトライ回数+1回（初回+リトライ2回=3回）実行されたことを確認
     assert route.call_count == 3
     assert "failed after" in str(exc_info.value)
+    # バックオフが2回呼ばれることを確認（最後の試行ではバックオフなし）
+    assert mock_backoff.call_count == 2
 
 
 @patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
@@ -97,6 +101,8 @@ async def test_async_4xx_error_no_retry(mock_backoff: Mock) -> None:
     # 4xxエラーはリトライしない（1回のみ実行）
     assert route.call_count == 1
     assert exc_info.value.status_code == 404
+    # 4xxは即raise、バックオフに到達しないことを確認
+    assert mock_backoff.call_count == 0
 
 
 # =============================================================================
@@ -121,6 +127,8 @@ async def test_async_timeout_error_retry(mock_backoff: Mock) -> None:
     # リトライが実行されることを確認（初回+リトライ1回=2回）
     assert route.call_count == 2
     assert isinstance(exc_info.value.__cause__, APITimeoutError)
+    # バックオフが1回呼ばれることを確認（最後の試行ではバックオフなし）
+    assert mock_backoff.call_count == 1
 
 
 @patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
@@ -138,6 +146,8 @@ async def test_async_timeout_then_success(mock_backoff: Mock) -> None:
 
     assert route.call_count == 2
     assert response.status_code == 200
+    # バックオフが1回呼ばれることを確認（attempt 0で失敗→backoff、attempt 1で成功）
+    assert mock_backoff.call_count == 1
 
 
 # =============================================================================
@@ -161,6 +171,8 @@ async def test_async_connection_error_retry(mock_backoff: Mock) -> None:
 
     assert route.call_count == 2
     assert isinstance(exc_info.value.__cause__, APIConnectionError)
+    # バックオフが1回呼ばれることを確認（最後の試行ではバックオフなし）
+    assert mock_backoff.call_count == 1
 
 
 @patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
@@ -179,6 +191,8 @@ async def test_async_connection_then_success(mock_backoff: Mock) -> None:
 
     assert route.call_count == 3
     assert response.status_code == 200
+    # バックオフが2回呼ばれることを確認（attempt 0, 1で失敗→backoff、attempt 2で成功）
+    assert mock_backoff.call_count == 2
 
 
 # =============================================================================
@@ -202,6 +216,8 @@ async def test_async_mixed_errors_then_success(mock_backoff: Mock) -> None:
 
     assert route.call_count == 3
     assert response.status_code == 200
+    # バックオフが2回呼ばれることを確認（attempt 0, 1で失敗→backoff、attempt 2で成功）
+    assert mock_backoff.call_count == 2
 
 
 @patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
@@ -222,6 +238,8 @@ async def test_async_mixed_errors_exhaust_retries(mock_backoff: Mock) -> None:
     assert route.call_count == 3
     # 最後のエラー（500 Server Error）が__causeとして記録されていることを確認
     assert isinstance(exc_info.value.__cause__, APIHTTPError)
+    # バックオフが2回呼ばれることを確認（最後の試行ではバックオフなし）
+    assert mock_backoff.call_count == 2
 
 
 # =============================================================================
@@ -247,6 +265,8 @@ async def test_async_post_with_retry(mock_backoff: Mock) -> None:
 
     assert route.call_count == 2
     assert response.status_code == 201
+    # バックオフが1回呼ばれることを確認（attempt 0で502失敗→backoff、attempt 1で成功）
+    assert mock_backoff.call_count == 1
 
 
 @patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
@@ -265,6 +285,8 @@ async def test_async_put_4xx_no_retry(mock_backoff: Mock) -> None:
     # 4xxエラーはリトライしない（1回のみ実行）
     assert route.call_count == 1
     assert exc_info.value.status_code == 400
+    # 4xxは即raise、バックオフに到達しないことを確認
+    assert mock_backoff.call_count == 0
 
 
 @patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
@@ -282,6 +304,8 @@ async def test_async_delete_with_retry(mock_backoff: Mock) -> None:
 
     assert route.call_count == 2
     assert response.status_code == 200
+    # バックオフが1回呼ばれることを確認（attempt 0でTimeout失敗→backoff、attempt 1で成功）
+    assert mock_backoff.call_count == 1
 
 
 # =============================================================================

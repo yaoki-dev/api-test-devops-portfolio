@@ -189,7 +189,7 @@ async def test_timeout_handling():
     - 例外チェーン維持（from e）
     - 警告ログ出力
     """
-    respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(
         side_effect=httpx.TimeoutException("Request timeout")
     )
 
@@ -201,6 +201,7 @@ async def test_timeout_handling():
     # 例外チェーン確認
     assert exc_info.value.__cause__ is not None
     assert isinstance(exc_info.value.__cause__, httpx.TimeoutException)
+    assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
 
 
 # =============================================================================
@@ -314,7 +315,7 @@ async def test_request_without_context_manager():
 @respx.mock
 async def test_httpx_timeout_exception():
     """httpx.TimeoutException処理の検証"""
-    respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(
         side_effect=httpx.TimeoutException("Connection timeout")
     )
 
@@ -324,13 +325,14 @@ async def test_httpx_timeout_exception():
 
     assert "timeout" in str(exc_info.value).lower()
     assert exc_info.value.__cause__ is not None
+    assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
 
 
 @respx.mock
 async def test_httpx_status_error_4xx():
     """httpx.HTTPStatusError（4xx）処理の検証"""
     # 401 Unauthorized: respxでステータスコードを返す
-    respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=401,
         headers={"X-RateLimit-Remaining": "60"},
     )
@@ -338,6 +340,8 @@ async def test_httpx_status_error_4xx():
     async with AsyncGitHubClient() as client:
         with pytest.raises(GitHubAPIError):
             await client.get_user("octocat")
+
+    assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
 
 
 @respx.mock
@@ -361,7 +365,7 @@ async def test_httpx_status_error_5xx():
 @respx.mock
 async def test_unexpected_exception():
     """予期しない例外処理の検証"""
-    respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(
         side_effect=ValueError("Unexpected error")
     )
 
@@ -371,6 +375,7 @@ async def test_unexpected_exception():
 
     assert "Unexpected error" in str(exc_info.value)
     assert isinstance(exc_info.value.__cause__, ValueError)
+    assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
 
 
 # =============================================================================

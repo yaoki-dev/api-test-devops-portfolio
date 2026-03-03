@@ -400,13 +400,14 @@ def test_sync_get_post_success() -> None:
     post_id = 1
     expected_post = {"id": 1, "userId": 1, "title": "Test Post", "body": "Test Content"}
 
-    respx.get(f"{BASE_URL}/posts/{post_id}").respond(json=expected_post)
+    route = respx.get(f"{BASE_URL}/posts/{post_id}").respond(json=expected_post)
 
     with SyncJSONPlaceholderClient() as client:
         result = client.get_post(post_id)
 
     assert result == expected_post
     assert result["id"] == post_id
+    assert route.call_count == 1  # GETリクエストが1回のみ発行されたことを確認
 
 
 @pytest.mark.unit

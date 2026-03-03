@@ -8,9 +8,9 @@ Note:
     例外クラス・_safe_parse_json・_map_request_error のテストは
     test_api_client_shared.py に統合済み。
 
-テストケース一覧（4件）:
-    - Retry (2件): exponential_backoff, 4xx_no_retry
-    - Timeout (1件): timeout_error_retry
+テストケース一覧（6件）:
+    - Retry (3件): exponential_backoff, 4xx_no_retry, retry_exhausted
+    - Timeout (2件): timeout_error_retry, timeout_then_success
     - Connection (1件): connection_error_retry
 """
 
@@ -119,6 +119,47 @@ def test_sync_connection_error_retry(mock_backoff: Mock) -> None:
 
     assert route.call_count == 2
     assert isinstance(exc_info.value.__cause__, APIConnectionError)
+
+
+@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
+@respx.mock
+def test_sync_retry_exhausted(mock_backoff: Mock) -> None:
+    """リトライ上限でAPIRetryErrorが発生することを確認（5xxのみリトライ）"""
+    route = respx.get(f"{BASE_URL}/posts/1")
+    route.side_effect = [
+        httpx.Response(500),
+        httpx.Response(500),
+        httpx.Response(500),
+    ]
+
+    with SyncAPIClient(retry_count=2, retry_delay=0.01) as client:
+        with pytest.raises(APIRetryError) as exc_info:
+            client.get("/posts/1")
+
+    # リトライ回数+1回（初回+リトライ2回=3回）実行されたことを確認
+    assert route.call_count == 3
+    assert "failed after" in str(exc_info.value)
+    # バックオフはattempt 0, 1で呼ばれる（attempt 2は最後なのでなし）
+    assert mock_backoff.call_count == 2
+
+
+@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
+@respx.mock
+def test_sync_timeout_then_success(mock_backoff: Mock) -> None:
+    """タイムアウト後に成功するケース"""
+    route = respx.get(f"{BASE_URL}/posts/1")
+    route.side_effect = [
+        httpx.TimeoutException("Timeout 1"),
+        httpx.Response(200, json={"id": 1}),
+    ]
+
+    with SyncAPIClient(retry_count=2, retry_delay=0.01) as client:
+        response = client.get("/posts/1")
+
+    assert route.call_count == 2
+    assert response.status_code == 200
+    # バックオフはattempt 0でのみ呼ばれる（attempt 1で成功）
+    assert mock_backoff.call_count == 1
 
 
 # =============================================================================
