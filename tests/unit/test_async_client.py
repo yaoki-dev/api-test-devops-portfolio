@@ -344,6 +344,7 @@ async def test_async_timeout_retry_then_success(mock_backoff: Mock) -> None:
 
     # リトライ動作検証: 3回目で成功（call_countで決定論的に検証）
     assert route.call_count == 3
+    assert mock_backoff.call_count == 2  # 3回試行 = 2回待機（初回は待機なし）
 
     # レスポンス検証: get()はhttpx.Responseを返す
     assert result.status_code == 200

@@ -338,9 +338,13 @@ async def test_httpx_status_error_4xx():
     )
 
     async with AsyncGitHubClient() as client:
-        with pytest.raises(GitHubAPIError):
+        with pytest.raises(GitHubAPIError) as exc_info:
             await client.get_user("octocat")
 
+    # GitHubAPIError であり、httpx.HTTPStatusError ではないことを明示検証
+    assert not isinstance(exc_info.value, httpx.HTTPStatusError)
+    # 例外チェーンが保持されていることを確認（from e でラップ）
+    assert isinstance(exc_info.value.__cause__, httpx.HTTPStatusError)
     assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
 
 
