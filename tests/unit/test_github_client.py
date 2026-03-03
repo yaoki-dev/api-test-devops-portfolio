@@ -177,7 +177,7 @@ async def test_retry_on_server_error():
 
     assert route.call_count == 3
     assert "Server error: 500" in str(exc_info.value)
-    assert "after 3 retries" in str(exc_info.value)
+    assert "after 3 attempts" in str(exc_info.value)
 
 
 @respx.mock
