@@ -42,11 +42,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
       > **WORKTREE_ROOT確認**: `git worktree list | cut -d' ' -f1 | grep -Fx "${WORKTREE_ROOT}"` (`-F`: literal string, `-x`: full-line match — prevents `/project` matching `/project-extra`; note: paths with spaces are not supported by this command)
       > **「パース不可」の定義**: 各行が `<absolute-path>` の形式を満たさない / 出力が空白のみ
       > **WORKTREE_ROOT未含有時のチェック**（ユーザー手動実行 — AI自動実行禁止）: `git rev-parse --is-inside-work-tree`（true → 正しいWORKTREE_ROOTをユーザーが再確認後にセッション再開 / false → 正しいプロジェクトディレクトリに移動後にセッション再開。⚠️ `git init` 実行禁止 — 既存リポジトリを破壊する危険がある）
+      > **ミスマッチ報告時のAI報告内容（必須）**: ①`git rev-parse --show-toplevel` の実行結果（セッション開始時の保存値） ②`git worktree list` の生出力（全行） ③原因候補: シンボリックリンク解決差異 / CI/Docker環境でのパスマッピング差異
 
     - For files outside WORKTREE_ROOT:
       - Autonomous edit: **NEVER**
       - User-requested edit: **STOP**, show exact absolute path, require explicit confirmation before proceeding
-      - Exception: `~/.claude/tasks/lessons.md` (Rule 15) and `~/.claude/tasks/todo.md` (RULES.md Task Management) are pre-authorized global files; no confirmation required for any access
+      - Exception: `~/.claude/tasks/lessons.md` (Rule 15) and `~/.claude/tasks/todo.md` (RULES.md Task Management) are pre-authorized global files; boundary confirmation not required (Rule 15 write constraints still apply)
 15. **ALWAYS** do both of the following with `~/.claude/tasks/lessons.md`:
     a) **At session start**: Read the file and review lessons tagged with the current project
        (file not found / ENOENT: silently ignore and continue, treat as no lessons;
@@ -62,7 +63,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
        - Cleanup: when entries exceed ~20 (no fixed monthly cadence)
        - Recurring pattern alert: If 2+ similar corrections appear for the same project (same Root Cause category), report to user for structural rule improvement
 16. **ALWAYS** fix bugs autonomously (no hand-holding) when scope is within:
-    - ❌ Confirmation required: `tests/**/conftest.py`, `scripts/*.py`, `models/responses.py`, `pyproject.toml`, `*.yml`/`.env*`, `config/`, `utils/sentry_init.py`/`utils/logger.py`/`utils/github_client.py`, git ops / infra config
+    - ❌ Confirmation required: `tests/**/conftest.py`, `scripts/*.py`, `models/responses.py`, `pyproject.toml`, `*.yml`/`.env*`, `config/`, `utils/sentry_init.py`/`utils/logger.py`/`utils/github_client.py`/`utils/api_client.py`, git ops / infra config
     - ✅ Autonomous fix OK: `tests/**/test_*.py`, 上記❌リスト以外の `*.py` ロジックエラー, pytest/ruff/mypy failures
     - Boundary cases (e.g., adding pyproject.toml dependencies) → apply Rule 3 (AskUserQuestion)
 

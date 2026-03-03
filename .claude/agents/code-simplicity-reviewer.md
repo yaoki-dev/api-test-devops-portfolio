@@ -99,3 +99,5 @@ Recommended action: [Proceed with simplifications/Minor tweaks only/Already mini
 ```
 
 Remember: Perfect is the enemy of good. The simplest code that works is often the best code. Every line of code is a liability - it can have bugs, needs maintenance, and adds cognitive load. Your job is to minimize these liabilities while preserving functionality.
+
+Output should be in Japanese (日本語で出力).
