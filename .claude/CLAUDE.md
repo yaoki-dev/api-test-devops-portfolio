@@ -61,13 +61,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
          `**Situation**: what happened / **Root Cause**: why / **Rule**: what to do next time`
        - Global file — one file, append-only, cross-project lessons accumulate here
        - Write rule: Use Edit tool to append ONLY. NEVER use Write tool (overwrites entire file)
-         **Exception (file absent)**: Use Write tool to create empty file first, then Edit to append (Write permitted for initial creation only); on append failure: report to user and output content in chat, then await explicit confirmation before continuing (silent continuation prohibited; 明示的確認（閉じたリスト）: 「記録した」「了解した」「確認した」のみ有効 — 「OK」「続けて」単体・これらを含む組み合わせは不可; compact/session restart後: 次セッション開始時に未確認の内容を再報告してから確認を取得すること)
+         **Exception (file absent)**: Use Write tool to create empty file first, then Edit to append (Write permitted for initial creation only); on append failure: report to user and output content in chat, then await explicit confirmation before continuing (silent continuation prohibited; 明示的確認（閉じたリスト）: 「記録した」「了解した」「確認した」のみ有効 — 「OK」「続けて」単体・これらを含む組み合わせは不可)
        - Cleanup: when entries exceed ~20 (no fixed monthly cadence)
        - Recurring pattern alert: If 2+ similar corrections appear for the same project (same Root Cause category), report to user for structural rule improvement
 16. **ALWAYS** fix bugs autonomously (no hand-holding) when scope is within:
-    - ❌ Absolutely prohibited (no autonomous modification): `pyproject.toml`, `*.yml`/`.env*`, `config/`, `tests/conftest.py`, `tests/**/conftest.py`, `tests/**/__init__.py`, `utils/__init__.py`, git ops / infra config
-    - ⚠️ Limited autonomous fix (spec-changing modifications → confirmation required; non-functional modifications: autonomous OK): `scripts/*.py`, `models/responses.py`, `utils/api_client.py`, `utils/github_client.py`, `utils/logger.py`, `utils/sentry_init.py`, `tests/test_smoke.py` — Permitted: typo fixes / import path fixes / lint·format fixes / clear flaky test fixes (e.g., strengthening wait conditions) / obvious mock URL typo fixes only
-    - ✅ Autonomous fix OK: `tests/**/test_*.py` and `tests/test_*.py` (except ⚠️ above), `*.py` logic errors (except ❌/⚠️ above), pytest/ruff/mypy failures (if fix requires ❌/⚠️ file changes, apply respective rules)
+    - ❌ Absolutely prohibited (no autonomous modification): `pyproject.toml`, `*.yml`/`.env*`, `config/`, `tests/conftest.py`, `tests/**/conftest.py`, `tests/**/__init__.py`, `utils/__init__.py`, `utils/logger.py`, `utils/sentry_init.py`, git ops / infra config
+    - ⚠️ Limited autonomous fix (spec-changing modifications → confirmation required; non-functional modifications: autonomous OK): `scripts/*.py`, `models/responses.py`, `utils/api_client.py`, `utils/github_client.py`, `tests/test_smoke.py` — Permitted: typo fixes / import path fixes / lint·format fixes / clear flaky test fixes (e.g., strengthening wait conditions) / obvious mock URL typo fixes only
+    - ✅ Autonomous fix OK: `tests/**/test_*.py` and `tests/test_*.py` (except `tests/test_smoke.py` — governed by ⚠️ above), `*.py` logic errors (except ❌/⚠️ paths above — excludes `config/`, `utils/__init__.py`, etc.), pytest/ruff/mypy failures (if fix requires ❌/⚠️ file changes, apply respective rules)
     - Boundary cases (e.g., adding pyproject.toml dependencies) → apply Rule 3 (AskUserQuestion)
 
 ## プロジェクト概要
