@@ -747,12 +747,13 @@ def test_sync_get_comments_invalid_post_id(post_id: int) -> None:
 
 
 @pytest.mark.unit
+@respx.mock
 @pytest.mark.parametrize(
     "album_id",
     [0, -1, -100],
     ids=["album_id_zero", "album_id_negative", "album_id_large_negative"],
 )
-def test_sync_get_photos_invalid_album_id(album_id: int, respx_mock: respx.MockRouter) -> None:
+def test_sync_get_photos_invalid_album_id(album_id: int) -> None:
     """
     SyncJSONPlaceholderClient.get_photos()の無効album_idバリデーション
 
@@ -769,8 +770,8 @@ def test_sync_get_photos_invalid_album_id(album_id: int, respx_mock: respx.MockR
         with pytest.raises(ValueError, match="album_id must be >= 1"):
             client.get_photos(album_id=album_id)
 
-    # HTTPリクエストが発行されていないことを確認（スコープ付きルーター使用）
-    assert len(respx_mock.calls) == 0
+    # HTTPリクエストが発行されていないことを確認
+    assert len(respx.mock.calls) == 0
 
 
 # =============================================================================

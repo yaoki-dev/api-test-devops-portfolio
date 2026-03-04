@@ -83,6 +83,25 @@ def sample_users_list():
 
 
 # ===============================================================================
+# テストヘルパー関数
+# ===============================================================================
+
+
+def assert_warning_log_count(log_output: list, event_name: str, expected_count: int) -> None:
+    """警告ログの発生回数を検証するヘルパー関数
+
+    Args:
+        log_output: capture_logs() が収集したログエントリのリスト
+        event_name: 検証対象のイベント名
+        expected_count: 期待する警告ログの発生回数
+    """
+    warning_events = [log["event"] for log in log_output if log.get("log_level") == "warning"]
+    assert warning_events.count(event_name) == expected_count, (
+        f"Expected {expected_count} '{event_name}' warnings, got: {warning_events}"
+    )
+
+
+# ===============================================================================
 # Test 1: 基本的な非同期GET リクエストテスト
 # ===============================================================================
 
@@ -277,10 +296,7 @@ async def test_partial_failure_graceful_degradation():
     assert route5.call_count == 1
 
     # 2件失敗（user_id=2,4）の警告ログ検証（Sentry監視の保証）
-    warning_events = [log["event"] for log in log_output if log.get("log_level") == "warning"]
-    assert warning_events.count("get_user_failed") == 2, (
-        f"Expected 2 'get_user_failed' warnings, got: {warning_events}"
-    )
+    assert_warning_log_count(log_output, "get_user_failed", 2)
 
 
 @respx.mock
@@ -313,10 +329,7 @@ async def test_all_requests_fail_returns_empty_list():
     assert all(r.call_count == 1 for r in routes)
 
     # 各ユーザー取得失敗時に警告ログが出力されることを確認（Sentry監視の保証）
-    warning_events = [log["event"] for log in log_output if log.get("log_level") == "warning"]
-    assert warning_events.count("get_user_failed") == 3, (
-        f"Expected 3 'get_user_failed' warnings, got: {warning_events}"
-    )
+    assert_warning_log_count(log_output, "get_user_failed", 3)
 
 
 # ===============================================================================
@@ -1919,14 +1932,13 @@ async def test_async_get_comments_invalid_post_id(
 
 
 @pytest.mark.unit
+@respx.mock
 @pytest.mark.parametrize(
     "album_id",
     [0, -1, -100],
     ids=["album_id_zero", "album_id_negative", "album_id_large_negative"],
 )
-async def test_async_get_photos_invalid_album_id(
-    album_id: int, respx_mock: respx.MockRouter
-) -> None:
+async def test_async_get_photos_invalid_album_id(album_id: int) -> None:
     """
     AsyncJSONPlaceholderClient.get_photos()の無効album_idバリデーション
 
@@ -1944,7 +1956,7 @@ async def test_async_get_photos_invalid_album_id(
             await client.get_photos(album_id=album_id)
 
     # ValueError が先に発生するため HTTP リクエストは到達しない
-    assert len(respx_mock.calls) == 0
+    assert len(respx.mock.calls) == 0
 
 
 async def test_async_client_timeout_zero_not_overridden() -> None:
