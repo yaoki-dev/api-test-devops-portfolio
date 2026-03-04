@@ -176,7 +176,7 @@ gitleaks detect --source . --verbose
 | ステージ | トリガー | テスト種別 |
 |---------|---------|-----------|
 | PR Validation (develop) | pull_request to develop | unit + integration (cov) → smoke |
-| PR Validation (main) | pull_request to main | smoke のみ |
+| PR Validation (main) | pull_request to main | unit + integration (cov) → smoke（developと同一） |
 | Post-Merge | push to main | + smoke |
 | Weekly | schedule (日曜) | + security + performance |
 

@@ -29,7 +29,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
       - If command fails (non-zero exit code): **STOP immediately and report to user**
       - If output is empty: **STOP immediately and report to user**
       - Store result as **WORKTREE_ROOT** for this session ("non-empty" = contains at least one non-whitespace character after stripping trailing newlines; whitespace-only output is treated as empty).
-        (post-compact context reload: re-verify by re-running `git rev-parse --show-toplevel`; if result differs from stored WORKTREE_ROOT → **STOP + report to user**)
+        (post-compact context reload: re-verify by re-running `git rev-parse --show-toplevel`; if command fails (non-zero exit code) or output is empty → **STOP + report to user**; if result differs from stored WORKTREE_ROOT → **STOP + report to user**)
     - Run `git worktree list --porcelain` (via pipeline) and check result:
 
       | `git worktree list --porcelain` (parsed) Result | Action |
@@ -38,7 +38,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
       | Empty / Unparseable | **STOP** + report to user |
       | WORKTREE_ROOT not found | **STOP** + mismatch report |
       | 1 entry | Run WORKTREE_ROOT confirmation command → Match: Notify "single-worktree mode (WORKTREE_ROOT: {absolute path})" + continue / Mismatch: **STOP** + mismatch report |
-      | 2+ entries | Notify "multi-worktree mode" → confirm WORKTREE_ROOT → **on failure: STOP + mismatch report** / on success: confirm scope with user |
+      | 2+ entries | Notify "multi-worktree mode" → confirm WORKTREE_ROOT → **on failure: STOP + mismatch report** / on success: confirm scope with user → **continue** |
 
       > **Evaluation order (required)**: Evaluate table rows top to bottom (check WORKTREE_ROOT containment before entry count): ① command failed → STOP ② empty/Unparseable → STOP ③ WORKTREE_ROOT containment check (if not found, STOP + mismatch report regardless of entry count) ④ entry count check (1 or 2+ entries)
       > **WORKTREE_ROOT confirmation**: First confirm WORKTREE_ROOT is non-empty (if empty: **STOP**). If non-empty: `git worktree list --porcelain | grep "^worktree " | sed 's/^worktree //' | grep -Fx "${WORKTREE_ROOT}"` (`-F`: literal string, `-x`: full-line match — prevents `/project` matching `/project-extra`; supports paths with spaces and detached HEAD state)
@@ -63,7 +63,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
        - Global file — one file, append-only, cross-project lessons accumulate here
        - Write rule: Use Edit tool to append ONLY. NEVER use Write tool (overwrites entire file)
          **Exception (file absent)**: Use Write tool to create empty file first, then Edit to append (Write permitted for initial creation only).
-         **If Edit fails AFTER Write succeeds**: (1) Delete the empty file (to restore ENOENT state for next session), (2) report to user with exact error detail, (3) output content in chat, (4) await explicit confirmation before continuing (silent continuation prohibited; 明示的確認（閉じたリスト）: 「記録した」「了解した」「確認した」のみ有効 — 「OK」「続けて」単体・これらを含む組み合わせは不可)
+         **If Edit fails AFTER Write succeeds**: (1) Delete the empty file (to restore ENOENT state for next session) — **if Delete also fails: skip to step (2) with both error details**, (2) report to user with exact error detail, (3) output content in chat, (4) await explicit confirmation before continuing (silent continuation prohibited; 明示的確認（閉じたリスト）: 「記録した」「了解した」「確認した」のみ有効 — 「OK」「続けて」単体・これらを含む組み合わせは不可)
          **If Edit fails on existing file**: (1) report to user with exact error detail, (2) output the intended content in chat, (3) await explicit confirmation before continuing (silent continuation prohibited; 明示的確認（閉じたリスト）: 「記録した」「了解した」「確認した」のみ有効 — 「OK」「続けて」単体・これらを含む組み合わせは不可)
        - Cleanup: when entries exceed ~20 (no fixed monthly cadence)
        - Recurring pattern alert: If 2+ similar corrections appear for the same project (same Root Cause category), report to user for structural rule improvement
@@ -121,7 +121,7 @@ uv run safety check
 
 **セットアップ**: `uv run pre-commit install`
 **戦略**: コミット時はruffのみ（3秒以内）、重いチェックはCI/CDで実行
-**詳細**: @memory:coding_standards Section 9.4
+**詳細**: `.claude/rules/python/coding-standards.md`
 
 ### Markdown品質チェック
 
@@ -139,7 +139,7 @@ npm run lint:md && npm run lint:text   # ローカル実行
 
 ## 設定管理
 
-**詳細**: @memory:coding_standards Section 11.2
+**詳細**: `.claude/rules/python/coding-standards.md`
 
 Pydantic Settingsのネスト記法（`__`区切り）を使用:
 
@@ -159,7 +159,7 @@ SECURITY__API_KEY=your-secret-key
 
 ## 重要な学習ポイント
 
-**詳細**: @memory:coding_standards 各セクション参照
+**詳細**: `.claude/rules/python/coding-standards.md` 各セクション参照
 
 1. **非同期プログラミング**: `utils/api_client.py:399-762` - async/await、asyncio.gather()
 2. **エラーハンドリング**: `api_client.py:24-57`, `132-219` - 階層的例外、リトライロジック
@@ -168,7 +168,7 @@ SECURITY__API_KEY=your-secret-key
 
 ## 開発時の注意事項
 
-**基本規約**: @memory:coding_standards, @memory:implementation_quality_gates
+**基本規約**: @memory:implementation_quality_gates
 
 <!-- preserve-on-compact: Git Flow -->
 **Git運用** (Git Flow):
@@ -230,8 +230,6 @@ git checkout -b feature/<次のタスク> origin/develop
 - [ ] 「簡潔」出力は 600-900字に収まるか
 - [ ] セッション初期化時に本基準を再読込
 
-**詳細ガイド**: @memory:output_quality_standards（計画中）
-
 **参考**: @memory:implementation_quality_gates, quality-gates.md
 
 ## 🔌 コマンド/スキル/プラグイン自動発動ルール
@@ -253,7 +251,7 @@ git checkout -b feature/<次のタスク> origin/develop
 | コマンド/スキル | 発動トリガー | 用途 |
 |----------------|------------|------|
 | `security-guidance` (hook) | Edit/Write時 | 自動警告（明示的呼出不要） |
-| `/reflexion:reflect` | 信頼度<90%時 | deep reflect実行（セルフレビュー） |
+| `/reflexion:reflect` | タスク完了時 | deep reflect実行（セルフレビュー） |
 | `/code-review:review-local-changes` | 品質ゲート全合格後 | 6並列エージェントレビュー（80点閾値） |
 
 ### High（開発標準）
