@@ -32,12 +32,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
         (post-compact context reload: re-verify by re-running `git rev-parse --show-toplevel`; if result differs from stored WORKTREE_ROOT → **STOP + report to user**)
     - Run `git worktree list` and check result:
 
-      | `git worktree list` Result | Action |
-      |---------------------------|--------|
+      | `git worktree list --porcelain` (parsed) Result | Action |
+      |--------------------------------------------------|--------|
       | Command failed (non-zero exit code) | **STOP** + report to user |
       | Empty / Unparseable | **STOP** + report to user |
       | WORKTREE_ROOT not found | **STOP** + mismatch report |
-      | 1 entry | Notify "single-worktree mode (WORKTREE_ROOT: {absolute path})" + continue |
+      | 1 entry | Run WORKTREE_ROOT confirmation command → Match: Notify "single-worktree mode (WORKTREE_ROOT: {absolute path})" + continue / Mismatch: **STOP** + mismatch report |
       | 2+ entries | Notify "multi-worktree mode" → confirm WORKTREE_ROOT → **on failure: STOP + mismatch report** / on success: confirm scope with user |
 
       > **Evaluation order (required)**: Evaluate table rows top to bottom (check WORKTREE_ROOT containment before entry count): ① command failed → STOP ② empty/Unparseable → STOP ③ WORKTREE_ROOT containment check (if not found, STOP + mismatch report regardless of entry count) ④ entry count check (1 or 2+ entries)
@@ -64,12 +64,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
        - Write rule: Use Edit tool to append ONLY. NEVER use Write tool (overwrites entire file)
          **Exception (file absent)**: Use Write tool to create empty file first, then Edit to append (Write permitted for initial creation only).
          **If Edit fails AFTER Write succeeds**: (1) Delete the empty file (to restore ENOENT state for next session), (2) report to user with exact error detail, (3) output content in chat, (4) await explicit confirmation before continuing (silent continuation prohibited; 明示的確認（閉じたリスト）: 「記録した」「了解した」「確認した」のみ有効 — 「OK」「続けて」単体・これらを含む組み合わせは不可)
+         **If Edit fails on existing file**: (1) report to user with exact error detail, (2) output the intended content in chat, (3) await explicit confirmation before continuing (silent continuation prohibited; 明示的確認（閉じたリスト）: 「記録した」「了解した」「確認した」のみ有効 — 「OK」「続けて」単体・これらを含む組み合わせは不可)
        - Cleanup: when entries exceed ~20 (no fixed monthly cadence)
        - Recurring pattern alert: If 2+ similar corrections appear for the same project (same Root Cause category), report to user for structural rule improvement
 16. **ALWAYS** fix bugs autonomously (no hand-holding) when scope is within:
     - ❌ Absolutely prohibited (no autonomous modification): `pyproject.toml`, `*.yml`/`*.yaml`/`.env*`, `config/`, `tests/conftest.py`, `tests/**/conftest.py`, `tests/**/__init__.py`, `utils/__init__.py`, `utils/logger.py`, `utils/sentry_init.py`, git ops / infra config
     - ⚠️ Limited autonomous fix (spec-changing modifications → confirmation required; non-functional modifications: autonomous OK): `scripts/*.py`, `models/responses.py`, `utils/api_client.py`, `utils/github_client.py`, `tests/test_smoke.py` — Permitted: typo fixes / import path fixes / lint·format fixes / clear flaky test fixes (e.g., strengthening wait conditions) / obvious mock URL typo fixes only
-    - ✅ Autonomous fix OK: `tests/**/test_*.py` and `tests/test_*.py` (except `tests/test_smoke.py` — governed by ⚠️ above), `*.py` logic errors (except ❌/⚠️ paths above — excludes `config/`, `utils/__init__.py`, etc.), pytest/ruff/mypy failures (if fix requires ❌/⚠️ file changes, apply respective rules)
+    - ✅ Autonomous fix OK: `tests/**/test_*.py` and `tests/test_*.py` (except `tests/test_smoke.py` — governed by ⚠️ above), `*.py` logic errors (except ALL ❌/⚠️ paths: `pyproject.toml`, `*.yml`/`*.yaml`/`.env*`, `config/`, `tests/conftest.py`, `tests/**/conftest.py`, `tests/**/__init__.py`, `utils/__init__.py`, `utils/logger.py`, `utils/sentry_init.py`, `scripts/*.py`, `models/responses.py`, `utils/api_client.py`, `utils/github_client.py`, `tests/test_smoke.py`), pytest/ruff/mypy failures (if fix requires ❌/⚠️ file changes, apply respective rules)
     - Boundary cases (e.g., adding pyproject.toml dependencies) → apply Rule 3 (AskUserQuestion)
 
 ## プロジェクト概要
