@@ -100,6 +100,7 @@ def test_sync_timeout_error_retry(mock_backoff: Mock) -> None:
     # リトライが実行されることを確認（初回+リトライ1回=2回）
     assert route.call_count == 2
     assert isinstance(exc_info.value.__cause__, APITimeoutError)
+    assert mock_backoff.call_count == 1  # retry_count=1 → バックオフ1回
 
 
 # =============================================================================
@@ -123,6 +124,7 @@ def test_sync_connection_error_retry(mock_backoff: Mock) -> None:
 
     assert route.call_count == 2
     assert isinstance(exc_info.value.__cause__, APIConnectionError)
+    assert mock_backoff.call_count == 1  # retry_count=1 → バックオフ1回
 
 
 @respx.mock

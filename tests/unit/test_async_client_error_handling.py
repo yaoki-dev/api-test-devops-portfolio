@@ -67,22 +67,19 @@ async def test_async_retry_on_server_error_then_success(mock_backoff: Mock) -> N
 @patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_retry_exhausted(mock_backoff: Mock) -> None:
     """リトライ上限でAPIRetryErrorが発生することを確認（5xxのみリトライ）"""
+    retry_count = 2
     route = respx.get(f"{BASE_URL}/posts/1")
-    route.side_effect = [
-        httpx.Response(500),
-        httpx.Response(500),
-        httpx.Response(500),
-    ]
+    route.side_effect = [httpx.Response(500)] * (retry_count + 1)  # 初回 + リトライ数
 
-    async with AsyncAPIClient(retry_count=2) as client:
+    async with AsyncAPIClient(retry_count=retry_count) as client:
         with pytest.raises(APIRetryError) as exc_info:
             await client.get("/posts/1")
 
-    # リトライ回数+1回（初回+リトライ2回=3回）実行されたことを確認
-    assert route.call_count == 3
-    assert "Async request failed after 3 attempts" in str(exc_info.value)
-    # バックオフが2回呼ばれることを確認（最後の試行ではバックオフなし）
-    assert mock_backoff.call_count == 2
+    # リトライ回数+1回（初回+リトライ{retry_count}回={retry_count + 1}回）実行されたことを確認
+    assert route.call_count == retry_count + 1
+    assert f"Async request failed after {retry_count + 1} attempts" in str(exc_info.value)
+    # バックオフがretry_count回呼ばれることを確認（最後の試行ではバックオフなし）
+    assert mock_backoff.call_count == retry_count
 
 
 @respx.mock

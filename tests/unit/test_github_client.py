@@ -7,7 +7,7 @@ GitHub API非同期クライアントのUnit Tests
 - カバレッジ目標: 80%以上
 """
 
-from unittest.mock import ANY, patch
+from unittest.mock import ANY, Mock, patch
 
 import httpx
 import pytest
@@ -156,7 +156,8 @@ async def test_rate_limit_exceeded():
 
 
 @respx.mock
-async def test_retry_on_server_error():
+@patch("utils.github_client.exponential_backoff_with_jitter", return_value=0.0)
+async def test_retry_on_server_error(mock_backoff: Mock) -> None:
     """5xxエラーで3回リトライ後、GitHubServerError発生
 
     検証項目:
@@ -178,6 +179,7 @@ async def test_retry_on_server_error():
     assert route.call_count == 3
     assert "Server error: 500" in str(exc_info.value)
     assert "after 3 attempts" in str(exc_info.value)
+    assert mock_backoff.call_count == 2  # 3試行 → attempt=0,1でバックオフ（attempt=2は発生しない）
 
 
 @respx.mock
@@ -349,7 +351,8 @@ async def test_httpx_status_error_4xx():
 
 
 @respx.mock
-async def test_httpx_status_error_5xx():
+@patch("utils.github_client.exponential_backoff_with_jitter", return_value=0.0)
+async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
     """httpx.HTTPStatusError（5xx）処理の検証"""
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
     route.side_effect = [
@@ -364,6 +367,7 @@ async def test_httpx_status_error_5xx():
 
     assert "Server error: 503" in str(exc_info.value)
     assert route.call_count == 3
+    assert mock_backoff.call_count == 2  # 3試行 → attempt=0,1でバックオフ（attempt=2は発生しない）
 
 
 @respx.mock
