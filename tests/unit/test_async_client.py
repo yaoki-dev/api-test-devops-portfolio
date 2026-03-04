@@ -26,6 +26,7 @@ import httpx
 import pytest
 import respx
 from httpx import Response
+from structlog.testing import capture_logs
 
 # プロジェクト内モジュール
 from utils.api_client import (
@@ -256,8 +257,9 @@ async def test_partial_failure_graceful_degradation():
     route5 = respx.get(f"{BASE_URL}/users/5").respond(json={"id": 5, "name": "User 5"})
 
     # retry_count=0: リトライなし設定でgraceful degradationのみ検証（リトライ挙動は別テストで担保）
-    async with AsyncJSONPlaceholderClient(retry_count=0) as client:
-        results = await client.get_multiple_users([1, 2, 3, 4, 5], max_concurrent=2)
+    with capture_logs() as log_output:
+        async with AsyncJSONPlaceholderClient(retry_count=0) as client:
+            results = await client.get_multiple_users([1, 2, 3, 4, 5], max_concurrent=2)
 
     # graceful degradation検証（成功分のみ返却パターン）
     assert len(results) == 3, f"Expected 3 successful results, got {len(results)}"
@@ -273,6 +275,12 @@ async def test_partial_failure_graceful_degradation():
     assert route3.call_count == 1
     assert route4.call_count == 1
     assert route5.call_count == 1
+
+    # 2件失敗（user_id=2,4）の警告ログ検証（Sentry監視の保証）
+    warning_events = [log["event"] for log in log_output if log.get("log_level") == "warning"]
+    assert warning_events.count("get_user_failed") == 2, (
+        f"Expected 2 'get_user_failed' warnings, got: {warning_events}"
+    )
 
 
 @respx.mock
@@ -293,8 +301,9 @@ async def test_all_requests_fail_returns_empty_list():
     routes = [respx.get(f"{BASE_URL}/users/{uid}").respond(status_code=500) for uid in [1, 2, 3]]
 
     # retry_count=0: リトライなし設定でgraceful degradationのみ検証（リトライ挙動は別テストで担保）
-    async with AsyncJSONPlaceholderClient(retry_count=0) as client:
-        results = await client.get_multiple_users([1, 2, 3], max_concurrent=2)
+    with capture_logs() as log_output:
+        async with AsyncJSONPlaceholderClient(retry_count=0) as client:
+            results = await client.get_multiple_users([1, 2, 3], max_concurrent=2)
 
     # 全件失敗で空リスト返却
     assert results == [], f"Expected empty list, got {results}"
@@ -303,14 +312,20 @@ async def test_all_requests_fail_returns_empty_list():
     # 全3エンドポイントが各1回ずつ呼ばれたことを確認（retry_count=0のため決定論的に==1）
     assert all(r.call_count == 1 for r in routes)
 
+    # 各ユーザー取得失敗時に警告ログが出力されることを確認（Sentry監視の保証）
+    warning_events = [log["event"] for log in log_output if log.get("log_level") == "warning"]
+    assert warning_events.count("get_user_failed") == 3, (
+        f"Expected 3 'get_user_failed' warnings, got: {warning_events}"
+    )
+
 
 # ===============================================================================
 # Test 3: エラーハンドリング・リトライ機能テスト
 # ===============================================================================
 
 
-@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 @respx.mock
+@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_timeout_retry_then_success(mock_backoff: Mock) -> None:
     """
     タイムアウトエラー後のリトライで最終的に成功するテスト
@@ -1879,8 +1894,9 @@ async def test_get_photos_with_filters(album_id, expected_count, test_descriptio
     [0, -1, -100],
     ids=["post_id_zero", "post_id_negative", "post_id_large_negative"],
 )
+@respx.mock
 async def test_async_get_comments_invalid_post_id(
-    post_id: int, respx_mock: respx.MockRouter
+    post_id: int,
 ) -> None:
     """
     AsyncJSONPlaceholderClient.get_comments()の無効post_idバリデーション
@@ -1899,7 +1915,7 @@ async def test_async_get_comments_invalid_post_id(
             await client.get_comments(post_id=post_id)
 
     # ValueError が先に発生するため HTTP リクエストは到達しない
-    assert len(respx_mock.calls) == 0
+    assert len(respx.mock.calls) == 0
 
 
 @pytest.mark.unit

@@ -34,19 +34,20 @@ BASE_URL = "https://jsonplaceholder.typicode.com"
 @respx.mock
 def test_sync_get_user() -> None:
     """GETリクエスト検証"""
-    respx.get(f"{BASE_URL}/users/1").respond(json={"id": 1, "name": "Test User"})
+    route = respx.get(f"{BASE_URL}/users/1").respond(json={"id": 1, "name": "Test User"})
 
     with SyncAPIClient() as client:
         response = client.get("/users/1")
 
     assert response.status_code == 200
     assert response.json()["id"] == 1
+    assert route.call_count == 1  # HTTPリクエストが1回実際に発行されたことを確認
 
 
 @respx.mock
 def test_sync_post_create_user() -> None:
     """POSTリクエスト検証"""
-    respx.post(f"{BASE_URL}/users").respond(
+    route = respx.post(f"{BASE_URL}/users").respond(
         status_code=201,
         json={"id": 101, "name": "New User", "email": "new@example.com"},
     )
@@ -56,29 +57,32 @@ def test_sync_post_create_user() -> None:
 
     assert response.status_code == 201
     assert response.json()["id"] == 101
+    assert route.call_count == 1  # HTTPリクエストが1回実際に発行されたことを確認
 
 
 @respx.mock
 def test_sync_put_update_user() -> None:
     """PUTリクエスト検証"""
-    respx.put(f"{BASE_URL}/users/1").respond(json={"id": 1, "name": "Updated"})
+    route = respx.put(f"{BASE_URL}/users/1").respond(json={"id": 1, "name": "Updated"})
 
     with SyncAPIClient() as client:
         response = client.put("/users/1", json={"name": "Updated"})
 
     assert response.status_code == 200
     assert response.json()["name"] == "Updated"
+    assert route.call_count == 1  # HTTPリクエストが1回実際に発行されたことを確認
 
 
 @respx.mock
 def test_sync_delete_user() -> None:
     """DELETEリクエスト検証（httpx.Response返却を検証）"""
-    respx.delete(f"{BASE_URL}/users/1").respond(status_code=204, content=b"")
+    route = respx.delete(f"{BASE_URL}/users/1").respond(status_code=204, content=b"")
 
     with SyncAPIClient() as client:
         response = client.delete("/users/1")
 
     assert response.status_code == 204
+    assert route.call_count == 1  # HTTPリクエストが1回実際に発行されたことを確認
 
 
 # =============================================================================
@@ -110,18 +114,19 @@ def test_sync_context_manager_cleanup() -> None:
 @respx.mock
 def test_sync_empty_response_handling() -> None:
     """空レスポンス（{}）の安全処理検証"""
-    respx.get(f"{BASE_URL}/empty").respond(json={})
+    route = respx.get(f"{BASE_URL}/empty").respond(json={})
 
     with SyncAPIClient() as client:
         response = client.get("/empty")
 
     assert response.json() == {}
+    assert route.call_count == 1  # HTTPリクエストが1回実際に発行されたことを確認
 
 
 @respx.mock
 def test_sync_malformed_json_handling() -> None:
     """不正JSON時の例外処理検証"""
-    respx.get(f"{BASE_URL}/malformed").respond(
+    route = respx.get(f"{BASE_URL}/malformed").respond(
         content=b"invalid json",
         headers={"content-type": "application/json"},
     )
@@ -131,18 +136,20 @@ def test_sync_malformed_json_handling() -> None:
 
     with pytest.raises(ValueError):
         response.json()
+    assert route.call_count == 1  # HTTPリクエストが1回実際に発行されたことを確認
 
 
 @pytest.mark.parametrize("user_id", [0, -1, sys.maxsize], ids=["zero", "negative", "max_int"])
 @respx.mock
 def test_sync_boundary_user_id(user_id: int) -> None:
     """境界値テスト: user_id=0, -1, MAX_INT（parametrize化）"""
-    respx.get(f"{BASE_URL}/users/{user_id}").respond(json={"id": user_id})
+    route = respx.get(f"{BASE_URL}/users/{user_id}").respond(json={"id": user_id})
 
     with SyncAPIClient() as client:
         response = client.get(f"/users/{user_id}")
 
     assert response.json()["id"] == user_id
+    assert route.call_count == 1  # HTTPリクエストが1回実際に発行されたことを確認
 
 
 # =============================================================================
@@ -717,7 +724,8 @@ def test_sync_get_photos(album_id: int | None, expected_count: int) -> None:
     [0, -1, -100],
     ids=["post_id_zero", "post_id_negative", "post_id_large_negative"],
 )
-def test_sync_get_comments_invalid_post_id(post_id: int, respx_mock: respx.MockRouter) -> None:
+@respx.mock
+def test_sync_get_comments_invalid_post_id(post_id: int) -> None:
     """
     SyncJSONPlaceholderClient.get_comments()の無効post_idバリデーション
 
@@ -735,7 +743,7 @@ def test_sync_get_comments_invalid_post_id(post_id: int, respx_mock: respx.MockR
             client.get_comments(post_id=post_id)
 
     # HTTPリクエストが発行されていないことを確認（スコープ付きルーター使用）
-    assert len(respx_mock.calls) == 0
+    assert len(respx.mock.calls) == 0
 
 
 @pytest.mark.unit
