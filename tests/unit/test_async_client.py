@@ -1539,12 +1539,8 @@ async def test_get_todos_with_filters(
     if limit is not None:
         filtered_todos = filtered_todos[:limit]
 
-    # respxモック設定（expected_paramsを直接使用、クエリパラメータの厳格マッチング）
-    # expected_params={} の場合は params__eq={} で「クエリなし」を厳格マッチ（no_paramsケース対応）
-    if expected_params:
-        route = respx.get(f"{BASE_URL}/todos", params=expected_params).respond(json=filtered_todos)
-    else:
-        route = respx.get(f"{BASE_URL}/todos", params__eq={}).respond(json=filtered_todos)
+    # respxモック設定（params__eq で厳格マッチング: 空dict=クエリなし, 非空dict=完全一致）
+    route = respx.get(f"{BASE_URL}/todos", params__eq=expected_params).respond(json=filtered_todos)
 
     # テスト実行
     async with AsyncJSONPlaceholderClient() as client:
@@ -1783,16 +1779,14 @@ async def test_get_albums_with_filters(user_id, expected_count, test_description
         {"id": 5, "userId": 3, "title": "Album 5"},
     ]
 
-    # パラメータに応じてフィルタ + respxモック設定（クエリパラメータの厳格マッチング）
-    # no_user_id ケースは params__eq={} で「クエリなし」を厳格マッチ
-    if user_id is not None:
-        filtered_albums = [a for a in all_albums if a["userId"] == user_id]
-        route = respx.get(f"{BASE_URL}/albums", params={"userId": user_id}).respond(
-            json=filtered_albums
-        )
-    else:
-        filtered_albums = all_albums
-        route = respx.get(f"{BASE_URL}/albums", params__eq={}).respond(json=filtered_albums)
+    # パラメータフィルタ + respxモック設定（params__eq 厳格マッチング）
+    filtered_albums = (
+        [a for a in all_albums if a["userId"] == user_id] if user_id is not None else all_albums
+    )
+    expected_params = {"userId": user_id} if user_id is not None else {}
+    route = respx.get(f"{BASE_URL}/albums", params__eq=expected_params).respond(
+        json=filtered_albums
+    )
 
     # テスト実行
     async with AsyncJSONPlaceholderClient() as client:
