@@ -185,9 +185,11 @@ async def test_async_multiple_users_with_semaphore():
     - max_concurrent パラメータを受け付けること
 
     注意（テスト設計上の制限）:
-    - respxモック環境ではHTTPリクエストのタイミング情報が記録されないため、
-      「max_concurrent=2の同時実行数制限が機能している」ことは観測不可能
+    - このテストはスパイパターンを使用しないため、respxモック環境では
+      HTTPリクエストのタイミング情報が記録されず、「max_concurrent=2の
+      同時実行数制限が機能している」ことは観測不可能
       （実装上はSemaphoreが機能しているが、このテストでは検証できない）
+      → Semaphoreの動作検証は test_semaphore_initialized_with_correct_max_concurrent を参照
 
     学習ポイント:
     - asyncio.Semaphore: 同時実行数を制限するロック機構
@@ -236,8 +238,10 @@ async def test_semaphore_initialized_with_correct_max_concurrent():
         max_concurrent_observed = max(max_concurrent_observed, current_concurrent)
         # event loopにyieldして他タスクの並行実行を許容する（実際の遅延なし）
         await asyncio.sleep(0)
-        result = await original_get_user(self, user_id)
-        current_concurrent -= 1
+        try:
+            result = await original_get_user(self, user_id)
+        finally:
+            current_concurrent -= 1
         return result
 
     # respxルート設定（5ユーザー分）
