@@ -754,17 +754,18 @@ async def test_async_context_manager_cleanup_on_exception():
     - 例外発生時でも aclose() が呼び出されること（リソースリークなし）
 
     Note: aclose()呼び出し検証はhttpxクライアントの内部動作に依存するためpatchを使用。
-          Exception は httpx.RequestError のサブクラスではないため、リトライを通らず
-          そのまま伝播する。例外型はテスト上の都合で使用。
+          RuntimeError は httpx.RequestError のサブクラスではないため、リトライを通らず
+          そのまま伝播する。基底クラス Exception より具体的な型を使用することで
+          テストバグの誤検知を防ぐ。
     """
     with patch("httpx.AsyncClient") as mock_client_class:
         mock_client_instance = AsyncMock()
         mock_client_class.return_value = mock_client_instance
 
-        test_error = Exception("Test error")
+        test_error = RuntimeError("Test error")
         mock_client_instance.request.side_effect = test_error
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(RuntimeError) as exc_info:
             async with AsyncJSONPlaceholderClient() as client:
                 await client.get("/users/1")
 
@@ -1038,6 +1039,74 @@ async def test_get_user_data_with_empty_posts():
     assert route_posts.call_count == 1
     assert route_todos.call_count == 1
     assert route_albums.call_count == 1
+
+
+@respx.mock
+async def test_get_user_data_user_not_found():
+    """
+    get_user_data()でユーザーが404の場合にAPIHTTPErrorが伝播することを確認
+
+    検証項目：
+    - /users/999 が404を返す場合、APIHTTPErrorが発生する
+    - status_code == 404 が正しく設定される
+    - asyncio.gather（return_exceptions=False）により例外がそのまま伝播する
+
+    学習ポイント:
+    - 404エラーの即時失敗: リトライなし
+    - asyncio.gather のデフォルト動作: 最初の例外で即時伝播
+    - pytest.raises: 例外の型とプロパティを同時検証
+    """
+    user_id = 999
+
+    # /users/999 は 404 を返す
+    respx.get(f"{BASE_URL}/users/{user_id}").respond(status_code=404)
+
+    # posts/todos/albums は正常応答（userId フィルタ付き）
+    respx.get(f"{BASE_URL}/posts", params={"userId": user_id}).respond(json=[])
+    respx.get(f"{BASE_URL}/todos", params={"userId": user_id}).respond(json=[])
+    respx.get(f"{BASE_URL}/albums", params={"userId": user_id}).respond(json=[])
+
+    # retry_count=0 でリトライなし（即時失敗）
+    async with AsyncJSONPlaceholderClient(retry_count=0) as client:
+        with pytest.raises(APIHTTPError) as exc_info:
+            await client.get_user_data(user_id)
+
+    assert exc_info.value.status_code == 404
+
+
+@respx.mock
+async def test_get_user_data_posts_server_error():
+    """
+    get_user_data()で /posts が500エラーの場合にAPIRetryErrorが伝播することを確認
+
+    検証項目：
+    - /posts が500を返す場合、APIRetryErrorが発生する
+    - retry_count=0 の場合はリトライせず即時失敗する
+    - asyncio.gather（return_exceptions=False）により例外がそのまま伝播する
+
+    学習ポイント:
+    - 5xxエラーのリトライ動作: retry_count=0 で即時失敗
+    - APIRetryError: リトライ上限到達時の例外型
+    - asyncio.gather の例外伝播: 最初に失敗したタスクの例外が伝播
+    """
+    user_id = 1
+
+    # /users/1 は正常応答
+    respx.get(f"{BASE_URL}/users/{user_id}").respond(
+        json={"id": 1, "name": "Leanne Graham", "email": "Sincere@april.biz"}
+    )
+
+    # /posts は 500 エラー（userId フィルタ付き）
+    respx.get(f"{BASE_URL}/posts", params={"userId": user_id}).respond(status_code=500)
+
+    # todos/albums は正常応答
+    respx.get(f"{BASE_URL}/todos", params={"userId": user_id}).respond(json=[])
+    respx.get(f"{BASE_URL}/albums", params={"userId": user_id}).respond(json=[])
+
+    # retry_count=0 でリトライなし（即時失敗）
+    async with AsyncJSONPlaceholderClient(retry_count=0) as client:
+        with pytest.raises(APIRetryError):
+            await client.get_user_data(user_id)
 
 
 # ===============================================================================
