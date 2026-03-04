@@ -1904,7 +1904,6 @@ async def test_get_photos_with_filters(album_id, expected_count, test_descriptio
 # ===============================================================================
 
 
-@pytest.mark.unit
 @respx.mock
 async def test_async_get_comments_with_post_id() -> None:
     """
@@ -1931,7 +1930,6 @@ async def test_async_get_comments_with_post_id() -> None:
     assert result == mock_comments
 
 
-@pytest.mark.unit
 @respx.mock
 async def test_async_get_comments_without_post_id() -> None:
     """
