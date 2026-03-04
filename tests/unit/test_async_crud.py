@@ -22,7 +22,7 @@ from unittest.mock import Mock, patch
 import pytest
 import respx
 
-from utils.api_client import APIClientError, AsyncJSONPlaceholderClient
+from utils.api_client import APIHTTPError, APIRetryError, AsyncJSONPlaceholderClient
 
 pytestmark = pytest.mark.unit
 
@@ -245,7 +245,7 @@ async def test_async_create_post_400_error() -> None:
 
     検証項目：
     - 不正なリクエストボディ送信時の400エラー
-    - APIClientError 例外の発生
+    - APIHTTPError 例外の発生（status_code=400）
     - エラーレスポンスの適切な処理
     - リトライが実行されないこと（4xxはクライアントエラー）
     """
@@ -256,8 +256,9 @@ async def test_async_create_post_400_error() -> None:
 
     async with AsyncJSONPlaceholderClient() as client:
         # 400エラーが発生することを確認
-        with pytest.raises(APIClientError):
+        with pytest.raises(APIHTTPError) as exc_info:
             await client.create_post("", "", 0)  # 不正なデータ
+        assert exc_info.value.status_code == 400
 
     assert route.call_count == 1  # 4xxはリトライなし
 
@@ -275,7 +276,7 @@ async def test_async_update_post_404_error() -> None:
     検証項目：
     - 存在しない post_id への更新リクエスト
     - 404エラーの適切な検出
-    - APIClientError 例外の発生
+    - APIHTTPError 例外の発生（status_code=404）
     - リトライが実行されないこと
     """
     route = respx.put(f"{BASE_URL}/posts/99999").respond(
@@ -285,8 +286,9 @@ async def test_async_update_post_404_error() -> None:
 
     async with AsyncJSONPlaceholderClient() as client:
         # 404エラーが発生することを確認
-        with pytest.raises(APIClientError):
+        with pytest.raises(APIHTTPError) as exc_info:
             await client.update_post(99999, "Title", "Body")  # 存在しないID
+        assert exc_info.value.status_code == 404
 
     assert route.call_count == 1  # 4xxはリトライなし
 
@@ -304,7 +306,7 @@ async def test_async_delete_post_500_error(mock_backoff: Mock) -> None:
 
     検証項目：
     - サーバーエラー時の500エラー
-    - APIClientError 例外の発生
+    - APIRetryError 例外の発生（リトライ上限到達）
     - リトライロジックの動作（5xxはサーバーエラー → リトライ対象）
     - リトライ回数の正確性（デフォルトretry_count=3 → 計4回）
     - エラーレスポンスの適切な処理
@@ -315,8 +317,8 @@ async def test_async_delete_post_500_error(mock_backoff: Mock) -> None:
     )
 
     async with AsyncJSONPlaceholderClient() as client:
-        # 500エラーが発生することを確認
-        with pytest.raises(APIClientError):
+        # 500エラーが発生することを確認（5xxはリトライ上限後にAPIRetryError）
+        with pytest.raises(APIRetryError):
             await client.delete_post(1)
 
     # リトライ回数検証: 初回 + リトライ3回 = 計4回（デフォルトretry_count=3）

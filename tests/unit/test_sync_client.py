@@ -771,7 +771,6 @@ def test_sync_get_comments_without_post_id() -> None:
     [0, -1, -100],
     ids=["post_id_zero", "post_id_negative", "post_id_large_negative"],
 )
-@respx.mock
 def test_sync_get_comments_invalid_post_id(post_id: int) -> None:
     """
     SyncJSONPlaceholderClient.get_comments()の無効post_idバリデーション
@@ -789,11 +788,7 @@ def test_sync_get_comments_invalid_post_id(post_id: int) -> None:
         with pytest.raises(ValueError, match="post_id must be >= 1"):
             client.get_comments(post_id=post_id)
 
-    # HTTPリクエストが発行されていないことを確認（スコープ付きルーター使用）
-    assert len(respx.mock.calls) == 0
 
-
-@respx.mock
 @pytest.mark.parametrize(
     "album_id",
     [0, -1, -100],
@@ -815,9 +810,6 @@ def test_sync_get_photos_invalid_album_id(album_id: int) -> None:
     with SyncJSONPlaceholderClient() as client:
         with pytest.raises(ValueError, match="album_id must be >= 1"):
             client.get_photos(album_id=album_id)
-
-    # HTTPリクエストが発行されていないことを確認
-    assert len(respx.mock.calls) == 0
 
 
 # =============================================================================

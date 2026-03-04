@@ -80,7 +80,7 @@ async def test_async_retry_exhausted(mock_backoff: Mock) -> None:
 
     # リトライ回数+1回（初回+リトライ2回=3回）実行されたことを確認
     assert route.call_count == 3
-    assert "failed after" in str(exc_info.value)
+    assert "Async request failed after 3 attempts" in str(exc_info.value)
     # バックオフが2回呼ばれることを確認（最後の試行ではバックオフなし）
     assert mock_backoff.call_count == 2
 

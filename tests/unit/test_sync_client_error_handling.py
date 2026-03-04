@@ -142,7 +142,7 @@ def test_sync_retry_exhausted(mock_backoff: Mock) -> None:
 
     # リトライ回数+1回（初回+リトライ2回=3回）実行されたことを確認
     assert route.call_count == 3
-    assert "failed after" in str(exc_info.value)
+    assert "Request failed after 3 attempts" in str(exc_info.value)
     # バックオフはattempt 0, 1で呼ばれる（attempt 2は最後なのでなし）
     assert mock_backoff.call_count == 2
 

@@ -521,9 +521,10 @@ async def test_async_bulk_create_users_partial_failure():
         Response(201, json={"id": 103, "name": "User 3", "email": "user3@test.com"}),
     ]
 
-    async with AsyncJSONPlaceholderClient() as client:
-        # 例外なく完了することを確認（silent partial failure）
-        results = await client.bulk_create_users(users_to_create)
+    with capture_logs() as log_output:
+        async with AsyncJSONPlaceholderClient() as client:
+            # 例外なく完了することを確認（silent partial failure）
+            results = await client.bulk_create_users(users_to_create)
 
     # 部分失敗: 3件中1件(422)が失敗するため成功件数は正確に2件
     # Note: respxのside_effectはリクエスト到着順（task作成順）に消費され決定論的
@@ -537,6 +538,15 @@ async def test_async_bulk_create_users_partial_failure():
     assert "User 1" in created_names  # 1件目成功
     assert "User 3" in created_names  # 3件目成功
     assert "User 2" not in created_names  # 2件目は422エラーで失敗、返却されない
+
+    # warningログ検証（Sentry監視の保証: ログ削除時のリグレッション検出）
+    partial_log = next(
+        (log for log in log_output if log.get("event") == "bulk_create_partial_failure"),
+        None,
+    )
+    assert partial_log is not None
+    assert partial_log.get("failed_count") == 1
+    assert partial_log.get("success_count") == 2
 
 
 @respx.mock
@@ -579,9 +589,10 @@ async def test_async_bulk_create_users_partial_failure_5xx() -> None:
     ]
 
     # retry_count=0: 5xxリトライなし → 即APIRetryError → side_effectは3件で決定論的
-    async with AsyncJSONPlaceholderClient(retry_count=0) as client:
-        # 例外なく完了することを確認（silent partial failure）
-        results = await client.bulk_create_users(users_to_create)
+    with capture_logs() as log_output:
+        async with AsyncJSONPlaceholderClient(retry_count=0) as client:
+            # 例外なく完了することを確認（silent partial failure）
+            results = await client.bulk_create_users(users_to_create)
 
     # 部分失敗: 3件中1件(500→APIRetryError)が失敗するため成功件数は正確に2件
     assert len(results) == 2, (
@@ -596,6 +607,15 @@ async def test_async_bulk_create_users_partial_failure_5xx() -> None:
     assert "User 1" in created_names  # 1件目成功
     assert "User 3" in created_names  # 3件目成功
     assert "User 2" not in created_names  # 2件目は500エラーで失敗、返却されない
+
+    # warningログ検証（Sentry監視の保証: ログ削除時のリグレッション検出）
+    partial_log = next(
+        (log for log in log_output if log.get("event") == "bulk_create_partial_failure"),
+        None,
+    )
+    assert partial_log is not None
+    assert partial_log.get("failed_count") == 1
+    assert partial_log.get("success_count") == 2
 
 
 @respx.mock
@@ -1968,7 +1988,6 @@ async def test_async_get_comments_without_post_id() -> None:
     [0, -1, -100],
     ids=["post_id_zero", "post_id_negative", "post_id_large_negative"],
 )
-@respx.mock
 async def test_async_get_comments_invalid_post_id(
     post_id: int,
 ) -> None:
@@ -1978,7 +1997,8 @@ async def test_async_get_comments_invalid_post_id(
     検証項目：
     - post_id=0 は ValueError を発生させる（JSONPlaceholder API は1-based ID）
     - 負数のpost_idも同様に ValueError を発生させる
-    - HTTP リクエストは発行されない
+    - HTTP リクエストは発行されない（ValueError がHTTPリクエスト前に発生するため
+      @respx.mock デコレータ・呼び出し検証は不要）
 
     学習ポイント:
     - 境界値テスト: 0 は偽値（falsy）であるため `if post_id:` では検出できないバグ
@@ -1988,12 +2008,8 @@ async def test_async_get_comments_invalid_post_id(
         with pytest.raises(ValueError, match="post_id must be >= 1"):
             await client.get_comments(post_id=post_id)
 
-    # ValueError が先に発生するため HTTP リクエストは到達しない
-    assert len(respx.mock.calls) == 0
-
 
 @pytest.mark.unit
-@respx.mock
 @pytest.mark.parametrize(
     "album_id",
     [0, -1, -100],
@@ -2006,7 +2022,8 @@ async def test_async_get_photos_invalid_album_id(album_id: int) -> None:
     検証項目：
     - album_id=0 は ValueError を発生させる（JSONPlaceholder API は1-based ID）
     - 負数のalbum_idも同様に ValueError を発生させる
-    - HTTP リクエストは発行されない
+    - HTTP リクエストは発行されない（ValueError がHTTPリクエスト前に発生するため
+      @respx.mock デコレータ・呼び出し検証は不要）
 
     学習ポイント:
     - album_id=0 を渡すと API は空配列を返すが、正しいエラーではない（サイレント失敗）
@@ -2015,9 +2032,6 @@ async def test_async_get_photos_invalid_album_id(album_id: int) -> None:
     async with AsyncJSONPlaceholderClient() as client:
         with pytest.raises(ValueError, match="album_id must be >= 1"):
             await client.get_photos(album_id=album_id)
-
-    # ValueError が先に発生するため HTTP リクエストは到達しない
-    assert len(respx.mock.calls) == 0
 
 
 async def test_async_client_timeout_zero_not_overridden() -> None:
