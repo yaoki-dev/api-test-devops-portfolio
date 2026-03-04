@@ -6,7 +6,7 @@
 # 学習ポイント：
 # 1. async/await を使った非同期テストの書き方
 # 2. pytest-asyncio を使った非同期テスト実行
-# 3. httpx.AsyncClient のモックとスタブ
+# 3. respx によるHTTPトランスポートレイヤーのモック
 # 4. 並行処理・コンカレンシーのテスト
 # 5. エラーハンドリングの検証
 # 6. パフォーマンス・タイムアウト測定
@@ -737,44 +737,39 @@ async def test_async_bulk_create_users_memory_error_propagates() -> None:
 # ===============================================================================
 
 
-async def test_async_performance_and_timeout():
+@respx.mock
+@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
+async def test_async_performance_and_timeout(mock_backoff: Mock) -> None:
     """
     非同期処理のパフォーマンス・タイムアウト・リソース管理テスト
 
     検証項目：
-    - リクエストタイムアウトの動作
-    - リトライ後のAPIRetryError発生
-    - リトライ間隔の検証
+    - リクエストタイムアウト時のリトライ動作
+    - 全リトライ失敗後のAPIRetryError発生
+    - リトライ回数がretry_countに基づくこと（route.call_countで決定論的に検証）
 
     Note: タイムアウト時、実装はリトライ後にAPIRetryErrorを発生させる。
           TimeoutExceptionは内部でキャッチされる。
-
-          【respx非移行理由】
-          httpx.AsyncClientをpatchしてcall_count検証する構造は
-          respxのroute.call_count検証と機能的に等価。
-          ただし実時間遅延検証（elapsed >= retry_delay）はCI環境でflakeyなため除去済みで
-          respxへの移行によるテスト品質向上が限定的なため現状維持。
-          ※aclose()検証はtest_async_context_manager_cleanupが担う（別責務）。
+          @patch(exponential_backoff_with_jitter)でリトライ待機を0秒化しCI時間短縮。
+          respxトランスポートモックにより実際のhttpxコードパスを通じて検証する。
     """
-    with patch("httpx.AsyncClient") as mock_client_class:
-        mock_client_instance = AsyncMock()
-        mock_client_class.return_value = mock_client_instance
+    retry_count = 1  # retry_count=1: 初回 + 1回リトライ = 2回のリクエスト
 
-        # Test 5-1: タイムアウト動作テスト（全リトライ後にAPIRetryError）
-        mock_client_instance.request.side_effect = httpx.TimeoutException("Request timeout")
+    # respxルート: 全リクエストでタイムアウト（retry_count+1 回）
+    route = respx.get(f"{BASE_URL}/users/1")
+    route.side_effect = [httpx.TimeoutException("Request timeout") for _ in range(retry_count + 1)]
 
-        async with AsyncAPIClient(timeout=1.0, retry_count=1, retry_delay=0.05) as client:
-            # 実装はリトライ失敗後にAPIRetryErrorを発生させる
-            with pytest.raises(APIRetryError) as exc_info:
-                await client.get("/users/1")
+    # タイムアウト動作テスト（全リトライ後にAPIRetryError）
+    async with AsyncAPIClient(timeout=1.0, retry_count=retry_count) as client:
+        with pytest.raises(APIRetryError) as exc_info:
+            await client.get("/users/1")
 
-            # エラーメッセージ検証
-            assert "failed after" in str(exc_info.value).lower()
+    # エラーメッセージ検証
+    assert "failed after" in str(exc_info.value).lower()
 
-            # リトライ動作確認: 初回 + 1回リトライ = 2回の呼び出し
-            assert mock_client_instance.request.call_count == 2
-            # Note: 実時間アサート（elapsed >= 0.05）は CI 環境での実行スケジュール変動により
-            # flaky になるため除去。リトライ動作は call_count == 2 で検証済み。
+    # リトライ動作確認: route.call_count で決定論的に検証（respxトランスポートモック使用）
+    assert route.call_count == retry_count + 1  # 初回 + retry_count回リトライ
+    assert mock_backoff.call_count == retry_count  # リトライ1回 = バックオフ1回
 
 
 async def test_async_context_manager_cleanup_on_success():
@@ -1351,7 +1346,7 @@ async def test_get_post_by_id_success():
     expected_post = {"id": 1, "userId": 1, "title": "Test Post", "body": "Test Content"}
 
     # モック設定
-    respx.get(f"{BASE_URL}/posts/{post_id}").respond(json=expected_post)
+    route = respx.get(f"{BASE_URL}/posts/{post_id}").respond(json=expected_post)
 
     # テスト実行
     async with AsyncJSONPlaceholderClient() as client:
@@ -1362,6 +1357,7 @@ async def test_get_post_by_id_success():
     assert result["id"] == post_id
     assert "title" in result
     assert "body" in result
+    assert route.call_count == 1  # HTTPリクエストが1回発行されたことを確認
 
 
 @respx.mock
@@ -1543,23 +1539,12 @@ async def test_get_todos_with_filters(
     if limit is not None:
         filtered_todos = filtered_todos[:limit]
 
-    # クエリパラメータ構築（Noneは除外）
-    query_params = []
-    if user_id is not None:
-        query_params.append(f"userId={user_id}")
-    if completed is not None:
-        query_params.append(f"completed={str(completed).lower()}")
-    if limit is not None:
-        query_params.append(f"_limit={limit}")
-
-    # URLを構築
-    if query_params:
-        url = f"{BASE_URL}/todos?{'&'.join(query_params)}"
+    # respxモック設定（expected_paramsを直接使用、クエリパラメータの厳格マッチング）
+    # expected_params={} の場合は params__eq={} で「クエリなし」を厳格マッチ（no_paramsケース対応）
+    if expected_params:
+        route = respx.get(f"{BASE_URL}/todos", params=expected_params).respond(json=filtered_todos)
     else:
-        url = f"{BASE_URL}/todos"
-
-    # respxモック設定
-    respx.get(url).respond(json=filtered_todos)
+        route = respx.get(f"{BASE_URL}/todos", params__eq={}).respond(json=filtered_todos)
 
     # テスト実行
     async with AsyncJSONPlaceholderClient() as client:
@@ -1571,6 +1556,7 @@ async def test_get_todos_with_filters(
     )
     assert result == filtered_todos
     assert all(isinstance(todo, dict) for todo in result)
+    assert route.call_count == 1  # HTTPリクエストが1回発行されたことを確認
 
     # 追加検証: フィルタ条件が結果に反映されている
     if user_id is not None:
@@ -1797,16 +1783,16 @@ async def test_get_albums_with_filters(user_id, expected_count, test_description
         {"id": 5, "userId": 3, "title": "Album 5"},
     ]
 
-    # パラメータに応じてフィルタ
+    # パラメータに応じてフィルタ + respxモック設定（クエリパラメータの厳格マッチング）
+    # no_user_id ケースは params__eq={} で「クエリなし」を厳格マッチ
     if user_id is not None:
         filtered_albums = [a for a in all_albums if a["userId"] == user_id]
-        url = f"{BASE_URL}/albums?userId={user_id}"
+        route = respx.get(f"{BASE_URL}/albums", params={"userId": user_id}).respond(
+            json=filtered_albums
+        )
     else:
         filtered_albums = all_albums
-        url = f"{BASE_URL}/albums"
-
-    # respxモック設定
-    respx.get(url).respond(json=filtered_albums)
+        route = respx.get(f"{BASE_URL}/albums", params__eq={}).respond(json=filtered_albums)
 
     # テスト実行
     async with AsyncJSONPlaceholderClient() as client:
@@ -1818,6 +1804,7 @@ async def test_get_albums_with_filters(user_id, expected_count, test_description
     )
     assert result == filtered_albums
     assert all(isinstance(album, dict) for album in result)
+    assert route.call_count == 1  # HTTPリクエストが1回発行されたことを確認
 
     # user_idフィルタ検証
     if user_id is not None:
