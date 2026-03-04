@@ -57,6 +57,8 @@ def test_sync_retry_with_exponential_backoff(mock_backoff: Mock) -> None:
 
     assert route.call_count == 3
     assert response.status_code == 200
+    # バックオフが2回呼ばれることを確認（attempt 0,1で失敗→backoff、attempt 2で成功）
+    assert mock_backoff.call_count == 2
 
 
 @respx.mock

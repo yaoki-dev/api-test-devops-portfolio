@@ -251,7 +251,6 @@ def test_sync_client_timeout_zero_not_overridden() -> None:
 # =============================================================================
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "limit,expected_count",
     [(2, 2), (None, 5), (0, 0), (100, 5)],
@@ -297,7 +296,6 @@ def test_sync_get_posts(limit: int | None, expected_count: int) -> None:
     assert route.call_count == 1  # GETリクエストが1回のみ発行されたことを確認
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "user_id,expected_count",
     [
@@ -353,7 +351,6 @@ def test_sync_get_posts_user_filter(user_id: int | None, expected_count: int) ->
         assert all(post["userId"] == user_id for post in result)
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "limit,user_id,expected_error",
     [
@@ -390,7 +387,6 @@ def test_sync_get_posts_validation_error(
             client.get_posts(limit=limit, user_id=user_id)
 
 
-@pytest.mark.unit
 @respx.mock
 def test_sync_get_post_success() -> None:
     """
@@ -417,7 +413,6 @@ def test_sync_get_post_success() -> None:
     assert route.call_count == 1  # GETリクエストが1回のみ発行されたことを確認
 
 
-@pytest.mark.unit
 @respx.mock
 def test_sync_create_post() -> None:
     """
@@ -467,7 +462,6 @@ def test_sync_create_post() -> None:
 # =============================================================================
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "user_id,completed,limit,expected_count",
     [
@@ -543,7 +537,6 @@ def test_sync_get_todos(
 # =============================================================================
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "limit,user_id,expected_error",
     [
@@ -585,7 +578,6 @@ def test_sync_get_todos_validation_error(
 # =============================================================================
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "user_id,expected_count",
     [(1, 2), (None, 5), (2, 1)],
@@ -637,7 +629,6 @@ def test_sync_get_albums(user_id: int | None, expected_count: int) -> None:
 # =============================================================================
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "user_id,expected_error",
     [
@@ -667,7 +658,6 @@ def test_sync_get_albums_validation_error(user_id: int, expected_error: str) -> 
 # =============================================================================
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "album_id,expected_count",
     [(1, 2), (None, 6), (2, 1)],
@@ -714,11 +704,68 @@ def test_sync_get_photos(album_id: int | None, expected_count: int) -> None:
 
 
 # =============================================================================
+# Comments API テスト
+# =============================================================================
+
+
+@respx.mock
+def test_sync_get_comments_with_post_id() -> None:
+    """
+    SyncJSONPlaceholderClient.get_comments()のpost_id指定時の正常系
+
+    検証項目：
+    - post_id=1 指定時に /posts/1/comments にGETリクエストが送られる
+    - レスポンスのコメントリストがそのまま返される
+    - リクエストが1回だけ発行される
+
+    学習ポイント:
+    - Comments API: post_id指定時はパスベースのエンドポイント（/posts/{id}/comments）
+    - クエリパラメータではなくパスパラメータでフィルタリングする設計
+    """
+    mock_comments = [
+        {"id": 1, "postId": 1, "name": "Test Comment", "email": "test@example.com", "body": "Body"},
+    ]
+    route = respx.get(f"{BASE_URL}/posts/1/comments").respond(json=mock_comments)
+
+    with SyncJSONPlaceholderClient() as client:
+        result = client.get_comments(post_id=1)
+
+    assert route.call_count == 1
+    assert result == mock_comments
+
+
+@respx.mock
+def test_sync_get_comments_without_post_id() -> None:
+    """
+    SyncJSONPlaceholderClient.get_comments()のpost_id未指定時の正常系
+
+    検証項目：
+    - post_id未指定時に /comments にGETリクエストが送られる
+    - 全コメントのリストがそのまま返される
+    - リクエストが1回だけ発行される
+
+    学習ポイント:
+    - post_id=None の場合は /comments に直接アクセス（全件取得）
+    - Optional引数の有無でエンドポイントが切り替わる分岐ロジック
+    """
+    mock_comments = [
+        {"id": 1, "postId": 1, "name": "Comment 1", "email": "a@b.com", "body": "Body 1"},
+        {"id": 2, "postId": 2, "name": "Comment 2", "email": "c@d.com", "body": "Body 2"},
+    ]
+    route = mock_get_route(f"{BASE_URL}/comments", None, mock_comments)
+
+    with SyncJSONPlaceholderClient() as client:
+        result = client.get_comments()
+
+    assert route.call_count == 1
+    assert result == mock_comments
+
+
+# =============================================================================
 # get_comments / get_photos 入力バリデーションテスト
 # =============================================================================
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "post_id",
     [0, -1, -100],
@@ -746,7 +793,6 @@ def test_sync_get_comments_invalid_post_id(post_id: int) -> None:
     assert len(respx.mock.calls) == 0
 
 
-@pytest.mark.unit
 @respx.mock
 @pytest.mark.parametrize(
     "album_id",
@@ -779,7 +825,6 @@ def test_sync_get_photos_invalid_album_id(album_id: int) -> None:
 # =============================================================================
 
 
-@pytest.mark.unit
 @respx.mock
 def test_sync_patch_method() -> None:
     """SyncAPIClient.patch() HTTP PATCHメソッドの動作確認
@@ -821,7 +866,6 @@ def test_sync_patch_method() -> None:
 # =============================================================================
 
 
-@pytest.mark.unit
 @respx.mock
 def test_sync_get_users() -> None:
     """SyncJSONPlaceholderClient.get_users() ユーザー一覧取得の動作確認
@@ -850,7 +894,6 @@ def test_sync_get_users() -> None:
     assert route.call_count == 1
 
 
-@pytest.mark.unit
 @respx.mock
 def test_sync_get_todo() -> None:
     """SyncJSONPlaceholderClient.get_todo() 特定TODO取得の動作確認
@@ -875,7 +918,6 @@ def test_sync_get_todo() -> None:
     assert route.call_count == 1
 
 
-@pytest.mark.unit
 @respx.mock
 def test_sync_create_todo() -> None:
     """SyncJSONPlaceholderClient.create_todo() 新規TODO作成の動作確認

@@ -1900,6 +1900,66 @@ async def test_get_photos_with_filters(album_id, expected_count, test_descriptio
 
 
 # ===============================================================================
+# Comments API テスト
+# ===============================================================================
+
+
+@pytest.mark.unit
+@respx.mock
+async def test_async_get_comments_with_post_id() -> None:
+    """
+    AsyncJSONPlaceholderClient.get_comments()のpost_id指定時の正常系
+
+    検証項目：
+    - post_id=1 指定時に /posts/1/comments にGETリクエストが送られる
+    - レスポンスのコメントリストがそのまま返される
+    - リクエストが1回だけ発行される
+
+    学習ポイント:
+    - Comments API: post_id指定時はパスベースのエンドポイント（/posts/{id}/comments）
+    - クエリパラメータではなくパスパラメータでフィルタリングする設計
+    """
+    mock_comments = [
+        {"id": 1, "postId": 1, "name": "Test Comment", "email": "test@example.com", "body": "Body"},
+    ]
+    route = respx.get(f"{BASE_URL}/posts/1/comments").respond(json=mock_comments)
+
+    async with AsyncJSONPlaceholderClient() as client:
+        result = await client.get_comments(post_id=1)
+
+    assert route.call_count == 1
+    assert result == mock_comments
+
+
+@pytest.mark.unit
+@respx.mock
+async def test_async_get_comments_without_post_id() -> None:
+    """
+    AsyncJSONPlaceholderClient.get_comments()のpost_id未指定時の正常系
+
+    検証項目：
+    - post_id未指定時に /comments にGETリクエストが送られる
+    - 全コメントのリストがそのまま返される
+    - リクエストが1回だけ発行される
+
+    学習ポイント:
+    - post_id=None の場合は /comments に直接アクセス（全件取得）
+    - Optional引数の有無でエンドポイントが切り替わる分岐ロジック
+    """
+    mock_comments = [
+        {"id": 1, "postId": 1, "name": "Comment 1", "email": "a@b.com", "body": "Body 1"},
+        {"id": 2, "postId": 2, "name": "Comment 2", "email": "c@d.com", "body": "Body 2"},
+    ]
+    route = respx.get(f"{BASE_URL}/comments", params__eq={}).respond(json=mock_comments)
+
+    async with AsyncJSONPlaceholderClient() as client:
+        result = await client.get_comments()
+
+    assert route.call_count == 1
+    assert result == mock_comments
+
+
+# ===============================================================================
 # get_comments / get_photos 入力バリデーションテスト
 # ===============================================================================
 

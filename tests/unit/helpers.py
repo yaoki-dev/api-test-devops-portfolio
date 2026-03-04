@@ -2,7 +2,7 @@
 テストユーティリティヘルパー
 
 respxを使ったHTTPモックテストの共通ヘルパー関数群。
-sync/asyncテスト両方から利用可能。
+主にsyncテスト（test_sync_client.py）で利用。
 """
 
 from __future__ import annotations
@@ -20,7 +20,9 @@ def mock_get_route(url: str, params: dict[str, Any] | None, json_data: Any) -> r
 
     前提条件:
         必ず @respx.mock デコレータまたは with respx.mock: ブロック内から
-        呼び出すこと。コンテキスト外から呼び出した場合、RuntimeError が発生する。
+        呼び出すこと。コンテキスト外でもルート登録自体は成功するが、
+        モックは機能しない。モックされていないリクエストが発行された場合、
+        respxは AllMockedAssertionError を発生させる。
 
     Args:
         url: モック対象のURL
@@ -31,7 +33,7 @@ def mock_get_route(url: str, params: dict[str, Any] | None, json_data: Any) -> r
         respx.Route: call_count等の検証に使用可能なルートオブジェクト
 
     Raises:
-        RuntimeError: @respx.mock コンテキスト外から呼び出した場合
+        なし（この関数自体は例外を発生させない）
     """
     if params is not None:
         return respx.get(url, params=params).respond(json=json_data)
