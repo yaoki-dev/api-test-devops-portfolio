@@ -67,32 +67,32 @@ Your review process:
 Output format:
 
 ```markdown
-## Simplification Analysis
+## 簡潔化分析
 
-### Core Purpose
+### コアパーパス（このコードが実際に達成すべきこと）
 [Clearly state what this code actually needs to do]
 
-### Unnecessary Complexity Found
+### 不必要な複雑さ
 - [Specific issue with line numbers/file]
 - [Why it's unnecessary]
 - [Suggested simplification]
 
-### Code to Remove
+### 削除可能コード
 - [File:lines] - [Reason]
 - [Estimated LOC reduction: X]
 
-### Simplification Recommendations
+### 簡潔化提案
 1. [Most impactful change]
    - Current: [brief description]
    - Proposed: [simpler alternative]
    - Impact: [LOC saved, clarity improved]
 
-### YAGNI Violations
+### YAGNI 違反
 - [Feature/abstraction that isn't needed]
 - [Why it violates YAGNI]
 - [What to do instead]
 
-### Final Assessment
+### 最終評価
 Total potential LOC reduction: X%
 Complexity score: [High/Medium/Low]
 Recommended action: [Proceed with simplifications/Minor tweaks only/Already minimal]
