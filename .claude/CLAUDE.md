@@ -41,7 +41,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
       > **評価順序（必須）**: テーブル行を上から順に評価すること（エントリ数チェックより先に WORKTREE_ROOT 含有確認を行う）: ①コマンド失敗 → STOP ②空/パース不可 → STOP ③ WORKTREE_ROOT 含有確認（含まれない場合はエントリ数に関わらず STOP + ミスマッチ報告） ④エントリ数確認（1 or 2+エントリ）
       > **WORKTREE_ROOT確認**: `git worktree list | cut -d' ' -f1 | grep -Fx "${WORKTREE_ROOT}"` (`-F`: literal string, `-x`: full-line match — prevents `/project` matching `/project-extra`; note: paths with spaces are not supported by this command)
-      > **「パース不可」の定義**: 各行が `<absolute-path>` の形式を満たさない / 出力が空白のみ
+      > **「パース不可」の定義**: **いずれかの**行が `<absolute-path>` の形式を満たさない（1行でも不正 → STOP） / 出力が空白のみ
       > **WORKTREE_ROOT未含有時のチェック**（ユーザー手動実行 — AI自動実行禁止）: `git rev-parse --is-inside-work-tree`（true → 正しいWORKTREE_ROOTをユーザーが再確認後にセッション再開 / false → 正しいプロジェクトディレクトリに移動後にセッション再開。⚠️ `git init` 実行禁止 — 既存リポジトリを破壊する危険がある）
       > **ミスマッチ報告時のAI報告内容（必須）**: ①`git rev-parse --show-toplevel` の実行結果（セッション開始時の保存値） ②`git worktree list` の生出力（全行） ③原因候補: シンボリックリンク解決差異 / CI/Docker環境でのパスマッピング差異
 
@@ -60,7 +60,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
          `**Situation**: what happened / **Root Cause**: why / **Rule**: what to do next time`
        - Global file — one file, append-only, cross-project lessons accumulate here
        - Write rule: Use Edit tool to append ONLY. NEVER use Write tool (overwrites entire file)
-         **Exception (file absent)**: Use Write tool to create empty file first, then Edit to append (Write permitted for initial creation only); on append failure: report to user and output content in chat, then await explicit confirmation before continuing (silent continuation prohibited)
+         **Exception (file absent)**: Use Write tool to create empty file first, then Edit to append (Write permitted for initial creation only); on append failure: report to user and output content in chat, then await explicit confirmation before continuing (silent continuation prohibited; 明示的確認の例: 「記録した」「了解した」等 — 「OK」「続けて」単体は不可; compact/session restart後: 次セッション開始時に未確認の内容を再報告してから確認を取得すること)
        - Cleanup: when entries exceed ~20 (no fixed monthly cadence)
        - Recurring pattern alert: If 2+ similar corrections appear for the same project (same Root Cause category), report to user for structural rule improvement
 16. **ALWAYS** fix bugs autonomously (no hand-holding) when scope is within:
@@ -293,7 +293,7 @@ git checkout -b feature/<次のタスク> origin/develop
    → Skip for obvious single-line fixes
 4. reflect(タスクごとに実施) → /reflexion:reflect "deep reflect if less than 90% confidence. 日本語で簡潔に回答" + 信頼度が90%未満であれば改善とreflectを反復する。
 各反復で信頼度と改善理由を簡潔に示し、信頼度が90%以上に達した時点で終了する。
-   reflexion時確認: コマンドルール（Section「🔌」のCritical/High/Medium優先度・発動条件）/ 2h+セッション時はCLAUDE.md主要セクション再読込
+   reflexion時確認: コマンドルール（Section「🔌」のCritical/High/Medium優先度・発動条件）/ @memory:implementation_quality_gates（品質ゲート4段階）/ @memory:api-specification-check（API仕様確認）/ @memory:execution-efficiency（並列実行判定）/ 2h+セッション時はCLAUDE.md主要セクション再読込
    "Would a staff engineer approve this?"（観点: 1責務/ネスト≤3段/命名の明確さ）
    → No: reflexion再実行。3回でもNoなら理由をユーザー報告 → 明示承認後のみ続行（承認スコープはそのタスク限定）
 5. コミット前レビュー → /code-review:review-local-changes (80点閾値)
