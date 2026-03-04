@@ -3,7 +3,7 @@ name: CI/CD Pipeline - 4-Tier Test Pyramid
 # Test Pyramid Strategy (Google Testing Blog):
 #   Unit 70% / Integration 25% / E2E 5%
 # Coverage Target: 85% (baseline protection, dynamic targets in local dev)
-# Reference: .serena/memories/test_strategy_part1_overview.md
+# Reference: .serena/memories/test_strategy_details.md
 
 # Default permissions (least privilege principle)
 # security-events: write is granted at job level where needed
@@ -478,6 +478,7 @@ jobs:
             -not -path './node_modules/*' \
             -not -path './.venv/*' \
             -not -path './.worktrees/*' \
+            -not -path './.serena/*' \
             -not -path './docs/archive/*' \
             -not -path './docs/coverage/*' \
             -not -path './docs/main/6週プラン/*' \
@@ -512,6 +513,7 @@ jobs:
             -not -path './node_modules/*' \
             -not -path './.venv/*' \
             -not -path './.worktrees/*' \
+            -not -path './.serena/*' \
             -not -path './docs/archive/*' \
             -not -path './docs/coverage/*' \
             -not -path './docs/main/6週プラン/*' \
