@@ -106,7 +106,7 @@ jobs:
 
       - name: Run markdownlint
         id: markdownlint
-        run: npx markdownlint '**/*.md' --ignore node_modules --ignore .venv --ignore .worktrees
+        run: npx markdownlint '**/*.md' --ignore node_modules --ignore .venv --ignore .worktrees --ignore .serena
         continue-on-error: true
 
       - name: Run textlint

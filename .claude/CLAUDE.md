@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 <!-- preserve-on-compact: CRITICAL RULES -->
 <!-- IMPORTANT: These rules override all other instructions -->
-## 🔴 CRITICAL RULES (MUST FOLLOW - 16 RULES)
+## 🔴 CRITICAL RULES (MUST FOLLOW - 16項目)
 
 **YOU MUST** follow these rules. Violations are NOT acceptable.
 
@@ -31,19 +31,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
       - Store non-empty result as **WORKTREE_ROOT** (immutable for this session; "non-empty" = contains at least one non-whitespace character after stripping trailing newlines; whitespace-only output is treated as empty)
     - Run `git worktree list` and check result:
 
-      | `git worktree list` 結果 | 対応 |
-      |--------------------------|------|
-      | コマンド失敗（非ゼロ終了） | **STOP** + ユーザー報告 |
-      | 空 / パース不可 | **STOP** + ユーザー報告 |
-      | WORKTREE_ROOT 未含有 | **STOP** + ミスマッチ報告 |
-      | 1エントリ | 「single-worktreeモード（WORKTREE_ROOT: {絶対パス}）」通知 + 続行 |
-      | 2+エントリ | 「multi-worktreeモード」通知 → WORKTREE_ROOT確認 → **確認失敗時: STOP + ミスマッチ報告** / 確認成功時: ユーザーとスコープ確認 |
+      | `git worktree list` Result | Action |
+      |---------------------------|--------|
+      | Command failed (non-zero exit code) | **STOP** + report to user |
+      | Empty / Unparseable | **STOP** + report to user |
+      | WORKTREE_ROOT not found | **STOP** + mismatch report |
+      | 1 entry | Notify "single-worktree mode (WORKTREE_ROOT: {absolute path})" + continue |
+      | 2+ entries | Notify "multi-worktree mode" → confirm WORKTREE_ROOT → **on failure: STOP + mismatch report** / on success: confirm scope with user |
 
-      > **評価順序（必須）**: テーブル行を上から順に評価すること（エントリ数チェックより先に WORKTREE_ROOT 含有確認を行う）: ①コマンド失敗 → STOP ②空/パース不可 → STOP ③ WORKTREE_ROOT 含有確認（含まれない場合はエントリ数に関わらず STOP + ミスマッチ報告） ④エントリ数確認（1 or 2+エントリ）
-      > **WORKTREE_ROOT確認**: WORKTREE_ROOTが非空であることを先に確認（空の場合は **STOP**）。非空の場合: `git worktree list --porcelain | grep "^worktree " | sed 's/^worktree //' | grep -Fx "${WORKTREE_ROOT}"` (`-F`: literal string, `-x`: full-line match — prevents `/project` matching `/project-extra`; supports paths with spaces and detached HEAD state)
-      > **「パース不可」の定義**: **いずれかの**行の `cut -d' ' -f1` 結果が絶対パスでない（`/`で始まらない）/ 出力が空白のみ（注: detached HEAD形式 `<path> <hash> (detached HEAD)` では `cut -d' ' -f1` でパスを正しく抽出可能 — 「パース不可」に該当しない）
-      > **WORKTREE_ROOT未含有時のチェック**（ユーザー手動実行 — AI自動実行禁止）: `git rev-parse --is-inside-work-tree`（true → 正しいWORKTREE_ROOTをユーザーが再確認後にセッション再開 / false → 正しいプロジェクトディレクトリに移動後にセッション再開。⚠️ `git init` 実行禁止 — 既存リポジトリを破壊する危険がある）
-      > **ミスマッチ報告時のAI報告内容（必須）**: ①`git rev-parse --show-toplevel` の実行結果（セッション開始時の保存値） ②`git worktree list` の生出力（全行） ③原因候補: シンボリックリンク解決差異 / CI/Docker環境でのパスマッピング差異
+      > **Evaluation order (required)**: Evaluate table rows top to bottom (check WORKTREE_ROOT containment before entry count): ① command failed → STOP ② empty/Unparseable → STOP ③ WORKTREE_ROOT containment check (if not found, STOP + mismatch report regardless of entry count) ④ entry count check (1 or 2+ entries)
+      > **WORKTREE_ROOT confirmation**: First confirm WORKTREE_ROOT is non-empty (if empty: **STOP**). If non-empty: `git worktree list --porcelain | grep "^worktree " | sed 's/^worktree //' | grep -Fx "${WORKTREE_ROOT}"` (`-F`: literal string, `-x`: full-line match — prevents `/project` matching `/project-extra`; supports paths with spaces and detached HEAD state)
+      > **"Unparseable" definition**: output of `git worktree list --porcelain | grep "^worktree " | sed 's/^worktree //'` is empty, OR any extracted line does not start with `/` (not an absolute path) — unified to porcelain format (same pipeline as WORKTREE_ROOT confirmation command above)
+      > **When WORKTREE_ROOT not found** (user manual execution — AI autonomous execution prohibited): `git rev-parse --is-inside-work-tree` (true → user re-confirms correct WORKTREE_ROOT then restart session / false → navigate to correct project directory then restart session. ⚠️ `git init` prohibited — risk of destroying existing repository)
+      > **AI report content on mismatch (required)**: ① result of `git rev-parse --show-toplevel` (value stored at session start) ② raw output of `git worktree list` (all lines) ③ candidate causes: symbolic link resolution difference / path mapping difference in CI/Docker environment
 
     - For files outside WORKTREE_ROOT:
       - Autonomous edit: **NEVER**
@@ -65,8 +65,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
        - Cleanup: when entries exceed ~20 (no fixed monthly cadence)
        - Recurring pattern alert: If 2+ similar corrections appear for the same project (same Root Cause category), report to user for structural rule improvement
 16. **ALWAYS** fix bugs autonomously (no hand-holding) when scope is within:
-    - ❌ Confirmation required: `tests/conftest.py`, `tests/**/conftest.py`, `tests/**/__init__.py`, `scripts/*.py`, `models/responses.py`, `pyproject.toml`, `*.yml`/`.env*`, `config/`, `utils/__init__.py`, `utils/sentry_init.py`/`utils/logger.py`/`utils/github_client.py`/`utils/api_client.py`, git ops / infra config
-    - ✅ Autonomous fix OK: `tests/**/test_*.py`, 上記❌リスト以外の `*.py` ロジックエラー, pytest/ruff/mypy failures（ただし修正が❌リストファイルへの変更を要する場合はRule 3適用）
+    - ❌ Absolutely prohibited (no autonomous modification): `pyproject.toml`, `*.yml`/`.env*`, `config/`, `tests/conftest.py`, `tests/**/conftest.py`, `tests/**/__init__.py`, `utils/__init__.py`, git ops / infra config
+    - ⚠️ Limited autonomous fix (spec-changing modifications → confirmation required; non-functional modifications: autonomous OK): `scripts/*.py`, `models/responses.py`, `utils/api_client.py`, `utils/github_client.py`, `utils/logger.py`, `utils/sentry_init.py`, `tests/test_smoke.py` — Permitted: typo fixes / import path fixes / lint·format fixes / clear flaky test fixes (e.g., strengthening wait conditions) / obvious mock URL typo fixes only
+    - ✅ Autonomous fix OK: `tests/**/test_*.py` and `tests/test_*.py` (except ⚠️ above), `*.py` logic errors (except ❌/⚠️ above), pytest/ruff/mypy failures (if fix requires ❌/⚠️ file changes, apply respective rules)
     - Boundary cases (e.g., adding pyproject.toml dependencies) → apply Rule 3 (AskUserQuestion)
 
 ## プロジェクト概要
