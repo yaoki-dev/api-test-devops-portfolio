@@ -114,6 +114,7 @@ def test_map_request_error_too_many_redirects() -> None:
         _map_request_error(error)
 
     assert "Non-retryable" in str(exc_info.value)
+    assert isinstance(exc_info.value.__cause__, httpx.TooManyRedirects)
 
 
 def test_map_request_error_invalid_url() -> None:
@@ -124,6 +125,7 @@ def test_map_request_error_invalid_url() -> None:
         _map_request_error(error)
 
     assert "Non-retryable" in str(exc_info.value)
+    assert isinstance(exc_info.value.__cause__, httpx.InvalidURL)
 
 
 def test_map_request_error_timeout() -> None:

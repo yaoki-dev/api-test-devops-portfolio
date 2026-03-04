@@ -230,7 +230,7 @@ async def test_semaphore_initialized_with_correct_max_concurrent():
 
     original_get_user = AsyncJSONPlaceholderClient.get_user
 
-    async def spy_get_user(self, user_id: int) -> dict:  # type: ignore[override]
+    async def spy_get_user(self: AsyncJSONPlaceholderClient, user_id: int) -> dict:
         nonlocal max_concurrent_observed, current_concurrent
         current_concurrent += 1
         max_concurrent_observed = max(max_concurrent_observed, current_concurrent)
