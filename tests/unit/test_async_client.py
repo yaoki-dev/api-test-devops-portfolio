@@ -359,7 +359,6 @@ async def test_async_timeout_retry_then_success(mock_backoff: Mock) -> None:
           respxトランスポートモックにより実際のhttpxコードパスを通じて検証する。
     """
     # respxルート: 最初の2回はタイムアウト、3回目で成功
-    # side_effectリスト要素数はリクエスト総数と一致させること。
     # retry_count=3 の場合: 初回(1) + 最大リトライ(3) = 最大4リクエスト。
     # 本テストは3回目で成功するためリスト要素は3個（TimeoutException 2個 + Response 1個）。
     # 注意: side_effect 要素数はリクエスト総数（初回+リトライ数）と一致させること。
