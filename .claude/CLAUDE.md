@@ -2,11 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-*最終更新: 2026年02月13日*
+*最終更新: 2026年02月23日*
 
 <!-- preserve-on-compact: CRITICAL RULES -->
 <!-- IMPORTANT: These rules override all other instructions -->
-## 🔴 CRITICAL RULES (MUST FOLLOW - 12項目)
+## 🔴 CRITICAL RULES (MUST FOLLOW - 13項目)
 
 **YOU MUST** follow these rules. Violations are NOT acceptable.
 
@@ -22,6 +22,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 10. **ALWAYS** follow development workflow order → Section「🔄 開発ワークフロー」
 11. **ALWAYS** re-read CLAUDE.md during reflexion → Section「🔄 reflexion使用時の必須チェック」
 12. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `/reflexion:reflect`
+13. **ALWAYS** when 2+ independent tasks identified (after task classification, per RULES.md exception conditions) → invoke `superpowers:dispatching-parallel-agents` skill
 
 ## プロジェクト概要
 
@@ -111,9 +112,9 @@ SECURITY__API_KEY=your-secret-key
 
 **詳細**: @memory:coding_standards 各セクション参照
 
-1. **非同期プログラミング**: `utils/api_client.py:399-762` - async/await、asyncio.gather()
-2. **エラーハンドリング**: `api_client.py:24-57`, `132-219` - 階層的例外、リトライロジック
-3. **テスト設計パターン**: `conftest.py:123-164`, `172-238` - fixtureスコープ、ファクトリーパターン
+1. **非同期プログラミング**: `utils/api_client.py:589-1098` - async/await、asyncio.gather()
+2. **エラーハンドリング**: `api_client.py:55-86`, `110-140`, `222-321` - 階層的例外、エラーマッピング、リトライロジック
+3. **テスト設計パターン**: `conftest.py:90-132`, `143-209` - fixtureスコープ、ファクトリーパターン
 4. **設定管理**: `config/settings.py` - Pydantic Settings、SecretStr
 
 ## 開発時の注意事項
@@ -323,6 +324,9 @@ API契約変更対象: `models/responses.py`, `utils/api_client.py` public metho
 - [ ] ワークフロー提案時: Section「🔄 開発ワークフロー」参照
 - [ ] コマンド提案時: Section「🔌 コマンド/スキル/プラグイン自動発動ルール」参照
 - [ ] コード提案時: coding_standards参照
+- [ ] **品質基準**: "Would a staff engineer approve this?" — コードの品質・シンプルさ・保守性を自問（観点: 1責務/ネスト≤3段/命名の明確さ）
+  - 「Yes」: 次のステップへ進む
+  - 「No」: `/reflexion:reflect` を再実行し具体的な改善箇所を修正する（3回繰り返しても「No」の場合は、引っかかっているチェック項目と改善できない理由をユーザーに明示して報告し、ユーザーが明示的に承認した場合のみ次ステップへ進む。承認スコープはそのタスク限定）
 
 **目的**: CLAUDE.md記載内容の「適用漏れ」防止
 

@@ -29,8 +29,41 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
 
 - Follow: Understand → Plan (parallelization) → TodoWrite (3+ tasks) → Execute → Track → Verify
 - Batch independent operations; validate before/after execution
+- One task per subagent invocation; avoid multi-task delegation to maintain context focus; if a subagent reports failure or partial completion (any task where not all specified artifacts have reached their expected final state), stop and report to the user instead of silently continuing.
+- This applies to task delegation; reflexion retry logic in CLAUDE.md governs implementation quality checks.
+- Within a single agent turn, parallel *tool calls* (Read, Grep, Bash, Task etc.) remain encouraged (see "Batch independent operations" above); this is distinct from delegating multiple unrelated tasks to a single subagent.
 - Session pattern: Load → Work → Checkpoint (30 min) → Save
 - Use `/sc:load` and `/sc:save` if superclaude available
+- **Parallel Dispatch Rule** (extension of "One task per subagent invocation" above — each agent still handles exactly one task): When 2+ independent TodoList tasks exist, dispatch each as a separate Task tool invocation (parallel recommended)
+  - Independence criteria (all must be satisfied):
+    1. No output dependency between tasks (no A→B ordering constraint)
+    2. No simultaneous edits to the same file
+    3. No conflicting **writes** to shared resources (examples: conftest.py, pyproject.toml, uv.lock, config files, .env files — read-only access does not count as conflicting; when write conflicts cannot be ruled out, treat as shared)
+  - Worktree isolation: instruct each agent to invoke `/using-git-worktrees` skill in their prompt
+  - Exception: if one task has 3x+ more TodoWrite sub-items (or estimated file changes) than the other, sequential execution is acceptable
+  - On failure: if **any** agent reports failure or partial completion, the parent agent must (1) allow already-running invocations to complete (Task tool has no cancel API), (2) collect and log agent statuses (success/failure/unknown), and (3) report full status summary to user before further action
+  - Silent continuation after ambiguous/empty results is prohibited
+  - On completion: after all parallel agents complete, the parent agent must explicitly verify that each artifact exists in its expected final state before marking the parent task complete
+
+**Task Classification**: Before dispatching, classify the task type:
+- **Implementation** (実装): code writing, feature development, bug fixes, test authoring
+- **Investigation** (調査): research, analysis, debugging, codebase exploration
+- **Review** (レビュー): code review, PR review, security audit, documentation review
+- **Design** (設計): architecture design, API spec, system planning
+
+**Agent Selection**: Map task type to agents (reference: `~/.claude/docs/AGENTS_CATALOG.md`):
+
+| Task Type | Recommended Agents |
+|-----------|-------------------|
+| Implementation: Python/Test | `python-expert`, `debugger`, `api-testing` |
+| Implementation: Refactoring | `refactoring-expert`, `debugger` |
+| Implementation: Docker/Infra | `docker-devops`, `devops-engineer` |
+| Implementation: CI/CD | `ci/cd-pipeline`, `ci/cd-github-engineer`, `devops-engineer` |
+| Investigation | `researcher`, `Explore` (built-in Task subagent) |
+| Review | `code-review:*`, `pr-review-toolkit:*` (parallel) |
+| Design | `system-architect`, `backend-architect`, `devops-architect` |
+
+**Dispatch Automation**: When 2+ independent tasks exist post-classification, invoke `superpowers:dispatching-parallel-agents` skill via Skill tool. After all agents complete and all TodoWrite tasks are marked done, `/reflexion:reflect` runs per CLAUDE.md Rule 12 (no additional call needed here).
 
 **Good:** Plan → TodoWrite → Execute → Verify | **Bad:** Jump to implementation
 
