@@ -30,7 +30,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
       - If output is empty: **STOP immediately and report to user**
       - Store result as **WORKTREE_ROOT** for this session ("non-empty" = contains at least one non-whitespace character after stripping trailing newlines; whitespace-only output is treated as empty).
         (post-compact context reload: re-verify by re-running BOTH:
-          (1) `git rev-parse --show-toplevel` — if command fails (non-zero exit code) or output is empty → **STOP + report to user**; if WORKTREE_ROOT was not stored (context lost after compact) → treat as mismatch: **STOP + report to user** ("WORKTREE_ROOT not recoverable after context reload — please restart session"); if result differs from stored WORKTREE_ROOT → **STOP + report to user**
+          (1) **FIRST — recall check (before any git command)**: Can you recall a WORKTREE_ROOT value established earlier in this session (before this reload)? If you CANNOT actively recall such a value in your current context (context loss confirmed) → **STOP immediately + report to user** ("WORKTREE_ROOT not recoverable after context reload — please restart session"). Only if the prior value IS present in active context: run `git rev-parse --show-toplevel` — if command fails (non-zero exit code) or output is empty → **STOP + report to user**; if result differs from recalled WORKTREE_ROOT → **STOP + report to user**
           (2) `git worktree list --porcelain` pipeline — full table evaluation required (same as session start) — NOT skippable on reload)
     - Run `git worktree list --porcelain` (via pipeline) and check result:
 

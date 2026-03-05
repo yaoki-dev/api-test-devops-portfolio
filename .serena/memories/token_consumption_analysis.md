@@ -112,7 +112,7 @@ Located in `.claude/agents/`:
 6. test-coverage-reviewer.md
 7. code-simplicity-reviewer.md
 
-**TOKEN COST**: Each PR review spawns 6 agents in parallel, each loading their full context
+**TOKEN COST**: Each PR review spawns 7 agents in parallel, each loading their full context
 
 ## 6. Large Files Creating Token Overhead
 

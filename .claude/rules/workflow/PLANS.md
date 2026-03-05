@@ -1,7 +1,7 @@
 ---
 paths:
   - "claudedocs/plans"
-  - "/Users/yuta/.claude/plans"
+  - "~/.claude/plans"
 ---
 
 # PLANS.md - 計画文書テンプレート
