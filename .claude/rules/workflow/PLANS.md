@@ -97,7 +97,7 @@ AskUserQuestion の回答・設計判断を記録する。
 
 - [ ] `npm run lint:md && npm run lint:text` 全pass
 - [ ] `/reflexion:reflect`（信頼度90%以上）
-- [ ] `/code-review:review-local-changes`（80点閾値通過）
+- [ ] `/pr-review-toolkit:review-pr`
 - ※ PRレビューは CLAUDE.md Step 7-8（`/pr-review-toolkit:review-pr`）に委譲
 
 **設定ファイル変更（*.yml / pyproject.toml / config/）**:
