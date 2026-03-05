@@ -21,7 +21,7 @@ paths:
 | **~/.claude/tasks/todo.md** | 大規模タスクの永続追跡 | Cross-session |
 | **lessons.md** (Rule 15) | セッション横断の教訓蓄積 | Cross-project |
 
-### 使用閾値（＝Planモード起動条件）
+### 使用閾値
 
 本テンプレートを使用する条件（いずれか1つ以上）:
 
