@@ -171,10 +171,12 @@ class SyncAPIClient:
 
         """
         # 設定から値を取得（引数で上書き可能）
-        self.base_url = base_url or settings.api.base_url
-        self.timeout = timeout or settings.api.timeout
-        self.retry_count = retry_count or settings.api.retry_count
-        self.retry_delay = retry_delay or settings.api.retry_delay
+        # NOTE: retry_count=0, retry_delay=0.0, timeout=0.0 は有効な設定値のため is not None で判定
+        # timeout=0.0: 即座にタイムアウト（無効化は timeout=None）
+        self.base_url = base_url if base_url is not None else settings.api.base_url
+        self.timeout = timeout if timeout is not None else settings.api.timeout
+        self.retry_count = retry_count if retry_count is not None else settings.api.retry_count
+        self.retry_delay = retry_delay if retry_delay is not None else settings.api.retry_delay
 
         # デフォルトヘッダーの設定
         self.default_headers = {
@@ -254,7 +256,7 @@ class SyncAPIClient:
 
                 # HTTPリクエスト実行
                 response = self._client.request(method, endpoint, **kwargs)
-            except httpx.RequestError as e:
+            except (httpx.RequestError, httpx.InvalidURL) as e:
                 # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
                 last_exception = _map_request_error(e)
                 self.logger.warning("Request error", method=method, endpoint=endpoint, error=str(e))
@@ -610,10 +612,12 @@ class AsyncAPIClient:
 
         """
         # 設定から値を取得（引数で上書き可能）
-        self.base_url = base_url or settings.api.base_url
-        self.timeout = timeout or settings.api.timeout
-        self.retry_count = retry_count or settings.api.retry_count
-        self.retry_delay = retry_delay or settings.api.retry_delay
+        # NOTE: retry_count=0, retry_delay=0.0, timeout=0.0 は有効な設定値のため is not None で判定
+        # timeout=0.0: 即座にタイムアウト（無効化は timeout=None）
+        self.base_url = base_url if base_url is not None else settings.api.base_url
+        self.timeout = timeout if timeout is not None else settings.api.timeout
+        self.retry_count = retry_count if retry_count is not None else settings.api.retry_count
+        self.retry_delay = retry_delay if retry_delay is not None else settings.api.retry_delay
 
         # デフォルトヘッダーの設定
         self.default_headers = {
@@ -698,7 +702,7 @@ class AsyncAPIClient:
 
                 # 非同期HTTPリクエスト実行
                 response = await self._client.request(method, endpoint, **kwargs)
-            except httpx.RequestError as e:
+            except (httpx.RequestError, httpx.InvalidURL) as e:
                 # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
                 last_exception = _map_request_error(e)
                 self.logger.warning(
@@ -962,10 +966,52 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 
         個別失敗を許容し、成功したユーザーのみ返却。
         失敗時はwarningログを出力（最初の5件まで詳細表示）。
+        K8s SIGTERM等で複数タスクが同時キャンセルされた場合はerrorログを出力後、
+        CancelledError等のfatal例外を再発生させる（graceful shutdown保護）。
+
+        Args:
+            users_data: 作成するユーザーデータのリスト（各要素はname/emailを含むdict）
+
+        Returns:
+            成功したユーザーデータのリスト（失敗した分は除外される）
+
+        Raises:
+            asyncio.CancelledError: 単一タスクがキャンセルされた場合（K8s graceful shutdown等）
+            BaseExceptionGroup: 複数タスクが同時にfatal例外を発生させた場合（Python convention準拠）
+            KeyboardInterrupt: Ctrl+C等の割り込みシグナルを受けた場合
+            SystemExit: sys.exit()が呼ばれた場合
+            MemoryError: メモリ不足が発生した場合
         """
         # 並行してユーザー作成（個別失敗許容）
         tasks = [self.create_user(user_data) for user_data in users_data]
         results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # システム例外はgather後に再発生させる（graceful shutdown保護）
+        # asyncio.CancelledError（Python 3.8+ は BaseException サブクラス）を吸収しない
+        # 複数タスクが同時キャンセルされる場合（K8s SIGTERM等）に全件収集してログ出力
+        fatal_exceptions = [
+            r
+            for r in results
+            if isinstance(r, (KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError))
+        ]
+        if fatal_exceptions:
+            if len(fatal_exceptions) > 1:
+                # Python convention: 複数同時例外はBaseExceptionGroupで伝播（TaskGroup同パターン）
+                # ログとraise件数の一貫性を保証（count=N → N件をBaseExceptionGroupで伝播）
+                # NOTE: CancelledError/KeyboardInterrupt/SystemExitはBaseExceptionサブクラスのため
+                #       ExceptionGroup（Exception限定）ではなくBaseExceptionGroupを使用
+                self.logger.error(
+                    "bulk_create_multiple_fatal_errors",
+                    count=len(fatal_exceptions),
+                    types=[type(e).__name__ for e in fatal_exceptions],
+                )
+                raise BaseExceptionGroup(
+                    "bulk_create_users: multiple fatal errors occurred",
+                    fatal_exceptions,
+                )
+            # 単一例外は直接raise（Python convention: asyncio.TaskGroupと同パターン）
+            exc = fatal_exceptions[0]
+            raise exc
 
         # 成功・失敗を分離（型安全なフィルタリング）
         successful: list[dict[str, Any]] = [r for r in results if isinstance(r, dict)]
