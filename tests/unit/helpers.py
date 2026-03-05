@@ -2,7 +2,7 @@
 テストユーティリティヘルパー
 
 respxを使ったHTTPモックテストの共通ヘルパー関数群。
-主にsyncテスト（test_sync_client.py）で利用。
+主にsyncテスト（test_sync_client.py）およびasyncテスト（test_async_client.py）で利用。
 """
 
 from __future__ import annotations
@@ -38,3 +38,20 @@ def mock_get_route(url: str, params: dict[str, Any] | None, json_data: Any) -> r
     if params is not None:
         return respx.get(url, params=params).respond(json=json_data)
     return respx.get(url, params__eq={}).respond(json=json_data)
+
+
+def assert_warning_log_count(log_output: list, event_name: str, expected_count: int) -> None:
+    """警告ログの発生回数を検証するヘルパー関数
+
+    structlog の capture_logs() が収集したログエントリから、
+    指定したイベント名の警告ログが期待回数発生していることを検証する。
+
+    Args:
+        log_output: capture_logs() が収集したログエントリのリスト
+        event_name: 検証対象のイベント名
+        expected_count: 期待する警告ログの発生回数
+    """
+    warning_events = [log["event"] for log in log_output if log.get("log_level") == "warning"]
+    assert warning_events.count(event_name) == expected_count, (
+        f"Expected {expected_count} '{event_name}' warnings, got: {warning_events}"
+    )

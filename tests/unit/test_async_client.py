@@ -28,6 +28,9 @@ import respx
 from httpx import Response
 from structlog.testing import capture_logs
 
+# テストヘルパー
+from tests.unit.helpers import assert_warning_log_count
+
 # プロジェクト内モジュール
 from utils.api_client import (
     APIHTTPError,
@@ -80,25 +83,6 @@ def sample_users_list():
         {"id": 2, "name": "Ervin Howell", "email": "Shanna@melissa.tv"},
         {"id": 3, "name": "Clementine Bauch", "email": "Nathan@yesenia.net"},
     ]
-
-
-# ===============================================================================
-# テストヘルパー関数
-# ===============================================================================
-
-
-def assert_warning_log_count(log_output: list, event_name: str, expected_count: int) -> None:
-    """警告ログの発生回数を検証するヘルパー関数
-
-    Args:
-        log_output: capture_logs() が収集したログエントリのリスト
-        event_name: 検証対象のイベント名
-        expected_count: 期待する警告ログの発生回数
-    """
-    warning_events = [log["event"] for log in log_output if log.get("log_level") == "warning"]
-    assert warning_events.count(event_name) == expected_count, (
-        f"Expected {expected_count} '{event_name}' warnings, got: {warning_events}"
-    )
 
 
 # ===============================================================================
@@ -618,7 +602,6 @@ async def test_async_bulk_create_users_partial_failure_5xx() -> None:
     assert partial_log.get("success_count") == 2
 
 
-@respx.mock
 async def test_async_bulk_create_users_cancelled_error_propagates() -> None:
     """複数タスク同時キャンセル時にBaseExceptionGroupで伝播されることを確認（graceful shutdown保護）
 
@@ -648,7 +631,6 @@ async def test_async_bulk_create_users_cancelled_error_propagates() -> None:
     assert all(isinstance(e, asyncio.CancelledError) for e in exc_info.value.exceptions)
 
 
-@respx.mock
 async def test_async_bulk_create_users_single_cancelled_error_no_log() -> None:
     """単一タスクキャンセル時は logger.error を呼ばずに CancelledError を再発生させることを確認
 
@@ -673,7 +655,6 @@ async def test_async_bulk_create_users_single_cancelled_error_no_log() -> None:
                 mock_logger.error.assert_not_called()
 
 
-@respx.mock
 async def test_async_bulk_create_users_multiple_cancelled_errors_logged() -> None:
     """複数タスク同時キャンセル時にerrorログが出力されることを確認
 
@@ -707,7 +688,6 @@ async def test_async_bulk_create_users_multiple_cancelled_errors_logged() -> Non
         assert all(isinstance(e, asyncio.CancelledError) for e in exc_info.value.exceptions)
 
 
-@respx.mock
 async def test_async_bulk_create_users_memory_error_propagates() -> None:
     """MemoryError が gather 後に再発生されることを確認
 
@@ -1105,12 +1085,14 @@ async def test_get_user_data_user_not_found():
     user_id = 999
 
     # /users/999 は 404 を返す
-    respx.get(f"{BASE_URL}/users/{user_id}").respond(status_code=404)
+    route_user = respx.get(f"{BASE_URL}/users/{user_id}").respond(status_code=404)
 
     # posts/todos/albums は正常応答（userId フィルタ付き）
-    respx.get(f"{BASE_URL}/posts", params={"userId": user_id}).respond(json=[])
-    respx.get(f"{BASE_URL}/todos", params={"userId": user_id}).respond(json=[])
-    respx.get(f"{BASE_URL}/albums", params={"userId": user_id}).respond(json=[])
+    # asyncio.gather はデフォルト（return_exceptions=False）で全タスクを並列実行してから例外伝播する
+    # user が 404 でも posts/todos/albums は全て1回呼ばれる
+    route_posts = respx.get(f"{BASE_URL}/posts", params={"userId": user_id}).respond(json=[])
+    route_todos = respx.get(f"{BASE_URL}/todos", params={"userId": user_id}).respond(json=[])
+    route_albums = respx.get(f"{BASE_URL}/albums", params={"userId": user_id}).respond(json=[])
 
     # retry_count=0 でリトライなし（即時失敗）
     async with AsyncJSONPlaceholderClient(retry_count=0) as client:
@@ -1118,6 +1100,13 @@ async def test_get_user_data_user_not_found():
             await client.get_user_data(user_id)
 
     assert exc_info.value.status_code == 404
+
+    # asyncio.gather（return_exceptions=False）は全タスクを並列起動してから例外を伝播する
+    # そのため全エンドポイントが各1回呼ばれることを確認
+    assert route_user.call_count == 1
+    assert route_posts.call_count == 1
+    assert route_todos.call_count == 1
+    assert route_albums.call_count == 1
 
 
 @respx.mock
@@ -1138,21 +1127,30 @@ async def test_get_user_data_posts_server_error():
     user_id = 1
 
     # /users/1 は正常応答
-    respx.get(f"{BASE_URL}/users/{user_id}").respond(
+    route_user = respx.get(f"{BASE_URL}/users/{user_id}").respond(
         json={"id": 1, "name": "Leanne Graham", "email": "Sincere@april.biz"}
     )
 
     # /posts は 500 エラー（userId フィルタ付き）
-    respx.get(f"{BASE_URL}/posts", params={"userId": user_id}).respond(status_code=500)
+    route_posts = respx.get(f"{BASE_URL}/posts", params={"userId": user_id}).respond(
+        status_code=500
+    )
 
     # todos/albums は正常応答
-    respx.get(f"{BASE_URL}/todos", params={"userId": user_id}).respond(json=[])
-    respx.get(f"{BASE_URL}/albums", params={"userId": user_id}).respond(json=[])
+    route_todos = respx.get(f"{BASE_URL}/todos", params={"userId": user_id}).respond(json=[])
+    route_albums = respx.get(f"{BASE_URL}/albums", params={"userId": user_id}).respond(json=[])
 
     # retry_count=0 でリトライなし（即時失敗）
     async with AsyncJSONPlaceholderClient(retry_count=0) as client:
         with pytest.raises(APIRetryError):
             await client.get_user_data(user_id)
+
+    # asyncio.gather（return_exceptions=False）は全タスクを並列起動してから例外を伝播する
+    # retry_count=0 のため posts は1回のみ呼ばれる（リトライなし）
+    assert route_user.call_count == 1
+    assert route_posts.call_count == 1
+    assert route_todos.call_count == 1
+    assert route_albums.call_count == 1
 
 
 # ===============================================================================
@@ -1287,7 +1285,6 @@ async def test_async_get_posts_user_filter(user_id, expected_count, test_descrip
 # ===============================================================================
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "limit,user_id,expected_error",
     [
@@ -1566,7 +1563,6 @@ async def test_get_todos_with_filters(
 # ===============================================================================
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "limit,user_id,expected_error",
     [
@@ -1810,7 +1806,6 @@ async def test_get_albums_with_filters(user_id, expected_count, test_description
 # ===============================================================================
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "user_id,expected_error",
     [
@@ -1963,7 +1958,6 @@ async def test_async_get_comments_without_post_id() -> None:
 # ===============================================================================
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "post_id",
     [0, -1, -100],
@@ -1990,7 +1984,6 @@ async def test_async_get_comments_invalid_post_id(
             await client.get_comments(post_id=post_id)
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "album_id",
     [0, -1, -100],
@@ -2034,6 +2027,132 @@ async def test_async_client_timeout_zero_not_overridden() -> None:
             "timeout=0.0 はhttpxで有効な設定値（即座にタイムアウト）のため"
             "デフォルト設定値に上書きされてはならない"
         )
+
+
+# ===============================================================================
+# Test: AsyncJSONPlaceholderClient.get_users() - ユーザー一覧取得
+# ===============================================================================
+
+
+@respx.mock
+async def test_async_get_users() -> None:
+    """AsyncJSONPlaceholderClient.get_users() ユーザー一覧取得の動作確認
+
+    検証項目:
+    - GET /users リクエストが送信される
+    - ユーザーリストが正しく返される
+    - call_count で1回のリクエストを確認
+
+    学習ポイント:
+    - respx: パラメータなしのGETリクエストモック
+    - 非同期コンテキストマネージャーによるクライアント管理
+    """
+    mock_users = [
+        {"id": 1, "name": "Leanne Graham", "email": "sincere@april.biz"},
+        {"id": 2, "name": "Ervin Howell", "email": "shanna@melissa.tv"},
+    ]
+
+    route = respx.get(f"{BASE_URL}/users").respond(json=mock_users)
+
+    async with AsyncJSONPlaceholderClient() as client:
+        result = await client.get_users()
+
+    assert len(result) == 2
+    assert result[0]["name"] == "Leanne Graham"
+    assert result[1]["id"] == 2
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_async_get_users_returns_empty_list() -> None:
+    """AsyncJSONPlaceholderClient.get_users() ユーザーが存在しない場合に空リストを返すことを確認
+
+    検証項目:
+    - API が空配列を返す場合、空リストを返す
+    - call_count で1回のリクエストを確認
+
+    学習ポイント:
+    - 境界値: 空コレクションのハンドリング
+    """
+    route = respx.get(f"{BASE_URL}/users").respond(json=[])
+
+    async with AsyncJSONPlaceholderClient() as client:
+        result = await client.get_users()
+
+    assert result == []
+    assert route.call_count == 1
+
+
+# ===============================================================================
+# Test: AsyncJSONPlaceholderClient.update_todo() - TODO部分更新
+# ===============================================================================
+
+
+@respx.mock
+async def test_async_update_todo() -> None:
+    """AsyncJSONPlaceholderClient.update_todo() TODO部分更新（PATCH）の動作確認
+
+    検証項目:
+    - PATCH /todos/{id} リクエストが送信される
+    - HTTPメソッドが "PATCH" である
+    - リクエストボディに kwargs が正しく含まれる
+    - 更新後のデータが正しく返される
+
+    学習ポイント:
+    - HTTP PATCH: リソースの部分更新操作（PUT は全体更新）
+    - respx: PATCHメソッドのモック
+    - **kwargs パターン: 柔軟な更新フィールド指定
+    """
+    todo_id = 1
+    patch_data = {"completed": True}
+    full_response = {"id": todo_id, "title": "delectus aut autem", "completed": True, "userId": 1}
+
+    route = respx.patch(f"{BASE_URL}/todos/{todo_id}").respond(status_code=200, json=full_response)
+
+    async with AsyncJSONPlaceholderClient() as client:
+        result = await client.update_todo(todo_id, completed=True)
+
+    assert result == full_response
+    assert result["completed"] is True
+    assert route.call_count == 1
+    assert route.calls[0].request.method == "PATCH"
+
+    # リクエストボディが kwargs と一致することを確認
+    request_body = json.loads(route.calls[0].request.content)
+    assert request_body == patch_data
+
+
+@respx.mock
+async def test_async_update_todo_multiple_fields() -> None:
+    """AsyncJSONPlaceholderClient.update_todo() 複数フィールド同時更新の動作確認
+
+    検証項目:
+    - 複数の kwargs が正しくリクエストボディに含まれる
+    - title と completed の両方が更新される
+
+    学習ポイント:
+    - **kwargs の多フィールド展開: 辞書としてリクエストボディに渡される
+    """
+    todo_id = 1
+    full_response = {
+        "id": todo_id,
+        "title": "Updated Title",
+        "completed": True,
+        "userId": 1,
+    }
+
+    route = respx.patch(f"{BASE_URL}/todos/{todo_id}").respond(status_code=200, json=full_response)
+
+    async with AsyncJSONPlaceholderClient() as client:
+        result = await client.update_todo(todo_id, title="Updated Title", completed=True)
+
+    assert result["title"] == "Updated Title"
+    assert result["completed"] is True
+    assert route.call_count == 1
+
+    # 複数フィールドがリクエストボディに含まれることを確認
+    request_body = json.loads(route.calls[0].request.content)
+    assert request_body == {"title": "Updated Title", "completed": True}
 
 
 # ===============================================================================
