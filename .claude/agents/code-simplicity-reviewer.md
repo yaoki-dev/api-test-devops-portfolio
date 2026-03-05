@@ -69,33 +69,33 @@ Output format:
 ```markdown
 ## 簡潔化分析
 
-### コアパーパス（このコードが実際に達成すべきこと）
-[Clearly state what this code actually needs to do]
+### コア目的（このコードが実際に達成すべきこと）
+[このコードが実際に達成すべきことを明確に記述]
 
 ### 不必要な複雑さ
-- [Specific issue with line numbers/file]
-- [Why it's unnecessary]
-- [Suggested simplification]
+- [対象ファイル:行番号 - 具体的な問題]
+- [不必要な理由]
+- [簡潔化の提案]
 
 ### 削除可能コード
-- [File:lines] - [Reason]
-- [Estimated LOC reduction: X]
+- [ファイル:行番号] - [理由]
+- [削減見込みLOC: X]
 
 ### 簡潔化提案
-1. [Most impactful change]
-   - Current: [brief description]
-   - Proposed: [simpler alternative]
-   - Impact: [LOC saved, clarity improved]
+1. [最も影響の大きい変更]
+   - 現状: [現在の実装の概要]
+   - 提案: [より簡潔な代替案]
+   - 効果: [削減LOC、可読性向上]
 
 ### YAGNI 違反
-- [Feature/abstraction that isn't needed]
-- [Why it violates YAGNI]
-- [What to do instead]
+- [不要な機能/抽象化]
+- [YAGNIに違反する理由]
+- [代わりに行うべきこと]
 
 ### 最終評価
-Total potential LOC reduction: X%
-Complexity score: [High/Medium/Low]
-Recommended action: [Proceed with simplifications/Minor tweaks only/Already minimal]
+潜在的なLOC削減率: X%
+複雑度スコア: [高/中/低]
+推奨アクション: [簡潔化を実施する/軽微な調整のみ/既に最小限]
 ```
 
 Remember: Perfect is the enemy of good. The simplest code that works is often the best code. Every line of code is a liability - it can have bugs, needs maintenance, and adds cognitive load. Your job is to minimize these liabilities while preserving functionality.

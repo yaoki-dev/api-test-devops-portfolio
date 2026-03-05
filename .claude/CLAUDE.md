@@ -29,7 +29,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
       - If command fails (non-zero exit code): **STOP immediately and report to user**
       - If output is empty: **STOP immediately and report to user**
       - Store result as **WORKTREE_ROOT** for this session ("non-empty" = contains at least one non-whitespace character after stripping trailing newlines; whitespace-only output is treated as empty).
-        (post-compact context reload: re-verify by re-running `git rev-parse --show-toplevel`; if command fails (non-zero exit code) or output is empty → **STOP + report to user**; if result differs from stored WORKTREE_ROOT → **STOP + report to user**)
+        (post-compact context reload: re-verify by re-running `git rev-parse --show-toplevel`; if command fails (non-zero exit code) or output is empty → **STOP + report to user**; if WORKTREE_ROOT was not stored (context lost after compact) → treat as mismatch: **STOP + report to user** ("WORKTREE_ROOT not recoverable after context reload — please restart session"); if result differs from stored WORKTREE_ROOT → **STOP + report to user**)
     - Run `git worktree list --porcelain` (via pipeline) and check result:
 
       | `git worktree list --porcelain` (parsed) Result | Action |
@@ -55,7 +55,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
        (file not found / ENOENT: silently ignore and continue, treat as no lessons;
         other errors:
           - permissions: report to user, WARN that Rule 15b (Edit) will likely fail this session; then continue
-          - corruption / broken symlink: report to user, WARN that Edit operations will fail this session; await explicit confirmation before continuing)
+          - corruption / broken symlink: report to user, WARN that Edit operations will fail this session; await explicit confirmation before continuing
+            (explicit confirmation required — closed list: 「記録した」/「了解した」/「確認した」only; 「OK」/「続けて」alone or combined are invalid))
     b) **After correction**: Update immediately when receiving ANY explicit correction or negative feedback
        - Detection signals: "that's wrong", "not X but Y", "fix this", "you misunderstood"
          (Japanese equivalents: 「違います」「〜ではなく〜です」「直してください」「誤解してる」)
@@ -72,7 +73,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 16. **ALWAYS** fix bugs autonomously (no hand-holding) when scope is within:
     - ❌ Absolutely prohibited (no autonomous modification): `pyproject.toml`, `*.yml`/`*.yaml`/`.env*`, `config/`, `tests/conftest.py`, `tests/**/conftest.py`, `tests/**/__init__.py`, `utils/__init__.py`, `utils/logger.py`, `utils/sentry_init.py`, git ops / infra config
     - ⚠️ Limited autonomous fix (spec-changing modifications → confirmation required; non-functional modifications: autonomous OK): `scripts/*.py`, `models/responses.py`, `utils/api_client.py`, `utils/github_client.py`, `tests/test_smoke.py` — Permitted: typo fixes / import path fixes / lint·format fixes / clear flaky test fixes (e.g., strengthening wait conditions) / obvious mock URL typo fixes only
-    - ✅ Autonomous fix OK: `tests/**/test_*.py` and `tests/test_*.py` (except `tests/test_smoke.py` — governed by ⚠️ above), `*.py` logic errors (except ❌/⚠️ scope above), pytest/ruff/mypy failures (if fix requires ❌/⚠️ file changes, apply respective rules)
+    - ✅ Autonomous fix OK: `tests/**/test_*.py` and `tests/test_*.py` (except `tests/test_smoke.py` — governed by ⚠️ above), `*.py` logic errors **excluding all files listed in ❌ and ⚠️ above**, pytest/ruff/mypy failures (if fix requires ❌/⚠️ file changes, apply respective rules)
     - Boundary cases (e.g., adding pyproject.toml dependencies) → apply Rule 3 (AskUserQuestion)
 
 ## プロジェクト概要
@@ -123,7 +124,7 @@ uv run safety check
 
 **セットアップ**: `uv run pre-commit install`
 **戦略**: コミット時はruffのみ（3秒以内）、重いチェックはCI/CDで実行
-**詳細**: `.claude/rules/python/coding-standards.md`
+**詳細**: `.claude/rules/python/coding-standards.md` Section 10「自動検証コマンド」
 
 ### Markdown品質チェック
 

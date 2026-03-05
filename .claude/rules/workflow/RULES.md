@@ -80,7 +80,7 @@ record plans in `~/.claude/tasks/todo.md` (complements the ephemeral TodoWrite t
 2. **Verify Plan**: Align with the user before implementation
 3. **Track Progress**: Mark items as complete
 4. **Document Results**: Append review section after completion
-5. **Capture Lessons**: Update `lessons.md` after any corrections
+5. **Capture Lessons**: Update `~/.claude/tasks/lessons.md` after any corrections
 
 Usage distinction:
 - TodoWrite = in-session UI display (unchanged)
