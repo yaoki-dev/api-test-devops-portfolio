@@ -49,7 +49,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
       > **"Unparseable" definition**: output of `git worktree list --porcelain | grep "^worktree " | sed 's/^worktree //'` is empty, OR any extracted line does not start with `/` (not an absolute path; empty lines are excluded from this check) — unified to porcelain format (same pipeline as WORKTREE_ROOT confirmation command above)
       > **When WORKTREE_ROOT not found** (user manual execution — AI autonomous execution prohibited): `git rev-parse --is-inside-work-tree` (true → user re-confirms correct WORKTREE_ROOT then restart session / false → navigate to correct project directory then restart session. ⚠️ `git init` prohibited — risk of destroying existing repository)
       > **AI report content on mismatch (required)**: ① result of `git rev-parse --show-toplevel` (value stored at session start) ② raw output of `git worktree list` (all lines) ③ candidate causes: symbolic link resolution difference / path mapping difference in CI/Docker environment
-      > **Stderr warnings**: `git worktree list --porcelain` may output warnings to stderr (e.g., "warning: gitdir file points to non-existent location") for broken worktree entries while still returning exit 0. These broken entries still appear in stdout and may match WORKTREE_ROOT. If stderr output is detected alongside worktree list output, report the warnings to the user before proceeding with boundary checks.
+      > **Stderr warnings**: `git worktree list --porcelain` may output warnings to stderr (e.g., "warning: gitdir file points to non-existent location") for broken worktree entries while still returning exit 0. These broken entries still appear in stdout and may match WORKTREE_ROOT. If stderr output is detected alongside worktree list output, report the warnings to the user and await explicit acknowledgment before proceeding with boundary checks (acknowledgment = any user response; 閉鎖リスト確認 is NOT required here — warnings are informational, not error recovery).
 
     - For files outside WORKTREE_ROOT:
       - Autonomous edit: **NEVER**
@@ -75,7 +75,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
        - Global file — one file, append-only, cross-project lessons accumulate here
        **Closed list definition (Rule 15 common)**: explicit confirmation required — closed list: 「記録した」/「了解した」/「確認した」only; 「OK」/「続けて」are always invalid — even when combined with other words (e.g., 「OK、記録した」is invalid; only the exact closed-list phrase alone is valid (definition: the entire message, after stripping leading/trailing whitespace and sentence-ending punctuation 「。！!.」, consists of exactly one phrase from the closed list; e.g., 「記録した。」→ valid; 「なるほど、記録した」→ invalid))
        - Write rule: Use Edit tool to append ONLY. NEVER use Write tool (overwrites entire file)
-         **Exception (file absent)**: If Write fails (directory absent, permission denied, disk full, etc.): (1) report to user with exact error detail (2) output content in chat (3) await explicit confirmation (閉鎖リスト確認 — Rule 15 共通定義参照) (4) NEVER retry in the same session. If Write succeeds: use Write tool to create empty file first, then Edit to append (Write permitted for initial creation only).
+         **Exception (file absent)**: If lessons.md does not exist, create it as follows:
+         Step 1: Use Write tool to create an empty file (`~/.claude/tasks/lessons.md`).
+           - If Step 1 fails (directory absent, permission denied, disk full, etc.): (1) report to user with exact error detail (2) output content in chat (3) await explicit confirmation (閉鎖リスト確認 — Rule 15 共通定義参照) (4) NEVER retry in the same session.
+           - If Step 1 succeeds: proceed to Step 2.
+         Step 2: Use Edit tool to append content.
+           - If Step 2 fails: follow「If Edit fails AFTER Write succeeds」procedure below.
          **If Edit fails AFTER Write succeeds**:
          1. Delete the empty file (to restore ENOENT state for next session)
             - If Delete also fails: proceed to step 2 and report ALL of the following explicitly:
@@ -88,14 +93,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
          4. Await explicit confirmation before continuing (silent continuation prohibited; 閉鎖リスト確認 — Rule 15 共通定義参照)
          5. **NEVER retry the same Write→Edit sequence in the same session** after step 4; await user direction only
          **If Edit fails on existing file**:
-         1. Report to user with exact error detail (if a corruption or unidentifiable error was reported at session start per Rule 15a, re-state that warning here — the current Edit failure may be caused by that initial error)
+         1. Report to user with exact error detail (if a corruption, unidentifiable error, or empty-file warning was reported at session start per Rule 15a, re-state that warning here — the current Edit failure may be caused by that initial error)
          2. Output the intended content in chat
          3. Await explicit confirmation before continuing (silent continuation prohibited; 閉鎖リスト確認 — Rule 15 共通定義参照)
          4. **NEVER retry Edit in the same session** after step 3; await user direction only
        - Cleanup: when entries exceed ~20 (no fixed monthly cadence)
        - Recurring pattern alert: If 2+ similar corrections appear for the same project (same Root Cause category), report to user for structural rule improvement
 16. **ALWAYS** fix bugs autonomously (no hand-holding) when scope is within:
-    - ❌ Absolutely prohibited (no autonomous modification): `pyproject.toml`, `*.yml`/`*.yaml`/`.env*`, `config/`, `tests/conftest.py`, `tests/**/conftest.py`, `tests/**/__init__.py`, `utils/__init__.py`, `utils/logger.py`, `utils/sentry_init.py`, git ops / infra config
+    - ❌ Absolutely prohibited (no autonomous modification): `pyproject.toml`, `*.yml`/`*.yaml`/`.env*`, `config/`, `tests/conftest.py`, `tests/**/conftest.py`, `tests/**/__init__.py`, `tests/**/helpers.py`, `utils/__init__.py`, `utils/logger.py`, `utils/sentry_init.py`, git ops / infra config
     - ⚠️ Limited autonomous fix (spec-changing modifications → confirmation required; non-functional modifications: autonomous OK): `scripts/*.py`, `models/responses.py`, `utils/api_client.py`, `utils/github_client.py`, `tests/test_smoke.py`, `utils/*.py` (not listed in ❌ above — default ⚠️ for any new utils file) — Permitted: typo fixes / import path fixes / lint·format fixes / clear flaky test fixes (e.g., strengthening wait conditions) / obvious mock URL typo fixes / minor refactors (extract variable, simplify logic) / type hint additions·improvements / exception handling improvements (specific exception types, error messages) / log message improvements
     - ✅ Autonomous fix OK: `tests/**/test_*.py` and `tests/test_*.py` (except `tests/test_smoke.py` — governed by ⚠️ above), `*.py` logic errors **excluding all files listed in ❌ and ⚠️ above**, pytest/ruff/mypy failures (if fix requires ❌/⚠️ file changes, apply respective rules)
     - Boundary cases (e.g., adding pyproject.toml dependencies) → apply Rule 3 (AskUserQuestion)
