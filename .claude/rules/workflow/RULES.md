@@ -12,7 +12,8 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
 2. **This RULES.md** - behavioral patterns
 3. **PRINCIPLES.md** - foundational principles
 
-**Related Serena Memories:** `@memory:implementation_quality_gates`, `@memory:coding_standards`, `@memory:command_usage_guide`
+**Related Serena Memories:** `@memory:implementation_quality_gates`, `@memory:command_usage_guide`
+**Coding Standards:** `.claude/rules/python/coding-standards.md`
 
 ---
 
@@ -155,7 +156,7 @@ uv run pytest --cov-fail-under=[target] && uv run ruff check . && uv run mypy ut
 - UPPER_SNAKE_CASE: constants
 - Follow existing patterns in `utils/`, `config/`, `models/`
 
-**Reference:** `@memory:coding_standards`
+**Reference:** `.claude/rules/python/coding-standards.md`
 
 ---
 

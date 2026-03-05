@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **YOU MUST** follow these rules. Violations are NOT acceptable.
 
 1. **ALWAYS** respond in `Japanese` for all outputs, including skill usage
-2. **ALWAYS** create a task list using `todowrite` before starting any work
+2. **ALWAYS** create a task list using `todowrite` before starting any work (exception: obvious single-step trivial tasks; RULES.md Workflow Rules "TodoWrite (3+ tasks)" qualifier)
 3. **ALWAYS** use AskUserQuestion for 2+ distinct user choices
 4. **NEVER** use `git commit` → **ALWAYS** use `/commit`
 5. **NEVER** use `gh pr create` → **ALWAYS** use `/push-pr`
@@ -44,6 +44,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
       > **Evaluation order (required)**: Evaluate table rows top to bottom (check WORKTREE_ROOT containment before entry count): ① command failed → STOP ② empty/Unparseable → STOP ③ WORKTREE_ROOT containment check (if not found, STOP + mismatch report regardless of entry count) ④ entry count check (1 or 2+ entries)
       > **Note on pipeline exit codes**: `grep` returning exit 1 due to 0 matches is NOT "command failed" — treat as empty output (→ STOP at ②). Only treat as "command failed" when `git worktree list` itself returns non-zero exit code.
+      > **Pipeline exit code caveat**: In the pipeline `git worktree list --porcelain | grep ... | sed ...`, the pipeline exit code reflects `sed`'s exit, not `git`'s. In practice: if `git worktree list` fails and produces no stdout, empty pipeline output is caught at ② (empty → STOP). For explicit git exit code verification, run `git worktree list --porcelain` as a standalone command before piping.
       > **WORKTREE_ROOT confirmation**: First confirm WORKTREE_ROOT is non-empty (if empty: **STOP**). If non-empty: `git worktree list --porcelain | grep "^worktree " | sed 's/^worktree //' | grep -Fx "${WORKTREE_ROOT}"` (`-F`: literal string, `-x`: full-line match — prevents `/project` matching `/project-extra`; supports paths with spaces and detached HEAD state)
       > **"Unparseable" definition**: output of `git worktree list --porcelain | grep "^worktree " | sed 's/^worktree //'` is empty, OR any extracted line does not start with `/` (not an absolute path) — unified to porcelain format (same pipeline as WORKTREE_ROOT confirmation command above)
       > **When WORKTREE_ROOT not found** (user manual execution — AI autonomous execution prohibited): `git rev-parse --is-inside-work-tree` (true → user re-confirms correct WORKTREE_ROOT then restart session / false → navigate to correct project directory then restart session. ⚠️ `git init` prohibited — risk of destroying existing repository)
@@ -52,14 +53,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     - For files outside WORKTREE_ROOT:
       - Autonomous edit: **NEVER**
       - User-requested edit: **STOP**, show exact absolute path, require explicit confirmation before proceeding
-      - Exception: `~/.claude/tasks/lessons.md` (Rule 15) and `~/.claude/tasks/todo.md` (RULES.md Task Management) are pre-authorized global files; boundary confirmation not required (Rule 15 write constraints still apply)
+      - Exception: all files under `~/.claude/tasks/` directory are pre-authorized global files (dedicated Claude Code workspace); boundary confirmation not required for any file in this directory (Rule 15 write constraints still apply to `~/.claude/tasks/lessons.md`)
 15. **ALWAYS** do both of the following with `~/.claude/tasks/lessons.md`:
     a) **At session start**: Read the file and review lessons tagged with the current project
        (file not found / ENOENT: silently ignore and continue, treat as no lessons;
+        unidentifiable errors (error type cannot be determined from the message, e.g., generic "file read failed"): treat as corruption errors (most conservative path) — report to user, WARN that Edit operations may fail this session; await explicit confirmation before continuing (same confirmation requirements as corruption/broken symlink);
         other errors:
           - permissions: report to user, WARN that Rule 15b (Edit) will likely fail this session; then continue
           - corruption / broken symlink: report to user, WARN that Edit operations will fail this session; await explicit confirmation before continuing
-            (explicit confirmation required — closed list: 「記録した」/「了解した」/「確認した」only; 「OK」/「続けて」alone or combined are invalid))
+            (explicit confirmation required — closed list: 「記録した」/「了解した」/「確認した」only; 「OK」/「続けて」are always invalid — even when combined with other words (e.g., 「OK、記録した」is invalid; only the exact closed-list phrase alone is valid))
     b) **After correction**: Update immediately when receiving ANY explicit correction or negative feedback
        - Detection signals: "that's wrong", "not X but Y", "fix this", "you misunderstood"
          (Japanese equivalents: 「違います」「〜ではなく〜です」「直してください」「誤解してる」)
@@ -70,8 +72,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
        - Global file — one file, append-only, cross-project lessons accumulate here
        - Write rule: Use Edit tool to append ONLY. NEVER use Write tool (overwrites entire file)
          **Exception (file absent)**: Use Write tool to create empty file first, then Edit to append (Write permitted for initial creation only).
-         **If Edit fails AFTER Write succeeds**: (1) Delete the empty file (to restore ENOENT state for next session) — **if Delete also fails: skip to step (2) with both error details** (⚠️ empty file persists at `~/.claude/tasks/lessons.md`; next session Rule 15a reads it as "0 lessons" not ENOENT — advise user to manually delete before next session), (2) report to user with exact error detail, (3) output content in chat, (4) await explicit confirmation before continuing (silent continuation prohibited; explicit confirmation required — closed list: 「記録した」/「了解した」/「確認した」only; 「OK」/「続けて」alone or combined are invalid)
-         **If Edit fails on existing file**: (1) report to user with exact error detail, (2) output the intended content in chat, (3) await explicit confirmation before continuing (silent continuation prohibited; explicit confirmation required — closed list: 「記録した」/「了解した」/「確認した」only; 「OK」/「続けて」alone or combined are invalid)
+         **If Edit fails AFTER Write succeeds**:
+         1. Delete the empty file (to restore ENOENT state for next session)
+            - If Delete also fails: skip to step 2 with both error details ⚠️ (empty file persists at `~/.claude/tasks/lessons.md` — advise user to manually delete before next session; next session Rule 15a reads it as "0 lessons" not ENOENT)
+         2. Report to user with exact error detail
+         3. Output content in chat
+         4. Await explicit confirmation before continuing (silent continuation prohibited; explicit confirmation required — closed list: 「記録した」/「了解した」/「確認した」only; 「OK」/「続けて」are always invalid — even when combined with other words)
+         5. **NEVER retry the same Write→Edit sequence in the same session** after step 4; await user direction only
+         **If Edit fails on existing file**:
+         1. Report to user with exact error detail
+         2. Output the intended content in chat
+         3. Await explicit confirmation before continuing (silent continuation prohibited; explicit confirmation required — closed list: 「記録した」/「了解した」/「確認した」only; 「OK」/「続けて」are always invalid — even when combined with other words)
+         4. **NEVER retry Edit in the same session** after step 3; await user direction only
        - Cleanup: when entries exceed ~20 (no fixed monthly cadence)
        - Recurring pattern alert: If 2+ similar corrections appear for the same project (same Root Cause category), report to user for structural rule improvement
 16. **ALWAYS** fix bugs autonomously (no hand-holding) when scope is within:
