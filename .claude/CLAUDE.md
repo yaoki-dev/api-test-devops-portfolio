@@ -31,7 +31,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
       - Store result as **WORKTREE_ROOT** for this session ("non-empty" = contains at least one non-whitespace character after stripping trailing newlines; whitespace-only output is treated as empty).
         (post-compact context reload: re-verify by re-running BOTH:
           (1) **FIRST — recall check (before any git command)**: Can you recall a WORKTREE_ROOT value established earlier in this session (before this reload)? If you CANNOT actively recall such a value in your current context (context loss confirmed) → **STOP immediately + report to user** ("WORKTREE_ROOT not recoverable after context reload — please restart session"). Only if the prior value IS present in active context: run `git rev-parse --show-toplevel` — if command fails (non-zero exit code) or output is empty → **STOP + report to user**; if result differs from recalled WORKTREE_ROOT → **STOP + report to user**
-          (2) `git worktree list --porcelain` pipeline — full table evaluation required (same as session start) — NOT skippable on reload)
+          (2) `git worktree list --porcelain` pipeline — full table evaluation required (same as session start) — NOT skippable on reload **when (1) succeeds**)
     - Run `git worktree list --porcelain` (via pipeline) and check result:
 
       | `git worktree list --porcelain` (parsed) Result | Action |
@@ -44,7 +44,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
       > **Evaluation order (required)**: Evaluate table rows top to bottom (check WORKTREE_ROOT containment before entry count): ① command failed → STOP ② empty/Unparseable → STOP ③ WORKTREE_ROOT containment check (if not found, STOP + mismatch report regardless of entry count) ④ entry count check (1 or 2+ entries)
       > **Note on pipeline exit codes**: `grep` returning exit 1 due to 0 matches is NOT "command failed" — treat as empty output (→ STOP at ②). Only treat as "command failed" when `git worktree list` itself returns non-zero exit code.
-      > **Pipeline exit code caveat**: In the pipeline `git worktree list --porcelain | grep ... | sed ...`, the pipeline exit code reflects `sed`'s exit, not `git`'s. In practice: if `git worktree list` fails and produces no stdout, empty pipeline output is caught at ② (empty → STOP). For explicit git exit code verification, run `git worktree list --porcelain` as a standalone command before piping.
+      > **Pipeline exit code caveat**: In the pipeline `git worktree list --porcelain | grep ... | sed ...`, the pipeline exit code reflects `sed`'s exit, not `git`'s. In practice: if `git worktree list` fails and produces no stdout, empty pipeline output is caught at ② (empty → STOP). **Mandatory**: Always run `git worktree list --porcelain` as a standalone command first and verify its exit code independently (non-zero → STOP immediately); proceed to the pipeline only if exit code is 0.
       > **WORKTREE_ROOT confirmation**: First confirm WORKTREE_ROOT is non-empty (if empty: **STOP**). If non-empty: `git worktree list --porcelain | grep "^worktree " | sed 's/^worktree //' | grep -Fx "${WORKTREE_ROOT}"` (`-F`: literal string, `-x`: full-line match — prevents `/project` matching `/project-extra`; supports paths with spaces and detached HEAD state)
       > **"Unparseable" definition**: output of `git worktree list --porcelain | grep "^worktree " | sed 's/^worktree //'` is empty, OR any extracted line does not start with `/` (not an absolute path; empty lines are excluded from this check) — unified to porcelain format (same pipeline as WORKTREE_ROOT confirmation command above)
       > **When WORKTREE_ROOT not found** (user manual execution — AI autonomous execution prohibited): `git rev-parse --is-inside-work-tree` (true → user re-confirms correct WORKTREE_ROOT then restart session / false → navigate to correct project directory then restart session. ⚠️ `git init` prohibited — risk of destroying existing repository)
@@ -61,7 +61,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
         other errors:
           - permissions: report to user, WARN that Rule 15b (Edit) will likely fail this session; then continue
           - corruption / broken symlink: report to user, WARN that Edit operations will fail this session; await explicit confirmation before continuing
-            (explicit confirmation required — closed list: 「記録した」/「了解した」/「確認した」only; 「OK」/「続けて」are always invalid — even when combined with other words (e.g., 「OK、記録した」is invalid; only the exact closed-list phrase alone is valid))
+            (explicit confirmation required — closed list: 「記録した」/「了解した」/「確認した」only; 「OK」/「続けて」are always invalid — even when combined with other words (e.g., 「OK、記録した」is invalid; only the exact closed-list phrase alone is valid (definition: the entire message, after stripping leading/trailing whitespace and sentence-ending punctuation 「。！!.」, consists of exactly one phrase from the closed list; e.g., 「記録した。」→ valid; 「なるほど、記録した」→ invalid)))
           - any other identifiable error (ETIMEDOUT, EMFILE, EIO, etc.): treat same as corruption — report to user, WARN that Edit operations may fail this session; await explicit confirmation before continuing (same confirmation requirements as corruption/broken symlink)
     b) **After correction**: Update immediately when receiving ANY explicit correction or negative feedback
        - Detection signals: "that's wrong", "not X but Y", "fix this", "you misunderstood"
@@ -72,7 +72,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
          `**Situation**: what happened / **Root Cause**: why / **Rule**: what to do next time`
        - Global file — one file, append-only, cross-project lessons accumulate here
        - Write rule: Use Edit tool to append ONLY. NEVER use Write tool (overwrites entire file)
-         **Exception (file absent)**: Use Write tool to create empty file first, then Edit to append (Write permitted for initial creation only).
+         **Exception (file absent)**: If Write fails (directory absent, permission denied, disk full, etc.): (1) report to user with exact error detail (2) output content in chat (3) await explicit confirmation (closed list: 「記録した」/「了解した」/「確認した」only) (4) NEVER retry in the same session. If Write succeeds: use Write tool to create empty file first, then Edit to append (Write permitted for initial creation only).
          **If Edit fails AFTER Write succeeds**:
          1. Delete the empty file (to restore ENOENT state for next session)
             - If Delete also fails: skip to step 2 with both error details ⚠️ (empty file persists at `~/.claude/tasks/lessons.md` — advise user to manually delete before next session; next session Rule 15a reads it as "0 lessons" not ENOENT)
@@ -81,7 +81,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
          4. Await explicit confirmation before continuing (silent continuation prohibited; explicit confirmation required — closed list: 「記録した」/「了解した」/「確認した」only; 「OK」/「続けて」are always invalid — even when combined with other words)
          5. **NEVER retry the same Write→Edit sequence in the same session** after step 4; await user direction only
          **If Edit fails on existing file**:
-         1. Report to user with exact error detail
+         1. Report to user with exact error detail (if a corruption or unidentifiable error was reported at session start per Rule 15a, re-state that warning here — the current Edit failure may be caused by that initial error)
          2. Output the intended content in chat
          3. Await explicit confirmation before continuing (silent continuation prohibited; explicit confirmation required — closed list: 「記録した」/「了解した」/「確認した」only; 「OK」/「続けて」are always invalid — even when combined with other words)
          4. **NEVER retry Edit in the same session** after step 3; await user direction only
