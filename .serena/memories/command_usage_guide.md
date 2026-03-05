@@ -61,10 +61,10 @@ graph LR
 | **テスト** | `/test` | コンテキスト検出テスト | - |
 | | `/generate-tests` | テスト自動生成 | - |
 | | `@qa-expert (agent)` | テスト戦略設計 | - |
-| **レビュー** | `/code-review:review-local-changes` | 4並列エージェント（80点閾値） | code-reviewer |
+| **レビュー** | `/code-review:review-local-changes` | 6並列エージェント（80点閾値） | code-reviewer |
 | | `/pr-review-toolkit:review-pr` | 6エージェント包括レビュー | silent-failure-hunter, security-code-reviewer |
 | | `/reflexion:reflect` | 自己改善フィードバック | - |
-| **デプロイ** | `/commit-push-pr` | コミット→PR一括作成 | - |
+| **デプロイ** | `/push-pr` | PR作成 | - |
 | | `/docs:update-docs` | ドキュメント自動更新 | tech-writer |
 
 ### Claude Flow エージェントオーケストレーション
@@ -117,7 +117,7 @@ workflow:
 |---------|-----------|--------------|
 | Feature開始 | `/git:feature <name>` | Issue作成後 |
 | コミット | `/commit` | 品質ゲート全合格後 |
-| PR作成 | `/commit-push-pr` | `/pr-review-toolkit:review-pr` 完了後 |
+| PR作成 | `/push-pr` | `/pr-review-toolkit:review-pr` 完了後 |
 | マージ | `gh pr merge --squash` | レビュー承認後 |
 | ブランチ削除 | `/finishing-a-development-branch` | マージ完了後 |
 
@@ -313,14 +313,14 @@ workflow:
 | ツール | 種別 | 発動トリガー | 用途 |
 |--------|------|------------|------|
 | `security-guidance` | Hook | Edit/Write/MultiEdit時 | 自動セキュリティ警告（9パターン検出） |
-| `/code-review:review-local-changes` | Plugin | 品質ゲート全合格後（※1） | 4並列エージェントレビュー（80点閾値） |
+| `/code-review:review-local-changes` | Plugin | 品質ゲート全合格後（※1） | 6並列エージェントレビュー（80点閾値） |
 
 #### High（開発標準）
 
 | ツール | 種別 | 発動トリガー | 用途 |
 |--------|------|------------|------|
 | `/commit` | Command | コミット作成時 | ステージング+コミット |
-| `/commit-push-pr` | Command | PR作成時 | コミット→プッシュ→PR一括 |
+| `/push-pr` | Command | PR作成時 | プッシュ→PR作成 |
 | `/pr-review-toolkit:review-pr` | Plugin | git push完了後、PR作成前 | 6エージェント包括レビュー |
 | `/code-review:review-pr (CEK)` | Plugin | 重要PR時 | 6エージェント防御レビュー（セキュリティ・バグ・API契約） |
 | `/test-coverage` | Command | テスト関連時 | カバレッジ分析 |
@@ -355,7 +355,7 @@ workflow:
 1. 機能開発開始 → `/git:feature <name>`
 2. 実装中の変更保存 → `/commit`
 3. 実装完了・PR作成前 → `/pr-review-toolkit:review-pr`
-4. PR作成 → `/commit-push-pr`
+4. PR作成 → `/push-pr`
 5. マージ後 → `/clean_gone`
 <!-- 6. リリース準備 → `/release <version>` -->
 7. リリース完了 → `/clean-gone`

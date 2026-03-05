@@ -44,7 +44,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
       > **Evaluation order (required)**: Evaluate table rows top to bottom (check WORKTREE_ROOT containment before entry count): ① command failed → STOP ② empty/Unparseable → STOP ③ WORKTREE_ROOT containment check (if not found, STOP + mismatch report regardless of entry count) ④ entry count check (1 or 2+ entries)
       > **Note on pipeline exit codes**: `grep` returning exit 1 due to 0 matches is NOT "command failed" — treat as empty output (→ STOP at ②). Only treat as "command failed" when `git worktree list` itself returns non-zero exit code.
-      > **Pipeline exit code caveat**: In the pipeline `git worktree list --porcelain | grep ... | sed ...`, the pipeline exit code reflects `sed`'s exit, not `git`'s. In practice: if `git worktree list` fails and produces no stdout, empty pipeline output is caught at ② (empty → STOP). **Mandatory**: Always run `git worktree list --porcelain` as a standalone command first and verify its exit code independently (non-zero → STOP immediately); proceed to the pipeline only if exit code is 0.
+      > **Pipeline exit code caveat**: The pipeline `git worktree list --porcelain | grep ... | sed ...` exit code reflects `sed`'s exit, NOT `git`'s — meaning `git worktree list` failure is invisible to the pipeline exit code regardless of stdout content. **Mandatory (no exceptions)**: Always run `git worktree list --porcelain` as a standalone command first and verify its exit code independently (non-zero → STOP immediately); proceed to the pipeline only if exit code is 0.
       > **WORKTREE_ROOT confirmation**: First confirm WORKTREE_ROOT is non-empty (if empty: **STOP**). If non-empty: `git worktree list --porcelain | grep "^worktree " | sed 's/^worktree //' | grep -Fx "${WORKTREE_ROOT}"` (`-F`: literal string, `-x`: full-line match — prevents `/project` matching `/project-extra`; supports paths with spaces and detached HEAD state)
       > **"Unparseable" definition**: output of `git worktree list --porcelain | grep "^worktree " | sed 's/^worktree //'` is empty, OR any extracted line does not start with `/` (not an absolute path; empty lines are excluded from this check) — unified to porcelain format (same pipeline as WORKTREE_ROOT confirmation command above)
       > **When WORKTREE_ROOT not found** (user manual execution — AI autonomous execution prohibited): `git rev-parse --is-inside-work-tree` (true → user re-confirms correct WORKTREE_ROOT then restart session / false → navigate to correct project directory then restart session. ⚠️ `git init` prohibited — risk of destroying existing repository)
@@ -54,7 +54,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     - For files outside WORKTREE_ROOT:
       - Autonomous edit: **NEVER**
       - User-requested edit: **STOP**, show exact absolute path, require explicit confirmation before proceeding
-      - Exception: all files under `~/.claude/tasks/` directory are pre-authorized global files (dedicated Claude Code workspace); boundary confirmation not required for any file in this directory (Rule 15 write constraints still apply to `~/.claude/tasks/lessons.md`)
+      - Exception: all files under `~/.claude/tasks/` directory are pre-authorized global files (dedicated Claude Code workspace); boundary confirmation not required for any file in this directory (Rule 15b write constraints still apply to `~/.claude/tasks/lessons.md`)
 15. **ALWAYS** do both of the following with `~/.claude/tasks/lessons.md`:
     a) **At session start**: Read the file and review lessons tagged with the current project
        (file not found / ENOENT: silently ignore and continue, treat as no lessons;
@@ -63,7 +63,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
         other errors:
           - permissions: report to user, WARN that Rule 15b (Edit) will fail this session; await explicit confirmation before continuing (same confirmation requirements as corruption/broken symlink)
           - corruption / broken symlink: report to user, WARN that Edit operations will fail this session; await explicit confirmation before continuing
-            (explicit confirmation required — closed list: 「記録した」/「了解した」/「確認した」only; 「OK」/「続けて」are always invalid — even when combined with other words (e.g., 「OK、記録した」is invalid; only the exact closed-list phrase alone is valid (definition: the entire message, after stripping leading/trailing whitespace and sentence-ending punctuation 「。！!.」, consists of exactly one phrase from the closed list; e.g., 「記録した。」→ valid; 「なるほど、記録した」→ invalid)))
+            （閉鎖リスト確認 — Rule 15 共通定義参照）
           - any other identifiable error (ETIMEDOUT, EMFILE, EIO, etc.): treat same as corruption — report to user, WARN that Edit operations may fail this session; await explicit confirmation before continuing (same confirmation requirements as corruption/broken symlink)
     b) **After correction**: Update immediately when receiving ANY explicit correction or negative feedback
        - Detection signals: "that's wrong", "not X but Y", "fix this", "you misunderstood"
@@ -73,19 +73,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
        - Append format: `## [YYYY-MM-DD] [project-name] - Category`
          `**Situation**: what happened / **Root Cause**: why / **Rule**: what to do next time`
        - Global file — one file, append-only, cross-project lessons accumulate here
+       **Closed list definition (Rule 15 common)**: explicit confirmation required — closed list: 「記録した」/「了解した」/「確認した」only; 「OK」/「続けて」are always invalid — even when combined with other words (e.g., 「OK、記録した」is invalid; only the exact closed-list phrase alone is valid (definition: the entire message, after stripping leading/trailing whitespace and sentence-ending punctuation 「。！!.」, consists of exactly one phrase from the closed list; e.g., 「記録した。」→ valid; 「なるほど、記録した」→ invalid))
        - Write rule: Use Edit tool to append ONLY. NEVER use Write tool (overwrites entire file)
-         **Exception (file absent)**: If Write fails (directory absent, permission denied, disk full, etc.): (1) report to user with exact error detail (2) output content in chat (3) await explicit confirmation (closed list: 「記録した」/「了解した」/「確認した」only) (4) NEVER retry in the same session. If Write succeeds: use Write tool to create empty file first, then Edit to append (Write permitted for initial creation only).
+         **Exception (file absent)**: If Write fails (directory absent, permission denied, disk full, etc.): (1) report to user with exact error detail (2) output content in chat (3) await explicit confirmation (閉鎖リスト確認 — Rule 15 共通定義参照) (4) NEVER retry in the same session. If Write succeeds: use Write tool to create empty file first, then Edit to append (Write permitted for initial creation only).
          **If Edit fails AFTER Write succeeds**:
          1. Delete the empty file (to restore ENOENT state for next session)
-            - If Delete also fails: skip to step 2 with both error details ⚠️ (empty file persists at `~/.claude/tasks/lessons.md` — advise user to manually delete before next session; next session Rule 15a reads it as "0 lessons" not ENOENT)
+            - If Delete also fails: proceed to step 2 and report ALL of the following explicitly:
+                (a) Edit error detail
+                (b) Delete error detail
+                (c) 空ファイルが `~/.claude/tasks/lessons.md` に残存している事実
+                (d) 次セッションで Rule 15a の「空ファイル」警告が発生することの予告 → 手動削除推奨: `rm ~/.claude/tasks/lessons.md`
          2. Report to user with exact error detail
          3. Output content in chat
-         4. Await explicit confirmation before continuing (silent continuation prohibited; explicit confirmation required — closed list: 「記録した」/「了解した」/「確認した」only; 「OK」/「続けて」are always invalid — even when combined with other words)
+         4. Await explicit confirmation before continuing (silent continuation prohibited; 閉鎖リスト確認 — Rule 15 共通定義参照)
          5. **NEVER retry the same Write→Edit sequence in the same session** after step 4; await user direction only
          **If Edit fails on existing file**:
          1. Report to user with exact error detail (if a corruption or unidentifiable error was reported at session start per Rule 15a, re-state that warning here — the current Edit failure may be caused by that initial error)
          2. Output the intended content in chat
-         3. Await explicit confirmation before continuing (silent continuation prohibited; explicit confirmation required — closed list: 「記録した」/「了解した」/「確認した」only; 「OK」/「続けて」are always invalid — even when combined with other words)
+         3. Await explicit confirmation before continuing (silent continuation prohibited; 閉鎖リスト確認 — Rule 15 共通定義参照)
          4. **NEVER retry Edit in the same session** after step 3; await user direction only
        - Cleanup: when entries exceed ~20 (no fixed monthly cadence)
        - Recurring pattern alert: If 2+ similar corrections appear for the same project (same Root Cause category), report to user for structural rule improvement
