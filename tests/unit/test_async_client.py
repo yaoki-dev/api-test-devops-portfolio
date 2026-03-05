@@ -2035,7 +2035,7 @@ async def test_async_client_timeout_zero_not_overridden() -> None:
 
 
 @respx.mock
-async def test_async_get_users() -> None:
+async def test_async_get_users(sample_users_list) -> None:
     """AsyncJSONPlaceholderClient.get_users() ユーザー一覧取得の動作確認
 
     検証項目:
@@ -2047,12 +2047,7 @@ async def test_async_get_users() -> None:
     - respx: パラメータなしのGETリクエストモック
     - 非同期コンテキストマネージャーによるクライアント管理
     """
-    mock_users = [
-        {"id": 1, "name": "Leanne Graham", "email": "sincere@april.biz"},
-        {"id": 2, "name": "Ervin Howell", "email": "shanna@melissa.tv"},
-    ]
-
-    route = respx.get(f"{BASE_URL}/users").respond(json=mock_users)
+    route = respx.get(f"{BASE_URL}/users").respond(json=sample_users_list[:2])
 
     async with AsyncJSONPlaceholderClient() as client:
         result = await client.get_users()
