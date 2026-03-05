@@ -123,4 +123,4 @@ Stage 4: test        → テスト実行環境（全依存関係、pytest）
 ## Reference
 - Implementation: See CLAUDE.md for detailed guidance
 - Test Strategy: @memory:test_strategy
-- Coding Standards: @memory:coding_standards
+- Coding Standards: .claude/rules/python/coding-standards.md

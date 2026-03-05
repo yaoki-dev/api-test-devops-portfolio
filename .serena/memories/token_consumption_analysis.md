@@ -44,7 +44,7 @@
 ### C. Docstring Format Rules (LOW DUPLICATION)
 
 Referenced in:
-- `.claude/CLAUDE.md` (indirect reference via @memory:coding_standards)
+- `.claude/CLAUDE.md` (indirect reference via .claude/rules/python/coding-standards.md)
 - `.claude/rules/python/coding-standards.md` (Section 4 - full docstring规约, 47-61 lines)
 
 ## 3. Memory System Integration
@@ -54,7 +54,7 @@ Referenced in:
 | Reference | Lines | Status |
 |-----------|-------|--------|
 | @memory:implementation_quality_gates | 19, 124, 278 | 3 references |
-| @memory:coding_standards | 26, 60, 95, 115, 125, 275 | 6 references |
+| .claude/rules/python/coding-standards.md | (removed, replaced with direct path) | 0 references |
 | @memory:test_strategy | 49, 301 | 2 references |
 | @memory:command_usage_guide | 172 | 1 reference |
 | @memory:project_file_structure | 91 | 1 reference |

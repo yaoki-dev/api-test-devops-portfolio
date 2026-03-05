@@ -105,8 +105,10 @@ Usage distinction:
 
 - Identify parallel vs sequential operations during planning
 - Map dependencies; estimate resources; state efficiency metrics
+- When plan doc needed: create in claudedocs/plans/ per PLANS.md §使用閾値
+- Record AskUserQuestion results and design decisions in Decision Log (see PLANS.md)
 
-**Reference:** `execution-efficiency.md`
+**Reference:** `execution-efficiency.md` (execution details) | `PLANS.md` (plan template)
 
 ---
 

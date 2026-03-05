@@ -194,7 +194,8 @@
 2. **品質ゲート実行（完全自動）**:
 
    ```bash
-   uv run pytest --cov=. --cov-fail-under=[Phase別目標]
+   uv run pytest -n auto -m "(unit or integration) and not external" \
+     --cov=utils --cov=config --cov=models --cov-report=term-missing
    uv run ruff check .
    uv run mypy utils/ config/ models/
    ```

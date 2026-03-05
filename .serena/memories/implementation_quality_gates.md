@@ -105,7 +105,7 @@ security: セキュリティ修正
 ```
 
 **不合格時の対応**:
-- 未コミット: `git add` + `/commit` スキル使用（**生 `git commit` 禁止** - CLAUDE.md CRITICAL RULE #3）
+- 未コミット: `git add` + `/commit` スキル使用（**生 `git commit` 禁止** - CLAUDE.md CRITICAL RULE #4）
 - 一時ファイル混入: `.gitignore`追加、`git rm --cached`で除外
 
 ---

@@ -157,7 +157,8 @@ gitleaks detect --source . --verbose
 | コード脆弱性 | 毎 PR | bandit |
 | シークレット検出 | 毎 PR | gitleaks |
 | 依存関係 | 週次 | Dependabot |
-| コンテナ | リリース前 | Trivy |
+| filesystem scan | 毎 PR (develop/main) | Trivy |
+| コンテナ image scan | main向け PR + リリース時 | Trivy |
 
 ---
 
@@ -183,7 +184,8 @@ gitleaks detect --source . --verbose
 ### 5.3 品質ゲート
 ```bash
 # Week別統合検証
-uv run pytest --cov=. --cov-fail-under=${COVERAGE_TARGET} \
+uv run pytest -n auto -m "(unit or integration) and not external" \
+  --cov=utils --cov=config --cov=models --cov-report=term-missing \
   && uv run ruff check . \
   && uv run mypy utils/ config/ models/ \
   && git status

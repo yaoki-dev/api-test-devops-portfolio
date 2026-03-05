@@ -46,7 +46,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
       > **Note on pipeline exit codes**: `grep` returning exit 1 due to 0 matches is NOT "command failed" — treat as empty output (→ STOP at ②). Only treat as "command failed" when `git worktree list` itself returns non-zero exit code.
       > **Pipeline exit code caveat**: In the pipeline `git worktree list --porcelain | grep ... | sed ...`, the pipeline exit code reflects `sed`'s exit, not `git`'s. In practice: if `git worktree list` fails and produces no stdout, empty pipeline output is caught at ② (empty → STOP). For explicit git exit code verification, run `git worktree list --porcelain` as a standalone command before piping.
       > **WORKTREE_ROOT confirmation**: First confirm WORKTREE_ROOT is non-empty (if empty: **STOP**). If non-empty: `git worktree list --porcelain | grep "^worktree " | sed 's/^worktree //' | grep -Fx "${WORKTREE_ROOT}"` (`-F`: literal string, `-x`: full-line match — prevents `/project` matching `/project-extra`; supports paths with spaces and detached HEAD state)
-      > **"Unparseable" definition**: output of `git worktree list --porcelain | grep "^worktree " | sed 's/^worktree //'` is empty, OR any extracted line does not start with `/` (not an absolute path) — unified to porcelain format (same pipeline as WORKTREE_ROOT confirmation command above)
+      > **"Unparseable" definition**: output of `git worktree list --porcelain | grep "^worktree " | sed 's/^worktree //'` is empty, OR any extracted line does not start with `/` (not an absolute path; empty lines are excluded from this check) — unified to porcelain format (same pipeline as WORKTREE_ROOT confirmation command above)
       > **When WORKTREE_ROOT not found** (user manual execution — AI autonomous execution prohibited): `git rev-parse --is-inside-work-tree` (true → user re-confirms correct WORKTREE_ROOT then restart session / false → navigate to correct project directory then restart session. ⚠️ `git init` prohibited — risk of destroying existing repository)
       > **AI report content on mismatch (required)**: ① result of `git rev-parse --show-toplevel` (value stored at session start) ② raw output of `git worktree list` (all lines) ③ candidate causes: symbolic link resolution difference / path mapping difference in CI/Docker environment
 
@@ -62,6 +62,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
           - permissions: report to user, WARN that Rule 15b (Edit) will likely fail this session; then continue
           - corruption / broken symlink: report to user, WARN that Edit operations will fail this session; await explicit confirmation before continuing
             (explicit confirmation required — closed list: 「記録した」/「了解した」/「確認した」only; 「OK」/「続けて」are always invalid — even when combined with other words (e.g., 「OK、記録した」is invalid; only the exact closed-list phrase alone is valid))
+          - any other identifiable error (ETIMEDOUT, EMFILE, EIO, etc.): treat same as corruption — report to user, WARN that Edit operations may fail this session; await explicit confirmation before continuing (same confirmation requirements as corruption/broken symlink)
     b) **After correction**: Update immediately when receiving ANY explicit correction or negative feedback
        - Detection signals: "that's wrong", "not X but Y", "fix this", "you misunderstood"
          (Japanese equivalents: 「違います」「〜ではなく〜です」「直してください」「誤解してる」)
@@ -305,6 +306,7 @@ git checkout -b feature/<次のタスク> origin/develop
 0. 大規模タスク（複数セッション）: `.claude/rules/workflow/RULES.md` 「Task Management (Persistent Layer)」参照（todo.md活用）
 1. Worktree作成 → /using-git-worktrees（常時※1）
    → ブランチ作成も含む
+   → 計画ファイル作成が必要な場合: claudedocs/plans/ に作成（閾値詳細: .claude/rules/workflow/PLANS.md §使用閾値）
 
 【実装フェーズ】
 2. コード変更 → security-guidance (hook自動)
