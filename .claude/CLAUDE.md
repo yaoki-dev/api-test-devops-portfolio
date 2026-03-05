@@ -30,7 +30,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
       - If output is empty: **STOP immediately and report to user**
       - Store result as **WORKTREE_ROOT** for this session ("non-empty" = contains at least one non-whitespace character after stripping trailing newlines; whitespace-only output is treated as empty).
         (post-compact context reload: re-verify by re-running BOTH:
-          (1) **FIRST — recall check (before any git command)**: Can you recall a WORKTREE_ROOT value established earlier in this session (before this reload)? If you CANNOT actively recall such a value in your current context (context loss confirmed) → **STOP immediately + report to user** ("WORKTREE_ROOT not recoverable after context reload — please restart session"). Only if the prior value IS present in active context: run `git rev-parse --show-toplevel` — if command fails (non-zero exit code) or output is empty → **STOP + report to user**; if result differs from recalled WORKTREE_ROOT → **STOP + report to user**
+          (1) **FIRST — recall check (before any git command)**: Can you recall a WORKTREE_ROOT value established earlier in this session (before this reload)? If you CANNOT actively recall such a value in your current context (context loss confirmed) → **STOP immediately + report to user** ("WORKTREE_ROOT not recoverable after context reload — please restart session"). (design rationale: with total context loss, there is no reference point to verify the current directory belongs to the correct project; running git rev-parse fresh could silently accept a wrong WORKTREE_ROOT from a different project — STOP forces deliberate user re-orientation) Only if the prior value IS present in active context: run `git rev-parse --show-toplevel` — if command fails (non-zero exit code) or output is empty → **STOP + report to user**; if result differs from recalled WORKTREE_ROOT → **STOP + report to user**
           (2) `git worktree list --porcelain` pipeline — full table evaluation required (same as session start) — NOT skippable on reload **when (1) succeeds**)
     - Run `git worktree list --porcelain` (via pipeline) and check result:
 
@@ -40,7 +40,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
       | Empty / Unparseable | **STOP** + report to user |
       | WORKTREE_ROOT not found | **STOP** + mismatch report |
       | 1 entry | Run WORKTREE_ROOT confirmation command → Match: Notify "single-worktree mode (WORKTREE_ROOT: {absolute path})" + continue / Mismatch: **STOP** + mismatch report |
-      | 2+ entries | Notify "multi-worktree mode" → confirm WORKTREE_ROOT → **on failure: STOP + mismatch report** / on success: confirm scope with user → 承認: **continue** / 拒否: **STOP** + 理由をユーザーに報告 |
+      | 2+ entries | Notify "multi-worktree mode" → confirm WORKTREE_ROOT → **on failure: STOP + mismatch report** / on success: confirm scope with user → 承認: **continue** / 拒否: **STOP** + 理由をユーザーに報告（正しいworktreeパスを確認の上、セッションを再起動してください） |
 
       > **Evaluation order (required)**: Evaluate table rows top to bottom (check WORKTREE_ROOT containment before entry count): ① command failed → STOP ② empty/Unparseable → STOP ③ WORKTREE_ROOT containment check (if not found, STOP + mismatch report regardless of entry count) ④ entry count check (1 or 2+ entries)
       > **Note on pipeline exit codes**: `grep` returning exit 1 due to 0 matches is NOT "command failed" — treat as empty output (→ STOP at ②). Only treat as "command failed" when `git worktree list` itself returns non-zero exit code.
@@ -49,6 +49,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
       > **"Unparseable" definition**: output of `git worktree list --porcelain | grep "^worktree " | sed 's/^worktree //'` is empty, OR any extracted line does not start with `/` (not an absolute path; empty lines are excluded from this check) — unified to porcelain format (same pipeline as WORKTREE_ROOT confirmation command above)
       > **When WORKTREE_ROOT not found** (user manual execution — AI autonomous execution prohibited): `git rev-parse --is-inside-work-tree` (true → user re-confirms correct WORKTREE_ROOT then restart session / false → navigate to correct project directory then restart session. ⚠️ `git init` prohibited — risk of destroying existing repository)
       > **AI report content on mismatch (required)**: ① result of `git rev-parse --show-toplevel` (value stored at session start) ② raw output of `git worktree list` (all lines) ③ candidate causes: symbolic link resolution difference / path mapping difference in CI/Docker environment
+      > **Stderr warnings**: `git worktree list --porcelain` may output warnings to stderr (e.g., "warning: gitdir file points to non-existent location") for broken worktree entries while still returning exit 0. These broken entries still appear in stdout and may match WORKTREE_ROOT. If stderr output is detected alongside worktree list output, report the warnings to the user before proceeding with boundary checks.
 
     - For files outside WORKTREE_ROOT:
       - Autonomous edit: **NEVER**
@@ -57,9 +58,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 15. **ALWAYS** do both of the following with `~/.claude/tasks/lessons.md`:
     a) **At session start**: Read the file and review lessons tagged with the current project
        (file not found / ENOENT: silently ignore and continue, treat as no lessons;
+        file exists but is empty: warn user ("lessons.md が空ファイルです — 前セッションの書き込み失敗の可能性があります。手動削除を推奨: rm ~/.claude/tasks/lessons.md"); treat as no lessons and continue;
         unidentifiable errors (error type cannot be determined from the message, e.g., generic "file read failed"): treat as corruption errors (most conservative path) — report to user, WARN that Edit operations may fail this session; await explicit confirmation before continuing (same confirmation requirements as corruption/broken symlink);
         other errors:
-          - permissions: report to user, WARN that Rule 15b (Edit) will likely fail this session; then continue
+          - permissions: report to user, WARN that Rule 15b (Edit) will fail this session; await explicit confirmation before continuing (same confirmation requirements as corruption/broken symlink)
           - corruption / broken symlink: report to user, WARN that Edit operations will fail this session; await explicit confirmation before continuing
             (explicit confirmation required — closed list: 「記録した」/「了解した」/「確認した」only; 「OK」/「続けて」are always invalid — even when combined with other words (e.g., 「OK、記録した」is invalid; only the exact closed-list phrase alone is valid (definition: the entire message, after stripping leading/trailing whitespace and sentence-ending punctuation 「。！!.」, consists of exactly one phrase from the closed list; e.g., 「記録した。」→ valid; 「なるほど、記録した」→ invalid)))
           - any other identifiable error (ETIMEDOUT, EMFILE, EIO, etc.): treat same as corruption — report to user, WARN that Edit operations may fail this session; await explicit confirmation before continuing (same confirmation requirements as corruption/broken symlink)

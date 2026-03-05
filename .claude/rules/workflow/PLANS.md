@@ -104,6 +104,7 @@ AskUserQuestion の回答・設計判断を記録する。
 
 - ⚠️ 前提条件: Rule 16（❌確認必要ファイルリスト: CLAUDE.md Rule 16参照）と照合 + AskUserQuestion でユーザー確認
 - [ ] 変更前後で該当テスト合格（pytest / CI実行確認）
+- [ ] `npm run lint:md && npm run lint:text`（Markdownドキュメント品質チェック）
 
 ---
 

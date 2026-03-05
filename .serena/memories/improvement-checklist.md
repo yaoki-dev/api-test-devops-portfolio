@@ -22,7 +22,7 @@
 
 ### 1.1 目的
 
-**主目的**: improvement-kpi-definition.md定義のKPIを実行可能なチェックリスト形式で測定
+**主目的**: improvement-kpi-definition.md（未作成）定義のKPIを実行可能なチェックリスト形式で測定
 
 **測定対象**:
 - 定量指標8項目: 時間効率3、品質3、プロセス遵守2
@@ -575,7 +575,7 @@
 
 ### 4.3 判定実行
 
-- [ ] **1. 合格基準判定**（improvement-kpi-definition.md Section 4.1参照）
+- [ ] **1. 合格基準判定**（improvement-kpi-definition.md Section 4.1参照（ファイル未作成））
 
   **定量指標8項目**:
 
@@ -592,7 +592,7 @@
 
   **定量指標合格数**: __/8項目
 
-- [ ] **2. 定性指標評価**（improvement-kpi-definition.md Section 2参照）
+- [ ] **2. 定性指標評価**（improvement-kpi-definition.md Section 2参照（ファイル未作成））
 
   **ワークフロー品質指標**:
 
@@ -1074,7 +1074,7 @@ fi
 
 | 日付 | 変更内容 | Phase | 担当 |
 |------|---------|-------|------|
-| 2026-02-07 | 初版作成（Task #22対応） | improvement-kpi-definition.md準拠、実行可能チェックリスト化 | QA Expert Agent |
+| 2026-02-07 | 初版作成（Task #22対応） | improvement-kpi-definition.md（未作成）準拠、実行可能チェックリスト化 | QA Expert Agent |
 
 ---
 
@@ -1084,7 +1084,7 @@ fi
 
 | ドキュメント | 用途 | アクセスパス |
 |------------|------|------------|
-| **improvement-kpi-definition.md** | KPI定義・測定手順 | `.claude/rules/workflow/improvement-kpi-definition.md` |
+| **improvement-kpi-definition.md** | KPI定義・測定手順 | `.claude/rules/workflow/improvement-kpi-definition.md`（未作成 — Task #19予定） |
 | **api-specification-check.md** | API仕様確認プロセス | `.claude/rules/workflow/api-specification-check.md` |
 | **execution-efficiency.md** | 実行効率化ワークフロー | `.claude/rules/workflow/execution-efficiency.md` |
 | **requirement-clarification.md** | 要求定義明確化プロセス | `.claude/rules/workflow/requirement-clarification.md` |
@@ -1093,11 +1093,11 @@ fi
 
 ### 関連タスク
 
-- **Task #19**: KPI定義書作成（improvement-kpi-definition.md）
+- **Task #19**: KPI定義書作成（improvement-kpi-definition.md — 未作成）
 - **Task #20**: 3ドキュメント統合レビュー（整合性確認）
 - **Task #21**: 効果測定レポート作成（Phase 1実測値サマリー）
 - **Task #23**: CLAUDE.md開発ワークフロー統合（Phase 0/1/2の標準化）
 
 ---
 
-**Note**: 本チェックリストは、improvement-kpi-definition.md定義のKPIを実行可能な形式に変換したものです。毎タスク実施時に全セクションを実行し、daily_progress.md記録の一貫性を確保してください。
+**Note**: 本チェックリストは、improvement-kpi-definition.md（未作成 — Task #19予定）定義のKPIを実行可能な形式に変換したものです。毎タスク実施時に全セクションを実行し、daily_progress.md記録の一貫性を確保してください。
