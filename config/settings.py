@@ -94,8 +94,10 @@ def _resolve_hostname_cached(hostname: str) -> str:
         解決されたIPアドレス文字列。
 
     Raises:
-        OSError: DNS解決失敗時。lru_cacheは例外をキャッシュしないため、
-                 一時的なDNS障害後に再試行が可能。
+        socket.herror: DNSサーバーエラーによる解決失敗（OSError のサブクラス）。
+        socket.gaierror: アドレス情報取得失敗（OSError のサブクラス）。
+                         lru_cache は例外をキャッシュしないため、一時障害後に再試行が可能。
+        OSError: 上記以外の予期しないネットワークエラー（PermissionError, TimeoutError 等）。
         UnicodeError: 非ASCII文字を含むホスト名等のUnicode処理エラー時。
         TypeError: NULバイト（\\x00）等の不正文字を含むホスト名の場合。
         OverflowError: 極端に長いホスト名によるOSレベルオーバーフロー時（プラットフォーム依存）。
@@ -314,14 +316,15 @@ class APIConfig(BaseModel):
 
         # SSRF Prevention: 許可ドメインチェック
         if hostname not in ALLOWED_DOMAINS:
+            _allowed_sorted = sorted(ALLOWED_DOMAINS)
             _logger.warning(
                 "SSRF Prevention: Domain not in allowlist: %r. Allowed: %s",
                 hostname,
-                sorted(ALLOWED_DOMAINS),
+                _allowed_sorted,
             )
             raise ValueError(
                 f"SSRF Prevention: Domain not in allowlist: {hostname}. "
-                f"Allowed: {', '.join(sorted(ALLOWED_DOMAINS))}",
+                f"Allowed: {', '.join(_allowed_sorted)}",
             )
 
         if v.endswith("/"):

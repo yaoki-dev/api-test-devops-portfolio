@@ -1,6 +1,6 @@
 import logging
 import socket
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
@@ -1018,92 +1018,39 @@ class TestResolveHostname:
 
         assert result is None, "TypeErrorはFail-Closedとしてブロック（None）すべき"
 
-    def test_resolve_hostname_unicode_error_logs_warning(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    @pytest.mark.parametrize(
+        "exc_factory",
+        [
+            lambda: UnicodeDecodeError("utf-8", b"\xff\xfe", 0, 1, "invalid byte"),
+            lambda: TypeError("embedded null byte"),
+            lambda: OverflowError("host name is too long"),
+        ],
+        ids=["UnicodeDecodeError", "TypeError", "OverflowError"],
+    )
+    def test_resolve_hostname_security_exception_logs_warning(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        exc_factory: Callable[[], Exception],
     ) -> None:
-        """UnicodeError発生時にwarningレベルでSSRF試行の証跡ログが出力される
+        """SSRF攻撃的ホスト名による例外発生時にSSRF証跡ログが出力される
 
         Security Rationale:
-            UnicodeError/TypeErrorは攻撃的な入力パターン（SSRF試行）を示すため、
-            セキュリティインシデントの事後調査に必要なwarningレベルログを出力する。
+            UnicodeDecodeError/TypeError/OverflowErrorは攻撃的な入力パターン（SSRF試行）を
+            示すため、セキュリティインシデントの事後調査に必要なwarningレベルログを出力する。
             一時的なDNS障害（OSError）とはログレベルで明確に区別する。
         """
 
-        def raise_unicode_error(hostname: str) -> str:
-            raise UnicodeDecodeError("utf-8", b"\xff\xfe", 0, 1, "invalid byte")
+        def raise_exc(hostname: str) -> str:
+            raise exc_factory()
 
-        monkeypatch.setattr(socket, "gethostbyname", raise_unicode_error)
+        monkeypatch.setattr(socket, "gethostbyname", raise_exc)
 
         with caplog.at_level(logging.WARNING, logger="config.settings"):
-            result = _resolve_hostname("\xff\xfe.attacker.example")
+            result = _resolve_hostname("invalid")
 
         assert result is None
         assert "SSRF試行の可能性" in caplog.text
-        assert "UnicodeDecodeError" in caplog.text
-
-    def test_resolve_hostname_type_error_logs_warning(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """TypeError（NULバイト）発生時にwarningレベルでSSRF証跡ログが出力される
-
-        Security Rationale:
-            NULバイト注入はSSRF攻撃の一手法であり、UnicodeErrorと同様に
-            warningレベルでセキュリティ証跡を残す必要がある。
-        """
-
-        def raise_type_error(hostname: str) -> str:
-            raise TypeError("embedded null byte")
-
-        monkeypatch.setattr(socket, "gethostbyname", raise_type_error)
-
-        with caplog.at_level(logging.WARNING, logger="config.settings"):
-            result = _resolve_hostname("evil\x00.internal.corp")
-
-        assert result is None
-        assert "SSRF試行の可能性" in caplog.text
-        assert "TypeError" in caplog.text
-
-    def test_resolve_hostname_overflow_error_returns_none(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """極端に長いホスト名でOverflowErrorが発生してもNoneを返す
-
-        Security Rationale:
-            socket.gethostbyname() はプラットフォームによっては極端に長い
-            ホスト名に対して OverflowError を発生させる。
-            Fail-Closed原則に従い、Noneを返してis_private_ipがブロック判定する。
-        """
-
-        def raise_overflow_error(hostname: str) -> str:
-            raise OverflowError("host name is too long")
-
-        monkeypatch.setattr(socket, "gethostbyname", raise_overflow_error)
-
-        result = _resolve_hostname("a" * 100000 + ".example.com")
-
-        assert result is None, "OverflowErrorはFail-Closedとしてブロック（None）すべき"
-
-    def test_resolve_hostname_overflow_error_logs_warning(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """OverflowError発生時にwarningレベルでSSRF証跡ログが出力される
-
-        Security Rationale:
-            極端に長いホスト名はSSRF攻撃によるキャッシュ枯渇試行の兆候となりうるため、
-            UnicodeError/TypeErrorと同様にwarningレベルでセキュリティ証跡を残す。
-        """
-
-        def raise_overflow_error(hostname: str) -> str:
-            raise OverflowError("host name is too long")
-
-        monkeypatch.setattr(socket, "gethostbyname", raise_overflow_error)
-
-        with caplog.at_level(logging.WARNING, logger="config.settings"):
-            result = _resolve_hostname("a" * 100000 + ".example.com")
-
-        assert result is None
-        assert "SSRF試行の可能性" in caplog.text
-        assert "OverflowError" in caplog.text
 
     def test_resolve_hostname_gaierror_logs_dns_warning(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
