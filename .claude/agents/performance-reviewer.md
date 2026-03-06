@@ -1,7 +1,7 @@
 ---
 name: performance-reviewer
 description: Use this agent when you need to analyze code for performance issues, bottlenecks, and resource efficiency.
-tools: Glob, Grep, Read, WebFetch, TodoWrite, WebSearch, BashOutput, KillBash
+tools: Glob, Grep, Bash(mgrep:*), Read, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__find_code, mcp__ast-grep__find_code_by_rule, mcp__morph-mcp__warpgrep_codebase_search
 model: inherit
 ---
 

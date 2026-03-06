@@ -12,7 +12,8 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
 2. **This RULES.md** - behavioral patterns
 3. **PRINCIPLES.md** - foundational principles
 
-**Related Serena Memories:** `@memory:implementation_quality_gates`, `@memory:coding_standards`, `@memory:command_usage_guide`
+**Related Serena Memories:** `@memory:implementation_quality_gates`, `@memory:command_usage_guide`
+**Coding Standards:** `.claude/rules/python/coding-standards.md`
 
 ---
 
@@ -46,10 +47,10 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
   - On completion: after all parallel agents complete, the parent agent must explicitly verify that each artifact exists in its expected final state before marking the parent task complete
 
 **Task Classification**: Before dispatching, classify the task type:
-- **Implementation** (実装): code writing, feature development, bug fixes, test authoring
-- **Investigation** (調査): research, analysis, debugging, codebase exploration
-- **Review** (レビュー): code review, PR review, security audit, documentation review
-- **Design** (設計): architecture design, API spec, system planning
+- **Implementation** : code writing, feature development, bug fixes, test authoring
+- **Investigation** : research, analysis, debugging, codebase exploration
+- **Review** : code review, PR review, security audit, documentation review
+- **Design** : architecture design, API spec, system planning
 
 **Agent Selection**: Map task type to agents (reference: `~/.claude/docs/AGENTS_CATALOG.md`):
 
@@ -63,11 +64,30 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
 | Review | `code-review:*`, `pr-review-toolkit:*` (parallel) |
 | Design | `system-architect`, `backend-architect`, `devops-architect` |
 
-**Dispatch Automation**: When 2+ independent tasks exist post-classification, invoke `superpowers:dispatching-parallel-agents` skill via Skill tool. After all agents complete and all TodoWrite tasks are marked done, `/reflexion:reflect` runs per CLAUDE.md Rule 12 (no additional call needed here).
+**Dispatch Automation**: When 2+ independent tasks exist post-classification, invoke `superpowers:dispatching-parallel-agents` skill via Skill tool. After all agents complete and all TodoWrite tasks are marked done, `/reflexion:reflect` runs per CLAUDE.md Rule 11 ("ALWAYS after completing all tasks in `todowrite`, Use Skill tool to run `/reflexion:reflect`") (this dispatch context already satisfies Rule 11 at the parent agent level — no duplicate call needed within subagents).
 
 **Good:** Plan → TodoWrite → Execute → Verify | **Bad:** Jump to implementation
 
 **Reference:** `api-specification-check.md`, `execution-efficiency.md`
+
+---
+
+## Category: Task Management (Persistent Layer)
+**Trigger:** Multi-session or large-scale tasks | **Priority:** Important
+
+For large-scale or multi-session tasks,
+record plans in `~/.claude/tasks/todo.md` (complements the ephemeral TodoWrite tool):
+1. **Plan First**: Write a checkable item list before starting
+2. **Verify Plan**: Align with the user before implementation
+3. **Track Progress**: Mark items as complete
+4. **Document Results**: Append review section after completion
+5. **Capture Lessons**: Update `~/.claude/tasks/lessons.md` after any corrections
+
+Usage distinction:
+- TodoWrite = in-session UI display (unchanged)
+- `~/.claude/tasks/todo.md` = persistent record for large tasks spanning sessions
+
+**Reference:** CLAUDE.md Section「🔄 開発ワークフロー」Step 0（全体開発ワークフローとの統合コンテキスト）
 
 ---
 
@@ -85,8 +105,10 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
 
 - Identify parallel vs sequential operations during planning
 - Map dependencies; estimate resources; state efficiency metrics
+- When plan doc needed: create in claudedocs/plans/ per PLANS.md §使用閾値
+- Record AskUserQuestion results and design decisions in Decision Log (see PLANS.md)
 
-**Reference:** `execution-efficiency.md`
+**Reference:** `execution-efficiency.md` (execution details) | `PLANS.md` (plan template)
 
 ---
 
@@ -136,7 +158,7 @@ uv run pytest --cov-fail-under=[target] && uv run ruff check . && uv run mypy ut
 - UPPER_SNAKE_CASE: constants
 - Follow existing patterns in `utils/`, `config/`, `models/`
 
-**Reference:** `@memory:coding_standards`
+**Reference:** `.claude/rules/python/coding-standards.md`
 
 ---
 
