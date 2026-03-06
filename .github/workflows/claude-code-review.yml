@@ -187,6 +187,9 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # TEMPORARY: Enable full output to diagnose instant crash (201ms, $0, exit 1)
+          # TODO: Revert to false after root cause identified
+          show_full_output: true
           # Pass MXBAI_API_KEY to Claude Code for mgrep CLI (Bash) access
           # Only set when mgrep is available (API key validated in install-mgrep step)
           settings: |
