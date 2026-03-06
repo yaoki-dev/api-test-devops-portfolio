@@ -742,7 +742,7 @@ class TestSSRFPrevention:
         """
         monkeypatch.setattr(socket, "gethostbyname", lambda _: "not-an-ip-address")
 
-        with caplog.at_level(logging.WARNING):
+        with caplog.at_level(logging.WARNING, logger="config.settings"):
             result = is_private_ip("malicious.example.com")
 
         assert result is True, "不正なDNS応答はブロック扱い（Fail-Closed）"

@@ -20,6 +20,9 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# NOTE: utils/logger.py は config.settings に依存するため structlog は使用不可（循環インポート回避）
+_logger = logging.getLogger(__name__)
+
 # =============================================================================
 # SSRF Prevention Configuration
 # =============================================================================
@@ -222,7 +225,7 @@ def is_private_ip(hostname: str) -> bool:
             # DNS解決結果が有効なIPアドレス形式でない場合（異常なDNS応答）
             # セキュリティ: 不正な値はプライベートIPとして扱いブロック（Fail-Closed）
             # ログを残すことでセキュリティインシデントの証拠を保全する
-            # _logger はモジュールレベル（ファイル末尾付近）で定義済み
+            # _logger はモジュールレベル（インポート直後）で定義済み
             _logger.warning(
                 "DNS解決結果が不正なIPアドレス形式: hostname=%r, resolved=%r — ブロック扱い",
                 hostname[:200],
@@ -628,10 +631,8 @@ def reload_settings() -> Settings:
 
 
 # 便利なエイリアス
-# NOTE: utils/logger.py は config.settings に依存するため structlog は使用不可（循環インポート回避）
 # モジュールインポート時に ValidationError が発生すると ImportError として連鎖し
 # 根本原因（環境変数のタイポ等）が隠蔽される。logging で根本原因を明示する。
-_logger = logging.getLogger(__name__)
 try:
     settings = get_settings()
 except Exception as e:  # noqa: BLE001  # ValidationError含む全設定エラーを捕捉（SystemExit等のBaseException除外済み）
