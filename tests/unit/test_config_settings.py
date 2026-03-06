@@ -1,6 +1,6 @@
 import logging
 import socket
-from collections.abc import Generator
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -831,7 +831,7 @@ class TestResolveHostname:
     """
 
     @pytest.fixture(autouse=True)
-    def clear_dns_cache(self) -> Generator[None]:
+    def clear_dns_cache(self) -> Iterator[None]:
         """各テスト前後にDNS解決キャッシュをクリアする
 
         Design Note:

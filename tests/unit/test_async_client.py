@@ -2168,7 +2168,6 @@ def test_async_client_empty_base_url_raises_value_error() -> None:
         AsyncAPIClient(base_url="")
 
 
-@respx.mock
 async def test_async_client_falsy_values_not_overridden() -> None:
     """retry_count=0, timeout=0.0 がFalsy判定で設定値に上書きされないことを検証
 
