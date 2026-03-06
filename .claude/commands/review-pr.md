@@ -1,6 +1,7 @@
 ---
-allowed-tools: Bash(gh api repos/*/issues/*/comments:*),Bash(gh api repos/*/pulls/*/comments:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh repo view:*),Bash(mgrep:*)
+allowed-tools: Bash(gh api repos/*/issues/*/comments:*),Bash(gh api repos/*/pulls/*/comments:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh repo view:*),Bash(mgrep:*),mcp__ast-grep__find_code,mcp__ast-grep__find_code_by_rule,mcp__morph-mcp__warpgrep_codebase_search
 description: Review a pull request
+argument-hint: "[owner/repo] [pr-number]"
 ---
 
 ## Step 0: 対応不要判断の抽出
@@ -27,8 +28,10 @@ REVIEW_COMMENTS=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/comments" --paginate 
     select(.body | test("指摘|issue|#[0-9]+"; "i")) |
     {user: .user.login, body: (.body[:150])}]')
 
-# 両方の結果をマージ
-echo "${ISSUE_COMMENTS}" "${REVIEW_COMMENTS}" | jq -s 'add'
+# 両方の結果をマージ（null安全 + HTMLエスケープでプロンプトインジェクション対策）
+echo "${ISSUE_COMMENTS}" "${REVIEW_COMMENTS}" | jq -s '
+  (map(select(. != null)) | add // []) |
+  map(.body |= (gsub("<"; "&lt;") | gsub(">"; "&gt;")))'
 ```
 
 **エラーハンドリング**:
