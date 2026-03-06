@@ -164,9 +164,10 @@ def _resolve_hostname(hostname: str) -> str | None:
         # OverflowError: 極端に長いホスト名によるOSレベルオーバーフロー（プラットフォーム依存）
         # セキュリティ証跡: 攻撃的な入力パターンをwarningレベルで記録
         _logger.warning(
-            "不正なホスト名形式 — SSRF試行の可能性: hostname=%r, error=%s",
+            "不正なホスト名形式 — SSRF試行の可能性: hostname=%r, error_type=%s, error=%s",
             hostname[:200],
             type(e).__name__,
+            str(e),
         )
         return None
     except TypeError as e:
@@ -175,9 +176,10 @@ def _resolve_hostname(hostname: str) -> str | None:
         #   同経路で捕捉される。デバッグ困難防止のため分離して個別ログを記録する。
         _logger.warning(
             "不正なホスト名形式（TypeError） — SSRF試行またはシグネチャバグの可能性:"
-            " hostname=%r, error=%s",
+            " hostname=%r, error_type=%s, error=%s",
             hostname[:200],
             type(e).__name__,
+            str(e),
         )
         return None
     except OSError as e:
@@ -229,7 +231,7 @@ def is_private_ip(hostname: str) -> bool:
             _logger.warning(
                 "DNS解決結果が不正なIPアドレス形式: hostname=%r, resolved=%r — ブロック扱い",
                 hostname[:200],
-                resolved[:100] if resolved else "",
+                resolved[:100],
             )
             return True
 
@@ -316,9 +318,13 @@ class APIConfig(BaseModel):
 
         # SSRF Prevention: 許可ドメインチェック
         if hostname not in ALLOWED_DOMAINS:
+            _logger.warning(
+                "SSRF Prevention: Domain not in allowlist: %r. Allowed: %s",
+                hostname,
+                sorted(ALLOWED_DOMAINS),
+            )
             raise ValueError(
-                f"SSRF Prevention: Domain not in allowlist: {hostname}. "
-                f"Allowed: {', '.join(sorted(ALLOWED_DOMAINS))}",
+                f"SSRF Prevention: Domain not in allowlist: {hostname}",
             )
 
         if v.endswith("/"):
