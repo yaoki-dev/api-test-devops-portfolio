@@ -150,19 +150,17 @@ def _resolve_hostname(hostname: str) -> str | None:
         - UnicodeEncodeError: 非ASCII文字を含むホスト名のエンコード失敗
         - UnicodeError（親クラス）でまとめて捕捉し、実装・プラットフォーム差を吸収
         - TypeError: NULバイト（\x00）等の不正文字を含むホスト名
-          Note: _resolve_hostname_cached シグネチャ変更バグでも発生するため
-          個別catchで分離してログを明確化している
         - OverflowError: 極端に長いホスト名によるOSレベルオーバーフロー（プラットフォーム依存）
         - ラッパー側でcatchすることでlru_cacheに影響せず（成功値のみキャッシュ維持）
         - Fail-Closed: Noneを返してis_private_ipがブロック判定する
     """
     try:
         return _resolve_hostname_cached(hostname)
-    except (UnicodeError, OverflowError) as e:
+    except (UnicodeError, OverflowError, TypeError) as e:
         # UnicodeError: Unicode処理エラー（UnicodeDecodeError/UnicodeEncodeError含む）
         #   - 非ASCII文字を含む攻撃的なホスト名（SSRF試行の可能性）
         # OverflowError: 極端に長いホスト名によるOSレベルオーバーフロー（プラットフォーム依存）
-        # セキュリティ証跡: 攻撃的な入力パターンをwarningレベルで記録
+        # TypeError: NULバイト（\x00）等の不正文字を含むホスト名
         _logger.warning(
             "不正なホスト名形式 — SSRF試行の可能性: hostname=%r, error_type=%s, error=%s",
             hostname[:200],
@@ -170,23 +168,21 @@ def _resolve_hostname(hostname: str) -> str | None:
             str(e),
         )
         return None
-    except TypeError as e:
-        # TypeError: NULバイト（\x00）等の不正文字を含むホスト名 → socket.gethostbyname() 由来を想定
-        # Note: _resolve_hostname_cached のシグネチャ変更バグによる TypeError も
-        #   同経路で捕捉される。デバッグ困難防止のため分離して個別ログを記録する。
-        _logger.warning(
-            "不正なホスト名形式（TypeError） — SSRF試行またはシグネチャバグの可能性:"
-            " hostname=%r, error_type=%s, error=%s",
-            hostname[:200],
-            type(e).__name__,
-            str(e),
-        )
-        return None
-    except OSError as e:
-        # DNS解決失敗（socket.herror, socket.gaierror含む）
+    except (socket.herror, socket.gaierror) as e:
+        # DNS解決失敗（herror: サーバーエラー, gaierror: アドレス情報エラー）
         # Fail-Closed: サービスへの影響（正当リクエストのブロック）が発生するためWARNINGレベル
         _logger.warning(
             "DNS解決失敗: hostname=%r — ブロック扱い (error_type=%s, errno=%s)",
+            hostname[:200],
+            type(e).__name__,
+            e.args[0] if e.args else "N/A",
+        )
+        return None
+    except OSError as e:
+        # 予期しないネットワークエラー（PermissionError, TimeoutError 等）
+        # Fail-Closed: DNS解決失敗として誤分類しないよう別メッセージで記録
+        _logger.warning(
+            "予期しないネットワークエラー: hostname=%r — ブロック扱い (error_type=%s, errno=%s)",
             hostname[:200],
             type(e).__name__,
             getattr(e, "errno", "N/A"),
@@ -324,7 +320,8 @@ class APIConfig(BaseModel):
                 sorted(ALLOWED_DOMAINS),
             )
             raise ValueError(
-                f"SSRF Prevention: Domain not in allowlist: {hostname}",
+                f"SSRF Prevention: Domain not in allowlist: {hostname}. "
+                f"Allowed: {', '.join(sorted(ALLOWED_DOMAINS))}",
             )
 
         if v.endswith("/"):

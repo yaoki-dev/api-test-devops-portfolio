@@ -1060,7 +1060,7 @@ class TestResolveHostname:
             result = _resolve_hostname("evil\x00.internal.corp")
 
         assert result is None
-        assert "SSRF試行またはシグネチャバグの可能性" in caplog.text
+        assert "SSRF試行の可能性" in caplog.text
         assert "TypeError" in caplog.text
 
     def test_resolve_hostname_overflow_error_returns_none(
@@ -1105,10 +1105,10 @@ class TestResolveHostname:
         assert "SSRF試行の可能性" in caplog.text
         assert "OverflowError" in caplog.text
 
-    def test_resolve_hostname_os_error_logs_warning(
+    def test_resolve_hostname_gaierror_logs_dns_warning(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """OSError（DNS解決失敗）時にwarningレベルでログが出力される
+        """socket.gaierror（DNS解決失敗）時にwarningレベルでログが出力される
 
         Design Rationale:
             DNS解決失敗はFail-Closedを発動し正当なリクエストをブロックするため、
@@ -1116,8 +1116,29 @@ class TestResolveHostname:
             本番環境（INFO以上）でも可視化され、運用チームによる障害検知が可能。
         """
 
+        def raise_gaierror(hostname: str) -> str:
+            raise socket.gaierror(f"Name resolution failed: {hostname}")
+
+        monkeypatch.setattr(socket, "gethostbyname", raise_gaierror)
+
+        with caplog.at_level(logging.WARNING, logger="config.settings"):
+            result = _resolve_hostname("nonexistent.invalid")
+
+        assert result is None
+        assert "DNS解決失敗" in caplog.text
+
+    def test_resolve_hostname_os_error_logs_network_warning(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """汎用OSError時に「予期しないネットワークエラー」のwarningログが出力される
+
+        Design Rationale:
+            socket.herror/gaierror以外のOSError（PermissionError, TimeoutError等）は
+            DNS解決失敗として誤分類しないよう、別メッセージで記録する。
+        """
+
         def raise_os_error(hostname: str) -> str:
-            raise OSError(f"Name resolution failed: {hostname}")
+            raise OSError(f"Network error: {hostname}")
 
         monkeypatch.setattr(socket, "gethostbyname", raise_os_error)
 
@@ -1125,4 +1146,4 @@ class TestResolveHostname:
             result = _resolve_hostname("nonexistent.invalid")
 
         assert result is None
-        assert "DNS解決失敗" in caplog.text
+        assert "予期しないネットワークエラー" in caplog.text
