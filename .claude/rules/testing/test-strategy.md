@@ -4,9 +4,9 @@
 
 ## エグゼクティブサマリー
 
-**現在のカバレッジ**: 86.63%（CI条件: unit+integration, not external） | **目標達成**: ✅
-**テスト資産**: 413件（CI条件）/ 全503件
-**最優先改善領域**: utils/api_client.py (76.01%)
+**現在のカバレッジ**: 92.46%（CI条件: unit+integration, not external） | **目標達成**: ✅
+**テスト資産**: 479件（CI条件）/ 全547件
+**最優先改善領域**: utils/github_client.py (86.67%)
 
 ---
 
