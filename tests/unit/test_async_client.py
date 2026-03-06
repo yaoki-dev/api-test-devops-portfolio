@@ -2169,19 +2169,23 @@ def test_async_client_empty_base_url_raises_value_error() -> None:
 
 
 async def test_async_client_falsy_values_not_overridden() -> None:
-    """retry_count=0, timeout=0.0 がFalsy判定で設定値に上書きされないことを検証
+    """retry_count=0, timeout=0.0, retry_delay=0.0 がFalsy判定で設定値に上書きされないことを検証
 
     退行防止: 修正前の `x or default` パターンでは retry_count=0 や
     timeout=0.0 がFalsyと判定され設定値で上書きされていた。
     `x if x is not None else default` への修正が正しく動作することを保証する。
     """
-    async with AsyncAPIClient(retry_count=0, timeout=0.0) as client:
+    async with AsyncAPIClient(retry_count=0, timeout=0.0, retry_delay=0.0) as client:
         assert client.retry_count == 0, (
             "retry_count=0 should NOT be overridden by settings. "
             "Regression guard against `x or default` pattern."
         )
         assert client.timeout == 0.0, (
             "timeout=0.0 should NOT be overridden by settings. "
+            "Regression guard against `x or default` pattern."
+        )
+        assert client.retry_delay == 0.0, (
+            "retry_delay=0.0 should NOT be overridden by settings. "
             "Regression guard against `x or default` pattern."
         )
 

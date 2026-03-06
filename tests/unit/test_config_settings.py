@@ -1074,6 +1074,28 @@ class TestResolveHostname:
         assert result is None
         assert "DNS解決失敗" in caplog.text
 
+    def test_resolve_hostname_herror_logs_dns_warning(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """socket.herror（DNSサーバーエラー）時にwarningレベルでログが出力される
+
+        Design Rationale:
+            socket.herror はDNSサーバー自体のエラー（SERVFAIL等）で発生する。
+            gaierror と同じ except 節で捕捉されるが、将来のリファクタリングで
+            誤って除外されないよう個別にテストする（退行防止）。
+        """
+
+        def raise_herror(hostname: str) -> str:
+            raise socket.herror(f"Host resolution failed: {hostname}")
+
+        monkeypatch.setattr(socket, "gethostbyname", raise_herror)
+
+        with caplog.at_level(logging.WARNING, logger="config.settings"):
+            result = _resolve_hostname("invalid")
+
+        assert result is None
+        assert "DNS解決失敗" in caplog.text
+
     def test_resolve_hostname_os_error_logs_network_warning(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
     ) -> None:

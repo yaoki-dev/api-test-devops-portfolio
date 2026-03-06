@@ -179,8 +179,7 @@ class SyncAPIClient:
         self.base_url = base_url if base_url is not None else settings.api.base_url
         if not self.base_url:
             raise ValueError(
-                f"base_url が空です: 引数 base_url={base_url!r}, "
-                f"設定値 settings.api.base_url={settings.api.base_url!r}"
+                "base_url が空です。引数または API__BASE_URL 環境変数を確認してください。"
             )
         self.timeout = timeout if timeout is not None else settings.api.timeout
         self.retry_count = retry_count if retry_count is not None else settings.api.retry_count
@@ -628,8 +627,7 @@ class AsyncAPIClient:
         self.base_url = base_url if base_url is not None else settings.api.base_url
         if not self.base_url:
             raise ValueError(
-                f"base_url が空です: 引数 base_url={base_url!r}, "
-                f"設定値 settings.api.base_url={settings.api.base_url!r}"
+                "base_url が空です。引数または API__BASE_URL 環境変数を確認してください。"
             )
         self.timeout = timeout if timeout is not None else settings.api.timeout
         self.retry_count = retry_count if retry_count is not None else settings.api.retry_count
