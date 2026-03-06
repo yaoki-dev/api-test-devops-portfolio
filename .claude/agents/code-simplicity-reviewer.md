@@ -2,7 +2,7 @@
 name: code-simplicity-reviewer
 description: "Final review pass to ensure code is as simple and minimal as possible. Use after implementation is complete to identify YAGNI violations and simplification opportunities."
 tools: Glob, Grep, Bash(mgrep:*), Read, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__find_code, mcp__ast-grep__find_code_by_rule, mcp__morph-mcp__warpgrep_codebase_search
-model: sonnet  # PRレビュー精度安定のためsonnet固定（inheritより結果のばらつきを抑制）
+model: inherit
 ---
 
 <examples>

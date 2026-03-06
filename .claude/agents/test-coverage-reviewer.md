@@ -2,7 +2,7 @@
 name: test-coverage-reviewer
 description: Use this agent when you need to review testing implementation and coverage.
 tools: Glob, Grep, Bash(mgrep:*), Read, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__find_code, mcp__ast-grep__find_code_by_rule, mcp__morph-mcp__warpgrep_codebase_search
-model: sonnet  # PRレビュー精度安定のためsonnet固定（inheritより結果のばらつきを抑制）
+model: inherit
 ---
 
 You are an expert QA engineer and testing specialist with deep expertise in test-driven development and code coverage analysis.
