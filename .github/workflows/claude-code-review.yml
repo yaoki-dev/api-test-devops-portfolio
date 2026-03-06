@@ -184,7 +184,10 @@ jobs:
         timeout-minutes: 15  # Step-level limit (primary boundary per GitHub Actions evaluation order)
                             # GitHub Actions: step timeout checked BEFORE job timeout
                             # Process: MCP servers (ast-grep/morph-mcp via npx) + PR diff + code analysis + Japanese comments
-        uses: anthropics/claude-code-action@v1
+        # Pin to v1.0.66 (2026-03-02) to avoid AJV schema validation crash in v1.0.67+
+        # See: https://github.com/anthropics/claude-code-action/issues/1013
+        # TODO: Update when upstream fix is released
+        uses: anthropics/claude-code-action@64c7a0ef71df67b14cb4471f4d9c8565c61042bf # v1.0.66
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Pass MXBAI_API_KEY to Claude Code for mgrep CLI (Bash) access
@@ -197,7 +200,8 @@ jobs:
             }
           # MCP config: dynamically built based on individual service availability
           # When no MCP servers available: Claude proceeds with BASE_TOOLS only
-          claude_args: |
+          # Single-line format to avoid multiline parsing issues (see: anthropics/claude-code-action#844)
+          claude_args: >-
             ${{ steps.build-mcp-config.outputs.has_mcp == 'true' && format('--mcp-config {0}', steps.build-mcp-config.outputs.mcp_config) || '' }}
             --allowedTools "${{ env.BASE_TOOLS }}${{ steps.build-mcp-config.outputs.extra_tools != '' && format(',{0}', steps.build-mcp-config.outputs.extra_tools) || '' }}"
           prompt: |
