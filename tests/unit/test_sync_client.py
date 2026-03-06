@@ -825,11 +825,10 @@ def test_sync_client_empty_base_url_raises_value_error() -> None:
         発生し、原因特定が困難になる。初期化時に早期検証することで、
         設定ミスを即座に検出する。
     """
-    with pytest.raises(ValueError, match="base_url に空文字列は指定できません"):
+    with pytest.raises(ValueError, match="base_url が空です"):
         SyncAPIClient(base_url="")
 
 
-@respx.mock
 def test_sync_client_falsy_values_not_overridden() -> None:
     """retry_count=0, timeout=0.0 がFalsy判定で設定値に上書きされないことを検証
 

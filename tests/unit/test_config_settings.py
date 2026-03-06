@@ -1,6 +1,6 @@
 import logging
 import socket
-from collections.abc import Generator
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -722,6 +722,28 @@ class TestSSRFPrevention:
         result = is_private_ip("unknown-host.test")
         assert result is True, "DNS failure should return True (Fail-Closed)"
 
+    def test_is_private_ip_invalid_dns_response_returns_true(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """DNS解決結果が不正なIPアドレス形式の場合、Fail-Closedでブロック（True）を返す
+
+        Security:
+            異常なDNS応答（IPアドレス形式でない文字列）に対するSSRF防止の最終砦。
+            _logger.warning()でセキュリティ証跡を記録することも検証する。
+        """
+        monkeypatch.setattr(socket, "gethostbyname", lambda _: "not-an-ip-address")
+
+        # LRUキャッシュをクリアしてモックが確実に呼ばれるようにする
+        _resolve_hostname_cached.cache_clear()
+
+        with caplog.at_level(logging.WARNING):
+            result = is_private_ip("malicious.example.com")
+
+        assert result is True, "不正なDNS応答はブロック扱い（Fail-Closed）"
+        assert any("不正なIPアドレス形式" in record.message for record in caplog.records), (
+            "セキュリティ証跡としてwarningログが出力されること"
+        )
+
     @pytest.mark.parametrize(
         "allowed_domain",
         [
@@ -831,7 +853,7 @@ class TestResolveHostname:
     """
 
     @pytest.fixture(autouse=True)
-    def clear_dns_cache(self) -> Generator[None]:
+    def clear_dns_cache(self) -> Iterator[None]:
         """各テスト前後にDNS解決キャッシュをクリアする
 
         Design Note:

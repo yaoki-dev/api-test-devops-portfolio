@@ -178,7 +178,10 @@ class SyncAPIClient:
         # timeout=0.0: 即座にタイムアウト（無効化は timeout=None）
         self.base_url = base_url if base_url is not None else settings.api.base_url
         if not self.base_url:
-            raise ValueError(f"base_url に空文字列は指定できません: {base_url!r}")
+            raise ValueError(
+                f"base_url が空です: 引数 base_url={base_url!r}, "
+                f"設定値 settings.api.base_url={settings.api.base_url!r}"
+            )
         self.timeout = timeout if timeout is not None else settings.api.timeout
         self.retry_count = retry_count if retry_count is not None else settings.api.retry_count
         self.retry_delay = retry_delay if retry_delay is not None else settings.api.retry_delay
@@ -624,7 +627,10 @@ class AsyncAPIClient:
         # timeout=0.0: 即座にタイムアウト（無効化は timeout=None）
         self.base_url = base_url if base_url is not None else settings.api.base_url
         if not self.base_url:
-            raise ValueError(f"base_url に空文字列は指定できません: {base_url!r}")
+            raise ValueError(
+                f"base_url が空です: 引数 base_url={base_url!r}, "
+                f"設定値 settings.api.base_url={settings.api.base_url!r}"
+            )
         self.timeout = timeout if timeout is not None else settings.api.timeout
         self.retry_count = retry_count if retry_count is not None else settings.api.retry_count
         self.retry_delay = retry_delay if retry_delay is not None else settings.api.retry_delay
