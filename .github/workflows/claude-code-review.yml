@@ -151,6 +151,7 @@ jobs:
 
           # morph-mcp: AI-powered code search
           if [ "$MORPH_MCP" == "true" ]; then
+            echo "::add-mask::${{ secrets.MORPH_API_KEY }}"
             if [ -n "$SERVERS" ]; then SERVERS="$SERVERS,"; fi
             SERVERS="${SERVERS}\"morph-mcp\":{\"command\":\"npx\",\"args\":[\"-y\",\"@morphllm/morphmcp@${{ env.MORPH_MCP_VERSION }}\"],\"env\":{\"MORPH_API_KEY\":\"${{ secrets.MORPH_API_KEY }}\",\"ENABLED_TOOLS\":\"warpgrep_codebase_search\"}}"
             if [ -n "$EXTRA_TOOLS" ]; then EXTRA_TOOLS="$EXTRA_TOOLS,"; fi
