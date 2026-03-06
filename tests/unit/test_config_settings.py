@@ -573,6 +573,18 @@ class TestSSRFPrevention:
     - DNS解決失敗時のフェイルクローズド動作
     """
 
+    @pytest.fixture(autouse=True)
+    def clear_dns_cache(self) -> Iterator[None]:
+        """各テスト前後にDNS解決キャッシュをクリアする（TestResolveHostname と同パターン）
+
+        Design Note:
+            TestResolveHostname.clear_dns_cache と同じ autouse パターンで一元管理。
+            テスト追加時の cache_clear() 呼び忘れを防止する。
+        """
+        _resolve_hostname_cached.cache_clear()
+        yield
+        _resolve_hostname_cached.cache_clear()
+
     @pytest.mark.parametrize(
         ("malicious_url", "description"),
         [
@@ -715,9 +727,6 @@ class TestSSRFPrevention:
 
         monkeypatch.setattr(socket, "gethostbyname", mock_gethostbyname)
 
-        # LRUキャッシュをクリアしてモックが確実に呼ばれるようにする
-        _resolve_hostname_cached.cache_clear()
-
         # 不明なホストはプライベートIPとして扱う（Fail-Closed）
         result = is_private_ip("unknown-host.test")
         assert result is True, "DNS failure should return True (Fail-Closed)"
@@ -732,9 +741,6 @@ class TestSSRFPrevention:
             _logger.warning()でセキュリティ証跡を記録することも検証する。
         """
         monkeypatch.setattr(socket, "gethostbyname", lambda _: "not-an-ip-address")
-
-        # LRUキャッシュをクリアしてモックが確実に呼ばれるようにする
-        _resolve_hostname_cached.cache_clear()
 
         with caplog.at_level(logging.WARNING):
             result = is_private_ip("malicious.example.com")
@@ -1054,7 +1060,7 @@ class TestResolveHostname:
             result = _resolve_hostname("evil\x00.internal.corp")
 
         assert result is None
-        assert "SSRF試行の可能性" in caplog.text
+        assert "SSRF試行またはシグネチャバグの可能性" in caplog.text
         assert "TypeError" in caplog.text
 
     def test_resolve_hostname_overflow_error_returns_none(

@@ -147,20 +147,32 @@ def _resolve_hostname(hostname: str) -> str | None:
         - UnicodeEncodeError: 非ASCII文字を含むホスト名のエンコード失敗
         - UnicodeError（親クラス）でまとめて捕捉し、実装・プラットフォーム差を吸収
         - TypeError: NULバイト（\x00）等の不正文字を含むホスト名
+          Note: _resolve_hostname_cached シグネチャ変更バグでも発生するため
+          個別catchで分離してログを明確化している
         - OverflowError: 極端に長いホスト名によるOSレベルオーバーフロー（プラットフォーム依存）
         - ラッパー側でcatchすることでlru_cacheに影響せず（成功値のみキャッシュ維持）
         - Fail-Closed: Noneを返してis_private_ipがブロック判定する
     """
     try:
         return _resolve_hostname_cached(hostname)
-    except (UnicodeError, TypeError, OverflowError) as e:
+    except (UnicodeError, OverflowError) as e:
         # UnicodeError: Unicode処理エラー（UnicodeDecodeError/UnicodeEncodeError含む）
         #   - 非ASCII文字を含む攻撃的なホスト名（SSRF試行の可能性）
-        # TypeError: NULバイト（\x00）等の不正文字を含むホスト名
         # OverflowError: 極端に長いホスト名によるOSレベルオーバーフロー（プラットフォーム依存）
         # セキュリティ証跡: 攻撃的な入力パターンをwarningレベルで記録
         _logger.warning(
             "不正なホスト名形式 — SSRF試行の可能性: hostname=%r, error=%s",
+            hostname[:200],
+            type(e).__name__,
+        )
+        return None
+    except TypeError as e:
+        # TypeError: NULバイト（\x00）等の不正文字を含むホスト名 → socket.gethostbyname() 由来を想定
+        # Note: _resolve_hostname_cached のシグネチャ変更バグによる TypeError も
+        #   同経路で捕捉される。デバッグ困難防止のため分離して個別ログを記録する。
+        _logger.warning(
+            "不正なホスト名形式（TypeError） — SSRF試行またはシグネチャバグの可能性:"
+            " hostname=%r, error=%s",
             hostname[:200],
             type(e).__name__,
         )

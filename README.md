@@ -7,7 +7,7 @@
 このプロジェクトは、APIテストとDevOps技術を統合した実践的なポートフォリオです。
 
 [![CI/CD Pipeline](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml/badge.svg)](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/badge/coverage-92.46%25-brightgreen)](https://yuta158.github.io/api-test-portfolio/htmlcov/)
+[![Coverage](https://img.shields.io/badge/coverage-92.71%25-brightgreen)](https://yuta158.github.io/api-test-portfolio/htmlcov/)
 ![Python](https://img.shields.io/badge/Python-3.13-blue)
 [![Docker](https://img.shields.io/badge/docker-multi--stage-blue)](./Dockerfile)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
@@ -16,13 +16,13 @@
 [![Security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 [![Dependencies: safety](https://img.shields.io/badge/dependencies-safety--checked-green.svg)](https://safetycli.com/)
 
-> **Python/Docker/CI/CDを統合したAPIテスト自動化ポートフォリオ。547件のテスト（CI品質ゲート: 479件/92.46%）。**
+> **Python/Docker/CI/CDを統合したAPIテスト自動化ポートフォリオ。547件のテスト（CI品質ゲート: 480件/92.71%）。**
 
 ## 概要
 
 - **547件のテストスイート**: Unit(448) / Integration(36) / Performance(5) / External(5) / Smoke(3) / Slow(1) / マーカーなし(60) / E2E(実装予定)
-- **カバレッジ: 92.46%**（unit+integration条件）: 継続的な品質向上
-- **CI実行テスト: 479件**（unit+integration, external除外）
+- **カバレッジ: 92.71%**（unit+integration条件）: 継続的な品質向上
+- **CI実行テスト: 480件**（unit+integration, external除外）
 - **CI/CD自動化**: GitHub Actions による4段階パイプライン
 - **セキュリティ**: CI/CD品質ゲート（pytest + ruff + mypy + Trivy）
 - **GitHub API統合**: 実務的なAPI統合スキルを証明（Rate Limit管理、ETag活用、非同期処理）
@@ -270,8 +270,8 @@ if init_sentry():
 |------|------|--------|------|
 | Unit tests | 448件 | ✅ | ビジネスロジック検証 |
 | Integration tests | 36件（CI対象: 31件） | ✅（external 5件除外） | API統合検証 |
-| **CI合計（カバレッジ計測対象）** | **479件** | | |
-| **カバレッジ** | **92.46%** | | unit+integration条件 |
+| **CI合計（カバレッジ計測対象）** | **480件** | | |
+| **カバレッジ** | **92.71%** | | unit+integration条件 |
 
 **カバレッジ計測対象外テスト**
 
@@ -291,7 +291,7 @@ if init_sentry():
 
 ```mermaid
 graph TB
-    subgraph "Test Pyramid - 547件（CI対象: 479件）"
+    subgraph "Test Pyramid - 547件（CI対象: 480件）"
         E2E["🔝 E2E<br/>0件 → 5%目標"]
         Integration["🔗 Integration<br/>36件（CI対象: 31件）→ 25%目標"]
         Unit["🧱 Unit<br/>448件 (82%) → 70%目標"]
@@ -309,7 +309,7 @@ graph TB
 - **Integration (25%)**: API・DB接続の検証（中速・実環境近似）
 - **E2E (5%)**: クリティカルパスのみ（低速・高信頼）
 
-> **Note**: pytestパラメータ化テストにより、テスト関数 → pytest収集547件（CI対象: 479件）。カテゴリ別件数はマーカー別集計のため合計は547件と一致しない（マーカー重複・未付与テスト60件含む）
+> **Note**: pytestパラメータ化テストにより、テスト関数 → pytest収集547件（CI対象: 480件）。カテゴリ別件数はマーカー別集計のため合計は547件と一致しない（マーカー重複・未付与テスト60件含む）
 
 ### テスト実行特性（CI最適化）
 
