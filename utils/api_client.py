@@ -177,7 +177,7 @@ class SyncAPIClient:
         # NOTE: retry_count=0, retry_delay=0.0, timeout=0.0 は有効な設定値のため is not None で判定
         # timeout=0.0: 即座にタイムアウト（無効化は timeout=None）
         self.base_url = base_url if base_url is not None else settings.api.base_url
-        if not self.base_url or not self.base_url.strip():
+        if not self.base_url.strip():
             raise ValueError(
                 "base_url が空です。引数または API__BASE_URL 環境変数を確認してください。"
             )
@@ -625,7 +625,7 @@ class AsyncAPIClient:
         # NOTE: retry_count=0, retry_delay=0.0, timeout=0.0 は有効な設定値のため is not None で判定
         # timeout=0.0: 即座にタイムアウト（無効化は timeout=None）
         self.base_url = base_url if base_url is not None else settings.api.base_url
-        if not self.base_url or not self.base_url.strip():
+        if not self.base_url.strip():
             raise ValueError(
                 "base_url が空です。引数または API__BASE_URL 環境変数を確認してください。"
             )
