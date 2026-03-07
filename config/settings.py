@@ -94,36 +94,12 @@ def _resolve_hostname_cached(hostname: str) -> str:
         解決されたIPアドレス文字列。
 
     Raises:
-        socket.herror: DNSサーバーエラーによる解決失敗（OSError のサブクラス）。
-                        lru_cache は例外をキャッシュしないため、一時障害後に再試行が可能。
-        socket.gaierror: アドレス情報取得失敗（OSError のサブクラス）。
-                         lru_cache は例外をキャッシュしないため、一時障害後に再試行が可能。
+        socket.herror: DNSサーバーエラーによる解決失敗。例外はキャッシュされず再試行可能。
+        socket.gaierror: アドレス情報取得失敗。例外はキャッシュされず再試行可能。
         OSError: 上記以外の予期しないネットワークエラー（PermissionError, TimeoutError 等）。
         UnicodeError: 非ASCII文字を含むホスト名等のUnicode処理エラー時。
         TypeError: NULバイト（\\x00）等の不正文字を含むホスト名の場合。
         OverflowError: 極端に長いホスト名によるOSレベルオーバーフロー時（プラットフォーム依存）。
-
-    Note:
-        キャッシュサイズ256の根拠:
-        - 本プロジェクトの許可ドメイン数は最大10程度
-        - テスト中のユニークホスト名は約20-30種類
-        - 256は実用上十分な余裕を持たせた値（メモリ消費は無視できる程度）
-        - Python標準のlru_cacheデフォルト(128)の2倍で、
-          将来的なドメイン追加にも対応
-
-    Design:
-        成功値のみキャッシュする設計:
-        - DNS解決失敗（OSError）は例外として伝播させる
-        - lru_cacheは例外をキャッシュしないため、一時障害後に自動的に再試行される
-        - 従来パターン（失敗時None返却）ではNoneもキャッシュされ、
-          プロセス再起動まで永続ブロックが発生する問題があった
-
-    Security:
-        キャッシュポイズニングリスク評価:
-        - プロセス内キャッシュのため、外部からの直接改ざんは不可能
-        - DNS応答自体が汚染されている場合のリスクはキャッシュ有無に関わらず同一
-          （初回解決時点で汚染されたIPが返る）
-        - プロセス再起動でキャッシュはクリアされる
     """
     return socket.gethostbyname(hostname)
 
@@ -159,10 +135,10 @@ def _resolve_hostname(hostname: str) -> str | None:
         # OverflowError: 極端に長いホスト名によるOSレベルオーバーフロー（プラットフォーム依存）
         # TypeError: NULバイト（\x00）等の不正文字を含むホスト名
         _logger.warning(
-            "不正なホスト名形式 — SSRF試行の可能性: hostname=%r, error_type=%s, error=%s",
+            "不正なホスト名形式 — SSRF試行の可能性: hostname=%r, error_type=%s, error=%r",
             hostname[:200],
             type(e).__name__,
-            str(e),
+            e,
         )
         return None
     except (socket.herror, socket.gaierror) as e:

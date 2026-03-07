@@ -854,8 +854,6 @@ class TestSSRFPrevention:
             SSRF防止ブロックは重要なセキュリティイベントであるため、
             warningレベルのログで監査証跡を残す。
         """
-        import logging
-
         with caplog.at_level(logging.WARNING, logger="config.settings"):
             with pytest.raises(ValidationError):
                 APIConfig(base_url="https://evil.attacker.com/api")
@@ -1046,10 +1044,11 @@ class TestResolveHostname:
             OverflowErrorは過度に長いホスト名による攻撃的な入力パターン（SSRF試行）を
             示すため、Fail-Closedとしてブロック（None）する。
         """
-        monkeypatch.setattr(
-            "config.settings.socket.gethostbyname",
-            lambda _: (_ for _ in ()).throw(OverflowError("host name is too long")),
-        )
+
+        def raise_overflow_error(hostname: str) -> str:
+            raise OverflowError("host name is too long")
+
+        monkeypatch.setattr(socket, "gethostbyname", raise_overflow_error)
 
         result = _resolve_hostname("a" * 256 + ".attacker.example")
 
