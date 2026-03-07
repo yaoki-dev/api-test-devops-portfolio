@@ -20,6 +20,7 @@
 
 import asyncio
 import json
+from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
@@ -2035,7 +2036,7 @@ async def test_async_client_timeout_zero_not_overridden() -> None:
 
 
 @respx.mock
-async def test_async_get_users(sample_users_list) -> None:
+async def test_async_get_users(sample_users_list: list[dict[str, Any]]) -> None:
     """AsyncJSONPlaceholderClient.get_users() ユーザー一覧取得の動作確認
 
     検証項目:
@@ -2148,6 +2149,61 @@ async def test_async_update_todo_multiple_fields() -> None:
     # 複数フィールドがリクエストボディに含まれることを確認
     request_body = json.loads(route.calls[0].request.content)
     assert request_body == {"title": "Updated Title", "completed": True}
+
+
+# ===============================================================================
+# Client初期化バリデーション
+# ===============================================================================
+
+
+def test_async_client_empty_base_url_raises_value_error() -> None:
+    """base_url に空文字列を渡すと初期化時に ValueError が発生する
+
+    Security Rationale:
+        空文字列がhttpx.AsyncClientに渡ると、リクエスト実行時に初めて InvalidURL が
+        発生し、原因特定が困難になる。初期化時に早期検証することで、
+        設定ミスを即座に検出する。
+    """
+    with pytest.raises(ValueError, match="base_url が空です"):
+        AsyncAPIClient(base_url="")
+
+
+def test_async_client_whitespace_base_url_raises_value_error() -> None:
+    """空白文字のみの base_url を渡すと初期化時に ValueError が発生する
+
+    Security Rationale:
+        bool("   ") == True のため、空白文字列は `if not self.base_url` を通過する。
+        `str.strip()` による追加検証で空白のみの文字列も早期拒否する。
+    """
+    with pytest.raises(ValueError, match="base_url が空です"):
+        AsyncAPIClient(base_url="   ")
+
+
+async def test_async_client_falsy_values_not_overridden() -> None:
+    """retry_count=0, timeout=0.0, retry_delay=0.0 がFalsy判定で設定値に上書きされないことを検証
+
+    退行防止: 修正前の `x or default` パターンでは retry_count=0 や
+    timeout=0.0 がFalsyと判定され設定値で上書きされていた。
+    `x if x is not None else default` への修正が正しく動作することを保証する。
+    """
+    async with AsyncAPIClient(
+        base_url="https://jsonplaceholder.typicode.com",
+        retry_count=0,
+        timeout=0.0,
+        retry_delay=0.0,
+    ) as client:
+        assert client.retry_count == 0, (
+            "retry_count=0 should NOT be overridden by settings. "
+            "Regression guard against `x or default` pattern."
+        )
+        assert client.timeout == 0.0, (
+            "timeout=0.0 should NOT be overridden by settings. "
+            "Regression guard against `x or default` pattern."
+        )
+        assert client.retry_delay == 0.0, (
+            "retry_delay=0.0 should NOT be overridden by settings. "
+            "Regression guard against `x or default` pattern."
+        )
 
 
 # ===============================================================================

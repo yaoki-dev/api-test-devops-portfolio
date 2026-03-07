@@ -169,11 +169,18 @@ class SyncAPIClient:
         retry_delay: リトライ間隔（秒）
         headers: 追加HTTPヘッダー
 
+        Raises:
+            ValueError: base_urlが空文字列の場合
+
         """
         # 設定から値を取得（引数で上書き可能）
         # NOTE: retry_count=0, retry_delay=0.0, timeout=0.0 は有効な設定値のため is not None で判定
         # timeout=0.0: 即座にタイムアウト（無効化は timeout=None）
         self.base_url = base_url if base_url is not None else settings.api.base_url
+        if not self.base_url.strip():
+            raise ValueError(
+                "base_url が空です。引数または API__BASE_URL 環境変数を確認してください。"
+            )
         self.timeout = timeout if timeout is not None else settings.api.timeout
         self.retry_count = retry_count if retry_count is not None else settings.api.retry_count
         self.retry_delay = retry_delay if retry_delay is not None else settings.api.retry_delay
@@ -610,11 +617,18 @@ class AsyncAPIClient:
         retry_delay: リトライ間隔（秒）
         headers: 追加HTTPヘッダー
 
+        Raises:
+            ValueError: base_urlが空文字列の場合
+
         """
         # 設定から値を取得（引数で上書き可能）
         # NOTE: retry_count=0, retry_delay=0.0, timeout=0.0 は有効な設定値のため is not None で判定
         # timeout=0.0: 即座にタイムアウト（無効化は timeout=None）
         self.base_url = base_url if base_url is not None else settings.api.base_url
+        if not self.base_url.strip():
+            raise ValueError(
+                "base_url が空です。引数または API__BASE_URL 環境変数を確認してください。"
+            )
         self.timeout = timeout if timeout is not None else settings.api.timeout
         self.retry_count = retry_count if retry_count is not None else settings.api.retry_count
         self.retry_delay = retry_delay if retry_delay is not None else settings.api.retry_delay
