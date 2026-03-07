@@ -746,7 +746,7 @@ grep -rE "^def test_" tests/ --include="*.py"
 | AST解析精度 | 0.92 | 構文エラー時は動作せず |
 | False Positive許容率 | <5% | Phase 2昇格条件（CLAUDE.md記載検討） |
 | 標準Grep優先原則 | 必須 | 疑義時は常にGrep |
-| 適用対象 | Python 3.13互換 | プロジェクト技術スタック準拠 |
+| 適用対象 | Python 3.14互換 | プロジェクト技術スタック準拠 |
 
 ### 9.8 実装推奨トリガー（参考）
 
