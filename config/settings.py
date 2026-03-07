@@ -95,6 +95,7 @@ def _resolve_hostname_cached(hostname: str) -> str:
 
     Raises:
         socket.herror: DNSサーバーエラーによる解決失敗（OSError のサブクラス）。
+                        lru_cache は例外をキャッシュしないため、一時障害後に再試行が可能。
         socket.gaierror: アドレス情報取得失敗（OSError のサブクラス）。
                          lru_cache は例外をキャッシュしないため、一時障害後に再試行が可能。
         OSError: 上記以外の予期しないネットワークエラー（PermissionError, TimeoutError 等）。
@@ -310,15 +311,14 @@ class APIConfig(BaseModel):
 
         # SSRF Prevention: 許可ドメインチェック
         if hostname not in ALLOWED_DOMAINS:
-            _allowed_sorted = sorted(ALLOWED_DOMAINS)
             _logger.warning(
-                "SSRF Prevention: Domain not in allowlist: %r. Allowed: %s",
+                "SSRF Prevention: Domain not in allowlist: %r. Allowed domains count: %d",
                 hostname,
-                _allowed_sorted,
+                len(ALLOWED_DOMAINS),
             )
             raise ValueError(
                 f"SSRF Prevention: Domain not in allowlist: {hostname}. "
-                f"Allowed: {', '.join(_allowed_sorted)}",
+                f"Allowed domains count: {len(ALLOWED_DOMAINS)}",
             )
 
         if v.endswith("/"):

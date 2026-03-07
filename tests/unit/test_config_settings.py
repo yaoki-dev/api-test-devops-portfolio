@@ -845,6 +845,25 @@ class TestSSRFPrevention:
             f"is_private_ip({boundary_ip}) should be {expected_private}"
         )
 
+    def test_validate_base_url_ssrf_block_logs_warning(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """SSRF Prevention: 許可ドメイン外のURLブロック時にwarningログを出力する
+
+        Security Rationale:
+            SSRF防止ブロックは重要なセキュリティイベントであるため、
+            warningレベルのログで監査証跡を残す。
+        """
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="config.settings"):
+            with pytest.raises(ValidationError):
+                APIConfig(base_url="https://evil.attacker.com/api")
+
+        assert any("SSRF Prevention" in record.message for record in caplog.records), (
+            "SSRF防止ブロック時にwarningログが出力されるべき"
+        )
+
 
 class TestResolveHostname:
     """_resolve_hostname/_resolve_hostname_cached関数のDNS解決テスト
@@ -1017,6 +1036,24 @@ class TestResolveHostname:
         result = _resolve_hostname("evil\x00.internal.corp")
 
         assert result is None, "TypeErrorはFail-Closedとしてブロック（None）すべき"
+
+    def test_resolve_hostname_overflow_error_returns_none(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """長すぎるホスト名でOverflowErrorが発生してもNoneを返す
+
+        Security Rationale:
+            OverflowErrorは過度に長いホスト名による攻撃的な入力パターン（SSRF試行）を
+            示すため、Fail-Closedとしてブロック（None）する。
+        """
+        monkeypatch.setattr(
+            "config.settings.socket.gethostbyname",
+            lambda _: (_ for _ in ()).throw(OverflowError("host name is too long")),
+        )
+
+        result = _resolve_hostname("a" * 256 + ".attacker.example")
+
+        assert result is None, "OverflowErrorはFail-Closedとしてブロック（None）すべき"
 
     @pytest.mark.parametrize(
         "exc_factory",
