@@ -836,7 +836,12 @@ def test_sync_client_falsy_values_not_overridden() -> None:
     timeout=0.0 がFalsyと判定され設定値で上書きされていた。
     `x if x is not None else default` への修正が正しく動作することを保証する。
     """
-    with SyncAPIClient(retry_count=0, timeout=0.0, retry_delay=0.0) as client:
+    with SyncAPIClient(
+        base_url="https://jsonplaceholder.typicode.com",
+        retry_count=0,
+        timeout=0.0,
+        retry_delay=0.0,
+    ) as client:
         assert client.retry_count == 0, (
             "retry_count=0 should NOT be overridden by settings. "
             "Regression guard against `x or default` pattern."

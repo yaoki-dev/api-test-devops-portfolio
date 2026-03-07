@@ -564,7 +564,22 @@ class TestEnvironmentVariableLoading:
         assert settings.debug is False
 
 
-class TestSSRFPrevention:
+class DNSCacheClearMixin:
+    """DNS解決キャッシュクリアの共通fixture
+
+    TestSSRFPrevention と TestResolveHostname で共有する。
+    autouse=True により各テスト前後にキャッシュをクリアし、テスト間の干渉を防止。
+    """
+
+    @pytest.fixture(autouse=True)
+    def clear_dns_cache(self) -> Iterator[None]:
+        """各テスト前後にDNS解決キャッシュをクリアする"""
+        _resolve_hostname_cached.cache_clear()
+        yield
+        _resolve_hostname_cached.cache_clear()
+
+
+class TestSSRFPrevention(DNSCacheClearMixin):
     """SSRF攻撃防止のセキュリティテスト
 
     OWASP API Security Top 10 - API7:2023 Server Side Request Forgery (SSRF)
@@ -572,18 +587,6 @@ class TestSSRFPrevention:
     - 許可ドメインリストによるアクセス制御
     - DNS解決失敗時のフェイルクローズド動作
     """
-
-    @pytest.fixture(autouse=True)
-    def clear_dns_cache(self) -> Iterator[None]:
-        """各テスト前後にDNS解決キャッシュをクリアする（TestResolveHostname と同パターン）
-
-        Design Note:
-            TestResolveHostname.clear_dns_cache と同じ autouse パターンで一元管理。
-            テスト追加時の cache_clear() 呼び忘れを防止する。
-        """
-        _resolve_hostname_cached.cache_clear()
-        yield
-        _resolve_hostname_cached.cache_clear()
 
     @pytest.mark.parametrize(
         ("malicious_url", "description"),
@@ -863,7 +866,7 @@ class TestSSRFPrevention:
         )
 
 
-class TestResolveHostname:
+class TestResolveHostname(DNSCacheClearMixin):
     """_resolve_hostname/_resolve_hostname_cached関数のDNS解決テスト
 
     Security Rationale:
@@ -874,18 +877,6 @@ class TestResolveHostname:
         _resolve_hostname: ラッパー関数。失敗時にNoneを返す公開インターフェース。
         _resolve_hostname_cached: LRUキャッシュ付き内部関数。成功時のみキャッシュ。
     """
-
-    @pytest.fixture(autouse=True)
-    def clear_dns_cache(self) -> Iterator[None]:
-        """各テスト前後にDNS解決キャッシュをクリアする
-
-        Design Note:
-            TestSettingsSingleton.reset_singleton と同じ autouse パターンで一元管理。
-            テスト追加時の cache_clear() 呼び忘れを防止する。
-        """
-        _resolve_hostname_cached.cache_clear()
-        yield
-        _resolve_hostname_cached.cache_clear()
 
     def test_resolve_hostname_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """DNS解決成功時に正しいIPアドレス文字列を返す"""
@@ -985,28 +976,6 @@ class TestResolveHostname:
 
         assert result is None, "UnicodeDecodeErrorはFail-Closedとしてブロック（None）すべき"
 
-    def test_resolve_hostname_unicode_encode_error_returns_none(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """非ASCII文字を含むホスト名でUnicodeEncodeErrorが発生してもNoneを返す
-
-        Security Rationale:
-            プラットフォーム・Python実装によってはUnicodeEncodeErrorが発生しうる。
-            UnicodeError（親クラス）でまとめて捕捉することで、実装差異を吸収する。
-            Fail-Closed原則に従い、Noneを返してis_private_ipがブロック判定することを保証。
-        """
-
-        def raise_encode_error(hostname: str) -> str:
-            raise UnicodeEncodeError(
-                "ascii", "ÿþ.attacker.example", 0, 1, "ordinal not in range(128)"
-            )
-
-        monkeypatch.setattr(socket, "gethostbyname", raise_encode_error)
-
-        result = _resolve_hostname("ÿþ.attacker.example")
-
-        assert result is None, "UnicodeEncodeErrorはFail-Closedとしてブロック（None）すべき"
-
     def test_resolve_hostname_type_error_returns_none(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -1058,10 +1027,13 @@ class TestResolveHostname:
         "exc_factory",
         [
             lambda: UnicodeDecodeError("utf-8", b"\xff\xfe", 0, 1, "invalid byte"),
+            lambda: UnicodeEncodeError(
+                "ascii", "ÿþ.attacker.example", 0, 1, "ordinal not in range(128)"
+            ),
             lambda: TypeError("embedded null byte"),
             lambda: OverflowError("host name is too long"),
         ],
-        ids=["UnicodeDecodeError", "TypeError", "OverflowError"],
+        ids=["UnicodeDecodeError", "UnicodeEncodeError", "TypeError", "OverflowError"],
     )
     def test_resolve_hostname_security_exception_logs_warning(
         self,
@@ -1072,7 +1044,7 @@ class TestResolveHostname:
         """SSRF攻撃的ホスト名による例外発生時にSSRF証跡ログが出力される
 
         Security Rationale:
-            UnicodeDecodeError/TypeError/OverflowErrorは攻撃的な入力パターン（SSRF試行）を
+            UnicodeDecodeError/UnicodeEncodeError/TypeError/OverflowErrorは攻撃的な入力パターン（SSRF試行）を
             示すため、セキュリティインシデントの事後調査に必要なwarningレベルログを出力する。
             一時的なDNS障害（OSError）とはログレベルで明確に区別する。
         """
