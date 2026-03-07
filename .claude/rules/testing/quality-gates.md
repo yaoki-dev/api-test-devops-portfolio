@@ -94,5 +94,5 @@ uv run pytest -n auto --cov-fail-under=[目標] && uv run ruff check . && uv run
 ## 参考
 
 - RULES.md「Implementation Integrity」
-- @memory:coding_standards
-- @memory:test_strategy
+- `.claude/rules/python/coding-standards.md`
+- `.claude/rules/testing/test-strategy.md`
