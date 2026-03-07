@@ -2168,6 +2168,17 @@ def test_async_client_empty_base_url_raises_value_error() -> None:
         AsyncAPIClient(base_url="")
 
 
+def test_async_client_whitespace_base_url_raises_value_error() -> None:
+    """空白文字のみの base_url を渡すと初期化時に ValueError が発生する
+
+    Security Rationale:
+        bool("   ") == True のため、空白文字列は `if not self.base_url` を通過する。
+        `str.strip()` による追加検証で空白のみの文字列も早期拒否する。
+    """
+    with pytest.raises(ValueError, match="base_url が空です"):
+        AsyncAPIClient(base_url="   ")
+
+
 async def test_async_client_falsy_values_not_overridden() -> None:
     """retry_count=0, timeout=0.0, retry_delay=0.0 がFalsy判定で設定値に上書きされないことを検証
 

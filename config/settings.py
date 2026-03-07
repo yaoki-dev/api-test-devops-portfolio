@@ -96,7 +96,9 @@ def _resolve_hostname_cached(hostname: str) -> str:
     Raises:
         socket.herror: DNSサーバーエラーによる解決失敗。例外はキャッシュされず再試行可能。
         socket.gaierror: アドレス情報取得失敗。例外はキャッシュされず再試行可能。
-        OSError: 上記以外の予期しないネットワークエラー（PermissionError, TimeoutError 等）。
+        OSError: socket.herror / socket.gaierror を含む全ネットワークエラーの基底クラス。
+            ここでは PermissionError / TimeoutError 等それ以外の OSError サブクラスを指す。
+            例外はキャッシュされず再試行可能。
         UnicodeError: 非ASCII文字を含むホスト名等のUnicode処理エラー時。
         TypeError: NULバイト（\\x00）等の不正文字を含むホスト名の場合。
         OverflowError: 極端に長いホスト名によるOSレベルオーバーフロー時（プラットフォーム依存）。
@@ -288,9 +290,9 @@ class APIConfig(BaseModel):
         # SSRF Prevention: 許可ドメインチェック
         if hostname not in ALLOWED_DOMAINS:
             _logger.warning(
-                "SSRF Prevention: Domain not in allowlist: %r. Allowed domains count: %d",
+                "SSRF Prevention: Domain not in allowlist: %r. Allowed domains: %s",
                 hostname,
-                len(ALLOWED_DOMAINS),
+                sorted(ALLOWED_DOMAINS),
             )
             raise ValueError(
                 f"SSRF Prevention: Domain not in allowlist: {hostname}. "
