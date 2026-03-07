@@ -3,7 +3,7 @@
 **Generated:** 2026-01-28 14:35 JST
 **Last Commit:** 1bf45d5 (2026-01-28 13:57:52 +0700)
 **Version:** 0.1.0
-**Python:** ==3.13.*
+**Python:** ==3.14.*
 
 ---
 
@@ -191,8 +191,8 @@ uv run pytest -m "not slow"      # 高速テストのみ
 
 ### 1. Setup
 ```bash
-# Python 3.13以上確認
-python3.13 --version
+# Python 3.14以上確認
+python3.14 --version
 
 # 依存関係インストール（uv推奨）
 uv sync
@@ -289,7 +289,7 @@ uv run pytest && uv run ruff check . && uv run mypy utils/ config/ models/
 |--------|-------|--------|
 | Test Coverage | 86.63% | 85% (Week 7-10) |
 | Test Files | 19 | - |
-| Python Version | 3.13 | - |
+| Python Version | 3.14 | - |
 | Code Quality | ruff + mypy | 0 errors |
 | Documentation | CLAUDE.md + README | - |
 

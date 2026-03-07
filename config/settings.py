@@ -482,7 +482,7 @@ class Settings(BaseSettings):
         )
 
     @model_validator(mode="after")
-    def validate_production_secrets(self) -> "Settings":
+    def validate_production_secrets(self) -> Settings:
         """本番・ステージング環境でのシークレット存在チェック
 
         Security:
@@ -504,7 +504,7 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
-    def validate_production_https(self) -> "Settings":
+    def validate_production_https(self) -> Settings:
         """本番・ステージング環境でのHTTPS強制
 
         Security:
