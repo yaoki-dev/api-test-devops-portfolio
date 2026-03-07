@@ -290,9 +290,9 @@ class APIConfig(BaseModel):
         # SSRF Prevention: 許可ドメインチェック
         if hostname not in ALLOWED_DOMAINS:
             _logger.warning(
-                "SSRF Prevention: Domain not in allowlist: %r. Allowed domains: %s",
+                "SSRF Prevention: Domain not in allowlist: %r. Allowed domains count: %d",
                 hostname,
-                sorted(ALLOWED_DOMAINS),
+                len(ALLOWED_DOMAINS),
             )
             raise ValueError(
                 f"SSRF Prevention: Domain not in allowlist: {hostname}. "
