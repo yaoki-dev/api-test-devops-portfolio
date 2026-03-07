@@ -3,7 +3,7 @@
 *Last Updated: 2026-02-17*
 
 **Purpose**: Learning portfolio demonstrating 4,000-4,500 yen/hour technical capability
-**Tech Stack**: Python 3.13 / httpx / pytest / Pydantic Settings / structlog / Docker / GitHub Actions
+**Tech Stack**: Python 3.14 / httpx / pytest / Pydantic Settings / structlog / Docker / GitHub Actions
 
 ## Key Metrics (2025-12-26)
 - Test Coverage: 65-70% (target: 85%)
