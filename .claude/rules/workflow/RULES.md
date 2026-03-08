@@ -5,7 +5,7 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
 
 ## Project Context
 
-**Tech Stack:** Python 3.13 + httpx + pytest + Pydantic Settings | ruff + mypy | uv | GitHub Actions
+**Tech Stack:** Python 3.14 + httpx + pytest + Pydantic Settings | ruff + mypy | uv | GitHub Actions
 
 **Priority Hierarchy:**
 1. **CLAUDE.md** (project root) - highest priority
