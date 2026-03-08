@@ -49,10 +49,10 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
     is exploratory (no specific file paths in the prompt, or impact scope is unknown) AND
     requires impact scope investigation (e.g., refactoring across modules, bug fix with
     unidentified root cause), include `/iterative-retrieval` skill instructions
-    (DISPATCH→EVALUATE→REFINE→LOOP, max 3 cycles) in the agent prompt
+    (dispatch → evaluate → refine → loop, max 3 cycles) in the agent prompt
     - Fallback: if convergence not reached within 3 cycles, report accumulated context
-      and unresolved gaps to parent agent; parent agent reports to user before proceeding
-      (L46 "Silent continuation" prohibition applies)
+      and unresolved gaps to parent agent; parent agent reports to user and awaits explicit user direction before proceeding
+      ("Silent continuation" prohibition above applies)
 
 **Task Classification**: Before dispatching, classify the task type:
 - **Implementation** : code writing, feature development, bug fixes, test authoring
