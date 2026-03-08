@@ -1,13 +1,13 @@
 # API Test DevOps Portfolio - Architecture Overview
 
-*Last Updated: 2026-02-17*
+*Last Updated: 2026-03-07*
 
 **Purpose**: Learning portfolio demonstrating 4,000-4,500 yen/hour technical capability
-**Tech Stack**: Python 3.13 / httpx / pytest / Pydantic Settings / structlog / Docker / GitHub Actions
+**Tech Stack**: Python 3.14 / httpx / pytest / Pydantic Settings / structlog / Docker / GitHub Actions
 
-## Key Metrics (2025-12-26)
-- Test Coverage: 65-70% (target: 85%)
-- Test Count: ~254 tests (pytest collected)
+## Key Metrics (2026-03-07)
+- Test Coverage: 92.73% (target: 85% ✅達成、CI条件: unit+integration, not external)
+- Test Count: 551 tests (全件) / 483件 (CI条件: unit+integration)
 - Code Lines: ~2,500 (utils/config/models)
 - SOLID Compliance: 85%
 
@@ -24,7 +24,7 @@
 | models/responses.py | 350 | 7 Pydantic response models |
 
 ### Test Layer
-- **Total**: ~254 tests across ~19 test files
+- **Total**: 551 tests across ~19 test files (CI対象: 483件)
 - **Distribution**: unit(~11) / security(3) / integration(2) / regression(1) / performance(1) / validation(1)
 - **Infrastructure**: conftest.py shared fixtures
 

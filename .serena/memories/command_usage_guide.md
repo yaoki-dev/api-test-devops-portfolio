@@ -667,7 +667,7 @@ grep -rn "$DELETED_CMD" ~/.claude --include="*.md" | grep -v "/debug/"
 
 **Use Case 1: Python型ヒント統一変換**
 ```bash
-# ✅ ast-grep: Python 3.10 Union → 3.13 | 型変換
+# ✅ ast-grep: Python 3.10 Union → 3.14 | 型変換
 ast-grep --pattern 'Union[$A, $B]' --lang python utils/ config/ models/
 
 # ❌ Grep: 不正確（コメント・文字列リテラル内も誤検出）
@@ -746,7 +746,7 @@ grep -rE "^def test_" tests/ --include="*.py"
 | AST解析精度 | 0.92 | 構文エラー時は動作せず |
 | False Positive許容率 | <5% | Phase 2昇格条件（CLAUDE.md記載検討） |
 | 標準Grep優先原則 | 必須 | 疑義時は常にGrep |
-| 適用対象 | Python 3.13互換 | プロジェクト技術スタック準拠 |
+| 適用対象 | Python 3.14互換 | プロジェクト技術スタック準拠 |
 
 ### 9.8 実装推奨トリガー（参考）
 
@@ -754,7 +754,7 @@ grep -rE "^def test_" tests/ --include="*.py"
 
 | ケース | トリガー条件 | ツール |
 |--------|------------|--------|
-| Python構文変換 | 3.10→3.13型ヒント統一 | ast-grep |
+| Python構文変換 | 3.10→3.14型ヒント統一 | ast-grep |
 | pytestマーカー監査 | 品質ゲート失敗時（CRITICAL RULE 7） | ast-grep |
 | API契約変更検証 | models/responses.py変更時 | ast-grep |
 | CLAUDE.md構造分析 | 最適化・圧縮作業時 | mgrep |
