@@ -299,10 +299,9 @@ async def test_context_manager_initialization():
         assert ctx_client._client is not None
         assert isinstance(ctx_client._client, httpx.AsyncClient)
 
-    # __aexit__で_clientがクローズされる（closeメソッド呼び出し確認）
-    # Note: httpx.AsyncClientのclose後の状態はis_closedプロパティで確認不可（private実装）
-    # 代わりにlogger.infoが呼ばれたことを確認
-    # （実装上、__aexit__でaclose()が呼ばれればOK）
+    # __aexit__でhttpx.AsyncClientがクローズされたことを確認
+    assert client._client is not None
+    assert client._client.is_closed
 
 
 async def test_request_without_context_manager():
