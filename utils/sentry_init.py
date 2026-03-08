@@ -74,6 +74,7 @@ SENSITIVE_KEYS: frozenset[str] = frozenset(
         "mfa",
         "totp",
         # 個人情報
+        "email",  # GDPR/個人情報保護法: メールアドレスは個人識別情報
         "database_url",
         "ssn",
         "credit_card",

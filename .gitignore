@@ -78,7 +78,8 @@ reports/
 
 # MCP and AI Tools
 .mcp.json
-.serena/
+.serena/*
+!.serena/memories/
 .memory_mcp/
 .claude-flow/
 claude-flow-lite/

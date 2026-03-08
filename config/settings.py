@@ -14,11 +14,14 @@ import socket
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# NOTE: utils/logger.py は config.settings に依存するため structlog は使用不可（循環インポート回避）
+_logger = logging.getLogger(__name__)
 
 # =============================================================================
 # SSRF Prevention Configuration
@@ -81,34 +84,83 @@ def _check_ip_private(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool
 
 
 @lru_cache(maxsize=256)
-def _resolve_hostname(hostname: str) -> str | None:
-    """ホスト名をDNS解決してIPアドレス文字列を返す（結果をキャッシュ）
+def _resolve_hostname_cached(hostname: str) -> str:
+    """ホスト名をDNS解決してIPアドレス文字列を返す（成功時のみキャッシュ）
 
     Args:
         hostname: 解決対象のホスト名
 
     Returns:
-        解決されたIPアドレス文字列。失敗時はNone。
+        解決されたIPアドレス文字列。
+
+    Raises:
+        socket.herror: DNSサーバーエラーによる解決失敗。
+        socket.gaierror: アドレス情報取得失敗。
+        OSError: socket.herror / socket.gaierror を含む全ネットワークエラーの基底クラス。
+            ここでは PermissionError / TimeoutError 等それ以外の OSError サブクラスを指す。
+        UnicodeError: 非ASCII文字を含むホスト名等のUnicode処理エラー時。
+        TypeError: NULバイト（\\x00）等の不正文字を含むホスト名の場合。
+        OverflowError: 極端に長いホスト名によるOSレベルオーバーフロー時（プラットフォーム依存）。
+    """
+    return socket.gethostbyname(hostname)
+
+
+def _resolve_hostname(hostname: str) -> str | None:
+    """ホスト名をDNS解決してIPアドレス文字列を返す（失敗時はNone）
+
+    Args:
+        hostname: 解決対象のホスト名
+
+    Returns:
+        解決されたIPアドレス文字列。失敗時はNone（キャッシュされない）。
 
     Note:
-        キャッシュサイズ256の根拠:
-        - 本プロジェクトの許可ドメイン数は最大10程度
-        - テスト中のユニークホスト名は約20-30種類
-        - 256は実用上十分な余裕を持たせた値（メモリ消費は無視できる程度）
-        - Python標準のlru_cacheデフォルト(128)の2倍で、
-          将来的なドメイン追加にも対応
+        DNS解決成功時のみ _resolve_hostname_cached でキャッシュされる。
+        一時的なDNS障害後は次の呼び出しで再試行が行われる。
 
     Security:
-        キャッシュポイズニングリスク評価:
-        - プロセス内キャッシュのため、外部からの直接改ざんは不可能
-        - DNS応答自体が汚染されている場合のリスクはキャッシュ有無に関わらず同一
-          （初回解決時点で汚染されたIPが返る）
-        - プロセス再起動でキャッシュはクリアされる
-        - 長時間稼働サービスでは定期的なcache_clear()を検討
+        不正ホスト名入力に対するSSRF防止:
+        - UnicodeDecodeError: DNS応答の不正バイト列デコード失敗
+        - UnicodeEncodeError: 非ASCII文字を含むホスト名のエンコード失敗
+        - UnicodeError（親クラス）でまとめて捕捉し、実装・プラットフォーム差を吸収
+        - TypeError: NULバイト（\x00）等の不正文字を含むホスト名
+        - OverflowError: 極端に長いホスト名によるOSレベルオーバーフロー（プラットフォーム依存）
+        - ラッパー側でcatchすることでlru_cacheに影響せず（成功値のみキャッシュ維持）
+        - Fail-Closed: Noneを返してis_private_ipがブロック判定する
     """
     try:
-        return socket.gethostbyname(hostname)
-    except OSError:
+        return _resolve_hostname_cached(hostname)
+    except (UnicodeError, OverflowError, TypeError) as e:
+        # UnicodeError: Unicode処理エラー（UnicodeDecodeError/UnicodeEncodeError含む）
+        #   - 非ASCII文字を含む攻撃的なホスト名（SSRF試行の可能性）
+        # OverflowError: 極端に長いホスト名によるOSレベルオーバーフロー（プラットフォーム依存）
+        # TypeError: NULバイト（\x00）等の不正文字を含むホスト名
+        _logger.warning(
+            "不正なホスト名形式 — SSRF試行の可能性: hostname=%r, error_type=%s, error=%r",
+            hostname[:200],
+            type(e).__name__,
+            e,
+        )
+        return None
+    except (socket.herror, socket.gaierror) as e:
+        # DNS解決失敗（herror: サーバーエラー, gaierror: アドレス情報エラー）
+        # Fail-Closed: サービスへの影響（正当リクエストのブロック）が発生するためWARNINGレベル
+        _logger.warning(
+            "DNS解決失敗: hostname=%r — ブロック扱い (error_type=%s, errno=%s)",
+            hostname[:200],
+            type(e).__name__,
+            e.args[0] if e.args else "N/A",
+        )
+        return None
+    except OSError as e:
+        # 予期しないネットワークエラー（PermissionError, TimeoutError 等）
+        # Fail-Closed: DNS解決失敗として誤分類しないよう別メッセージで記録
+        _logger.warning(
+            "予期しないネットワークエラー: hostname=%r — ブロック扱い (error_type=%s, errno=%s)",
+            hostname[:200],
+            type(e).__name__,
+            getattr(e, "errno", "N/A"),
+        )
         return None
 
 
@@ -142,6 +194,15 @@ def is_private_ip(hostname: str) -> bool:
             ip = ipaddress.ip_address(resolved)
             return _check_ip_private(ip)
         except ValueError:
+            # DNS解決結果が有効なIPアドレス形式でない場合（異常なDNS応答）
+            # セキュリティ: 不正な値はプライベートIPとして扱いブロック（Fail-Closed）
+            # ログを残すことでセキュリティインシデントの証拠を保全する
+            # _logger はモジュールレベル（インポート直後）で定義済み
+            _logger.warning(
+                "DNS解決結果が不正なIPアドレス形式: hostname=%r, resolved=%r — ブロック扱い",
+                hostname[:200],
+                resolved[:100],
+            )
             return True
 
 
@@ -227,9 +288,14 @@ class APIConfig(BaseModel):
 
         # SSRF Prevention: 許可ドメインチェック
         if hostname not in ALLOWED_DOMAINS:
+            _logger.warning(
+                "SSRF Prevention: Domain not in allowlist: %r. Allowed domains count: %d",
+                hostname[:200],
+                len(ALLOWED_DOMAINS),
+            )
             raise ValueError(
                 f"SSRF Prevention: Domain not in allowlist: {hostname}. "
-                f"Allowed: {', '.join(sorted(ALLOWED_DOMAINS))}",
+                f"Allowed domains count: {len(ALLOWED_DOMAINS)}",
             )
 
         if v.endswith("/"):
@@ -416,7 +482,7 @@ class Settings(BaseSettings):
         )
 
     @model_validator(mode="after")
-    def validate_production_secrets(self) -> "Settings":
+    def validate_production_secrets(self) -> Self:
         """本番・ステージング環境でのシークレット存在チェック
 
         Security:
@@ -438,7 +504,7 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
-    def validate_production_https(self) -> "Settings":
+    def validate_production_https(self) -> Self:
         """本番・ステージング環境でのHTTPS強制
 
         Security:
@@ -542,10 +608,8 @@ def reload_settings() -> Settings:
 
 
 # 便利なエイリアス
-# NOTE: utils/logger.py は config.settings に依存するため structlog は使用不可（循環インポート回避）
 # モジュールインポート時に ValidationError が発生すると ImportError として連鎖し
 # 根本原因（環境変数のタイポ等）が隠蔽される。logging で根本原因を明示する。
-_logger = logging.getLogger(__name__)
 try:
     settings = get_settings()
 except Exception as e:  # noqa: BLE001  # ValidationError含む全設定エラーを捕捉（SystemExit等のBaseException除外済み）

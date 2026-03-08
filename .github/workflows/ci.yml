@@ -29,10 +29,10 @@ jobs:
     name: PR Validation
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 10  # 単一Python版（3.13固定、Dockerfile一致）
+    timeout-minutes: 10  # 単一Python版（3.14固定、Dockerfile一致）
     strategy:
       matrix:
-        python-version: ['3.13']
+        python-version: ['3.14']
 
     steps:
       - name: Checkout code
@@ -122,7 +122,7 @@ jobs:
           echo "textlint: ${{ steps.textlint.outcome }}"
           exit 1
 
-  # NOTE: post-merge-validation uses Python 3.13 only (matches Dockerfile)
+  # NOTE: post-merge-validation uses Python 3.14 only (matches Dockerfile)
 
   # ============================================================
   # Stage 1.5: PR Security Scan
@@ -150,7 +150,7 @@ jobs:
       # Step 1: Filesystem scan (both develop and main)
       - name: Trivy filesystem scan (dependencies)
         id: fs-scan
-        uses: aquasecurity/trivy-action@0.34.1
+        uses: aquasecurity/trivy-action@0.34.2
         env:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
         with:
@@ -217,7 +217,7 @@ jobs:
       - name: Trivy image scan (main PRs + docker label)
         id: image-scan
         if: steps.docker-build.outcome == 'success'
-        uses: aquasecurity/trivy-action@0.34.1
+        uses: aquasecurity/trivy-action@0.34.2
         env:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
         with:
@@ -290,7 +290,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.13'
+          python-version: '3.14'
 
       - name: Install uv
         run: |
@@ -319,7 +319,7 @@ jobs:
 
       - name: Trivy image scan (CRITICAL + HIGH)
         id: trivy-scan
-        uses: aquasecurity/trivy-action@0.34.1
+        uses: aquasecurity/trivy-action@0.34.2
         env:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
         with:
@@ -393,7 +393,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        python-version: ['3.13']
+        python-version: ['3.14']
 
     steps:
       - name: Checkout code
@@ -413,9 +413,7 @@ jobs:
         run: uv sync --dev
 
       - name: Run performance tests
-        run: |
-          uv run pytest -m "performance" -v
-          echo "performance_tests_passed=true" >> $GITHUB_ENV
+        run: uv run pytest -m "performance" -v
 
       - name: Run external API tests (Weekly validation)
         id: external-tests  # Used for outcome-based error handling
@@ -433,9 +431,7 @@ jobs:
 
       - name: Full coverage report
         # ALL 7 markers: unit/integration/smoke/e2e/performance/slow/external (no -m filter)
-        run: |
-          uv run pytest --cov=. --cov-report=html:reports/htmlcov --cov-report=json -v
-          echo "coverage_report_generated=true" >> $GITHUB_ENV
+        run: uv run pytest --cov=. --cov-report=html:reports/htmlcov --cov-report=json -v
 
       - name: Upload weekly test results
         if: always()
