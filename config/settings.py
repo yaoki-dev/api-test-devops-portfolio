@@ -14,7 +14,7 @@ import socket
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
@@ -482,7 +482,7 @@ class Settings(BaseSettings):
         )
 
     @model_validator(mode="after")
-    def validate_production_secrets(self) -> Settings:
+    def validate_production_secrets(self) -> Self:
         """本番・ステージング環境でのシークレット存在チェック
 
         Security:
@@ -504,7 +504,7 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
-    def validate_production_https(self) -> Settings:
+    def validate_production_https(self) -> Self:
         """本番・ステージング環境でのHTTPS強制
 
         Security:

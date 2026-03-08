@@ -10,7 +10,7 @@ import asyncio
 import json
 import re
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any, Self, cast
 
 import httpx
 
@@ -131,7 +131,7 @@ class AsyncGitHubClient:
         self._data_cache: dict[str, dict[str, Any] | list[dict[str, Any]]] = {}
         self.logger = get_logger(__name__)
 
-    async def __aenter__(self) -> AsyncGitHubClient:
+    async def __aenter__(self) -> Self:
         """非同期コンテキストマネージャーのエントリー"""
         self._client = httpx.AsyncClient(
             base_url=self.BASE_URL,
