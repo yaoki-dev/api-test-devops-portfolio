@@ -293,6 +293,8 @@ async def test_context_manager_initialization():
     assert client._client is None
 
     async with client as ctx_client:
+        # __aenter__がself を返す（Self型アノテーション契約）
+        assert ctx_client is client
         # __aenter__で_clientが初期化される
         assert ctx_client._client is not None
         assert isinstance(ctx_client._client, httpx.AsyncClient)

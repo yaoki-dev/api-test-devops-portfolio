@@ -413,9 +413,7 @@ jobs:
         run: uv sync --dev
 
       - name: Run performance tests
-        run: |
-          uv run pytest -m "performance" -v
-          echo "performance_tests_passed=true" >> $GITHUB_ENV
+        run: uv run pytest -m "performance" -v
 
       - name: Run external API tests (Weekly validation)
         id: external-tests  # Used for outcome-based error handling
