@@ -45,6 +45,16 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
   - On failure: if **any** agent reports failure or partial completion, the parent agent must (1) allow already-running invocations to complete (Task tool has no cancel API), (2) collect and log agent statuses (success/failure/unknown), and (3) report full status summary to user before further action
   - Silent continuation after ambiguous/empty results is prohibited
   - On completion: after all parallel agents complete, the parent agent must explicitly verify that each artifact exists in its expected final state before marking the parent task complete
+  - Context refinement: if the task is exploratory (no specific file paths in the prompt,
+    or impact scope is unknown) AND at least one of the following applies, include
+    `/iterative-retrieval` skill instructions (DISPATCH→EVALUATE→REFINE→LOOP, max 3 cycles)
+    in the agent prompt:
+    1. Bug fix with unidentified root cause location
+    2. Refactoring requiring impact scope investigation
+    3. New feature implementation requiring integration with existing patterns
+    - Not applicable when: documentation updates, edits to specified files, adding tests where
+      target files are already known
+    - Fallback: if convergence not reached within 3 cycles, proceed with accumulated context
 
 **Task Classification**: Before dispatching, classify the task type:
 - **Implementation** : code writing, feature development, bug fixes, test authoring
