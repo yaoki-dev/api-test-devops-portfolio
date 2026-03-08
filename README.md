@@ -124,7 +124,7 @@ main ─────────────────────────
 
 | 要件 | バージョン | 確認コマンド |
 |------|-----------|-------------|
-| Python | 3.14 | `python --version` |
+| Python | 3.14 | `uv run python --version` |
 | uv | 0.4+ | `uv --version` |
 | Git | 2.0+ | `git --version` |
 | Docker (任意) | 24.0+ | `docker --version` |

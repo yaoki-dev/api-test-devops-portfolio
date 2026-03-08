@@ -192,7 +192,7 @@ uv run pytest -m "not slow"      # 高速テストのみ
 ### 1. Setup
 ```bash
 # Python 3.14以上確認
-python --version
+uv run python --version
 
 # 依存関係インストール（uv推奨）
 uv sync

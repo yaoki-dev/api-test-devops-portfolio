@@ -667,7 +667,7 @@ grep -rn "$DELETED_CMD" ~/.claude --include="*.md" | grep -v "/debug/"
 
 **Use Case 1: Python型ヒント統一変換**
 ```bash
-# ✅ ast-grep: Python 3.10 Union → 3.13 | 型変換
+# ✅ ast-grep: Python 3.10 Union → 3.14 | 型変換
 ast-grep --pattern 'Union[$A, $B]' --lang python utils/ config/ models/
 
 # ❌ Grep: 不正確（コメント・文字列リテラル内も誤検出）
@@ -754,7 +754,7 @@ grep -rE "^def test_" tests/ --include="*.py"
 
 | ケース | トリガー条件 | ツール |
 |--------|------------|--------|
-| Python構文変換 | 3.10→3.13型ヒント統一 | ast-grep |
+| Python構文変換 | 3.10→3.14型ヒント統一 | ast-grep |
 | pytestマーカー監査 | 品質ゲート失敗時（CRITICAL RULE 7） | ast-grep |
 | API契約変更検証 | models/responses.py変更時 | ast-grep |
 | CLAUDE.md構造分析 | 最適化・圧縮作業時 | mgrep |

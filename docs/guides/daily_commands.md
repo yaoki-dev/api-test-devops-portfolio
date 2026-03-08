@@ -198,7 +198,7 @@ make dev
 uv sync --dev
 
 # Python環境確認
-python --version  # 3.14.x確認
+uv run python --version  # 3.14.x確認
 
 # プロジェクトステータス確認
 make status
