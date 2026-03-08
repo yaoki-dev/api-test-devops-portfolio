@@ -46,22 +46,21 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
   - Silent continuation after ambiguous/empty results is prohibited
   - On completion: after all parallel agents complete, the parent agent must explicitly verify that each artifact exists in its expected final state before marking the parent task complete
   - Context refinement (parent agent determines applicability before dispatch):
-    **Applicability check**: does the task prompt contain 1+ specific file paths?
-    - YES: Context refinement は任意（スキップ時は理由を1行記録）
-    - NO: Context refinement は必須
-    - 判定困難な場合: 安全側ルール適用（「探索的」とみなして Context refinement を適用）
-    When applicable, include `/iterative-retrieval` skill instructions
+    **Applicability check**: does the task prompt contain 1+ specific file paths (paths resolving to individual files with extension; glob patterns like `utils/*.py` and directory paths like `utils/` count as NO)?
+    - YES: Context refinement is optional (when skipping, record reason as `[SKIP: <reason>]` in agent response)
+    - NO (includes ambiguous cases): Context refinement is required
+    When applicable (YES or NO case where agent opts in), include `/iterative-retrieval` skill instructions
     (dispatch → evaluate → refine → loop, max 3 cycles per task invocation) in the agent prompt
-    - サイクルカウント: Context refinement 適用1回あたり（タスク再起動でリセット）
-    - エージェント失敗は1サイクル消費とみなす（無限リトライ禁止）
-    - **収束判定基準（全て満たした時点で収束）**:
-      1. 調査対象ファイルのリストが前サイクルから変化しない
-      2. 影響スコープの境界が確定している（追加調査不要）
-    - 収束未達の定義: 上記条件のうち1つでも満たせない場合
-    - Fallback: if convergence not reached within 3 cycles, report to parent agent:
-      (a) 消費サイクル数 (b) 各サイクルで取得したコンテキスト要約 (c) 未解決ギャップリスト (d) 収束をブロックした条件
-      parent agent reports to user and awaits explicit user direction before proceeding
-      ("Silent continuation" prohibition above applies)
+    - Agent failure definition: empty response, timeout, error message, or partial response (investigation stopped mid-way) — all count as failure; failed cycle output is discarded for convergence evaluation but may inform the next cycle's investigation scope
+    - Failed cycles consume 1 cycle each (infinite retry prohibited)
+    - Task restart (= new Task tool invocation issued) resets the cycle counter
+    - **Convergence criteria (converged when ALL are met)**:
+      1. The list of investigated files has not changed from the previous cycle
+      2. The impact scope boundary is finalized (no further investigation needed)
+    - Fallback triggers when ANY of: (a) 3 cycles reached, OR (b) 2 consecutive failures
+      Report to parent agent: (i) cycles consumed (ii) context summary per cycle (iii) unresolved gap list (iv) which condition blocked convergence
+      Parent agent reports to user and awaits explicit user direction before proceeding
+      ("Silent continuation after ambiguous/empty results is prohibited" — see Parallel Dispatch Rule above)
 
 **Task Classification**: Before dispatching, classify the task type:
 - **Implementation** : code writing, feature development, bug fixes, test authoring
