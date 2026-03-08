@@ -8,7 +8,7 @@
 
 [![CI/CD Pipeline](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml/badge.svg)](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/badge/coverage-92.73%25-brightgreen)](https://yuta158.github.io/api-test-portfolio/htmlcov/)
-![Python](https://img.shields.io/badge/Python-3.13-blue)
+![Python](https://img.shields.io/badge/Python-3.14-blue)
 [![Docker](https://img.shields.io/badge/docker-multi--stage-blue)](./Dockerfile)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
@@ -86,7 +86,7 @@ uv run pytest tests/unit/test_basic.py --cov=. --cov-report=term -q --color=yes
 
 | カテゴリ | 技術 |
 |---------|-----|
-| **言語** | Python 3.13 |
+| **言語** | Python 3.14 |
 | **HTTP Client** | httpx（同期/非同期対応） |
 | **設定管理** | Pydantic Settings（型安全） |
 | **テスト** | pytest + pytest-cov + pytest-asyncio |
@@ -124,7 +124,7 @@ main ─────────────────────────
 
 | 要件 | バージョン | 確認コマンド |
 |------|-----------|-------------|
-| Python | 3.13 | `python --version` |
+| Python | 3.14 | `uv run python --version` |
 | uv | 0.4+ | `uv --version` |
 | Git | 2.0+ | `git --version` |
 | Docker (任意) | 24.0+ | `docker --version` |

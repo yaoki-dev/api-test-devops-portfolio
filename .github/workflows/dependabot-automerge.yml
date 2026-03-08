@@ -47,7 +47,7 @@ jobs:
         # - 下記条件: 'docker'ラベル AND package-ecosystem=='docker' でマッチ
         #
         # セーフガード（4層防御）:
-        # 1. Tag固定: python:3.13-slim（major変更はタグ変更必須→手動レビュー）
+        # 1. Tag固定: python:3.14-slim（major変更はタグ変更必須→手動レビュー）
         # 2. package-ecosystem検証: fetch-metadataの出力で'docker'エコシステム限定
         #    （'docker'ラベルの誤付与・手動付与によるsemver制約バイパスを防止）
         # 3. Trivy scan: CRITICAL/HIGH脆弱性検出時は自動マージブロック（CI必須）

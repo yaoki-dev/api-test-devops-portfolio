@@ -19,7 +19,7 @@
 ## 環境情報
 
 - OS: macOS / Linux / Windows
-- Python: 3.13.x
+- Python: 3.14.x
 - 関連バージョン: <!-- httpx, pytest等 -->
 
 ## 完了基準
