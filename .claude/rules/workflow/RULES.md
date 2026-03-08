@@ -45,13 +45,22 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
   - On failure: if **any** agent reports failure or partial completion, the parent agent must (1) allow already-running invocations to complete (Task tool has no cancel API), (2) collect and log agent statuses (success/failure/unknown), and (3) report full status summary to user before further action
   - Silent continuation after ambiguous/empty results is prohibited
   - On completion: after all parallel agents complete, the parent agent must explicitly verify that each artifact exists in its expected final state before marking the parent task complete
-  - Context refinement (parent agent determines applicability before dispatch): if the task
-    is exploratory (no specific file paths in the prompt, or impact scope is unknown) AND
-    requires impact scope investigation (e.g., refactoring across modules, bug fix with
-    unidentified root cause), include `/iterative-retrieval` skill instructions
-    (dispatch → evaluate → refine → loop, max 3 cycles) in the agent prompt
-    - Fallback: if convergence not reached within 3 cycles, report accumulated context
-      and unresolved gaps to parent agent; parent agent reports to user and awaits explicit user direction before proceeding
+  - Context refinement (parent agent determines applicability before dispatch):
+    **Applicability check**: does the task prompt contain 1+ specific file paths?
+    - YES: Context refinement は任意（スキップ時は理由を1行記録）
+    - NO: Context refinement は必須
+    - 判定困難な場合: 安全側ルール適用（「探索的」とみなして Context refinement を適用）
+    When applicable, include `/iterative-retrieval` skill instructions
+    (dispatch → evaluate → refine → loop, max 3 cycles per task invocation) in the agent prompt
+    - サイクルカウント: Context refinement 適用1回あたり（タスク再起動でリセット）
+    - エージェント失敗は1サイクル消費とみなす（無限リトライ禁止）
+    - **収束判定基準（全て満たした時点で収束）**:
+      1. 調査対象ファイルのリストが前サイクルから変化しない
+      2. 影響スコープの境界が確定している（追加調査不要）
+    - 収束未達の定義: 上記条件のうち1つでも満たせない場合
+    - Fallback: if convergence not reached within 3 cycles, report to parent agent:
+      (a) 消費サイクル数 (b) 各サイクルで取得したコンテキスト要約 (c) 未解決ギャップリスト (d) 収束をブロックした条件
+      parent agent reports to user and awaits explicit user direction before proceeding
       ("Silent continuation" prohibition above applies)
 
 **Task Classification**: Before dispatching, classify the task type:
