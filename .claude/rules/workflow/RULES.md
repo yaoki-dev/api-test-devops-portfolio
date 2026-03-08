@@ -45,6 +45,19 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
   - On failure: if **any** agent reports failure or partial completion, the parent agent must (1) allow already-running invocations to complete (Task tool has no cancel API), (2) collect and log agent statuses (success/failure/unknown), and (3) report full status summary to user before further action
   - Silent continuation after ambiguous/empty results is prohibited
   - On completion: after all parallel agents complete, the parent agent must explicitly verify that each artifact exists in its expected final state before marking the parent task complete
+  - Context refinement (parent agent determines applicability before dispatch):
+    **Applicability check**: does the task prompt contain 1+ specific file paths (paths resolving to individual files with extension; glob patterns like `utils/*.py` and directory paths like `utils/` count as NO)?
+    - YES: Context refinement is optional (when skipping, record reason as `[SKIP: <reason>]` in agent response)
+    - NO (includes ambiguous cases): Context refinement is required
+    When applicable (YES case where agent opts in, or NO case where it is required), include `/iterative-retrieval` skill instructions
+    (dispatch → evaluate → refine → loop, max 3 cycles per task invocation) in the agent prompt
+    - Agent failure definition: empty response, timeout, error message, or partial response (investigation stopped mid-way) — all count as failure; failed cycle output is excluded from convergence evaluation (i.e., not used as comparison baseline for file list stability check) but may inform the next cycle's investigation scope
+    - Failed cycles consume 1 cycle each (infinite retry prohibited)
+    - Task restart (= new Task tool invocation issued) resets the cycle counter
+    - **Convergence criteria**: The impact scope boundary is finalized — the list of investigated files is stable (unchanged from the previous successful cycle) and no further investigation is needed
+    - Fallback triggers when ANY of: (a) 3 cycles reached, OR (b) 2 consecutive failures (consecutive = two immediately sequential cycles both counted as failed; a successful or partially-successful cycle resets the consecutive-failure counter to 0)
+      Report to parent agent: (i) cycles consumed (ii) context summary per cycle (iii) unresolved gap list (iv) which condition blocked convergence
+      Parent agent reports to user and awaits explicit user direction before proceeding
 
 **Task Classification**: Before dispatching, classify the task type:
 - **Implementation** : code writing, feature development, bug fixes, test authoring
