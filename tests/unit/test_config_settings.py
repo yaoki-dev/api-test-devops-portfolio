@@ -2,6 +2,7 @@ import logging
 import socket
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic import SecretStr, ValidationError
@@ -255,6 +256,39 @@ class TestSettingsEnvironmentMethods:
             security=SecurityConfig(api_key=SecretStr("test-key")),
         )
         assert settings.is_production() is True
+
+    def test_is_staging_true(self):
+        """is_staging() がTrueを返す"""
+        settings = Settings(
+            environment=Environment.STAGING,
+            security=SecurityConfig(api_key=SecretStr("test-key")),
+        )
+        assert settings.is_staging() is True
+
+    def test_is_staging_false_for_production(self):
+        """is_staging() が本番環境でFalseを返す"""
+        settings = Settings(
+            environment=Environment.PRODUCTION,
+            security=SecurityConfig(api_key=SecretStr("test-key")),
+        )
+        assert settings.is_staging() is False
+
+    @pytest.mark.parametrize(
+        ("env", "expected"),
+        [
+            pytest.param(Environment.PRODUCTION, True, id="production"),
+            pytest.param(Environment.STAGING, True, id="staging"),
+            pytest.param(Environment.DEVELOPMENT, False, id="development"),
+            pytest.param(Environment.TESTING, False, id="testing"),
+        ],
+    )
+    def test_is_production_like(self, env: Environment, expected: bool) -> None:
+        """is_production_like() が本番相当環境を正しく判定"""
+        kwargs: dict[str, Any] = {"environment": env}
+        if env in {Environment.PRODUCTION, Environment.STAGING}:
+            kwargs["security"] = SecurityConfig(api_key=SecretStr("test-key"))
+        settings = Settings(**kwargs)
+        assert settings.is_production_like() is expected
 
     @pytest.mark.parametrize(
         ("log_level", "expected"),
