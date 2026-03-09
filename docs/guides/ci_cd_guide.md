@@ -132,7 +132,7 @@ uv run pytest -n auto -m "(unit or integration) and not external" \
 | ブランチ | 用途 | CI実行 | マージ先 |
 |---------|------|--------|---------|
 | `feature/*` | 新機能開発 | PR Validation + PR Security Scan | `develop` |
-| `develop` | 統合ブランチ | - | `main` |
+| `develop` | 統合ブランチ | PR Validation + PR Security Scan | `main` |
 | `main` | 本番環境 | Post-Merge + Deploy | - |
 | `hotfix/*` | 緊急修正 | PR Validation + PR Security Scan | `main` + `develop` |
 
