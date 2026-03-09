@@ -575,7 +575,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         try:
             response = self.get("/users", params={"_limit": 1})
             return response.status_code == 200
-        except (KeyboardInterrupt, SystemExit, MemoryError):
+        except KeyboardInterrupt, SystemExit, MemoryError:
             # システム例外は再発生（K8s OOMKilled検知、graceful shutdown対応）
             raise
         except APIClientError as e:
@@ -1168,7 +1168,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         try:
             response = await self.get("/users", params={"_limit": 1})
             return response.status_code == 200
-        except (KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError):
+        except KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError:
             # システム例外・タスクキャンセルは再発生（K8s対応、graceful shutdown）
             raise
         except APIClientError as e:
@@ -1217,7 +1217,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             async with semaphore:
                 try:
                     return await self.get_user(user_id)
-                except (KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError):
+                except KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError:
                     # システム例外・タスクキャンセルは再発生（並行処理全体を停止）
                     raise
                 except APIClientError as e:
