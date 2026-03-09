@@ -72,7 +72,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: pr-validation-results-py${{ matrix.python-version }}
           path: |
@@ -375,7 +375,7 @@ jobs:
 
       - name: Upload regression test results
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: post-merge-results
           path: reports/
@@ -435,7 +435,7 @@ jobs:
 
       - name: Upload weekly test results
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: weekly-comprehensive-results-py${{ matrix.python-version }}
           path: |
@@ -524,7 +524,7 @@ jobs:
 
       - name: Upload link check results
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: link-check-results
           path: |
@@ -570,7 +570,7 @@ jobs:
           cat status_report.md
 
       - name: Upload status report
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: pipeline-status-report
           path: status_report.md
