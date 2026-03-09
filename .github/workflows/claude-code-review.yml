@@ -179,11 +179,11 @@ jobs:
             BASE_CONFIG='{"mcpServers":{}}'
 
             if [ -n "$AST_GREP_SERVER" ]; then
-              BASE_CONFIG=$(echo "$BASE_CONFIG" | jq '.mcpServers["ast-grep"] = {"command":"npx","args":["-y","@notprolands/ast-grep-mcp@${{ env.AST_GREP_MCP_VERSION }}"]}')
+              BASE_CONFIG=$(echo "$BASE_CONFIG" | jq -c '.mcpServers["ast-grep"] = {"command":"npx","args":["-y","@notprolands/ast-grep-mcp@${{ env.AST_GREP_MCP_VERSION }}"]}')
             fi
 
             if [ "$HAS_MORPH" == "true" ]; then
-              BASE_CONFIG=$(echo "$BASE_CONFIG" | jq --arg key "$MORPH_API_KEY" '.mcpServers["morph-mcp"] = {"command":"npx","args":["-y","@morphllm/morphmcp@${{ env.MORPH_MCP_VERSION }}"],"env":{"MORPH_API_KEY":$key,"ENABLED_TOOLS":"warpgrep_codebase_search"}}')
+              BASE_CONFIG=$(echo "$BASE_CONFIG" | jq -c --arg key "$MORPH_API_KEY" '.mcpServers["morph-mcp"] = {"command":"npx","args":["-y","@morphllm/morphmcp@${{ env.MORPH_MCP_VERSION }}"],"env":{"MORPH_API_KEY":$key,"ENABLED_TOOLS":"warpgrep_codebase_search"}}')
             fi
 
             # Write inline JSON to GITHUB_OUTPUT (not file path)
