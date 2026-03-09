@@ -257,21 +257,22 @@ class TestSettingsEnvironmentMethods:
         )
         assert settings.is_production() is True
 
-    def test_is_staging_true(self):
-        """is_staging() がTrueを返す"""
-        settings = Settings(
-            environment=Environment.STAGING,
-            security=SecurityConfig(api_key=SecretStr("test-key")),
-        )
-        assert settings.is_staging() is True
-
-    def test_is_staging_false_for_production(self):
-        """is_staging() が本番環境でFalseを返す"""
-        settings = Settings(
-            environment=Environment.PRODUCTION,
-            security=SecurityConfig(api_key=SecretStr("test-key")),
-        )
-        assert settings.is_staging() is False
+    @pytest.mark.parametrize(
+        ("env", "expected"),
+        [
+            pytest.param(Environment.STAGING, True, id="staging"),
+            pytest.param(Environment.PRODUCTION, False, id="production"),
+            pytest.param(Environment.DEVELOPMENT, False, id="development"),
+            pytest.param(Environment.TESTING, False, id="testing"),
+        ],
+    )
+    def test_is_staging(self, env: Environment, expected: bool) -> None:
+        """is_staging() がステージング環境のみTrueを返す"""
+        kwargs: dict[str, Any] = {"environment": env}
+        if env in {Environment.PRODUCTION, Environment.STAGING}:
+            kwargs["security"] = SecurityConfig(api_key=SecretStr("test-key"))
+        settings = Settings(**kwargs)
+        assert settings.is_staging() is expected
 
     @pytest.mark.parametrize(
         ("env", "expected"),
