@@ -308,7 +308,7 @@ jobs:
         run: echo "tag=myapp:${{ github.sha }}" >> $GITHUB_OUTPUT
 
       - name: Build production Docker image (with cache)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: runtime
