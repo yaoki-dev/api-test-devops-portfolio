@@ -124,14 +124,17 @@ jobs:
 
       # Build MCP config dynamically based on individual service availability
       # Each MCP server is independently verified and conditionally included
+      # Security: Secrets are passed via env: block (not ${{ secrets.* }} in run:) and
+      # JSON is built with jq --arg for safe escaping (prevents JSON injection)
       - name: Build MCP config
         id: build-mcp-config
+        env:
+          MORPH_API_KEY: ${{ secrets.MORPH_API_KEY }}
         run: |
           AST_GREP='${{ steps.verify-ast-grep.outputs.ast_grep_available }}'
           MORPH_MCP='${{ steps.verify-morph-mcp.outputs.morph_mcp_available }}'
           MGREP='${{ steps.install-mgrep.outputs.mgrep_available }}'
 
-          SERVERS=""
           EXTRA_TOOLS=""
 
           # mgrep CLI: semantic code search (Bash tool, not MCP)
@@ -142,26 +145,50 @@ jobs:
           fi
 
           # ast-grep: AST-based code analysis
+          AST_GREP_SERVER=""
           if [ "$AST_GREP" == "true" ]; then
-            SERVERS='"ast-grep":{"command":"npx","args":["-y","@notprolands/ast-grep-mcp@${{ env.AST_GREP_MCP_VERSION }}"]}'
+            AST_GREP_SERVER='"ast-grep":{"command":"npx","args":["-y","@notprolands/ast-grep-mcp@${{ env.AST_GREP_MCP_VERSION }}"]}'
             if [ -n "$EXTRA_TOOLS" ]; then EXTRA_TOOLS="$EXTRA_TOOLS,"; fi
             EXTRA_TOOLS="${EXTRA_TOOLS}${{ env.AST_GREP_TOOLS }}"
             echo "✅ ast-grep included in MCP config"
           fi
 
           # morph-mcp: AI-powered code search
+          # Secret is injected via jq (not shell interpolation) for safe JSON escaping
+          HAS_MORPH=false
           if [ "$MORPH_MCP" == "true" ]; then
-            echo "::add-mask::${{ secrets.MORPH_API_KEY }}"
-            if [ -n "$SERVERS" ]; then SERVERS="$SERVERS,"; fi
-            SERVERS="${SERVERS}\"morph-mcp\":{\"command\":\"npx\",\"args\":[\"-y\",\"@morphllm/morphmcp@${{ env.MORPH_MCP_VERSION }}\"],\"env\":{\"MORPH_API_KEY\":\"${{ secrets.MORPH_API_KEY }}\",\"ENABLED_TOOLS\":\"warpgrep_codebase_search\"}}"
+            echo "::add-mask::${MORPH_API_KEY}"
+            HAS_MORPH=true
             if [ -n "$EXTRA_TOOLS" ]; then EXTRA_TOOLS="$EXTRA_TOOLS,"; fi
             EXTRA_TOOLS="${EXTRA_TOOLS}${{ env.MORPH_MCP_TOOLS }}"
             echo "✅ morph-mcp included in MCP config"
           fi
 
-          # Build final config
-          if [ -n "$SERVERS" ]; then
-            echo "mcp_config={\"mcpServers\":{${SERVERS}}}" >> "$GITHUB_OUTPUT"
+          # Build final config using jq for safe JSON escaping of secret values
+          # Note: Uses inline JSON (not file path) for --mcp-config to avoid
+          # silent drop issue in claude-code-action (see: anthropics/claude-code-action#1004)
+          # Secret masking: ::add-mask:: + env: block ensure MORPH_API_KEY is masked in logs
+          HAS_SERVERS=false
+          if [ -n "$AST_GREP_SERVER" ] || [ "$HAS_MORPH" == "true" ]; then
+            HAS_SERVERS=true
+          fi
+
+          if [ "$HAS_SERVERS" == "true" ]; then
+            # Use jq to safely build the MCP config JSON
+            # This ensures proper escaping of all values (especially MORPH_API_KEY)
+            BASE_CONFIG='{"mcpServers":{}}'
+
+            if [ -n "$AST_GREP_SERVER" ]; then
+              BASE_CONFIG=$(echo "$BASE_CONFIG" | jq -c '.mcpServers["ast-grep"] = {"command":"npx","args":["-y","@notprolands/ast-grep-mcp@${{ env.AST_GREP_MCP_VERSION }}"]}')
+            fi
+
+            if [ "$HAS_MORPH" == "true" ]; then
+              BASE_CONFIG=$(echo "$BASE_CONFIG" | jq -c --arg key "$MORPH_API_KEY" '.mcpServers["morph-mcp"] = {"command":"npx","args":["-y","@morphllm/morphmcp@${{ env.MORPH_MCP_VERSION }}"],"env":{"MORPH_API_KEY":$key,"ENABLED_TOOLS":"warpgrep_codebase_search"}}')
+            fi
+
+            # Write inline JSON to GITHUB_OUTPUT (not file path)
+            # MORPH_API_KEY is masked by ::add-mask:: and GitHub's automatic secret masking
+            echo "mcp_config=${BASE_CONFIG}" >> "$GITHUB_OUTPUT"
             echo "extra_tools=${EXTRA_TOOLS}" >> "$GITHUB_OUTPUT"
             echo "has_mcp=true" >> "$GITHUB_OUTPUT"
           else
@@ -178,6 +205,23 @@ jobs:
 
           echo "📋 Summary: ast-grep=$AST_GREP, morph-mcp=$MORPH_MCP, mgrep=$MGREP"
 
+      # Build settings JSON with jq for safe JSON escaping of secret values
+      # Prevents JSON injection if API key contains special characters (e.g., double quotes)
+      - name: Build settings JSON
+        id: build-settings
+        env:
+          MXBAI_API_KEY: ${{ secrets.MXBAI_API_KEY }}
+          MGREP_AVAILABLE: ${{ steps.install-mgrep.outputs.mgrep_available }}
+        run: |
+          if [ "$MGREP_AVAILABLE" == "true" ]; then
+            echo "::add-mask::${MXBAI_API_KEY}"
+            # Use jq to safely escape the API key value in JSON
+            SETTINGS_JSON=$(jq -cn --arg key "$MXBAI_API_KEY" '{"env": {"MXBAI_API_KEY": $key}}')
+          else
+            SETTINGS_JSON='{"env": {}}'
+          fi
+          echo "settings_json=${SETTINGS_JSON}" >> "$GITHUB_OUTPUT"
+
       - name: Run Claude Code Review
         # NOTE: Workflow fails if this step fails (default behavior)
         # Claude Action errors (auth, timeout, rate limit) propagate automatically
@@ -191,14 +235,9 @@ jobs:
         uses: anthropics/claude-code-action@26ec041249acb0a944c0a47b6c0c13f05dbc5b44 # v1.0.70
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Pass MXBAI_API_KEY to Claude Code for mgrep CLI (Bash) access
-          # Only set when mgrep is available (API key validated in install-mgrep step)
-          settings: |
-            {
-              "env": {
-                ${{ steps.install-mgrep.outputs.mgrep_available == 'true' && format('"MXBAI_API_KEY": "{0}"', secrets.MXBAI_API_KEY) || '' }}
-              }
-            }
+          # Security: settings JSON is built in build-settings step using jq for safe
+          # JSON escaping (prevents JSON injection if key contains special characters)
+          settings: ${{ steps.build-settings.outputs.settings_json }}
           # MCP config: dynamically built based on individual service availability
           # When no MCP servers available: Claude proceeds with BASE_TOOLS only
           # Single-line format to avoid multiline parsing issues (see: anthropics/claude-code-action#844)
