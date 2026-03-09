@@ -188,7 +188,7 @@ jobs:
         # Pin to v1.0.66 (2026-03-02) to avoid AJV schema validation crash in v1.0.67+
         # See: https://github.com/anthropics/claude-code-action/issues/1013
         # TODO: Update when upstream fix is released
-        uses: anthropics/claude-code-action@64c7a0ef71df67b14cb4471f4d9c8565c61042bf # v1.0.66
+        uses: anthropics/claude-code-action@26ec041249acb0a944c0a47b6c0c13f05dbc5b44 # v1.0.70
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Pass MXBAI_API_KEY to Claude Code for mgrep CLI (Bash) access
