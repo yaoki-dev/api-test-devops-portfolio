@@ -86,7 +86,7 @@ def _sentry_processor(
 
     except ImportError:
         pass  # sentry-sdk未インストール（サイレントスキップ）
-    except (KeyboardInterrupt, SystemExit, MemoryError):
+    except KeyboardInterrupt, SystemExit, MemoryError:
         # システム例外は再発生（graceful shutdown/K8s OOMKilled検知対応）
         raise
     except Exception as e:  # noqa: BLE001
