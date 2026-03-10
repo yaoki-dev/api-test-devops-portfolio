@@ -373,6 +373,20 @@ class AsyncGitHubClient:
                     ) from e
                 if attempt == self.max_retries - 1:
                     raise GitHubServerError(f"Failed after {self.max_retries} attempts") from e
+                # 5xxエラーかつ最終試行でない場合のリトライ（防御的コードパス）
+                # Note: 5xxは通常L328-343で先に処理されるため、このパスは理論上到達しない
+                delay = exponential_backoff_with_jitter(attempt, base_delay=2.0)
+                self.logger.warning(
+                    "retrying_http_status_error",
+                    status_code=e.response.status_code,
+                    attempt=attempt + 1,
+                    max_retries=self.max_retries,
+                    endpoint=endpoint,
+                    method=method,
+                    delay=delay,
+                )
+                await asyncio.sleep(delay)
+                continue
 
             except httpx.TimeoutException as e:
                 self.logger.warning("request_timeout", endpoint=endpoint, method=method)
