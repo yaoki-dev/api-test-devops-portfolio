@@ -12,20 +12,20 @@
 
 ```bash
 # 単体テストのみ実行 - 開発中の高速フィードバックループ
-make test-unit
+uv run pytest -m unit
 
 # 詳細出力での単体テスト
 uv run pytest tests/unit/ -v -m "unit or not integration"
 
 # 特定テストファイルのみ実行
-uv run pytest tests/unit/test_basic.py -v
+uv run pytest tests/unit/test_api_client.py -v
 ```
 
 #### Integration Testing (30-45秒)
 
 ```bash
 # 統合テストのみ実行
-make test-integration
+uv run pytest -m integration
 
 # 詳細出力での統合テスト
 uv run pytest tests/integration/ -v -m integration
@@ -35,7 +35,7 @@ uv run pytest tests/integration/ -v -m integration
 
 ```bash
 # 全テスト実行 - push前の最終確認
-make test
+uv run pytest
 
 # 詳細出力での全テスト実行
 uv run pytest tests/ -v --tb=short
@@ -46,14 +46,14 @@ uv run pytest tests/ -v --tb=short
 #### Quality Checks (30秒) - 並列実行最適化
 
 ```bash
-# 統合品質チェック - ruff + mypy + bandit並列実行
-make quality
+# 統合品質チェック - ruff + mypy 実行
+uv run ruff check . && uv run mypy utils/ config/ models/
 
 # 個別品質チェック実行
-make format     # コードフォーマット
-make lint       # リンター実行 (ruff)
-make type-check # 型チェック (mypy)
-make security   # セキュリティスキャン (bandit)
+uv run ruff format .                          # コードフォーマット
+uv run ruff check .                           # リンター実行 (ruff)
+uv run mypy utils/ config/ models/            # 型チェック (mypy)
+uv run bandit -r utils/ config/ models/ -q    # セキュリティスキャン (bandit)
 ```
 
 #### 並列品質チェック (15秒 - 200%高速化)
@@ -72,10 +72,10 @@ uv run ruff format . && uv run ruff check . --fix
 
 ```bash
 # カバレッジレポート生成 - 85%閾値検証
-make coverage
+uv run pytest --cov=utils --cov=config --cov=models --cov-report=term-missing
 
 # 高速カバレッジチェック (閾値確認のみ)
-uv run pytest --cov=. --cov-fail-under=85
+uv run pytest --cov=utils --cov=config --cov=models --cov-fail-under=85
 
 # HTMLカバレッジレポート表示
 open reports/htmlcov/index.html
@@ -98,21 +98,18 @@ uv run pytest --cov=. --cov-report=xml:reports/coverage.xml
 #### Performance Testing (2-3分)
 
 ```bash
-# 高速パフォーマンステスト
-make performance-quick
-
-# 包括的パフォーマンス分析 (5-8分)
-make performance-comprehensive
-
 # パフォーマンステストのみ実行
-make test-performance
+uv run pytest tests/performance/ -v
+
+# ベンチマーク付きパフォーマンステスト
+uv run pytest tests/performance/ -v
 ```
 
 #### パフォーマンステスト詳細
 
 ```bash
-# ベンチマーク付きパフォーマンステスト
-uv run pytest tests/performance/ --benchmark-only --benchmark-sort=mean
+# パフォーマンステスト詳細実行
+uv run pytest tests/performance/ -v
 
 # メモリ使用量監視付きテスト
 uv run pytest tests/performance/ -v --benchmark-warmup=3
@@ -123,14 +120,14 @@ uv run pytest tests/performance/ -v --benchmark-warmup=3
 #### Security Validation (25秒 - 260%高速化)
 
 ```bash
-# 高速セキュリティスキャン
-make security-quick
+# 高速セキュリティスキャン (bandit)
+uv run bandit -r utils/ config/ models/ -q
 
 # 包括的セキュリティ分析 - CI/CD品質ゲート準拠
-make security-comprehensive
+uv run bandit -r utils/ config/ models/ -q && uv run safety check
 
-# セキュリティ並列実行
-make security-quick & make performance-quick
+# セキュリティ + パフォーマンス並列実行
+uv run bandit -r utils/ config/ models/ -q & uv run pytest tests/performance/ -v
 ```
 
 #### セキュリティスキャン詳細
@@ -145,8 +142,8 @@ uv run bandit -r utils/ config/ models/ -f json -o reports/security-report.json
 # safety 脆弱性チェック
 uv run safety check --json --output reports/safety-report.json
 
-# pip-audit 依存関係監査
-uv run pip-audit --format=json --output=reports/audit-report.json
+# safety 詳細レポート
+uv run safety check --json --output reports/safety-detailed.json
 ```
 
 ### 🔄 Local CI Pipeline (5-8分)
@@ -154,24 +151,24 @@ uv run pip-audit --format=json --output=reports/audit-report.json
 #### Complete CI/CD Simulation
 
 ```bash
-# ローカルCI/CDパイプライン - push前の完全検証
-make ci-local
+# ローカルCI/CDパイプライン相当 - push前の完全検証
+uv run pytest -n auto -m "(unit or integration) and not external" --cov=utils --cov=config --cov=models --cov-report=term-missing && uv run ruff check . && uv run mypy utils/ config/ models/
 
-# Docker環境CI/CDパイプライン
-make ci-docker
+# Docker環境でのテスト実行
+docker-compose -f docker-compose.test.yml run tests
 
-# 包括的CI/CDパイプライン (品質+セキュリティ+パフォーマンス)
-make ci-comprehensive
+# 包括的検証 (品質+セキュリティ)
+uv run pytest -n auto --cov=utils --cov=config --cov=models --cov-report=term-missing && uv run ruff check . && uv run mypy utils/ config/ models/ && uv run bandit -r utils/ config/ models/ -q
 ```
 
 #### 最適化開発サイクル
 
 ```bash
 # 開発サイクル最適化実行
-make setup && make test-unit && make quality && make coverage
+uv sync --dev && uv run pytest -m unit && uv run ruff check . && uv run mypy utils/ config/ models/ && uv run pytest --cov=utils --cov=config --cov=models --cov-report=term-missing
 
 # Git commit前の検証サイクル
-make test && make coverage && make quality && make security-quick
+uv run pytest -n auto -m "(unit or integration) and not external" --cov=utils --cov=config --cov=models --cov-report=term-missing && uv run ruff check . && uv run mypy utils/ config/ models/ && uv run bandit -r utils/ config/ models/ -q
 ```
 
 ## 🛠️ Environment Management (低頻度 - 月次使用)
@@ -182,13 +179,13 @@ make test && make coverage && make quality && make security-quick
 
 ```bash
 # プロジェクト初期セットアップ
-make setup
+uv sync --dev
 
 # 依存関係インストール (uv使用)
-make install
+uv sync
 
 # 開発環境起動支援
-make dev
+uv sync --dev && uv run pre-commit install
 ```
 
 #### 環境詳細設定
@@ -201,7 +198,7 @@ uv sync --dev
 uv run python --version  # 3.14.x確認
 
 # プロジェクトステータス確認
-make status
+git status
 ```
 
 ### 🐳 Docker Operations
@@ -210,29 +207,29 @@ make status
 
 ```bash
 # 開発環境起動
-make docker-up
+docker-compose up -d
 
 # Docker環境でのテスト実行
-make docker-test
+docker-compose -f docker-compose.test.yml run tests
 
 # 環境停止・クリーンアップ
-make docker-down
+docker-compose down
 
 # Dockerイメージビルド
-make docker-build
+docker build .
 ```
 
 #### Docker詳細操作
 
 ```bash
 # コンテナログ表示
-make docker-logs
+docker-compose logs
 
 # コンテナシェル起動
-make docker-shell
+docker-compose exec app bash
 
 # Docker環境の完全再構築
-make docker-down && make docker-build && make docker-up
+docker-compose down && docker build . && docker-compose up -d
 ```
 
 ### 🧹 Maintenance
@@ -240,14 +237,12 @@ make docker-down && make docker-build && make docker-up
 #### クリーンアップ
 
 ```bash
-# キャッシュとレポートクリア
-make clean
-
-# 完全クリーンアップ (Docker含む)
-make clean-all
-
 # Python cache削除
 find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+find . -name "*.pyc" -delete 2>/dev/null || true
+
+# 完全クリーンアップ (キャッシュ + レポート + Docker)
+find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && rm -rf reports/htmlcov reports/coverage.xml && docker-compose down --rmi local 2>/dev/null || true
 ```
 
 ## 🎯 特殊用途・統合コマンド
@@ -257,17 +252,9 @@ find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 #### MCP統合実行
 
 ```bash
-# MCP最適化実行
-make mcp-optimize
-
-# MCP監視実行
-make mcp-monitor
-
-# ダッシュボード起動
-make dashboard-start
-
-# ダッシュボードデータ更新
-make dashboard-update
+# MCP使用状況確認（Claude Code内で実行）
+# MCP統合は Claude Code セッション内で自動的に有効化される
+uv run pytest -n auto -m "(unit or integration) and not external" --cov=utils --cov=config --cov=models --cov-report=term-missing
 ```
 
 ### 📊 効果測定・レポート
@@ -275,24 +262,15 @@ make dashboard-update
 #### Effectiveness Measurement
 
 ```bash
-# 効果測定デモ実行
-python scripts/run_effectiveness_measurement.py demo
-
-# 自動スケジューラー起動
-python scripts/run_effectiveness_measurement.py start-scheduler
-
-# システムヘルスチェック
-python scripts/run_effectiveness_measurement.py status
+# 品質ゲート全項目実行（効果測定の代替）
+uv run pytest -n auto -m "(unit or integration) and not external" --cov=utils --cov=config --cov=models --cov-report=term-missing && uv run ruff check . && uv run mypy utils/ config/ models/
 ```
 
 #### パフォーマンス追跡
 
 ```bash
-# ROI追跡・品質メトリクス取得
-from monitoring.effectiveness_tracker import start_task, complete_task
-
-# ダッシュボード確認
-open monitoring/reports/dashboard_latest.html
+# カバレッジレポート確認
+uv run pytest --cov=utils --cov=config --cov=models --cov-report=html && open reports/htmlcov/index.html
 ```
 
 ## 🤖 Claude Squad統合ワークフロー
@@ -312,7 +290,7 @@ git log --oneline -10
 
 # ワークツリー状態確認
 git worktree list
-make squad-status
+cs list
 ```
 
 #### ステップ2: 本日の作業計画立案 (10秒)
@@ -406,32 +384,31 @@ watch -n 10 'cs list'
 # 開発中の継続的品質チェック
 # セッション A作業後
 cs switch core-dev-001
-make test-unit type-check
+uv run pytest -m unit && uv run mypy utils/ config/ models/
 
 # セッション B作業後
 cs switch testing-002
-make coverage test-integration
+uv run pytest --cov=utils --cov=config --cov=models --cov-report=term-missing && uv run pytest -m integration
 
 # セッション C作業後
 cs switch security-003
-make security-quick
+uv run bandit -r utils/ config/ models/ -q
 
 # セッション D作業後
 cs switch performance-004
-make performance-quick
+uv run pytest tests/performance/ -v
 ```
 
 #### 日次品質ゲートチェック (2-3分)
 
 ```bash
 # 1日の終わりの包括品質チェック
-make squad-quality
+uv run pytest -n auto -m "(unit or integration) and not external" --cov=utils --cov=config --cov=models --cov-report=term-missing && uv run ruff check . && uv run mypy utils/ config/ models/
 
 # 結果確認・問題対応
 if [ $? -ne 0 ]; then
     echo "⚠️  品質問題検出 - 各セッションで問題解決必要"
     cs list
-    make squad-status
 else
     echo "✅ 全品質チェック合格"
 fi
@@ -449,7 +426,7 @@ cs review security-003      # セキュリティ変更確認（該当時）
 cs review performance-004   # パフォーマンス変更確認（該当時）
 
 # 各セッション品質ゲート確認
-make squad-quality
+uv run pytest -n auto -m "(unit or integration) and not external" --cov=utils --cov=config --cov=models && uv run ruff check . && uv run mypy utils/ config/ models/
 ```
 
 #### ステップ2: セッション統合準備 (2-3分)
@@ -470,11 +447,11 @@ git push origin feature/testing-qa
 #### ステップ3: 統合実行 (3-5分)
 
 ```bash
-# セッション統合実行
-make squad-integrate
+# セッション統合実行（手動マージ）
+git merge --no-ff feature/session-branch
 
 # 統合後の完全検証
-make ci-comprehensive
+uv run pytest -n auto --cov=utils --cov=config --cov=models --cov-report=term-missing && uv run ruff check . && uv run mypy utils/ config/ models/ && uv run bandit -r utils/ config/ models/ -q
 
 # 統合成功確認
 git log --oneline integration/squad-merge -10
@@ -536,7 +513,7 @@ watch -n 5 'cs list | grep critical'
 cs spawn --agent=security --task="脆弱性対応緊急修正" --priority=critical --workspace=../claude-squad-workspaces/squad-security
 
 # 包括セキュリティチェック
-make security-comprehensive
+uv run bandit -r utils/ config/ models/ -q && uv run safety check
 
 # CI/CD品質ゲート確認（bandit + Trivy）
 uv run bandit -r utils/ config/ models/ -q
@@ -550,7 +527,7 @@ uv run bandit -r utils/ config/ models/ -q
 # 週次Claude Squadメンテナンス
 cs cleanup --days=7                    # 古いセッション削除
 cs config --optimize                   # 設定最適化
-make squad-status                      # 全体状況確認
+cs list                                # 全体状況確認
 
 # ワークツリー最適化
 git worktree prune                     # 不要ワークツリー削除
@@ -563,11 +540,11 @@ git gc --aggressive                    # Gitリポジトリ最適化
 # 月次Claude Squad効果測定
 echo "=== 月次Claude Squad効果レポート ==="
 echo "セッション数: $(cs list --all | wc -l)"
-echo "品質ゲート合格率: $(make squad-quality && echo 100% || echo 要改善)"
-echo "テストカバレッジ: $(uv run pytest --cov=. --cov-report=term | grep TOTAL | awk '{print $4}')"
+echo "品質ゲート合格率: $(uv run pytest -n auto -m '(unit or integration) and not external' --cov=utils --cov=config --cov=models && uv run ruff check . && uv run mypy utils/ config/ models/ && echo 100% || echo 要改善)"
+echo "テストカバレッジ: $(uv run pytest --cov=utils --cov=config --cov=models --cov-report=term | grep TOTAL | awk '{print $4}')"
 
-# パフォーマンス測定
-python scripts/run_effectiveness_measurement.py demo
+# パフォーマンス測定（テストカバレッジで代替）
+uv run pytest tests/performance/ -v 2>/dev/null || echo "パフォーマンステストはオプション"
 ```
 
 ### 🎯 Squad専用コマンド実行例集
@@ -587,10 +564,10 @@ cs review session-id                  # 変更内容確認
 cs merge session-id --to=branch       # ブランチ統合
 
 # 品質・効率管理
-make squad-status                     # 全体状況確認
-make squad-quality                    # 品質チェック
-make squad-integrate                  # 統合実行
-make squad-cleanup                    # クリーンアップ
+cs list                               # 全体状況確認
+uv run pytest -n auto -m "(unit or integration) and not external" --cov=utils --cov=config --cov=models && uv run ruff check . && uv run mypy utils/ config/ models/  # 品質チェック
+git merge --no-ff feature/session-branch  # 統合実行
+cs cleanup --days=7                   # クリーンアップ
 ```
 
 #### デバッグ・トラブルシューティング
@@ -618,9 +595,9 @@ cs spawn --verbose --task="テスト"    # 詳細ログ付きセッション
 
 #### Squad運用ベストプラクティス
 
-1. **朝の状態確認**: 必ず`cs list --all`と`make squad-status`実行
+1. **朝の状態確認**: 必ず`cs list --all`と`git status`実行
 2. **セッション命名**: 一貫した命名規則維持（機能-用途-番号）
-3. **定期統合**: 機能完了毎の`make squad-integrate`実行
+3. **定期統合**: 機能完了毎に`git merge --no-ff feature/session-branch`実行
 4. **品質ゲート**: 作業終了時の品質チェック必須実行
 5. **バックアップ**: 重要作業前の状態保存励行
 
@@ -638,25 +615,25 @@ cs spawn --verbose --task="テスト"    # 詳細ログ付きセッション
 ### 最頻繁使用 (日次)
 
 ```bash
-make test-unit      # 10-20秒 - 開発フィードバック
-make quality        # 30秒 - 品質チェック
-make coverage       # 45秒 - カバレッジ確認
+uv run pytest -m unit                                                              # 10-20秒 - 開発フィードバック
+uv run ruff check . && uv run mypy utils/ config/ models/                         # 30秒 - 品質チェック
+uv run pytest --cov=utils --cov=config --cov=models --cov-report=term-missing    # 45秒 - カバレッジ確認
 ```
 
 ### 重要検証 (週次)
 
 ```bash
-make ci-local              # 5-8分 - push前完全検証
-make performance-quick     # 2-3分 - パフォーマンス確認
-make security-comprehensive # 5分 - セキュリティ包括確認
+uv run pytest -n auto -m "(unit or integration) and not external" --cov=utils --cov=config --cov=models --cov-report=term-missing && uv run ruff check . && uv run mypy utils/ config/ models/  # push前完全検証
+uv run pytest tests/performance/ -v                                               # パフォーマンス確認
+uv run bandit -r utils/ config/ models/ -q && uv run safety check  # セキュリティ包括確認
 ```
 
 ### 環境管理 (月次)
 
 ```bash
-make setup         # 初期設定
-make docker-up     # Docker環境
-make clean-all     # 完全クリーンアップ
+uv sync --dev              # 初期設定
+docker-compose up -d       # Docker環境
+find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && rm -rf reports/htmlcov reports/coverage.xml  # 完全クリーンアップ
 ```
 
 ## 🔧 エラー対応・トラブルシューティング
@@ -665,13 +642,13 @@ make clean-all     # 完全クリーンアップ
 
 ```bash
 # 依存関係エラー
-uv sync --dev && make install
+uv sync --dev
 
 # テスト環境リセット
-make clean && make setup
+find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && uv sync --dev
 
 # Docker環境リセット
-make docker-down && make clean-all && make docker-build
+docker-compose down && find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && docker build . && docker-compose up -d
 ```
 
 ### 品質チェック問題

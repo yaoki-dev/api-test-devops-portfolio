@@ -52,7 +52,7 @@
 uv run pytest --cov=. --cov-report=term -q --color=yes
 
 # クイック実行（デモと同じ、19件）
-uv run pytest tests/unit/test_basic.py --cov=. --cov-report=term -q --color=yes
+uv run pytest tests/unit/test_api_client.py --cov=. --cov-report=term -q --color=yes
 ```
 
 </details>
