@@ -421,6 +421,13 @@ class SentryConfig(BaseModel):
 # =============================================================================
 
 
+# 本番相当環境セット（production + staging）
+# validate_production_secrets / validate_production_https / is_production_like で共有
+_PRODUCTION_LIKE_ENVIRONMENTS: frozenset[Environment] = frozenset(
+    {Environment.PRODUCTION, Environment.STAGING}
+)
+
+
 class Settings(BaseSettings):
     """アプリケーション設定の統合管理"""
 
@@ -495,7 +502,7 @@ class Settings(BaseSettings):
             開発/テスト環境ではシークレットなしで動作可能。
 
         """
-        if self.environment in {Environment.PRODUCTION, Environment.STAGING}:
+        if self.environment in _PRODUCTION_LIKE_ENVIRONMENTS:
             if self.security.api_key is None and self.security.jwt_secret is None:
                 raise ValueError(
                     f"{self.environment.value.capitalize()} environment requires at least one of: "
@@ -516,7 +523,7 @@ class Settings(BaseSettings):
         Note:
             開発/テスト環境ではHTTP接続を許可（ローカル開発用）。
         """
-        if self.environment in {Environment.PRODUCTION, Environment.STAGING}:
+        if self.environment in _PRODUCTION_LIKE_ENVIRONMENTS:
             if not self.api.base_url.startswith("https://"):
                 raise ValueError(
                     f"{self.environment.value.capitalize()} environment requires HTTPS. "
@@ -535,6 +542,14 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         """本番環境判定"""
         return self.environment == Environment.PRODUCTION
+
+    def is_staging(self) -> bool:
+        """ステージング環境判定"""
+        return self.environment == Environment.STAGING
+
+    def is_production_like(self) -> bool:
+        """本番相当環境判定（production + staging）"""
+        return self.environment in _PRODUCTION_LIKE_ENVIRONMENTS
 
     def get_log_level(self) -> int:
         """ログレベルの取得（logging/structlog共通）

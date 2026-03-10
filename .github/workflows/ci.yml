@@ -182,7 +182,11 @@ jobs:
           category: 'trivy-pr-fs-scan'
 
       - name: Fail job if vulnerabilities found or verification failed
-        if: steps.fs-scan.outcome == 'failure' || steps.verify-fs-scan.outcome == 'failure'
+        if: |
+          steps.fs-scan.outcome == 'failure' ||
+          steps.fs-scan.outcome == 'cancelled' ||
+          steps.verify-fs-scan.outcome == 'failure' ||
+          steps.verify-fs-scan.outcome == 'cancelled'
         run: |
           # 優先度1: SARIF検証失敗（インフラ問題の可能性）
           if [ "${{ steps.verify-fs-scan.outcome }}" == "failure" ]; then
@@ -248,7 +252,11 @@ jobs:
           category: 'trivy-pr-image-scan'
 
       - name: Fail job if vulnerabilities found or verification failed
-        if: steps.image-scan.outcome == 'failure' || steps.verify-image-scan.outcome == 'failure'
+        if: |
+          steps.image-scan.outcome == 'failure' ||
+          steps.image-scan.outcome == 'cancelled' ||
+          steps.verify-image-scan.outcome == 'failure' ||
+          steps.verify-image-scan.outcome == 'cancelled'
         run: |
           # 優先度1: SARIF検証失敗（インフラ問題の可能性）
           if [ "${{ steps.verify-image-scan.outcome }}" == "failure" ]; then
@@ -350,7 +358,11 @@ jobs:
           category: 'trivy-post-merge'
 
       - name: Fail job if vulnerabilities found or verification failed
-        if: steps.trivy-scan.outcome == 'failure' || steps.verify-trivy-scan.outcome == 'failure'
+        if: |
+          steps.trivy-scan.outcome == 'failure' ||
+          steps.trivy-scan.outcome == 'cancelled' ||
+          steps.verify-trivy-scan.outcome == 'failure' ||
+          steps.verify-trivy-scan.outcome == 'cancelled'
         run: |
           # 優先度1: SARIF検証失敗（インフラ問題の可能性）
           if [ "${{ steps.verify-trivy-scan.outcome }}" == "failure" ]; then
