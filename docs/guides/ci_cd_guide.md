@@ -133,7 +133,7 @@ uv run pytest -n auto -m "(unit or integration) and not external" \
 |---------|------|--------|---------|
 | `feature/*` | 新機能開発 | PR Validation + PR Security Scan | `develop` |
 | `develop` | 統合ブランチ | PR Validation + PR Security Scan | `main` |
-| `main` | 本番環境 | Post-Merge + Deploy | - |
+| `main` | 本番環境 | Post-Merge Validation (Trivy + Smoke) | - |
 | `hotfix/*` | 緊急修正 | PR Validation + PR Security Scan | `main` + `develop` |
 
 **マージ戦略**:
