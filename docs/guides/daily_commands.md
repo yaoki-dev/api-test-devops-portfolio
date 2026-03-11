@@ -100,19 +100,6 @@ uv run pytest --cov=. --cov-report=xml:reports/coverage.xml
 ```bash
 # パフォーマンステストのみ実行
 uv run pytest tests/performance/ -v
-
-# ベンチマーク付きパフォーマンステスト
-uv run pytest tests/performance/ -v
-```
-
-#### パフォーマンステスト詳細
-
-```bash
-# パフォーマンステスト詳細実行
-uv run pytest tests/performance/ -v
-
-# メモリ使用量監視付きテスト
-uv run pytest tests/performance/ -v --benchmark-warmup=3
 ```
 
 ### 🔒 セキュリティスキャンコマンド
@@ -127,7 +114,7 @@ uv run bandit -r utils/ config/ models/ -q
 uv run bandit -r utils/ config/ models/ -q && uv run safety check
 
 # セキュリティ + パフォーマンス並列実行
-uv run bandit -r utils/ config/ models/ -q & uv run pytest tests/performance/ -v
+uv run bandit -r utils/ config/ models/ -q && uv run pytest tests/performance/ -v
 ```
 
 #### セキュリティスキャン詳細
@@ -540,7 +527,11 @@ git gc --aggressive                    # Gitリポジトリ最適化
 # 月次Claude Squad効果測定
 echo "=== 月次Claude Squad効果レポート ==="
 echo "セッション数: $(cs list --all | wc -l)"
-echo "品質ゲート合格率: $(uv run pytest -n auto -m '(unit or integration) and not external' --cov=utils --cov=config --cov=models && uv run ruff check . && uv run mypy utils/ config/ models/ && echo 100% || echo 要改善)"
+if uv run pytest -n auto -m "(unit or integration) and not external" --cov=utils --cov=config --cov=models && uv run ruff check . && uv run mypy utils/ config/ models/; then
+    echo "品質ゲート合格率: 100%"
+else
+    echo "品質ゲート合格率: 要改善"
+fi
 echo "テストカバレッジ: $(uv run pytest --cov=utils --cov=config --cov=models --cov-report=term | grep TOTAL | awk '{print $4}')"
 
 # パフォーマンス測定（テストカバレッジで代替）

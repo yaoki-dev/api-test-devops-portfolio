@@ -49,10 +49,10 @@
 
 ```bash
 # 全テスト実行（551件）
-uv run pytest --cov=. --cov-report=term -q --color=yes
+uv run pytest --cov=utils --cov=config --cov=models --cov-report=term -q --color=yes
 
 # クイック実行（デモと同じ、19件）
-uv run pytest tests/unit/test_api_client.py --cov=. --cov-report=term -q --color=yes
+uv run pytest tests/unit/test_api_client.py --cov=utils --cov=config --cov=models --cov-report=term -q --color=yes
 ```
 
 </details>
@@ -159,7 +159,7 @@ uv sync
 uv run pytest -n auto
 
 # 4. カバレッジ付きテスト（並列）
-uv run pytest -n auto --cov=. --cov-report=term
+uv run pytest -n auto --cov=utils --cov=config --cov=models --cov-report=term
 
 # 5. 特定マーカーのテスト実行
 uv run pytest -n auto -m unit        # 単体テストのみ
