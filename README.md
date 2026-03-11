@@ -51,7 +51,7 @@
 # 全テスト実行（551件）
 uv run pytest --cov=utils --cov=config --cov=models --cov-report=term -q --color=yes
 
-# クイック実行（デモと同じ、19件）
+# クイック実行（unit tests）
 uv run pytest tests/unit/test_api_client.py --cov=utils --cov=config --cov=models --cov-report=term -q --color=yes
 ```
 

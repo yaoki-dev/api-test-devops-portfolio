@@ -111,9 +111,9 @@ uv run pytest tests/performance/ -v
 uv run bandit -r utils/ config/ models/ -q
 
 # 包括的セキュリティ分析 - CI/CD品質ゲート準拠
-uv run bandit -r utils/ config/ models/ -q && uv run safety check
+uv run bandit -r utils/ config/ models/ -q && uv run safety scan
 
-# セキュリティ + パフォーマンス並列実行
+# セキュリティ + パフォーマンス順次実行（bandit成功時のみperfテスト実行）
 uv run bandit -r utils/ config/ models/ -q && uv run pytest tests/performance/ -v
 ```
 
@@ -127,10 +127,10 @@ uv run bandit -r utils/ config/ models/ -q
 uv run bandit -r utils/ config/ models/ -f json -o reports/security-report.json
 
 # safety 脆弱性チェック
-uv run safety check --json --output reports/safety-report.json
+uv run safety scan --output json > reports/safety-report.json
 
 # safety 詳細レポート
-uv run safety check --json --output reports/safety-detailed.json
+uv run safety scan --output json > reports/safety-detailed.json
 ```
 
 ### 🔄 Local CI Pipeline (5-8分)
@@ -141,8 +141,8 @@ uv run safety check --json --output reports/safety-detailed.json
 # ローカルCI/CDパイプライン相当 - push前の完全検証
 uv run pytest -n auto -m "(unit or integration) and not external" --cov=utils --cov=config --cov=models --cov-report=term-missing && uv run ruff check . && uv run mypy utils/ config/ models/
 
-# Docker環境でのテスト実行
-docker-compose -f docker-compose.test.yml run tests
+# Docker環境でのテスト実行（Week3実装後に利用可能）
+# docker-compose -f docker-compose.test.yml run tests
 
 # 包括的検証 (品質+セキュリティ)
 uv run pytest -n auto --cov=utils --cov=config --cov=models --cov-report=term-missing && uv run ruff check . && uv run mypy utils/ config/ models/ && uv run bandit -r utils/ config/ models/ -q
@@ -190,33 +190,35 @@ git status
 
 ### 🐳 Docker Operations
 
+> ⚠️ **Week3実装予定** - `docker-compose.yml` は未作成のため、以下の `docker-compose` コマンドは現時点では利用不可
+
 #### Docker環境管理
 
 ```bash
-# 開発環境起動
+# Dockerイメージビルド
+docker build -t api-test-portfolio:latest .
+
+# 開発環境起動（Week3実装後）
 docker-compose up -d
 
-# Docker環境でのテスト実行
+# Docker環境でのテスト実行（Week3実装後）
 docker-compose -f docker-compose.test.yml run tests
 
-# 環境停止・クリーンアップ
+# 環境停止・クリーンアップ（Week3実装後）
 docker-compose down
-
-# Dockerイメージビルド
-docker build .
 ```
 
 #### Docker詳細操作
 
 ```bash
-# コンテナログ表示
+# コンテナログ表示（Week3実装後）
 docker-compose logs
 
-# コンテナシェル起動
+# コンテナシェル起動（Week3実装後）
 docker-compose exec app bash
 
-# Docker環境の完全再構築
-docker-compose down && docker build . && docker-compose up -d
+# Docker環境の完全再構築（Week3実装後）
+docker-compose down && docker build -t api-test-portfolio:latest . && docker-compose up -d
 ```
 
 ### 🧹 Maintenance
@@ -228,19 +230,22 @@ docker-compose down && docker build . && docker-compose up -d
 find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 find . -name "*.pyc" -delete 2>/dev/null || true
 
-# 完全クリーンアップ (キャッシュ + レポート + Docker)
-find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && rm -rf reports/htmlcov reports/coverage.xml && docker-compose down --rmi local 2>/dev/null || true
+# 完全クリーンアップ (上記 + レポート)
+rm -rf reports/htmlcov reports/coverage.xml
+
+# Dockerクリーンアップ（Week3実装後に実行可能）
+# docker-compose down --rmi local 2>/dev/null || true
 ```
 
 ## 🎯 特殊用途・統合コマンド
 
 ### 🤖 MCP最適化・監視
 
-#### MCP統合実行
+#### 品質ゲート実行
 
 ```bash
-# MCP使用状況確認（Claude Code内で実行）
 # MCP統合は Claude Code セッション内で自動的に有効化される
+# 品質ゲート一括実行
 uv run pytest -n auto -m "(unit or integration) and not external" --cov=utils --cov=config --cov=models --cov-report=term-missing
 ```
 
@@ -375,7 +380,7 @@ uv run pytest -m unit && uv run mypy utils/ config/ models/
 
 # セッション B作業後
 cs switch testing-002
-uv run pytest --cov=utils --cov=config --cov=models --cov-report=term-missing && uv run pytest -m integration
+uv run pytest -m "(unit or integration) and not external" --cov=utils --cov=config --cov=models --cov-report=term-missing
 
 # セッション C作業後
 cs switch security-003
@@ -435,7 +440,7 @@ git push origin feature/testing-qa
 
 ```bash
 # セッション統合実行（手動マージ）
-git merge --no-ff feature/session-branch
+git merge --no-ff feature/<your-branch>
 
 # 統合後の完全検証
 uv run pytest -n auto --cov=utils --cov=config --cov=models --cov-report=term-missing && uv run ruff check . && uv run mypy utils/ config/ models/ && uv run bandit -r utils/ config/ models/ -q
@@ -500,7 +505,7 @@ watch -n 5 'cs list | grep critical'
 cs spawn --agent=security --task="脆弱性対応緊急修正" --priority=critical --workspace=../claude-squad-workspaces/squad-security
 
 # 包括セキュリティチェック
-uv run bandit -r utils/ config/ models/ -q && uv run safety check
+uv run bandit -r utils/ config/ models/ -q && uv run safety scan
 
 # CI/CD品質ゲート確認（bandit + Trivy）
 uv run bandit -r utils/ config/ models/ -q
@@ -557,7 +562,7 @@ cs merge session-id --to=branch       # ブランチ統合
 # 品質・効率管理
 cs list                               # 全体状況確認
 uv run pytest -n auto -m "(unit or integration) and not external" --cov=utils --cov=config --cov=models && uv run ruff check . && uv run mypy utils/ config/ models/  # 品質チェック
-git merge --no-ff feature/session-branch  # 統合実行
+git merge --no-ff feature/<your-branch>  # 統合実行
 cs cleanup --days=7                   # クリーンアップ
 ```
 
@@ -588,7 +593,7 @@ cs spawn --verbose --task="テスト"    # 詳細ログ付きセッション
 
 1. **朝の状態確認**: 必ず`cs list --all`と`git status`実行
 2. **セッション命名**: 一貫した命名規則維持（機能-用途-番号）
-3. **定期統合**: 機能完了毎に`git merge --no-ff feature/session-branch`実行
+3. **定期統合**: 機能完了毎に`git merge --no-ff feature/<your-branch>`実行
 4. **品質ゲート**: 作業終了時の品質チェック必須実行
 5. **バックアップ**: 重要作業前の状態保存励行
 
@@ -616,14 +621,14 @@ uv run pytest --cov=utils --cov=config --cov=models --cov-report=term-missing   
 ```bash
 uv run pytest -n auto -m "(unit or integration) and not external" --cov=utils --cov=config --cov=models --cov-report=term-missing && uv run ruff check . && uv run mypy utils/ config/ models/  # push前完全検証
 uv run pytest tests/performance/ -v                                               # パフォーマンス確認
-uv run bandit -r utils/ config/ models/ -q && uv run safety check  # セキュリティ包括確認
+uv run bandit -r utils/ config/ models/ -q && uv run safety scan  # セキュリティ包括確認
 ```
 
 ### 環境管理 (月次)
 
 ```bash
 uv sync --dev              # 初期設定
-docker-compose up -d       # Docker環境
+# docker-compose up -d   # Docker環境（Week3実装後に利用可能）
 find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && rm -rf reports/htmlcov reports/coverage.xml  # 完全クリーンアップ
 ```
 
@@ -638,8 +643,8 @@ uv sync --dev
 # テスト環境リセット
 find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && uv sync --dev
 
-# Docker環境リセット
-docker-compose down && find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && docker build . && docker-compose up -d
+# Docker環境リセット（Week3実装後に利用可能）
+# docker-compose down && docker build -t api-test-portfolio:latest . && docker-compose up -d
 ```
 
 ### 品質チェック問題
