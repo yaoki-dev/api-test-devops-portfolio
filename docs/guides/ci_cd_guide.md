@@ -13,7 +13,6 @@ graph TB
     PV --> Merge{Merge to main?}
     PS --> Merge
     Merge -->|Yes| PM[Post-Merge Validation]
-    PM --> Deploy[Deployment]
     Weekly[Weekly Schedule] --> WC[Weekly Comprehensive]
 
     style PV fill:#1e90ff,color:#fff
@@ -26,7 +25,7 @@ graph TB
 |-------|---------|---------|---------|---------|
 | **PR Validation** | `pull_request` | Unit + Integration Tests | 10分 | ○ |
 | **PR Security Scan** | `pull_request` | Trivy（Filesystem + Image） | 10分 | ○ |
-| **Post-Merge** | `push to main` | Docker Build + Trivy + Deploy | 8分 | × |
+| **Post-Merge** | `push to main` | Docker Build + Trivy + Smoke Tests | 8分 | × |
 | **Weekly Comprehensive** | `schedule` (週次) | Performance + External API | 30分 | × |
 
 ---
@@ -134,7 +133,7 @@ uv run pytest -n auto -m "(unit or integration) and not external" \
 |---------|------|--------|---------|
 | `feature/*` | 新機能開発 | PR Validation + PR Security Scan | `develop` |
 | `develop` | 統合ブランチ | PR Validation + PR Security Scan | `main` |
-| `main` | 本番環境 | Post-Merge + Deploy | - |
+| `main` | 本番環境 | Post-Merge Validation (Trivy + Smoke) | - |
 | `hotfix/*` | 緊急修正 | PR Validation + PR Security Scan | `main` + `develop` |
 
 **マージ戦略**:
