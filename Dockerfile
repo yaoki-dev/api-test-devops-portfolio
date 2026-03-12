@@ -23,11 +23,13 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# セキュリティ: OSパッケージのセキュリティアップデート
+# セキュリティ: OSパッケージのセキュリティアップデート + pip更新
+# pip 25.3 → 26.0.1: CVE-2026-1703 (path traversal) 修正
 RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && \
+    pip install --upgrade pip
 
 # セキュリティ: 非rootユーザー作成
 RUN groupadd --gid 1000 appgroup && \
