@@ -15,5 +15,7 @@
 #              では該当する攻撃経路なし
 #   - 参考: https://security-tracker.debian.org/tracker/CVE-2026-0861
 #   - 確認日: 2026-03-12（Five Whys 根本原因分析 + ローカル Trivy スキャン検証）
-#   - 再評価: Debian 13向けパッチリリース時に削除（週次Trivyスキャンで自動検出可能）
+#   - 再評価: Debian 13向けパッチリリース時に削除
+#              削除確認: trivy image --severity HIGH python:3.14-slim で CVE-2026-0861
+#              が検出されなくなったらこのエントリを削除（週次スキャンで自動検出）
 CVE-2026-0861
