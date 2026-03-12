@@ -117,7 +117,7 @@ class TestLogFormat:
     """ログフォーマット設定のテスト"""
 
     @patch("utils.logger.get_settings")
-    def test_console_format_configuration(self, mock_get_settings) -> None:
+    def test_console_format_configuration(self, mock_get_settings: MagicMock) -> None:
         """コンソールフォーマット設定時の動作確認"""
         # モック設定
         mock_settings = mock_get_settings.return_value
@@ -133,7 +133,7 @@ class TestLogFormat:
         assert structlog.is_configured()
 
     @patch("utils.logger.get_settings")
-    def test_json_format_configuration(self, mock_get_settings) -> None:
+    def test_json_format_configuration(self, mock_get_settings: MagicMock) -> None:
         """JSONフォーマット設定時の動作確認"""
         # モック設定
         mock_settings = mock_get_settings.return_value

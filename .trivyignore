@@ -1,12 +1,19 @@
 # .trivyignore
-# 最終更新: 2026-01-08
-# 期限: 2026-02-08（30日後にレビュー）
+# 最終更新: 2026-03-12
 #
-# CVE-2025-8869: pip tar extraction path traversal vulnerability
-# 深刻度: MEDIUM (CVSS v4.0: 5.9)
-# 検出理由: python:3.12-slim内のpip (<25.3) がTrivyで検出される
-# 実際のリスク: 低（Python 3.12はPEP 706実装済み、脆弱コードパス未使用）
-# 修正状況: pip 25.3で修正済み、base image更新待ち
-# 参照: https://github.com/advisories/GHSA-4xh5-x5gv-qwph
-# 対応: base image更新時に削除検討
-CVE-2025-8869
+# CVE-2025-8869: PEP 706対応Python（3.9.17+/3.10.12+/3.11.4+/3.12+）および
+#                pip 25.3 で修正済み（Python 3.12以降は影響なし）
+#                確認日: 2026-03-08 PR#228
+#
+# CVE-2026-0861: glibc memalign 整数オーバーフロー (HIGH)
+# 対象: libc-bin, libc6 2.41-12+deb13u1 (Debian 13 trixie)
+# 抑制理由:
+#   - Debian公式が no-dsa (Minor issue) に分類 → DSA発行予定なし
+#   - 修正版: glibc 2.43 (sid/forky のみ, Debian 13向けパッチ未提供)
+#   - 攻撃条件: memalign の size と alignment 両方を攻撃者制御 +
+#              size が PTRDIFF_MAX 付近 → 本プロジェクト（APIテストクライアント）
+#              では該当する攻撃経路なし
+#   - 参考: https://security-tracker.debian.org/tracker/CVE-2026-0861
+#   - 確認日: 2026-03-12（Five Whys 根本原因分析 + ローカル Trivy スキャン検証）
+#   - 再評価: Debian 13向けパッチリリース時に削除（週次Trivyスキャンで自動検出可能）
+CVE-2026-0861

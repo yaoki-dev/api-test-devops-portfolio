@@ -10,7 +10,7 @@ import asyncio
 import json
 import re
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any, Self, cast
 
 import httpx
 
@@ -118,7 +118,7 @@ class AsyncGitHubClient:
 
         Args:
             timeout: リクエストタイムアウト（秒）
-            max_retries: リトライ回数（5xxエラーのみ）
+            max_retries: 最大試行回数（5xxエラーのみ、初回含む）
             user_agent: User-Agentヘッダー（GitHub要求事項）
 
         """
@@ -131,7 +131,7 @@ class AsyncGitHubClient:
         self._data_cache: dict[str, dict[str, Any] | list[dict[str, Any]]] = {}
         self.logger = get_logger(__name__)
 
-    async def __aenter__(self) -> "AsyncGitHubClient":
+    async def __aenter__(self) -> Self:
         """非同期コンテキストマネージャーのエントリー"""
         self._client = httpx.AsyncClient(
             base_url=self.BASE_URL,
@@ -339,7 +339,7 @@ class AsyncGitHubClient:
                         await asyncio.sleep(delay)
                         continue
                     raise GitHubServerError(
-                        f"Server error: {response.status_code} after {self.max_retries} retries",
+                        f"Server error: {response.status_code} after {self.max_retries} attempts",
                     )
 
                 response.raise_for_status()
@@ -367,17 +367,36 @@ class AsyncGitHubClient:
 
             except httpx.HTTPStatusError as e:
                 if e.response.status_code < 500:
-                    # 4xxエラー: リトライしない
-                    raise
+                    # 4xxエラー: リトライしない（GitHubAPIErrorに変換）
+                    raise GitHubAPIError(
+                        f"HTTP {e.response.status_code} error: {e.response.text}"
+                    ) from e
                 if attempt == self.max_retries - 1:
-                    raise GitHubServerError(f"Failed after {self.max_retries} retries") from e
+                    raise GitHubServerError(f"Failed after {self.max_retries} attempts") from e
+                # 5xxエラーかつ最終試行でない場合のリトライ（防御的コードパス）
+                # Note: 5xxは通常L328-343で先に処理されるため、このパスは理論上到達しない
+                delay = exponential_backoff_with_jitter(attempt, base_delay=2.0)
+                self.logger.warning(
+                    "retrying_http_status_error",
+                    status_code=e.response.status_code,
+                    attempt=attempt + 1,
+                    max_retries=self.max_retries,
+                    endpoint=endpoint,
+                    method=method,
+                    delay=delay,
+                )
+                await asyncio.sleep(delay)
+                continue
 
             except httpx.TimeoutException as e:
                 self.logger.warning("request_timeout", endpoint=endpoint, method=method)
                 raise GitHubAPIError(f"Request timeout: {e}") from e
 
-            except (KeyboardInterrupt, asyncio.CancelledError):
-                # システム例外は再発生（非同期キャンセル・ユーザー中断を適切に伝播）
+            except KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError:
+                # システム例外は再発生
+                # - KeyboardInterrupt/SystemExit: graceful shutdown対応
+                # - MemoryError: K8s OOMKilled等のリソース枯渇検知
+                # - CancelledError: asyncioタスクキャンセル伝播
                 raise
 
             except Exception as e:
@@ -390,7 +409,7 @@ class AsyncGitHubClient:
                 raise GitHubAPIError(f"Unexpected error: {e}") from e
 
         # リトライ上限到達（ここに到達することはないはずだが、型チェッカー対策）
-        raise GitHubServerError(f"Failed after {self.max_retries} retries")
+        raise GitHubServerError(f"Failed after {self.max_retries} attempts")
 
 
 # =============================================================================

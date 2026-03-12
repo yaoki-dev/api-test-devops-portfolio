@@ -169,12 +169,21 @@ class SyncAPIClient:
         retry_delay: リトライ間隔（秒）
         headers: 追加HTTPヘッダー
 
+        Raises:
+            ValueError: base_urlが空文字列の場合
+
         """
         # 設定から値を取得（引数で上書き可能）
-        self.base_url = base_url or settings.api.base_url
-        self.timeout = timeout or settings.api.timeout
-        self.retry_count = retry_count or settings.api.retry_count
-        self.retry_delay = retry_delay or settings.api.retry_delay
+        # NOTE: retry_count=0, retry_delay=0.0, timeout=0.0 は有効な設定値のため is not None で判定
+        # timeout=0.0: 即座にタイムアウト（無効化は timeout=None）
+        self.base_url = base_url if base_url is not None else settings.api.base_url
+        if not self.base_url.strip():
+            raise ValueError(
+                "base_url が空です。引数または API__BASE_URL 環境変数を確認してください。"
+            )
+        self.timeout = timeout if timeout is not None else settings.api.timeout
+        self.retry_count = retry_count if retry_count is not None else settings.api.retry_count
+        self.retry_delay = retry_delay if retry_delay is not None else settings.api.retry_delay
 
         # デフォルトヘッダーの設定
         self.default_headers = {
@@ -254,7 +263,7 @@ class SyncAPIClient:
 
                 # HTTPリクエスト実行
                 response = self._client.request(method, endpoint, **kwargs)
-            except httpx.RequestError as e:
+            except (httpx.RequestError, httpx.InvalidURL) as e:
                 # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
                 last_exception = _map_request_error(e)
                 self.logger.warning("Request error", method=method, endpoint=endpoint, error=str(e))
@@ -389,11 +398,28 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
     """
 
     # Posts API
-    def get_posts(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """投稿一覧の取得"""
+    def get_posts(
+        self, limit: int | None = None, user_id: int | None = None
+    ) -> list[dict[str, Any]]:
+        """投稿一覧の取得
+
+        Args:
+            limit: 取得件数上限（0以上）
+            user_id: ユーザーIDでフィルタリング（API側フィルタ、1以上）
+
+        Raises:
+            ValueError: limit < 0 または user_id < 1 の場合
+        """
+        if limit is not None and limit < 0:
+            raise ValueError("limit must be >= 0")
+        if user_id is not None and user_id < 1:
+            raise ValueError("user_id must be >= 1")
+
         params = {}
-        if limit:
+        if limit is not None:
             params["_limit"] = limit
+        if user_id is not None:
+            params["userId"] = user_id
 
         response = self.get("/posts", params=params)
         return _safe_parse_json(response)
@@ -427,13 +453,27 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         completed: bool | None = None,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
-        """TODO一覧の取得"""
+        """TODO一覧の取得
+
+        Args:
+            user_id: ユーザーIDでフィルタリング（API側フィルタ、1以上）
+            completed: 完了状態でフィルタリング
+            limit: 取得件数上限（0以上）
+
+        Raises:
+            ValueError: limit < 0 または user_id < 1 の場合
+        """
+        if limit is not None and limit < 0:
+            raise ValueError("limit must be >= 0")
+        if user_id is not None and user_id < 1:
+            raise ValueError("user_id must be >= 1")
+
         params = {}
-        if user_id:
+        if user_id is not None:
             params["userId"] = user_id
         if completed is not None:
             params["completed"] = completed
-        if limit:
+        if limit is not None:
             params["_limit"] = limit
 
         response = self.get("/todos", params=params)
@@ -457,8 +497,18 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
 
     # Comments API
     def get_comments(self, post_id: int | None = None) -> list[dict[str, Any]]:
-        """コメント一覧の取得"""
-        if post_id:
+        """コメント一覧の取得
+
+        Args:
+            post_id: 投稿IDでフィルタリング（1以上）
+
+        Raises:
+            ValueError: post_id < 1 の場合
+        """
+        if post_id is not None and post_id < 1:
+            raise ValueError("post_id must be >= 1")
+
+        if post_id is not None:
             response = self.get(f"/posts/{post_id}/comments")
         else:
             response = self.get("/comments")
@@ -466,17 +516,37 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
 
     # Albums & Photos API
     def get_albums(self, user_id: int | None = None) -> list[dict[str, Any]]:
-        """アルバム一覧の取得"""
+        """アルバム一覧の取得
+
+        Args:
+            user_id: ユーザーIDでフィルタリング（API側フィルタ、1以上）
+
+        Raises:
+            ValueError: user_id < 1 の場合
+        """
+        if user_id is not None and user_id < 1:
+            raise ValueError("user_id must be >= 1")
+
         params = {}
-        if user_id:
+        if user_id is not None:
             params["userId"] = user_id
 
         response = self.get("/albums", params=params)
         return _safe_parse_json(response)
 
     def get_photos(self, album_id: int | None = None) -> list[dict[str, Any]]:
-        """写真一覧の取得"""
-        if album_id:
+        """写真一覧の取得
+
+        Args:
+            album_id: アルバムIDでフィルタリング（1以上）
+
+        Raises:
+            ValueError: album_id < 1 の場合
+        """
+        if album_id is not None and album_id < 1:
+            raise ValueError("album_id must be >= 1")
+
+        if album_id is not None:
             response = self.get(f"/albums/{album_id}/photos")
         else:
             response = self.get("/photos")
@@ -505,7 +575,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         try:
             response = self.get("/users", params={"_limit": 1})
             return response.status_code == 200
-        except (KeyboardInterrupt, SystemExit, MemoryError):
+        except KeyboardInterrupt, SystemExit, MemoryError:
             # システム例外は再発生（K8s OOMKilled検知、graceful shutdown対応）
             raise
         except APIClientError as e:
@@ -547,12 +617,21 @@ class AsyncAPIClient:
         retry_delay: リトライ間隔（秒）
         headers: 追加HTTPヘッダー
 
+        Raises:
+            ValueError: base_urlが空文字列の場合
+
         """
         # 設定から値を取得（引数で上書き可能）
-        self.base_url = base_url or settings.api.base_url
-        self.timeout = timeout or settings.api.timeout
-        self.retry_count = retry_count or settings.api.retry_count
-        self.retry_delay = retry_delay or settings.api.retry_delay
+        # NOTE: retry_count=0, retry_delay=0.0, timeout=0.0 は有効な設定値のため is not None で判定
+        # timeout=0.0: 即座にタイムアウト（無効化は timeout=None）
+        self.base_url = base_url if base_url is not None else settings.api.base_url
+        if not self.base_url.strip():
+            raise ValueError(
+                "base_url が空です。引数または API__BASE_URL 環境変数を確認してください。"
+            )
+        self.timeout = timeout if timeout is not None else settings.api.timeout
+        self.retry_count = retry_count if retry_count is not None else settings.api.retry_count
+        self.retry_delay = retry_delay if retry_delay is not None else settings.api.retry_delay
 
         # デフォルトヘッダーの設定
         self.default_headers = {
@@ -637,7 +716,7 @@ class AsyncAPIClient:
 
                 # 非同期HTTPリクエスト実行
                 response = await self._client.request(method, endpoint, **kwargs)
-            except httpx.RequestError as e:
+            except (httpx.RequestError, httpx.InvalidURL) as e:
                 # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
                 last_exception = _map_request_error(e)
                 self.logger.warning(
@@ -778,11 +857,28 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
     """
 
     # Posts API
-    async def get_posts(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """投稿一覧の非同期取得"""
+    async def get_posts(
+        self, limit: int | None = None, user_id: int | None = None
+    ) -> list[dict[str, Any]]:
+        """投稿一覧の非同期取得
+
+        Args:
+            limit: 取得件数上限（0以上）
+            user_id: ユーザーIDでフィルタリング（API側フィルタ、1以上）
+
+        Raises:
+            ValueError: limit < 0 または user_id < 1 の場合
+        """
+        if limit is not None and limit < 0:
+            raise ValueError("limit must be >= 0")
+        if user_id is not None and user_id < 1:
+            raise ValueError("user_id must be >= 1")
+
         params = {}
-        if limit:
+        if limit is not None:
             params["_limit"] = limit
+        if user_id is not None:
+            params["userId"] = user_id
 
         response = await self.get("/posts", params=params)
         return _safe_parse_json(response)
@@ -826,13 +922,27 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         completed: bool | None = None,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
-        """TODO一覧の非同期取得"""
+        """TODO一覧の非同期取得
+
+        Args:
+            user_id: ユーザーIDでフィルタリング（API側フィルタ、1以上）
+            completed: 完了状態でフィルタリング
+            limit: 取得件数上限（0以上）
+
+        Raises:
+            ValueError: limit < 0 または user_id < 1 の場合
+        """
+        if limit is not None and limit < 0:
+            raise ValueError("limit must be >= 0")
+        if user_id is not None and user_id < 1:
+            raise ValueError("user_id must be >= 1")
+
         params = {}
-        if user_id:
+        if user_id is not None:
             params["userId"] = user_id
         if completed is not None:
             params["completed"] = completed
-        if limit:
+        if limit is not None:
             params["_limit"] = limit
 
         response = await self.get("/todos", params=params)
@@ -870,10 +980,52 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 
         個別失敗を許容し、成功したユーザーのみ返却。
         失敗時はwarningログを出力（最初の5件まで詳細表示）。
+        K8s SIGTERM等で複数タスクが同時キャンセルされた場合はerrorログを出力後、
+        CancelledError等のfatal例外を再発生させる（graceful shutdown保護）。
+
+        Args:
+            users_data: 作成するユーザーデータのリスト（各要素はname/emailを含むdict）
+
+        Returns:
+            成功したユーザーデータのリスト（失敗した分は除外される）
+
+        Raises:
+            asyncio.CancelledError: 単一タスクがキャンセルされた場合（K8s graceful shutdown等）
+            BaseExceptionGroup: 複数タスクが同時にfatal例外を発生させた場合（Python convention準拠）
+            KeyboardInterrupt: Ctrl+C等の割り込みシグナルを受けた場合
+            SystemExit: sys.exit()が呼ばれた場合
+            MemoryError: メモリ不足が発生した場合
         """
         # 並行してユーザー作成（個別失敗許容）
         tasks = [self.create_user(user_data) for user_data in users_data]
         results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # システム例外はgather後に再発生させる（graceful shutdown保護）
+        # asyncio.CancelledError（Python 3.8+ は BaseException サブクラス）を吸収しない
+        # 複数タスクが同時キャンセルされる場合（K8s SIGTERM等）に全件収集してログ出力
+        fatal_exceptions = [
+            r
+            for r in results
+            if isinstance(r, (KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError))
+        ]
+        if fatal_exceptions:
+            if len(fatal_exceptions) > 1:
+                # Python convention: 複数同時例外はBaseExceptionGroupで伝播（TaskGroup同パターン）
+                # ログとraise件数の一貫性を保証（count=N → N件をBaseExceptionGroupで伝播）
+                # NOTE: CancelledError/KeyboardInterrupt/SystemExitはBaseExceptionサブクラスのため
+                #       ExceptionGroup（Exception限定）ではなくBaseExceptionGroupを使用
+                self.logger.error(
+                    "bulk_create_multiple_fatal_errors",
+                    count=len(fatal_exceptions),
+                    types=[type(e).__name__ for e in fatal_exceptions],
+                )
+                raise BaseExceptionGroup(
+                    "bulk_create_users: multiple fatal errors occurred",
+                    fatal_exceptions,
+                )
+            # 単一例外は直接raise（Python convention: asyncio.TaskGroupと同パターン）
+            exc = fatal_exceptions[0]
+            raise exc
 
         # 成功・失敗を分離（型安全なフィルタリング）
         successful: list[dict[str, Any]] = [r for r in results if isinstance(r, dict)]
@@ -913,8 +1065,18 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 
     # Comments API
     async def get_comments(self, post_id: int | None = None) -> list[dict[str, Any]]:
-        """コメント一覧の非同期取得"""
-        if post_id:
+        """コメント一覧の非同期取得
+
+        Args:
+            post_id: 投稿IDでフィルタリング（1以上）
+
+        Raises:
+            ValueError: post_id < 1 の場合
+        """
+        if post_id is not None and post_id < 1:
+            raise ValueError("post_id must be >= 1")
+
+        if post_id is not None:
             response = await self.get(f"/posts/{post_id}/comments")
         else:
             response = await self.get("/comments")
@@ -922,17 +1084,37 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 
     # Albums & Photos API
     async def get_albums(self, user_id: int | None = None) -> list[dict[str, Any]]:
-        """アルバム一覧の非同期取得"""
+        """アルバム一覧の非同期取得
+
+        Args:
+            user_id: ユーザーIDでフィルタリング（API側フィルタ、1以上）
+
+        Raises:
+            ValueError: user_id < 1 の場合
+        """
+        if user_id is not None and user_id < 1:
+            raise ValueError("user_id must be >= 1")
+
         params = {}
-        if user_id:
+        if user_id is not None:
             params["userId"] = user_id
 
         response = await self.get("/albums", params=params)
         return _safe_parse_json(response)
 
     async def get_photos(self, album_id: int | None = None) -> list[dict[str, Any]]:
-        """写真一覧の非同期取得"""
-        if album_id:
+        """写真一覧の非同期取得
+
+        Args:
+            album_id: アルバムIDでフィルタリング（1以上）
+
+        Raises:
+            ValueError: album_id < 1 の場合
+        """
+        if album_id is not None and album_id < 1:
+            raise ValueError("album_id must be >= 1")
+
+        if album_id is not None:
             response = await self.get(f"/albums/{album_id}/photos")
         else:
             response = await self.get("/photos")
@@ -943,7 +1125,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         """ユーザーに関連するデータを並行取得"""
         # 並行してユーザー情報、投稿、TODO、アルバムを取得
         user_task = self.get_user(user_id)
-        posts_task = self.get_posts()
+        posts_task = self.get_posts(user_id=user_id)
         todos_task = self.get_todos(user_id=user_id)
         albums_task = self.get_albums(user_id=user_id)
 
@@ -957,7 +1139,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 
         return {
             "user": user,
-            "posts": [p for p in posts if p["userId"] == user_id],
+            "posts": posts,
             "todos": todos,
             "albums": albums,
         }
@@ -986,7 +1168,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         try:
             response = await self.get("/users", params={"_limit": 1})
             return response.status_code == 200
-        except (KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError):
+        except KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError:
             # システム例外・タスクキャンセルは再発生（K8s対応、graceful shutdown）
             raise
         except APIClientError as e:
@@ -1035,7 +1217,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             async with semaphore:
                 try:
                     return await self.get_user(user_id)
-                except (KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError):
+                except KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError:
                     # システム例外・タスクキャンセルは再発生（並行処理全体を停止）
                     raise
                 except APIClientError as e:

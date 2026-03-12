@@ -1,14 +1,14 @@
 # API Test + DevOps Portfolio
 
-*最終更新: 2026年02月11日*
+*最終更新: 2026年03月06日*
 
 ## 概要
 
 このプロジェクトは、APIテストとDevOps技術を統合した実践的なポートフォリオです。
 
 [![CI/CD Pipeline](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml/badge.svg)](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/badge/coverage-76%25-brightgreen)](https://yuta158.github.io/api-test-portfolio/htmlcov/)
-![Python](https://img.shields.io/badge/Python-3.12-blue)
+[![Coverage](https://img.shields.io/badge/coverage-92.73%25-brightgreen)](https://yuta158.github.io/api-test-portfolio/htmlcov/)
+![Python](https://img.shields.io/badge/Python-3.14-blue)
 [![Docker](https://img.shields.io/badge/docker-multi--stage-blue)](./Dockerfile)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
@@ -16,13 +16,13 @@
 [![Security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 [![Dependencies: safety](https://img.shields.io/badge/dependencies-safety--checked-green.svg)](https://safetycli.com/)
 
-> **Python/Docker/CI/CDを統合したAPIテスト自動化ポートフォリオ。415件のテストで品質を保証。**
+> **Python/Docker/CI/CDを統合したAPIテスト自動化ポートフォリオ。551件のテスト（CI品質ゲート: 483件/92.73%）。**
 
 ## 概要
 
-- **415件のテストスイート**: Unit / Integration / e2e / smoke / Performance / external
-- **カバレッジ: 76.65%**: 継続的な品質向上（CI条件: unit+integration, not external）
-- **CI実行テスト: 300件**
+- **551件のテストスイート**: Unit(452) / Integration(36) / Performance(5) / External(5) / Smoke(3) / Slow(1) / マーカーなし(60) / E2E(実装予定)
+- **カバレッジ: 92.73%**（unit+integration条件）: 継続的な品質向上
+- **CI実行テスト: 483件**（unit+integration, external除外）
 - **CI/CD自動化**: GitHub Actions による4段階パイプライン
 - **セキュリティ**: CI/CD品質ゲート（pytest + ruff + mypy + Trivy）
 - **GitHub API統合**: 実務的なAPI統合スキルを証明（Rate Limit管理、ETag活用、非同期処理）
@@ -35,24 +35,24 @@
 
 ![Test Demo - pytest実行で19件テスト合格、カバレッジ64%を5秒で確認。テスト自動化スキルを実証](assets/demo-test.gif)
 
-> **📝 デモ内容**: クイック実行例（基本テスト19件、デモ時間短縮のため抽出。全415件は約60秒）
-> **🔍 全415件を今すぐ確認**: [GitHub Actions CI/CD](https://github.com/yuta158/api-test-portfolio/actions) でフルテスト結果＋カバレッジレポートを閲覧
+> **📝 デモ内容**: クイック実行例（基本テスト19件、デモ時間短縮のため抽出。全551件は約60秒）
+> **🔍 全551件を今すぐ確認**: [GitHub Actions CI/CD](https://github.com/yuta158/api-test-portfolio/actions) でフルテスト結果＋カバレッジレポートを閲覧
 
 **何がわかるか**:
 
 - pytest + pytest-covによる自動テスト実行
 - カバレッジレポートによる品質可視化
-- テスト実行: 基本19件 ~5秒、全415件 ~60秒
+- テスト実行: 基本19件 ~5秒、全551件 ~60秒
 
 <details>
-<summary>全テスト実行コマンド（415件、約60秒）</summary>
+<summary>全テスト実行コマンド（551件、約60秒）</summary>
 
 ```bash
-# 全テスト実行（415件）
-uv run pytest --cov=. --cov-report=term -q --color=yes
+# 全テスト実行（551件）
+uv run pytest --cov=utils --cov=config --cov=models --cov-report=term -q --color=yes
 
-# クイック実行（デモと同じ、19件）
-uv run pytest tests/unit/test_basic.py --cov=. --cov-report=term -q --color=yes
+# クイック実行（unit tests）
+uv run pytest tests/unit/test_api_client.py --cov=utils --cov=config --cov=models --cov-report=term -q --color=yes
 ```
 
 </details>
@@ -86,7 +86,7 @@ uv run pytest tests/unit/test_basic.py --cov=. --cov-report=term -q --color=yes
 
 | カテゴリ | 技術 |
 |---------|-----|
-| **言語** | Python 3.12 |
+| **言語** | Python 3.14 |
 | **HTTP Client** | httpx（同期/非同期対応） |
 | **設定管理** | Pydantic Settings（型安全） |
 | **テスト** | pytest + pytest-cov + pytest-asyncio |
@@ -124,7 +124,7 @@ main ─────────────────────────
 
 | 要件 | バージョン | 確認コマンド |
 |------|-----------|-------------|
-| Python | 3.12+ | `python --version` |
+| Python | 3.14 | `uv run python --version` |
 | uv | 0.4+ | `uv --version` |
 | Git | 2.0+ | `git --version` |
 | Docker (任意) | 24.0+ | `docker --version` |
@@ -159,7 +159,7 @@ uv sync
 uv run pytest -n auto
 
 # 4. カバレッジ付きテスト（並列）
-uv run pytest -n auto --cov=. --cov-report=term
+uv run pytest -n auto --cov=utils --cov=config --cov=models --cov-report=term
 
 # 5. 特定マーカーのテスト実行
 uv run pytest -n auto -m unit        # 単体テストのみ
@@ -180,7 +180,7 @@ api-test-devops-portfolio/
 ├── config/              # 設定管理（Pydantic Settings）
 ├── utils/               # ユーティリティ（APIクライアント等）
 ├── models/              # データモデル
-├── tests/               # テストスイート（334関数/415件）
+├── tests/               # テストスイート（551件）
 │   ├── unit/            # 単体テスト
 │   ├── integration/     # 統合テスト
 │   ├── performance/     # パフォーマンステスト
@@ -264,14 +264,37 @@ if init_sentry():
 
 ## テスト戦略
 
+### テストサマリー
+
+| 種別 | 件数 | CI対象 | 備考 |
+|------|------|--------|------|
+| Unit tests | 452件 | ✅ | ビジネスロジック検証 |
+| Integration tests | 36件（CI対象: 31件） | ✅（external 5件除外） | API統合検証 |
+| **CI合計（カバレッジ計測対象）** | **483件** | | |
+| **カバレッジ** | **92.73%** | | unit+integration条件 |
+
+**カバレッジ計測対象外テスト**
+
+| 種別 | 件数 | 除外理由 |
+|------|------|---------|
+| Performance tests | 5件 | 実API依存・実行時間変動 |
+| External API tests | 5件 | 実ネットワーク依存 |
+| Smoke tests | 3件 | 実環境依存 |
+| Slow tests | 1件 | タイムアウト対象（>3秒） |
+| E2E tests | 実装予定 | — |
+| マーカーなし | 60件 | マーカー付与予定（test_responses_models等） |
+| **全件合計** | **551件** | |
+
+> カバレッジはCI安定性確保のため、決定論的テスト（unit + integration）のみを計測対象としています。
+
 ### テストピラミッド
 
 ```mermaid
 graph TB
-    subgraph "Test Pyramid - 415件"
+    subgraph "Test Pyramid - 551件（CI対象: 483件）"
         E2E["🔝 E2E<br/>0件 → 5%目標"]
-        Integration["🔗 Integration<br/>31件 (8%) → 25%目標"]
-        Unit["🧱 Unit<br/>338件 (92%) → 70%目標"]
+        Integration["🔗 Integration<br/>36件（CI対象: 31件）→ 25%目標"]
+        Unit["🧱 Unit<br/>452件 (82%) → 70%目標"]
     end
     E2E --> Integration --> Unit
 
@@ -286,7 +309,7 @@ graph TB
 - **Integration (25%)**: API・DB接続の検証（中速・実環境近似）
 - **E2E (5%)**: クリティカルパスのみ（低速・高信頼）
 
-> **Note**: pytestパラメータ化テストにより、334個のテスト関数 → pytest収集415件
+> **Note**: pytestパラメータ化テストにより、テスト関数 → pytest収集551件（CI対象: 483件）。カテゴリ別件数はマーカー別集計のため合計は551件と一致しない（マーカー重複・未付与テスト60件含む）
 
 ### テスト実行特性（CI最適化）
 
@@ -310,6 +333,34 @@ graph TB
 | PR Security Scan | Pull Request | Trivy脆弱性スキャン | 10分 |
 | Post-Merge | Push to main | Docker Build + Trivy | 8分 |
 | Weekly Comprehensive | 週次スケジュール | Performance + External API | 30分 |
+
+### Trivy Security Scan（SARIF形式 + 3層検証）
+
+Trivyセキュリティスキャンは**SARIF（Static Analysis Results Format）**形式で出力し、**3層検証**により確実性を担保：
+
+```mermaid
+graph LR
+    A[Trivy Scan] --> B[Layer 1: File Existence]
+    B --> C[Layer 2: Size Check ≥100 bytes]
+    C --> D[Layer 3: JSON Validity]
+    D --> E[GitHub Security Tab Upload]
+```
+
+**検証フロー**:
+
+1. **Layer 1**: SARIFファイル存在確認
+2. **Layer 2**: ファイルサイズ検証（≥100 bytes、空ファイル検出）
+3. **Layer 3**: JSON妥当性検証（`jq empty`）
+
+**エラーハンドリング**:
+
+- `continue-on-error: true`: Trivyスキャン失敗時もパイプライン継続
+- 各層で明確なエラーメッセージ出力
+- Filesystem/Image scan個別に検証実行
+
+**実装詳細**: 3層検証ロジックはComposite Actionとして実装され、PR/Post-Mergeの3箇所で再利用されています。
+
+> 📚 詳細実装は [CI/CD運用ガイド](docs/guides/ci_cd_guide.md) を参照
 
 ---
 

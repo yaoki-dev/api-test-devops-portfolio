@@ -8,15 +8,21 @@ on:
 jobs:
   claude-review:
     runs-on: ubuntu-latest
-    timeout-minutes: 15  # Job-level timeout to prevent runaway jobs
+    timeout-minutes: 20  # Job-level timeout (backup defense: inner step limit 15min)
+                         # Rationale: MCP init (1-2min) + PR analysis (2-3min) + LLM response (2-4min) = 5-9min
+                         # Defense-in-depth: step-timeout (15min) triggers first per GitHub Actions spec
     # Skip for Dependabot PRs (package updates don't need code review)
     if: github.actor != 'dependabot[bot]'
     env:
       AST_GREP_MCP_VERSION: "1.1.1"
+      MORPH_MCP_VERSION: "0.8.92"
+      MGREP_VERSION: "0.1.10"
+      # Base tools (mgrep is conditionally added based on MXBAI_API_KEY availability)
       BASE_TOOLS: "Read,Glob,Grep,Task,WebFetch,WebSearch,TodoWrite,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+      MGREP_TOOLS: "Bash(mgrep:*)"
       AST_GREP_TOOLS: "mcp__ast-grep__find_code,mcp__ast-grep__find_code_by_rule"
-      # MCP configuration (job-level for consistency with other env vars)
-      MCP_CONFIG: '{"mcpServers": {"ast-grep": {"command": "npx", "args": ["-y", "@notprolands/ast-grep-mcp@1.1.1"]}}}'
+      MORPH_MCP_TOOLS: "mcp__morph-mcp__warpgrep_codebase_search"
+      # Note: mgrep is a CLI tool (not MCP), configured separately via npm install
     permissions:
       contents: read
       pull-requests: write
@@ -29,61 +35,215 @@ jobs:
         with:
           fetch-depth: 1
 
-      # ast-grep MCP availability verification (graceful degradation)
-      # mcp_available controls: --mcp-config injection + allowedTools list
-      # When false: review proceeds without AST analysis (degraded but functional)
+      # Install mgrep CLI for semantic code search (Bash-based, not MCP)
+      # MXBAI_API_KEY is passed to Claude Code via settings.env for Bash access
+      - name: Install mgrep CLI
+        id: install-mgrep
+        timeout-minutes: 2
+        env:
+          HAS_MXBAI_KEY: ${{ secrets.MXBAI_API_KEY != '' }}
+        run: |
+          set -euo pipefail
+
+          if [ "$HAS_MXBAI_KEY" != "true" ]; then
+            echo "::warning::MXBAI_API_KEY not configured. Semantic search will be unavailable."
+            echo "mgrep_available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "🔍 Installing @mixedbread/mgrep@${{ env.MGREP_VERSION }}..."
+          if npm install -g @mixedbread/mgrep@${{ env.MGREP_VERSION }} 2>&1; then
+            echo "✅ mgrep installed: $(mgrep --version)"
+            echo "mgrep_available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::mgrep installation failed. Semantic search will be unavailable."
+            echo "mgrep_available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ast-grep MCP availability verification (independent graceful degradation)
+      # ast_grep_available controls: ast-grep server in MCP config + AST_GREP_TOOLS
       - name: Verify ast-grep MCP availability
-        id: verify-mcp
+        id: verify-ast-grep
         timeout-minutes: 2
         run: |
           set -euo pipefail
 
-          # npm可用性チェック（ubuntu-latestにはnpmがプリインストールされているため、
-          # 存在しない場合は環境異常）
           if ! command -v npm &> /dev/null; then
             echo "::error::npm is not installed. This is unexpected on ubuntu-latest."
-            echo "::error::AST-based code analysis will be UNAVAILABLE. Review quality may be reduced."
-            echo "mcp_available=false" >> "$GITHUB_OUTPUT"
+            echo "ast_grep_available=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          echo "🔍 Verifying @notprolands/ast-grep-mcp@${{ env.AST_GREP_MCP_VERSION }} availability..."
-
-          # stderrを保持して診断情報を確保（Issue 1対応）
+          echo "🔍 Verifying @notprolands/ast-grep-mcp@${{ env.AST_GREP_MCP_VERSION }}..."
           NPM_OUTPUT=$(npm view @notprolands/ast-grep-mcp@${{ env.AST_GREP_MCP_VERSION }} version 2>&1) && NPM_STATUS=0 || NPM_STATUS=$?
 
           if [ "$NPM_STATUS" -eq 0 ]; then
-            echo "✅ Package verified: $NPM_OUTPUT"
-            echo "mcp_available=true" >> "$GITHUB_OUTPUT"
+            echo "✅ ast-grep verified: $NPM_OUTPUT"
+            echo "ast_grep_available=true" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::ast-grep MCP verification failed (exit code: $NPM_STATUS)"
             echo "::warning::npm output: $NPM_OUTPUT"
             echo "::warning::Review will proceed without AST analysis."
-            echo "mcp_available=false" >> "$GITHUB_OUTPUT"
+            echo "ast_grep_available=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # Validate MCP verification output (Issue 2: edge case handling)
-      - name: Validate MCP verification
-        if: steps.verify-mcp.outputs.mcp_available == ''
+      # morph-mcp availability verification (independent graceful degradation)
+      # morph_mcp_available controls: morph-mcp server in MCP config + MORPH_MCP_TOOLS
+      - name: Verify morph-mcp availability
+        id: verify-morph-mcp
+        timeout-minutes: 2
+        env:
+          HAS_MORPH_KEY: ${{ secrets.MORPH_API_KEY != '' }}
         run: |
-          echo "::error::MCP verification step did not produce expected output"
-          echo "::error::Check 'Verify ast-grep MCP availability' step for errors"
-          # Continue with degraded mode rather than failing the workflow
-          echo "mcp_available=false" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+
+          if [ "$HAS_MORPH_KEY" != "true" ]; then
+            echo "::warning::MORPH_API_KEY not configured. AI-powered search will be unavailable."
+            echo "morph_mcp_available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! command -v npm &> /dev/null; then
+            echo "::error::npm is not installed. This is unexpected on ubuntu-latest."
+            echo "morph_mcp_available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "🔍 Verifying @morphllm/morphmcp@${{ env.MORPH_MCP_VERSION }}..."
+          NPM_OUTPUT=$(npm view @morphllm/morphmcp@${{ env.MORPH_MCP_VERSION }} version 2>&1) && NPM_STATUS=0 || NPM_STATUS=$?
+
+          if [ "$NPM_STATUS" -eq 0 ]; then
+            echo "✅ morph-mcp verified: $NPM_OUTPUT"
+            echo "morph_mcp_available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::morph-mcp verification failed (exit code: $NPM_STATUS)"
+            echo "::warning::npm output: $NPM_OUTPUT"
+            echo "::warning::Review will proceed without AI-powered search."
+            echo "morph_mcp_available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Build MCP config dynamically based on individual service availability
+      # Each MCP server is independently verified and conditionally included
+      # Security: Secrets are passed via env: block (not ${{ secrets.* }} in run:) and
+      # JSON is built with jq --arg for safe escaping (prevents JSON injection)
+      - name: Build MCP config
+        id: build-mcp-config
+        env:
+          MORPH_API_KEY: ${{ secrets.MORPH_API_KEY }}
+        run: |
+          AST_GREP='${{ steps.verify-ast-grep.outputs.ast_grep_available }}'
+          MORPH_MCP='${{ steps.verify-morph-mcp.outputs.morph_mcp_available }}'
+          MGREP='${{ steps.install-mgrep.outputs.mgrep_available }}'
+
+          EXTRA_TOOLS=""
+
+          # mgrep CLI: semantic code search (Bash tool, not MCP)
+          if [ "$MGREP" == "true" ]; then
+            if [ -n "$EXTRA_TOOLS" ]; then EXTRA_TOOLS="$EXTRA_TOOLS,"; fi
+            EXTRA_TOOLS="${EXTRA_TOOLS}${{ env.MGREP_TOOLS }}"
+            echo "✅ mgrep CLI included in allowedTools"
+          fi
+
+          # ast-grep: AST-based code analysis
+          AST_GREP_SERVER=""
+          if [ "$AST_GREP" == "true" ]; then
+            AST_GREP_SERVER='"ast-grep":{"command":"npx","args":["-y","@notprolands/ast-grep-mcp@${{ env.AST_GREP_MCP_VERSION }}"]}'
+            if [ -n "$EXTRA_TOOLS" ]; then EXTRA_TOOLS="$EXTRA_TOOLS,"; fi
+            EXTRA_TOOLS="${EXTRA_TOOLS}${{ env.AST_GREP_TOOLS }}"
+            echo "✅ ast-grep included in MCP config"
+          fi
+
+          # morph-mcp: AI-powered code search
+          # Secret is injected via jq (not shell interpolation) for safe JSON escaping
+          HAS_MORPH=false
+          if [ "$MORPH_MCP" == "true" ]; then
+            echo "::add-mask::${MORPH_API_KEY}"
+            HAS_MORPH=true
+            if [ -n "$EXTRA_TOOLS" ]; then EXTRA_TOOLS="$EXTRA_TOOLS,"; fi
+            EXTRA_TOOLS="${EXTRA_TOOLS}${{ env.MORPH_MCP_TOOLS }}"
+            echo "✅ morph-mcp included in MCP config"
+          fi
+
+          # Build final config using jq for safe JSON escaping of secret values
+          # Note: Uses inline JSON (not file path) for --mcp-config to avoid
+          # silent drop issue in claude-code-action (see: anthropics/claude-code-action#1004)
+          # Secret masking: ::add-mask:: + env: block ensure MORPH_API_KEY is masked in logs
+          HAS_SERVERS=false
+          if [ -n "$AST_GREP_SERVER" ] || [ "$HAS_MORPH" == "true" ]; then
+            HAS_SERVERS=true
+          fi
+
+          if [ "$HAS_SERVERS" == "true" ]; then
+            # Use jq to safely build the MCP config JSON
+            # This ensures proper escaping of all values (especially MORPH_API_KEY)
+            BASE_CONFIG='{"mcpServers":{}}'
+
+            if [ -n "$AST_GREP_SERVER" ]; then
+              BASE_CONFIG=$(echo "$BASE_CONFIG" | jq -c '.mcpServers["ast-grep"] = {"command":"npx","args":["-y","@notprolands/ast-grep-mcp@${{ env.AST_GREP_MCP_VERSION }}"]}')
+            fi
+
+            if [ "$HAS_MORPH" == "true" ]; then
+              BASE_CONFIG=$(echo "$BASE_CONFIG" | jq -c --arg key "$MORPH_API_KEY" '.mcpServers["morph-mcp"] = {"command":"npx","args":["-y","@morphllm/morphmcp@${{ env.MORPH_MCP_VERSION }}"],"env":{"MORPH_API_KEY":$key,"ENABLED_TOOLS":"warpgrep_codebase_search"}}')
+            fi
+
+            # Write inline JSON to GITHUB_OUTPUT (not file path)
+            # MORPH_API_KEY is masked by ::add-mask:: and GitHub's automatic secret masking
+            echo "mcp_config=${BASE_CONFIG}" >> "$GITHUB_OUTPUT"
+            echo "extra_tools=${EXTRA_TOOLS}" >> "$GITHUB_OUTPUT"
+            echo "has_mcp=true" >> "$GITHUB_OUTPUT"
+          else
+            # mgrep is CLI-only (no MCP server), so has_mcp may be false even with mgrep available
+            echo "mcp_config=" >> "$GITHUB_OUTPUT"
+            echo "extra_tools=${EXTRA_TOOLS}" >> "$GITHUB_OUTPUT"
+            if [ -n "$EXTRA_TOOLS" ]; then
+              echo "has_mcp=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "::warning::No MCP servers or CLI tools available. Review with BASE_TOOLS only."
+              echo "has_mcp=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+          echo "📋 Summary: ast-grep=$AST_GREP, morph-mcp=$MORPH_MCP, mgrep=$MGREP"
+
+      # Build settings JSON with jq for safe JSON escaping of secret values
+      # Prevents JSON injection if API key contains special characters (e.g., double quotes)
+      - name: Build settings JSON
+        id: build-settings
+        env:
+          MXBAI_API_KEY: ${{ secrets.MXBAI_API_KEY }}
+          MGREP_AVAILABLE: ${{ steps.install-mgrep.outputs.mgrep_available }}
+        run: |
+          if [ "$MGREP_AVAILABLE" == "true" ]; then
+            echo "::add-mask::${MXBAI_API_KEY}"
+            # Use jq to safely escape the API key value in JSON
+            SETTINGS_JSON=$(jq -cn --arg key "$MXBAI_API_KEY" '{"env": {"MXBAI_API_KEY": $key}}')
+          else
+            SETTINGS_JSON='{"env": {}}'
+          fi
+          echo "settings_json=${SETTINGS_JSON}" >> "$GITHUB_OUTPUT"
 
       - name: Run Claude Code Review
         # NOTE: Workflow fails if this step fails (default behavior)
         # Claude Action errors (auth, timeout, rate limit) propagate automatically
         id: claude-review
-        timeout-minutes: 10
-        uses: anthropics/claude-code-action@v1
+        timeout-minutes: 15  # Step-level limit (primary boundary per GitHub Actions evaluation order)
+                            # GitHub Actions: step timeout checked BEFORE job timeout
+                            # Process: MCP servers (ast-grep/morph-mcp via npx) + PR diff + code analysis + Japanese comments
+        # Pin to v1.0.66 (2026-03-02) to avoid AJV schema validation crash in v1.0.67+
+        # See: https://github.com/anthropics/claude-code-action/issues/1013
+        # TODO: Update when upstream fix is released
+        uses: anthropics/claude-code-action@26ec041249acb0a944c0a47b6c0c13f05dbc5b44 # v1.0.70
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Conditional MCP config: inject only when package is verified available
-          # When unavailable: Claude proceeds with BASE_TOOLS only (no AST analysis)
-          claude_args: |
-            ${{ steps.verify-mcp.outputs.mcp_available == 'true' && format('--mcp-config {0}', env.MCP_CONFIG) || '' }}
-            --allowedTools "${{ env.BASE_TOOLS }}${{ steps.verify-mcp.outputs.mcp_available == 'true' && format(',{0}', env.AST_GREP_TOOLS) || '' }}"
+          # Security: settings JSON is built in build-settings step using jq for safe
+          # JSON escaping (prevents JSON injection if key contains special characters)
+          settings: ${{ steps.build-settings.outputs.settings_json }}
+          # MCP config: dynamically built based on individual service availability
+          # When no MCP servers available: Claude proceeds with BASE_TOOLS only
+          # Single-line format to avoid multiline parsing issues (see: anthropics/claude-code-action#844)
+          claude_args: >-
+            ${{ steps.build-mcp-config.outputs.has_mcp == 'true' && format('--mcp-config {0}', steps.build-mcp-config.outputs.mcp_config) || '' }}
+            --allowedTools "${{ env.BASE_TOOLS }}${{ steps.build-mcp-config.outputs.extra_tools != '' && format(',{0}', steps.build-mcp-config.outputs.extra_tools) || '' }}"
           prompt: |
             /review-pr REPO: ${{ github.repository }} PR_NUMBER: ${{ github.event.pull_request.number }}
 

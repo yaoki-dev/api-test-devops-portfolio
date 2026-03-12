@@ -1,14 +1,19 @@
 # Dockerfile - 4-stage Multi-stage builds
-# 最終更新: 2026年01月29日
+# 最終更新: 2026年03月08日
 # 品質基準: イメージサイズ < 200MB, ビルド時間 < 3分
 
 # ============================================================
 # Stage 1: Base - 共通ベースイメージ
 # ============================================================
 # セキュリティ: SHA256ダイジェスト固定（サプライチェーン攻撃防止）
-# 更新時: docker pull python:3.12-slim && docker inspect --format='{{index .RepoDigests 0}}' python:3.12-slim
-# 2026-01-29更新: 定期セキュリティパッチ適用（OpenSSL等）
-FROM python:3.12-slim@sha256:5e2dbd4bbdd9c0e67412aea9463906f74a22c60f89eb7b5bbb7d45b66a2b68a6 AS base
+# 更新フロー: Dependabotが週次（月曜 09:00 JST）で自動検出・PR作成
+# 手動更新: docker pull python:3.14-slim && docker inspect --format='{{index .RepoDigests 0}}' python:3.14-slim
+# 変更履歴:
+#   2026-02-17: Python 3.12→3.13 (セキュリティサポート延長)
+#   2026-03-07: Python 3.13→3.14 (プロジェクト全体統一移行 PR#228)
+# 注意: CVE-2025-8869はPEP 706対応Python（3.9.17+/3.10.12+/3.11.4+/3.12+を含む）
+#        では影響を受けない。pip 26.x（>=26,<27 でアップグレード済み）でも修正済み（詳細: .trivyignore参照）
+FROM python:3.14-slim@sha256:6a27522252aef8432841f224d9baaa6e9fce07b07584154fa0b9a96603af7456 AS base
 
 WORKDIR /app
 
@@ -18,11 +23,13 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# セキュリティ: OSパッケージのセキュリティアップデート
+# セキュリティ: OSパッケージのセキュリティアップデート + pip更新
+# pip 25.3 → 26.x (>=26,<27): CVE-2026-1703 (path traversal) 修正
 RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && \
+    pip install --no-cache-dir "pip>=26,<27"
 
 # セキュリティ: 非rootユーザー作成
 RUN groupadd --gid 1000 appgroup && \

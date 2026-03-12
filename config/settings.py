@@ -11,13 +11,17 @@ import ipaddress
 import logging
 import os
 import socket
-from enum import Enum
+from enum import StrEnum
+from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# NOTE: utils/logger.py は config.settings に依存するため structlog は使用不可（循環インポート回避）
+_logger = logging.getLogger(__name__)
 
 # =============================================================================
 # SSRF Prevention Configuration
@@ -79,6 +83,87 @@ def _check_ip_private(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool
     return any(ip in network for network in PRIVATE_IP_RANGES)
 
 
+@lru_cache(maxsize=256)
+def _resolve_hostname_cached(hostname: str) -> str:
+    """ホスト名をDNS解決してIPアドレス文字列を返す（成功時のみキャッシュ）
+
+    Args:
+        hostname: 解決対象のホスト名
+
+    Returns:
+        解決されたIPアドレス文字列。
+
+    Raises:
+        socket.herror: DNSサーバーエラーによる解決失敗。
+        socket.gaierror: アドレス情報取得失敗。
+        OSError: socket.herror / socket.gaierror を含む全ネットワークエラーの基底クラス。
+            ここでは PermissionError / TimeoutError 等それ以外の OSError サブクラスを指す。
+        UnicodeError: 非ASCII文字を含むホスト名等のUnicode処理エラー時。
+        TypeError: NULバイト（\\x00）等の不正文字を含むホスト名の場合。
+        OverflowError: 極端に長いホスト名によるOSレベルオーバーフロー時（プラットフォーム依存）。
+    """
+    return socket.gethostbyname(hostname)
+
+
+def _resolve_hostname(hostname: str) -> str | None:
+    """ホスト名をDNS解決してIPアドレス文字列を返す（失敗時はNone）
+
+    Args:
+        hostname: 解決対象のホスト名
+
+    Returns:
+        解決されたIPアドレス文字列。失敗時はNone（キャッシュされない）。
+
+    Note:
+        DNS解決成功時のみ _resolve_hostname_cached でキャッシュされる。
+        一時的なDNS障害後は次の呼び出しで再試行が行われる。
+
+    Security:
+        不正ホスト名入力に対するSSRF防止:
+        - UnicodeDecodeError: DNS応答の不正バイト列デコード失敗
+        - UnicodeEncodeError: 非ASCII文字を含むホスト名のエンコード失敗
+        - UnicodeError（親クラス）でまとめて捕捉し、実装・プラットフォーム差を吸収
+        - TypeError: NULバイト（\x00）等の不正文字を含むホスト名
+        - OverflowError: 極端に長いホスト名によるOSレベルオーバーフロー（プラットフォーム依存）
+        - ラッパー側でcatchすることでlru_cacheに影響せず（成功値のみキャッシュ維持）
+        - Fail-Closed: Noneを返してis_private_ipがブロック判定する
+    """
+    try:
+        return _resolve_hostname_cached(hostname)
+    except (UnicodeError, OverflowError, TypeError) as e:
+        # UnicodeError: Unicode処理エラー（UnicodeDecodeError/UnicodeEncodeError含む）
+        #   - 非ASCII文字を含む攻撃的なホスト名（SSRF試行の可能性）
+        # OverflowError: 極端に長いホスト名によるOSレベルオーバーフロー（プラットフォーム依存）
+        # TypeError: NULバイト（\x00）等の不正文字を含むホスト名
+        _logger.warning(
+            "不正なホスト名形式 — SSRF試行の可能性: hostname=%r, error_type=%s, error=%r",
+            hostname[:200],
+            type(e).__name__,
+            e,
+        )
+        return None
+    except (socket.herror, socket.gaierror) as e:
+        # DNS解決失敗（herror: サーバーエラー, gaierror: アドレス情報エラー）
+        # Fail-Closed: サービスへの影響（正当リクエストのブロック）が発生するためWARNINGレベル
+        _logger.warning(
+            "DNS解決失敗: hostname=%r — ブロック扱い (error_type=%s, errno=%s)",
+            hostname[:200],
+            type(e).__name__,
+            e.args[0] if e.args else "N/A",
+        )
+        return None
+    except OSError as e:
+        # 予期しないネットワークエラー（PermissionError, TimeoutError 等）
+        # Fail-Closed: DNS解決失敗として誤分類しないよう別メッセージで記録
+        _logger.warning(
+            "予期しないネットワークエラー: hostname=%r — ブロック扱い (error_type=%s, errno=%s)",
+            hostname[:200],
+            type(e).__name__,
+            getattr(e, "errno", "N/A"),
+        )
+        return None
+
+
 def is_private_ip(hostname: str) -> bool:
     """ホスト名がプライベートIPまたはローカルアドレスかチェック
 
@@ -91,21 +176,33 @@ def is_private_ip(hostname: str) -> bool:
     Security:
         - IPv4-mapped IPv6（::ffff:x.x.x.x）もプライベートIPとして検出
         - DNS解決失敗時はFail-Closed（ブロック）
+        - DNS解決結果はLRUキャッシュ（256エントリ）で高速化
 
     """
     try:
-        # IPアドレス形式の場合
+        # IPアドレス形式の場合（DNS解決不要）
         ip = ipaddress.ip_address(hostname)
         return _check_ip_private(ip)
     except ValueError:
-        # ホスト名の場合、DNS解決を試みる
-        try:
-            resolved_ip = socket.gethostbyname(hostname)
-            ip = ipaddress.ip_address(resolved_ip)
-            return _check_ip_private(ip)
-        except (OSError, ValueError):
+        # ホスト名の場合、DNS解決を試みる（キャッシュ付き）
+        resolved = _resolve_hostname(hostname)
+        if resolved is None:
             # DNS解決失敗は安全側に倒す（ブロック = Fail-Closed）
             # セキュリティ: SSRF攻撃防止のため、不明なホストはプライベートIPと見なす
+            return True
+        try:
+            ip = ipaddress.ip_address(resolved)
+            return _check_ip_private(ip)
+        except ValueError:
+            # DNS解決結果が有効なIPアドレス形式でない場合（異常なDNS応答）
+            # セキュリティ: 不正な値はプライベートIPとして扱いブロック（Fail-Closed）
+            # ログを残すことでセキュリティインシデントの証拠を保全する
+            # _logger はモジュールレベル（インポート直後）で定義済み
+            _logger.warning(
+                "DNS解決結果が不正なIPアドレス形式: hostname=%r, resolved=%r — ブロック扱い",
+                hostname[:200],
+                resolved[:100],
+            )
             return True
 
 
@@ -114,7 +211,7 @@ def is_private_ip(hostname: str) -> bool:
 # =============================================================================
 
 
-class Environment(str, Enum):
+class Environment(StrEnum):
     """実行環境の定義"""
 
     DEVELOPMENT = "development"
@@ -123,7 +220,7 @@ class Environment(str, Enum):
     PRODUCTION = "production"
 
 
-class LogLevel(str, Enum):
+class LogLevel(StrEnum):
     """ログレベルの定義"""
 
     DEBUG = "DEBUG"
@@ -133,7 +230,7 @@ class LogLevel(str, Enum):
     CRITICAL = "CRITICAL"
 
 
-class LogFormat(str, Enum):
+class LogFormat(StrEnum):
     """ログフォーマットの定義"""
 
     CONSOLE = "console"
@@ -191,9 +288,14 @@ class APIConfig(BaseModel):
 
         # SSRF Prevention: 許可ドメインチェック
         if hostname not in ALLOWED_DOMAINS:
+            _logger.warning(
+                "SSRF Prevention: Domain not in allowlist: %r. Allowed domains count: %d",
+                hostname[:200],
+                len(ALLOWED_DOMAINS),
+            )
             raise ValueError(
                 f"SSRF Prevention: Domain not in allowlist: {hostname}. "
-                f"Allowed: {', '.join(sorted(ALLOWED_DOMAINS))}",
+                f"Allowed domains count: {len(ALLOWED_DOMAINS)}",
             )
 
         if v.endswith("/"):
@@ -319,6 +421,13 @@ class SentryConfig(BaseModel):
 # =============================================================================
 
 
+# 本番相当環境セット（production + staging）
+# validate_production_secrets / validate_production_https / is_production_like で共有
+_PRODUCTION_LIKE_ENVIRONMENTS: frozenset[Environment] = frozenset(
+    {Environment.PRODUCTION, Environment.STAGING}
+)
+
+
 class Settings(BaseSettings):
     """アプリケーション設定の統合管理"""
 
@@ -347,30 +456,78 @@ class Settings(BaseSettings):
 
     @field_validator("environment", mode="before")
     @classmethod
-    def validate_environment(cls, v: str | Environment) -> str | Environment:
-        """環境設定のバリデーション"""
+    def validate_environment(cls, v: str | Environment) -> Environment:
+        """環境設定のバリデーション
+
+        Note:
+            StrEnumはstrを継承するため isinstance(v, str) はEnumインスタンスにもTrueを返す。
+            Enumインスタンスを先に判定し、strは正規化（strip + lower）してから
+            Environmentコンストラクタで変換する。これにより末尾スペースやタイポを
+            早期検出し、わかりやすいエラーメッセージを提供できる。
+
+        Raises:
+            ValueError: 無効な環境名（タイポ・末尾スペース含む）またはstr/Environment以外の型
+        """
+        # StrEnumはstrを継承するため、Enumインスタンスを先に判定して早期リターン
+        if isinstance(v, Environment):
+            return v
         if isinstance(v, str):
-            v = v.lower()
-        return v
+            normalized = v.strip().lower()
+            try:
+                return Environment(normalized)
+            except ValueError:
+                valid = [e.value for e in Environment]
+                # from None: PydanticがValidationErrorでラップするため
+                # 元のValueErrorチェーンを隠してエラーメッセージをクリーンに保つ
+                raise ValueError(f"environment の値が無効です: {v!r}。有効な値: {valid}") from None
+        # NOTE: mode="before" のためPydantic型強制前に実行され、int/None等も到達可能。
+        # Pydanticがmode="after"なら非str型は型強制段階で排除されるが、
+        # mode="before"では生の値を受け取るため、この分岐は防御的コードとして機能する。
+        raise ValueError(
+            f"environment には str または Environment を指定してください。"
+            f"受け取った型: {type(v).__name__!r}, 値: {v!r}"
+        )
 
     @model_validator(mode="after")
-    def validate_production_secrets(self) -> "Settings":
-        """本番環境でのシークレット存在チェック
+    def validate_production_secrets(self) -> Self:
+        """本番・ステージング環境でのシークレット存在チェック
 
         Security:
-            本番環境（ENVIRONMENT=production）では、
+            本番環境（ENVIRONMENT=production）およびステージング（ENVIRONMENT=staging）では、
             api_keyまたはjwt_secretの少なくとも一方が必須。
             未設定の場合はValueErrorを発生させ、サイレント失敗を防止。
+            ステージングは本番と同等のインフラ・データを扱うため同一ポリシーを適用。
 
         Note:
             開発/テスト環境ではシークレットなしで動作可能。
 
         """
-        if self.environment == Environment.PRODUCTION:
+        if self.environment in _PRODUCTION_LIKE_ENVIRONMENTS:
             if self.security.api_key is None and self.security.jwt_secret is None:
                 raise ValueError(
-                    "Production environment requires at least one of: "
+                    f"{self.environment.value.capitalize()} environment requires at least one of: "
                     "SECURITY__API_KEY or SECURITY__JWT_SECRET",
+                )
+        return self
+
+    @model_validator(mode="after")
+    def validate_production_https(self) -> Self:
+        """本番・ステージング環境でのHTTPS強制
+
+        Security:
+            本番（ENVIRONMENT=production）およびステージング（ENVIRONMENT=staging）では、
+            HTTPS接続を強制し平文HTTP通信を禁止。
+            OWASP A02: Cryptographic Failures対策。
+            ステージングは本番と同等のインフラ・データを扱うため同一ポリシーを適用。
+
+        Note:
+            開発/テスト環境ではHTTP接続を許可（ローカル開発用）。
+        """
+        if self.environment in _PRODUCTION_LIKE_ENVIRONMENTS:
+            if not self.api.base_url.startswith("https://"):
+                raise ValueError(
+                    f"{self.environment.value.capitalize()} environment requires HTTPS. "
+                    "Set API__BASE_URL to an https:// URL.",
                 )
         return self
 
@@ -385,6 +542,14 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         """本番環境判定"""
         return self.environment == Environment.PRODUCTION
+
+    def is_staging(self) -> bool:
+        """ステージング環境判定"""
+        return self.environment == Environment.STAGING
+
+    def is_production_like(self) -> bool:
+        """本番相当環境判定（production + staging）"""
+        return self.environment in _PRODUCTION_LIKE_ENVIRONMENTS
 
     def get_log_level(self) -> int:
         """ログレベルの取得（logging/structlog共通）
@@ -458,7 +623,17 @@ def reload_settings() -> Settings:
 
 
 # 便利なエイリアス
-settings = get_settings()
+# モジュールインポート時に ValidationError が発生すると ImportError として連鎖し
+# 根本原因（環境変数のタイポ等）が隠蔽される。logging で根本原因を明示する。
+try:
+    settings = get_settings()
+except Exception as e:  # noqa: BLE001  # ValidationError含む全設定エラーを捕捉（SystemExit等のBaseException除外済み）
+    _logger.critical(
+        "設定の初期化に失敗しました (type=%s)。環境変数を確認してください: %s",
+        type(e).__name__,
+        e,
+    )
+    raise
 
 # =============================================================================
 # 学習ポイント:

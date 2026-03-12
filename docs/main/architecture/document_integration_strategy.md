@@ -101,7 +101,7 @@ class ContentDeduplication:
 ```markdown
 <!-- 動的相互参照構文例 -->
 @ref:daily_commands/quality_checks -> 品質チェックコマンド詳細
-@ref:technical_stack/python_version -> Python 3.12仕様詳細
+@ref:technical_stack/python_version -> Python 3.14仕様詳細
 @ref:agent_strategies/parallel_execution -> 並列実行戦略
 ```
 

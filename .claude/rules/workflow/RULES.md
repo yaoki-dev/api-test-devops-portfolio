@@ -5,14 +5,15 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
 
 ## Project Context
 
-**Tech Stack:** Python 3.12 + httpx + pytest + Pydantic Settings | ruff + mypy | uv | GitHub Actions
+**Tech Stack:** Python 3.14 + httpx + pytest + Pydantic Settings | ruff + mypy | uv | GitHub Actions
 
 **Priority Hierarchy:**
 1. **CLAUDE.md** (project root) - highest priority
 2. **This RULES.md** - behavioral patterns
 3. **PRINCIPLES.md** - foundational principles
 
-**Related Serena Memories:** `@memory:implementation_quality_gates`, `@memory:coding_standards`, `@memory:command_usage_guide`
+**Related Serena Memories:** `@memory:implementation_quality_gates`, `@memory:command_usage_guide`
+**Coding Standards:** `.claude/rules/python/coding-standards.md`
 
 ---
 
@@ -29,12 +30,77 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
 
 - Follow: Understand → Plan (parallelization) → TodoWrite (3+ tasks) → Execute → Track → Verify
 - Batch independent operations; validate before/after execution
+- One task per subagent invocation; avoid multi-task delegation to maintain context focus; if a subagent reports failure or partial completion (any task where not all specified artifacts have reached their expected final state), stop and report to the user instead of silently continuing.
+- This applies to task delegation; reflexion retry logic in CLAUDE.md governs implementation quality checks.
+- Within a single agent turn, parallel *tool calls* (Read, Grep, Bash, Task etc.) remain encouraged (see "Batch independent operations" above); this is distinct from delegating multiple unrelated tasks to a single subagent.
 - Session pattern: Load → Work → Checkpoint (30 min) → Save
 - Use `/sc:load` and `/sc:save` if superclaude available
+- **Parallel Dispatch Rule** (extension of "One task per subagent invocation" above — each agent still handles exactly one task): When 2+ independent TodoList tasks exist, dispatch each as a separate Task tool invocation (parallel recommended)
+  - Independence criteria (all must be satisfied):
+    1. No output dependency between tasks (no A→B ordering constraint)
+    2. No simultaneous edits to the same file
+    3. No conflicting **writes** to shared resources (examples: conftest.py, pyproject.toml, uv.lock, config files, .env files — read-only access does not count as conflicting; when write conflicts cannot be ruled out, treat as shared)
+  - Worktree isolation: instruct each agent to invoke `/using-git-worktrees` skill in their prompt
+  - Exception: if one task has 3x+ more TodoWrite sub-items (or estimated file changes) than the other, sequential execution is acceptable
+  - On failure: if **any** agent reports failure or partial completion, the parent agent must (1) allow already-running invocations to complete (Task tool has no cancel API), (2) collect and log agent statuses (success/failure/unknown), and (3) report full status summary to user before further action
+  - Silent continuation after ambiguous/empty results is prohibited
+  - On completion: after all parallel agents complete, the parent agent must explicitly verify that each artifact exists in its expected final state before marking the parent task complete
+  - Context refinement (parent agent determines applicability before dispatch):
+    **Applicability check**: does the task prompt contain 1+ specific file paths (paths resolving to individual files with extension; glob patterns like `utils/*.py` and directory paths like `utils/` count as NO)?
+    - YES: Context refinement is optional (when skipping, record reason as `[SKIP: <reason>]` in agent response)
+    - NO (includes ambiguous cases): Context refinement is required
+    When applicable (YES case where agent opts in, or NO case where it is required), include `/iterative-retrieval` skill instructions
+    (dispatch → evaluate → refine → loop, max 3 cycles per task invocation) in the agent prompt
+    - Agent failure definition: empty response, timeout, error message, or partial response (investigation stopped mid-way) — all count as failure; failed cycle output is excluded from convergence evaluation (i.e., not used as comparison baseline for file list stability check) but may inform the next cycle's investigation scope
+    - Failed cycles consume 1 cycle each (infinite retry prohibited)
+    - Task restart (= new Task tool invocation issued) resets the cycle counter
+    - **Convergence criteria**: The impact scope boundary is finalized — the list of investigated files is stable (unchanged from the previous successful cycle) and no further investigation is needed
+    - Fallback triggers when ANY of: (a) 3 cycles reached, OR (b) 2 consecutive failures (consecutive = two immediately sequential cycles both counted as failed; a successful or partially-successful cycle resets the consecutive-failure counter to 0)
+      Report to parent agent: (i) cycles consumed (ii) context summary per cycle (iii) unresolved gap list (iv) which condition blocked convergence
+      Parent agent reports to user and awaits explicit user direction before proceeding
+
+**Task Classification**: Before dispatching, classify the task type:
+- **Implementation** : code writing, feature development, bug fixes, test authoring
+- **Investigation** : research, analysis, debugging, codebase exploration
+- **Review** : code review, PR review, security audit, documentation review
+- **Design** : architecture design, API spec, system planning
+
+**Agent Selection**: Map task type to agents (reference: `~/.claude/docs/AGENTS_CATALOG.md`):
+
+| Task Type | Recommended Agents |
+|-----------|-------------------|
+| Implementation: Python/Test | `python-expert`, `debugger`, `api-testing` |
+| Implementation: Refactoring | `refactoring-expert`, `debugger` |
+| Implementation: Docker/Infra | `docker-devops`, `devops-engineer` |
+| Implementation: CI/CD | `ci/cd-pipeline`, `ci/cd-github-engineer`, `devops-engineer` |
+| Investigation | `researcher`, `Explore` (built-in Task subagent) |
+| Review | `code-review:*`, `pr-review-toolkit:*` (parallel) |
+| Design | `system-architect`, `backend-architect`, `devops-architect` |
+
+**Dispatch Automation**: When 2+ independent tasks exist post-classification, invoke `superpowers:dispatching-parallel-agents` skill via Skill tool. After all agents complete and all TodoWrite tasks are marked done, `/reflexion:reflect` runs per CLAUDE.md Rule 11 ("ALWAYS after completing all tasks in `todowrite`, Use Skill tool to run `/reflexion:reflect`") (this dispatch context already satisfies Rule 11 at the parent agent level — no duplicate call needed within subagents).
 
 **Good:** Plan → TodoWrite → Execute → Verify | **Bad:** Jump to implementation
 
 **Reference:** `api-specification-check.md`, `execution-efficiency.md`
+
+---
+
+## Category: Task Management (Persistent Layer)
+**Trigger:** Multi-session or large-scale tasks | **Priority:** Important
+
+For large-scale or multi-session tasks,
+record plans in `~/.claude/tasks/todo.md` (complements the ephemeral TodoWrite tool):
+1. **Plan First**: Write a checkable item list before starting
+2. **Verify Plan**: Align with the user before implementation
+3. **Track Progress**: Mark items as complete
+4. **Document Results**: Append review section after completion
+5. **Capture Lessons**: Update `~/.claude/tasks/lessons.md` after any corrections
+
+Usage distinction:
+- TodoWrite = in-session UI display (unchanged)
+- `~/.claude/tasks/todo.md` = persistent record for large tasks spanning sessions
+
+**Reference:** CLAUDE.md Section「🔄 開発ワークフロー」Step 0（全体開発ワークフローとの統合コンテキスト）
 
 ---
 
@@ -52,8 +118,10 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
 
 - Identify parallel vs sequential operations during planning
 - Map dependencies; estimate resources; state efficiency metrics
+- When plan doc needed: create in claudedocs/plans/ per PLANS.md §使用閾値
+- Record AskUserQuestion results and design decisions in Decision Log (see PLANS.md)
 
-**Reference:** `execution-efficiency.md`
+**Reference:** `execution-efficiency.md` (execution details) | `PLANS.md` (plan template)
 
 ---
 
@@ -103,7 +171,7 @@ uv run pytest --cov-fail-under=[target] && uv run ruff check . && uv run mypy ut
 - UPPER_SNAKE_CASE: constants
 - Follow existing patterns in `utils/`, `config/`, `models/`
 
-**Reference:** `@memory:coding_standards`
+**Reference:** `.claude/rules/python/coding-standards.md`
 
 ---
 

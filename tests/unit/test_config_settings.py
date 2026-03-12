@@ -1,5 +1,8 @@
 import logging
+import socket
+from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic import SecretStr, ValidationError
@@ -13,6 +16,8 @@ from config.settings import (
     SentryConfig,
     Settings,
     TestConfig,
+    _resolve_hostname,
+    _resolve_hostname_cached,
     get_settings,
     is_private_ip,
     reload_settings,
@@ -153,7 +158,7 @@ class TestSettingsEnvironmentValidation:
             pytest.param("PRODUCTION", Environment.PRODUCTION, True, id="uppercase"),
             pytest.param("DeVeLoPmEnT", Environment.DEVELOPMENT, False, id="mixed_case"),
             pytest.param(Environment.TESTING, Environment.TESTING, False, id="enum_direct"),
-            pytest.param("staging", Environment.STAGING, False, id="lowercase"),
+            pytest.param("staging", Environment.STAGING, True, id="lowercase"),
         ],
     )
     def test_environment_validation(
@@ -167,15 +172,67 @@ class TestSettingsEnvironmentValidation:
         Note:
             Pydantic field_validatorが実行時に文字列→Enum変換を行うため、
             str | Environment を受け入れる。静的型チェックとの差異あり。
+            本番・ステージング環境はシークレット必須かつHTTPS強制のため、
+            needs_secret=Trueの場合はHTTPS URLも合わせて指定する。
         """
         if needs_secret:
             settings = Settings(
                 environment=env_input,  # type: ignore[arg-type]
                 security=SecurityConfig(api_key=SecretStr("test-key")),
+                api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),
             )
         else:
             settings = Settings(environment=env_input)  # type: ignore[arg-type]
         assert settings.environment == expected
+
+    @pytest.mark.parametrize(
+        "env_input",
+        [
+            pytest.param("production ", id="trailing_space"),
+            pytest.param(" development", id="leading_space"),
+            pytest.param("  staging  ", id="both_spaces"),
+        ],
+    )
+    def test_environment_validation_strips_whitespace(self, env_input: str) -> None:
+        """validate_environment: 前後スペースを除去してから正規化する"""
+        stripped = env_input.strip().lower()
+        expected = Environment(stripped)
+        needs_secret = expected in {Environment.PRODUCTION, Environment.STAGING}
+        if needs_secret:
+            settings = Settings(
+                environment=env_input,  # type: ignore[arg-type]
+                security=SecurityConfig(api_key=SecretStr("test-key")),
+                api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),
+            )
+        else:
+            settings = Settings(environment=env_input)  # type: ignore[arg-type]
+        assert settings.environment == expected
+
+    @pytest.mark.parametrize(
+        "empty_input",
+        [
+            pytest.param("", id="empty_string"),
+            pytest.param("  ", id="whitespace_only"),
+            pytest.param("\t", id="tab_only"),
+        ],
+    )
+    def test_environment_validation_empty_raises(self, empty_input: str) -> None:
+        """validate_environment: 空文字列・スペースのみ・タブのみはValidationErrorを発生させる"""
+        with pytest.raises(ValidationError):
+            Settings(environment=empty_input)  # type: ignore[arg-type]
+
+    def test_environment_validation_invalid_string_raises(self) -> None:
+        """validate_environment: タイポなど無効な文字列はValidationErrorを発生させる"""
+        with pytest.raises(ValidationError) as exc_info:
+            Settings(environment="producton")  # type: ignore[arg-type]
+        # エラーメッセージに有効値リストが含まれることを検証（契約の明示的保護）
+        # Pydantic非依存: validate_environment のカスタムメッセージを .errors() で検証
+        assert any("有効な値" in str(e["msg"]) for e in exc_info.value.errors())
+
+    def test_environment_validation_invalid_type_raises(self) -> None:
+        """validate_environment: str/Environment以外の型はValidationErrorを発生させる"""
+        with pytest.raises(ValidationError):
+            Settings(environment=123)  # type: ignore[arg-type]
 
 
 class TestSettingsEnvironmentMethods:
@@ -201,6 +258,40 @@ class TestSettingsEnvironmentMethods:
         assert settings.is_production() is True
 
     @pytest.mark.parametrize(
+        ("env", "expected"),
+        [
+            pytest.param(Environment.STAGING, True, id="staging"),
+            pytest.param(Environment.PRODUCTION, False, id="production"),
+            pytest.param(Environment.DEVELOPMENT, False, id="development"),
+            pytest.param(Environment.TESTING, False, id="testing"),
+        ],
+    )
+    def test_is_staging(self, env: Environment, expected: bool) -> None:
+        """is_staging() がステージング環境のみTrueを返す"""
+        kwargs: dict[str, Any] = {"environment": env}
+        if env in {Environment.PRODUCTION, Environment.STAGING}:
+            kwargs["security"] = SecurityConfig(api_key=SecretStr("test-key"))
+        settings = Settings(**kwargs)
+        assert settings.is_staging() is expected
+
+    @pytest.mark.parametrize(
+        ("env", "expected"),
+        [
+            pytest.param(Environment.PRODUCTION, True, id="production"),
+            pytest.param(Environment.STAGING, True, id="staging"),
+            pytest.param(Environment.DEVELOPMENT, False, id="development"),
+            pytest.param(Environment.TESTING, False, id="testing"),
+        ],
+    )
+    def test_is_production_like(self, env: Environment, expected: bool) -> None:
+        """is_production_like() が本番相当環境を正しく判定"""
+        kwargs: dict[str, Any] = {"environment": env}
+        if env in {Environment.PRODUCTION, Environment.STAGING}:
+            kwargs["security"] = SecurityConfig(api_key=SecretStr("test-key"))
+        settings = Settings(**kwargs)
+        assert settings.is_production_like() is expected
+
+    @pytest.mark.parametrize(
         ("log_level", "expected"),
         [
             pytest.param(LogLevel.DEBUG, logging.DEBUG, id="debug"),
@@ -218,7 +309,7 @@ class TestSettingsEnvironmentMethods:
 
 
 class TestProductionSecretValidation:
-    """本番環境でのシークレット検証テスト"""
+    """本番・ステージング環境でのシークレット検証テスト"""
 
     def test_production_without_secrets_raises_error(self):
         """本番環境でシークレット未設定時にエラー"""
@@ -246,6 +337,74 @@ class TestProductionSecretValidation:
         """開発環境ではシークレット不要"""
         settings = Settings(environment=Environment.DEVELOPMENT)
         assert settings.is_development() is True
+
+    def test_staging_without_secrets_raises_error(self):
+        """ステージング環境でシークレット未設定時にエラー (STAGING=本番同等ポリシー)"""
+        with pytest.raises(ValidationError) as exc_info:
+            Settings(
+                environment=Environment.STAGING,
+                api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),
+            )
+        assert "SECURITY__API_KEY or SECURITY__JWT_SECRET" in str(exc_info.value)
+
+    def test_staging_with_api_key_valid(self):
+        """ステージング環境でapi_key設定時は有効"""
+        settings = Settings(
+            environment=Environment.STAGING,
+            security=SecurityConfig(api_key=SecretStr("test-key")),
+            api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),
+        )
+        assert settings.environment == Environment.STAGING
+
+
+class TestProductionHTTPSValidation:
+    """本番環境でのHTTPS強制テスト"""
+
+    def test_production_http_raises_error(self):
+        """本番環境でHTTP URLはエラー"""
+        with pytest.raises(ValidationError) as exc_info:
+            Settings(
+                environment=Environment.PRODUCTION,
+                security=SecurityConfig(api_key=SecretStr("test-key")),
+                api=APIConfig(base_url="http://jsonplaceholder.typicode.com"),
+            )
+        assert "requires HTTPS" in str(exc_info.value)
+
+    def test_production_https_valid(self):
+        """本番環境でHTTPS URLは有効"""
+        settings = Settings(
+            environment=Environment.PRODUCTION,
+            security=SecurityConfig(api_key=SecretStr("test-key")),
+            api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),
+        )
+        assert settings.api.base_url == "https://jsonplaceholder.typicode.com"
+
+    def test_staging_http_raises_error(self):
+        """ステージング環境でHTTP URLはエラー (OWASP A02)"""
+        with pytest.raises(ValidationError) as exc_info:
+            Settings(
+                environment=Environment.STAGING,
+                security=SecurityConfig(api_key=SecretStr("test-key")),
+                api=APIConfig(base_url="http://jsonplaceholder.typicode.com"),
+            )
+        assert "requires HTTPS" in str(exc_info.value)
+
+    def test_staging_https_valid(self):
+        """ステージング環境でHTTPS URLは有効"""
+        settings = Settings(
+            environment=Environment.STAGING,
+            security=SecurityConfig(api_key=SecretStr("test-key")),
+            api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),
+        )
+        assert settings.api.base_url == "https://jsonplaceholder.typicode.com"
+
+    def test_development_http_valid(self):
+        """開発環境ではHTTP URLを許可"""
+        settings = Settings(
+            environment=Environment.DEVELOPMENT,
+            api=APIConfig(base_url="http://jsonplaceholder.typicode.com"),
+        )
+        assert settings.api.base_url == "http://jsonplaceholder.typicode.com"
 
 
 class TestSettingsSecretMasking:
@@ -440,7 +599,22 @@ class TestEnvironmentVariableLoading:
         assert settings.debug is False
 
 
-class TestSSRFPrevention:
+class DNSCacheClearMixin:
+    """DNS解決キャッシュクリアの共通fixture
+
+    TestSSRFPrevention と TestResolveHostname で共有する。
+    autouse=True により各テスト前後にキャッシュをクリアし、テスト間の干渉を防止。
+    """
+
+    @pytest.fixture(autouse=True)
+    def clear_dns_cache(self) -> Iterator[None]:
+        """各テスト前後にDNS解決キャッシュをクリアする"""
+        _resolve_hostname_cached.cache_clear()
+        yield
+        _resolve_hostname_cached.cache_clear()
+
+
+class TestSSRFPrevention(DNSCacheClearMixin):
     """SSRF攻撃防止のセキュリティテスト
 
     OWASP API Security Top 10 - API7:2023 Server Side Request Forgery (SSRF)
@@ -595,6 +769,25 @@ class TestSSRFPrevention:
         result = is_private_ip("unknown-host.test")
         assert result is True, "DNS failure should return True (Fail-Closed)"
 
+    def test_is_private_ip_invalid_dns_response_returns_true(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """DNS解決結果が不正なIPアドレス形式の場合、Fail-Closedでブロック（True）を返す
+
+        Security:
+            異常なDNS応答（IPアドレス形式でない文字列）に対するSSRF防止の最終砦。
+            _logger.warning()でセキュリティ証跡を記録することも検証する。
+        """
+        monkeypatch.setattr(socket, "gethostbyname", lambda _: "not-an-ip-address")
+
+        with caplog.at_level(logging.WARNING, logger="config.settings"):
+            result = is_private_ip("malicious.example.com")
+
+        assert result is True, "不正なDNS応答はブロック扱い（Fail-Closed）"
+        assert any("不正なIPアドレス形式" in record.message for record in caplog.records), (
+            "セキュリティ証跡としてwarningログが出力されること"
+        )
+
     @pytest.mark.parametrize(
         "allowed_domain",
         [
@@ -689,3 +882,212 @@ class TestSSRFPrevention:
             f"Boundary test failed for {description}: "
             f"is_private_ip({boundary_ip}) should be {expected_private}"
         )
+
+    def test_validate_base_url_ssrf_block_logs_warning(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """SSRF Prevention: 許可ドメイン外のURLブロック時にwarningログを出力する
+
+        Security Rationale:
+            SSRF防止ブロックは重要なセキュリティイベントであるため、
+            warningレベルのログで監査証跡を残す。
+        """
+        with caplog.at_level(logging.WARNING, logger="config.settings"):
+            with pytest.raises(ValidationError):
+                APIConfig(base_url="https://evil.attacker.com/api")
+
+        assert any("SSRF Prevention" in record.message for record in caplog.records), (
+            "SSRF防止ブロック時にwarningログが出力されるべき"
+        )
+
+
+class TestResolveHostname(DNSCacheClearMixin):
+    """_resolve_hostname/_resolve_hostname_cached関数のDNS解決テスト
+
+    Security Rationale:
+        DNS解決結果のキャッシュ動作とエラーハンドリングを検証し、
+        ネットワーク障害時の安全なフォールバック（None返却）を保証する。
+
+    Design Note:
+        _resolve_hostname: ラッパー関数。失敗時にNoneを返す公開インターフェース。
+        _resolve_hostname_cached: LRUキャッシュ付き内部関数。成功時のみキャッシュ。
+    """
+
+    def test_resolve_hostname_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """DNS解決成功時に正しいIPアドレス文字列を返す"""
+        monkeypatch.setattr(socket, "gethostbyname", lambda _: "93.184.216.34")
+
+        result = _resolve_hostname("example.com")
+
+        assert result == "93.184.216.34"
+
+    def test_resolve_hostname_failure_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """DNS解決失敗（OSError）時にNoneを返す（キャッシュされないこと含む）
+
+        設計保証: lru_cacheは例外をキャッシュしないため、一時的なDNS障害後に
+        再試行が可能であることを call_count == 2 で明示的に検証する。
+        これにより「成功のみキャッシュ」設計の回帰防止テストとなる。
+        """
+        call_count = 0
+
+        def raise_os_error(hostname: str) -> str:
+            nonlocal call_count
+            call_count += 1
+            raise OSError(f"Name resolution failed: {hostname}")
+
+        monkeypatch.setattr(socket, "gethostbyname", raise_os_error)
+
+        result1 = _resolve_hostname("nonexistent.invalid")
+        result2 = _resolve_hostname("nonexistent.invalid")
+
+        assert result1 is None
+        assert result2 is None
+        # 重要: 失敗がキャッシュされていないことを検証（2回とも gethostbyname が呼ばれる）
+        # もし失敗をキャッシュする実装に退行した場合、call_count == 1 になりこのテストで検出できる
+        assert call_count == 2, (
+            f"DNS failure should NOT be cached by lru_cache. "
+            f"gethostbyname should be called twice, but was called {call_count} time(s)."
+        )
+
+    def test_resolve_hostname_cache_hit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """2回目の呼び出しでキャッシュヒット（socket.gethostbynameが1回しか呼ばれない）"""
+        call_count = 0
+
+        def counting_resolver(hostname: str) -> str:
+            nonlocal call_count
+            call_count += 1
+            return "10.0.0.1"
+
+        monkeypatch.setattr(socket, "gethostbyname", counting_resolver)
+
+        result1 = _resolve_hostname("cached.example.com")
+        result2 = _resolve_hostname("cached.example.com")
+
+        assert result1 == "10.0.0.1"
+        assert result2 == "10.0.0.1"
+        assert call_count == 1, (
+            f"gethostbyname should be called once due to cache, but was called {call_count} times"
+        )
+
+    def test_resolve_hostname_cache_clear(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """cache_clear()後に再度DNS解決が実行される"""
+        call_count = 0
+
+        def counting_resolver(hostname: str) -> str:
+            nonlocal call_count
+            call_count += 1
+            return "10.0.0.2"
+
+        monkeypatch.setattr(socket, "gethostbyname", counting_resolver)
+
+        _resolve_hostname("cleared.example.com")
+        assert call_count == 1
+
+        _resolve_hostname_cached.cache_clear()
+        _resolve_hostname("cleared.example.com")
+        assert call_count == 2, (
+            f"gethostbyname should be called again after cache_clear(), "
+            f"but total calls were {call_count}"
+        )
+
+    @pytest.mark.parametrize(
+        "exc_factory",
+        [
+            lambda: UnicodeDecodeError("utf-8", b"\xff\xfe", 0, 1, "invalid byte"),
+            lambda: UnicodeEncodeError(
+                "ascii", "ÿþ.attacker.example", 0, 1, "ordinal not in range(128)"
+            ),
+            lambda: TypeError("embedded null byte"),
+            lambda: OverflowError("host name is too long"),
+        ],
+        ids=["UnicodeDecodeError", "UnicodeEncodeError", "TypeError", "OverflowError"],
+    )
+    def test_resolve_hostname_security_exception_logs_warning(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        exc_factory: Callable[[], Exception],
+    ) -> None:
+        """SSRF攻撃的ホスト名による例外発生時にSSRF証跡ログが出力される
+
+        Security Rationale:
+            UnicodeDecodeError/UnicodeEncodeError/TypeError/OverflowErrorは攻撃的な入力パターン（SSRF試行）を
+            示すため、セキュリティインシデントの事後調査に必要なwarningレベルログを出力する。
+            一時的なDNS障害（OSError）とはログレベルで明確に区別する。
+        """
+
+        def raise_exc(hostname: str) -> str:
+            raise exc_factory()
+
+        monkeypatch.setattr(socket, "gethostbyname", raise_exc)
+
+        with caplog.at_level(logging.WARNING, logger="config.settings"):
+            result = _resolve_hostname("invalid")
+
+        assert result is None
+        assert "SSRF試行の可能性" in caplog.text
+
+    def test_resolve_hostname_gaierror_logs_dns_warning(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """socket.gaierror（DNS解決失敗）時にwarningレベルでログが出力される
+
+        Design Rationale:
+            DNS解決失敗はFail-Closedを発動し正当なリクエストをブロックするため、
+            サービス影響度に基づきwarningレベルで記録する。
+            本番環境（INFO以上）でも可視化され、運用チームによる障害検知が可能。
+        """
+
+        def raise_gaierror(hostname: str) -> str:
+            raise socket.gaierror(f"Name resolution failed: {hostname}")
+
+        monkeypatch.setattr(socket, "gethostbyname", raise_gaierror)
+
+        with caplog.at_level(logging.WARNING, logger="config.settings"):
+            result = _resolve_hostname("nonexistent.invalid")
+
+        assert result is None
+        assert "DNS解決失敗" in caplog.text
+
+    def test_resolve_hostname_herror_logs_dns_warning(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """socket.herror（DNSサーバーエラー）時にwarningレベルでログが出力される
+
+        Design Rationale:
+            socket.herror はDNSサーバー自体のエラー（SERVFAIL等）で発生する。
+            gaierror と同じ except 節で捕捉されるが、将来のリファクタリングで
+            誤って除外されないよう個別にテストする（退行防止）。
+        """
+
+        def raise_herror(hostname: str) -> str:
+            raise socket.herror(f"Host resolution failed: {hostname}")
+
+        monkeypatch.setattr(socket, "gethostbyname", raise_herror)
+
+        with caplog.at_level(logging.WARNING, logger="config.settings"):
+            result = _resolve_hostname("invalid")
+
+        assert result is None
+        assert "DNS解決失敗" in caplog.text
+
+    def test_resolve_hostname_os_error_logs_network_warning(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """汎用OSError時に「予期しないネットワークエラー」のwarningログが出力される
+
+        Design Rationale:
+            socket.herror/gaierror以外のOSError（PermissionError, TimeoutError等）は
+            DNS解決失敗として誤分類しないよう、別メッセージで記録する。
+        """
+
+        def raise_os_error(hostname: str) -> str:
+            raise OSError(f"Network error: {hostname}")
+
+        monkeypatch.setattr(socket, "gethostbyname", raise_os_error)
+
+        with caplog.at_level(logging.WARNING, logger="config.settings"):
+            result = _resolve_hostname("nonexistent.invalid")
+
+        assert result is None
+        assert "予期しないネットワークエラー" in caplog.text
