@@ -24,7 +24,7 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # セキュリティ: OSパッケージのセキュリティアップデート + pip更新
-# pip 25.3 → 26.0.1: CVE-2026-1703 (path traversal) 修正
+# pip 25.3 → 26.x (>=26,<27): CVE-2026-1703 (path traversal) 修正
 RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get clean && \
