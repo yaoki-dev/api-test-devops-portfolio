@@ -9,7 +9,7 @@
 # 対象: libc-bin, libc6 2.41-12+deb13u1 (Debian 13 trixie)
 # 抑制理由:
 #   - Debian公式が no-dsa (Minor issue) に分類 → DSA発行予定なし
-#   - 修正版: glibc 2.43 (sid/forky のみ, Debian 13向けパッチ未提供)
+#   - 修正版: glibc 2.43 (sid/experimental のみ, Debian 13向けパッチ未提供)
 #   - 攻撃条件: memalign の size と alignment 両方を攻撃者制御 +
 #              size が PTRDIFF_MAX 付近 → 本プロジェクト（APIテストクライアント）
 #              では該当する攻撃経路なし
