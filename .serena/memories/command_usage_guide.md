@@ -314,16 +314,19 @@ workflow:
 | ツール | 種別 | 発動トリガー | 用途 |
 |--------|------|------------|------|
 | `security-guidance` | Hook | Edit/Write/MultiEdit時 | 自動セキュリティ警告（9パターン検出） |
-| `/code-review:review-local-changes` | Plugin | 品質ゲート全合格後（※1） | 6並列エージェントレビュー（80点閾値） |
+| `/superpowers:verification-before-completion` | Skill | タスク完了時（reflect前） | 作業完了証拠確認|
+| `/reflexion:reflect` | Skill | タスク完了時 | deep reflect実行（セルフレビュー） |
+| `/code-review:review-local-changes` | Skill | 品質ゲート全合格後（※1） | 6並列エージェントレビュー（80点閾値） |
 
 #### High（開発標準）
 
 | ツール | 種別 | 発動トリガー | 用途 |
 |--------|------|------------|------|
-| `/commit` | Command | コミット作成時 | ステージング+コミット |
-| `/push-pr` | Command | PR作成時 | プッシュ→PR作成 |
-| `/pr-review-toolkit:review-pr` | Plugin | git push完了後、PR作成前 | 6エージェント包括レビュー |
-| `/code-review:review-pr (CEK)` | Plugin | 重要PR時 | 6エージェント防御レビュー（セキュリティ・バグ・API契約） |
+| `/create-issue` | SKill |Issue作成 | Issue駆動開発支援 |
+| `/commit` | Skill | コミット作成時 | ステージング+コミット |
+| `/push-pr` | Skill | PR作成時 | プッシュ→PR作成 |
+| `/pr-review-toolkit:review-pr` | Skill | git push完了後、PR作成前 | 6エージェント包括レビュー |
+| `/code-review:review-pr (CEK)` | Skill | 重要PR時 | 6エージェント防御レビュー（セキュリティ・バグ・API契約） |
 | `/test-coverage` | Command | テスト関連時 | カバレッジ分析 |
 | `/generate-tests` | Command | テスト関連時 | テスト生成 |
 
@@ -332,7 +335,7 @@ workflow:
 | ツール | 種別 | 発動トリガー | 用途 |
 |--------|------|------------|------|
 | `/sc:document` | Command | 新規ドキュメント作成時 | コンポーネント/API/ガイド生成 |
-| `/docs:update-docs` | Plugin | 実装後ドキュメント更新時 | Git連携+マルチエージェント品質レビュー |
+| `/docs:update-docs` | Skill | 実装後ドキュメント更新時 | Git連携+マルチエージェント品質レビュー |
 | `/docs-maintenance` | Command | ドキュメント品質監査時 | リンク検証・スタイル一貫性・自動同期 |
 | `/troubleshooting-guide` | Command | トラブルシューティング時 | 診断手順・共通問題・自動解決 |
 | `/decision-helper` | Skill | 2+選択肢の比較評価時 | 構造化意思決定フレームワーク（Pros/Cons, Decision Matrix, ICE） |
