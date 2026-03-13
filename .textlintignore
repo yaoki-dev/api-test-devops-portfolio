@@ -15,8 +15,6 @@ node_modules/**
 obsidian-vault-local/**
 # Cache directories
 .pre-commit-cache/**
-# Claude-flow generated files
-.claude-flow/**
 # Serena memories (dynamic content)
 .serena/**
 # Claude Code working documents (local only)

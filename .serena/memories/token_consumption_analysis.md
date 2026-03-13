@@ -70,7 +70,6 @@ Referenced in:
 ### Active in settings.local.json
 
 Permissions allowed:
-- `mcp__claude-flow-lite__agent_spawn` (1 server)
 - WebFetch (6 domain whitelist)
 
 Additional directories:
@@ -189,7 +188,6 @@ Located in `.claude/agents/`:
 | Duplicate Content Areas | 3 | Quality gates, coding standards, commands |
 | Agent Files | 6 | Each loads ~100-200 lines independently |
 | Memory References | 19 | All in root CLAUDE.md |
-| Active MCP Servers | 1 | claude-flow-lite (agent spawning) |
 
 ## Recommendations Priority
 

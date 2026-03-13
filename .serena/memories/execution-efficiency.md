@@ -607,7 +607,7 @@ Group 4 (検証): 全ファイル確認
 | ドキュメント | 関連内容 | 用途 |
 |------------|---------|------|
 | **AGENTS_CATALOG.md** | 69エージェント仕様 | エージェント選択 |
-| **command-usage.md Section 1** | Claude Flow統合 | 並列エージェント実行 |
+| **command-usage.md Section 1** | マルチエージェント統合 | 並列エージェント実行 |
 
 ---
 

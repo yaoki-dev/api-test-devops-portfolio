@@ -19,7 +19,6 @@ Users/                         # 誤配置ディレクトリ
 .serena/                       # Serena MCP内部DB
 !.serena/memories/             # メモリファイルは保持
 .memory_mcp/                   # Memory MCP内部データ
-.claude-flow/                  # Claude Flow状態
 .taskmaster/                   # Task Master管理データ
 .hive-mind/                    # Hive Mind協働データ
 .swarm/                        # Swarm MCP内部DB
