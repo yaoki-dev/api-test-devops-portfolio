@@ -12,7 +12,7 @@
 #   2026-02-17: Python 3.12→3.13 (セキュリティサポート延長)
 #   2026-03-07: Python 3.13→3.14 (プロジェクト全体統一移行 PR#228)
 # 注意: CVE-2025-8869はPEP 706対応Python（3.9.17+/3.10.12+/3.11.4+/3.12+を含む）
-#        では影響を受けない。pip 25.3（本イメージに搭載）でも修正済み（詳細: .trivyignore参照）
+#        では影響を受けない。pip 26.x（>=26,<27 でアップグレード済み）でも修正済み（詳細: .trivyignore参照）
 FROM python:3.14-slim@sha256:6a27522252aef8432841f224d9baaa6e9fce07b07584154fa0b9a96603af7456 AS base
 
 WORKDIR /app
@@ -23,11 +23,13 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# セキュリティ: OSパッケージのセキュリティアップデート
+# セキュリティ: OSパッケージのセキュリティアップデート + pip更新
+# pip 25.3 → 26.x (>=26,<27): CVE-2026-1703 (path traversal) 修正
 RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && \
+    pip install --no-cache-dir "pip>=26,<27"
 
 # セキュリティ: 非rootユーザー作成
 RUN groupadd --gid 1000 appgroup && \
