@@ -63,6 +63,7 @@ graph LR
 | | `@qa-expert (agent)` | テスト戦略設計 | - |
 | **レビュー** | `/code-review:review-local-changes` | 6並列エージェント（80点閾値） | code-reviewer |
 | | `/pr-review-toolkit:review-pr` | 6エージェント包括レビュー | silent-failure-hunter, security-code-reviewer |
+| | `/superpowers:verification-before-completion` | 作業完了証拠確認（reflect前） | - |
 | | `/reflexion:reflect` | 自己改善フィードバック | - |
 | **デプロイ** | `/push-pr` | PR作成 | - |
 | | `/docs:update-docs` | ドキュメント自動更新 | tech-writer |

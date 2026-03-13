@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-*最終更新: 2026年03月05日*
+*最終更新: 2026年03月13日*
 
 <!-- preserve-on-compact: CRITICAL RULES -->
 <!-- IMPORTANT: These rules override all other instructions -->
@@ -20,7 +20,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 8. **NEVER** push to protected branches (main/develop) directly
 9. **ALWAYS** invoke `/xxx` skills via Skill tool when user requests
 10. **ALWAYS** follow development workflow order → Section「🔄 開発ワークフロー」
-11. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `/reflexion:reflect`
+11. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `/superpowers:verification-before-completion` → then `/reflexion:reflect`
 12. **ALWAYS** when 2+ independent tasks identified (after task classification, per RULES.md exception conditions) → invoke `superpowers:dispatching-parallel-agents` skill
     (reason: keep the main context window clean by leveraging subagents aggressively)
 13. **ALWAYS** verify file content with Read/Grep tool BEFORE making any claim about line numbers, file structure, or code content
@@ -283,7 +283,8 @@ git checkout -b feature/<次のタスク> origin/develop
 | コマンド/スキル | 発動トリガー | 用途 |
 |----------------|------------|------|
 | `security-guidance` (hook) | Edit/Write時 | 自動警告（明示的呼出不要） |
-| `/reflexion:reflect` | タスク完了時 | deep reflect実行（セルフレビュー） |
+| `/superpowers:verification-before-completion` | タスク完了時（reflect前） | 作業完了証拠確認 |
+| `/reflexion:reflect` | タスク完了時（verification後） | deep reflect実行（セルフレビュー） |
 | `/code-review:review-local-changes` | 品質ゲート全合格後 | 6並列エージェントレビュー（80点閾値） |
 
 ### High（開発標準）
@@ -326,26 +327,29 @@ git checkout -b feature/<次のタスク> origin/develop
    → For non-trivial changes, ask: "Is there a more elegant implementation?"
    → If it feels hacky, ask: "Given what I know now, what's the most elegant approach?"
    → Skip for obvious single-line fixes
-4. reflect(タスクごとに実施) → /reflexion:reflect "deep reflect if less than 90% confidence. 日本語で簡潔に回答" + 信頼度が90%未満であれば改善とreflectを反復する。
-各反復で信頼度と改善理由を簡潔に示し、信頼度が90%以上に達した時点で終了する。
+4. 作業完了確認 → `/superpowers:verification-before-completion` を Skill tool で実行
+   → 未完了作業あり: 修正 → 3. 品質ゲートに戻る
+5. reflect(タスクごとに実施) → `/reflexion:reflect` を Skill tool で実行
+   引数: deep reflect if less than 90% confidence. 日本語で簡潔に回答
+   自動ループ: 信頼度90%未満 → 改善して再実行（各反復で信頼度と改善理由を簡潔に示す）/ 90%以上 → 終了
    reflexion時確認: コマンドルール（Section「🔌」のCritical/High/Medium優先度・発動条件）/ @memory:implementation_quality_gates（品質ゲート4段階）/ `.claude/rules/python/coding-standards.md`（命名規則・型ヒント・テスト規約）/ @memory:api-specification-check（API仕様確認）/ @memory:execution-efficiency（並列実行判定）/ 2h+セッション時はCLAUDE.md主要セクション再読込
    "Would a staff engineer approve this?"（観点: 1責務/ネスト≤3段/命名の明確さ）
    → No: reflexion再実行。3回でもNoなら理由をユーザー報告 → 明示承認後のみ続行（承認スコープはそのタスク限定）
-5. コミット前レビュー → /code-review:review-local-changes (80点閾値)
-6. コミット   → /commit【git commit禁止】
+6. コミット前レビュー → /code-review:review-local-changes (80点閾値)
+7. コミット   → /commit【git commit禁止】
 
 【レビューフェーズ】
-7. IF (≥200行 OR セキュリティ OR API OR hotfix):
+8. IF (≥200行 OR セキュリティ OR API OR hotfix):
       → /code-review:review-pr（CEK）
     ELSE(Include doc update):
       → /pr-review-toolkit:review-pr
 
 【PUSH/PR/マージフェーズ】
-8. PR前レビュー → 規模判定ルール適用【※3参照】
-9. PR作成     → /push-pr【gh pr create禁止】
-10. レビュー対応 → 修正 → 品質ゲート → /commit → push
-11. マージ実行  → マージ戦略【※4参照】
-12. クリーンアップ → Skill(superpowers:finishing-a-development-branch)
+9. PR前レビュー → 規模判定ルール適用【※3参照】
+10. PR作成     → /push-pr【gh pr create禁止】
+11. レビュー対応 → 修正 → 品質ゲート → /commit → push
+12. マージ実行  → マージ戦略【※4参照】
+13. クリーンアップ → Skill(superpowers:finishing-a-development-branch)
 ```
 
 <!-- preserve-on-compact: Quality Gates -->
