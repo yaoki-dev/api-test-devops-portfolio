@@ -326,26 +326,29 @@ git checkout -b feature/<次のタスク> origin/develop
    → For non-trivial changes, ask: "Is there a more elegant implementation?"
    → If it feels hacky, ask: "Given what I know now, what's the most elegant approach?"
    → Skip for obvious single-line fixes
-4. reflect(タスクごとに実施) → /reflexion:reflect "deep reflect if less than 90% confidence. 日本語で簡潔に回答" + 信頼度が90%未満であれば改善とreflectを反復する。
-各反復で信頼度と改善理由を簡潔に示し、信頼度が90%以上に達した時点で終了する。
+4. 作業完了確認 → `/superpowers:verification-before-completion` を Skill tool で実行
+   → 未完了作業あり: 修正 → 3. 品質ゲートに戻る
+5. reflect(タスクごとに実施) → `/reflexion:reflect` を Skill tool で実行
+   引数: deep reflect if less than 90% confidence. 日本語で簡潔に回答
+   自動ループ: 信頼度90%未満 → 改善して再実行（各反復で信頼度と改善理由を簡潔に示す）/ 90%以上 → 終了
    reflexion時確認: コマンドルール（Section「🔌」のCritical/High/Medium優先度・発動条件）/ @memory:implementation_quality_gates（品質ゲート4段階）/ `.claude/rules/python/coding-standards.md`（命名規則・型ヒント・テスト規約）/ @memory:api-specification-check（API仕様確認）/ @memory:execution-efficiency（並列実行判定）/ 2h+セッション時はCLAUDE.md主要セクション再読込
    "Would a staff engineer approve this?"（観点: 1責務/ネスト≤3段/命名の明確さ）
    → No: reflexion再実行。3回でもNoなら理由をユーザー報告 → 明示承認後のみ続行（承認スコープはそのタスク限定）
-5. コミット前レビュー → /code-review:review-local-changes (80点閾値)
-6. コミット   → /commit【git commit禁止】
+6. コミット前レビュー → /code-review:review-local-changes (80点閾値)
+7. コミット   → /commit【git commit禁止】
 
 【レビューフェーズ】
-7. IF (≥200行 OR セキュリティ OR API OR hotfix):
+8. IF (≥200行 OR セキュリティ OR API OR hotfix):
       → /code-review:review-pr（CEK）
     ELSE(Include doc update):
       → /pr-review-toolkit:review-pr
 
 【PUSH/PR/マージフェーズ】
-8. PR前レビュー → 規模判定ルール適用【※3参照】
-9. PR作成     → /push-pr【gh pr create禁止】
-10. レビュー対応 → 修正 → 品質ゲート → /commit → push
-11. マージ実行  → マージ戦略【※4参照】
-12. クリーンアップ → Skill(superpowers:finishing-a-development-branch)
+9. PR前レビュー → 規模判定ルール適用【※3参照】
+10. PR作成     → /push-pr【gh pr create禁止】
+11. レビュー対応 → 修正 → 品質ゲート → /commit → push
+12. マージ実行  → マージ戦略【※4参照】
+13. クリーンアップ → Skill(superpowers:finishing-a-development-branch)
 ```
 
 <!-- preserve-on-compact: Quality Gates -->

@@ -52,7 +52,6 @@ api-test-devops-portfolio/
 │   ├── プロジェクト再編/        # プロジェクト計画・テンプレート
 │   │
 │   └── tools/                 # ツール関連ドキュメント
-│       └── claude-flow/       # Claude Flow設定
 │
 ├── scripts/                   # 自動化スクリプト
 │   ├── setup/                 # セットアップスクリプト
