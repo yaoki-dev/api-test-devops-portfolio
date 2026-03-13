@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-*最終更新: 2026年03月05日*
+*最終更新: 2026年03月13日*
 
 <!-- preserve-on-compact: CRITICAL RULES -->
 <!-- IMPORTANT: These rules override all other instructions -->
@@ -20,7 +20,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 8. **NEVER** push to protected branches (main/develop) directly
 9. **ALWAYS** invoke `/xxx` skills via Skill tool when user requests
 10. **ALWAYS** follow development workflow order → Section「🔄 開発ワークフロー」
-11. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `/reflexion:reflect`
+11. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `/superpowers:verification-before-completion` → then `/reflexion:reflect`
 12. **ALWAYS** when 2+ independent tasks identified (after task classification, per RULES.md exception conditions) → invoke `superpowers:dispatching-parallel-agents` skill
     (reason: keep the main context window clean by leveraging subagents aggressively)
 13. **ALWAYS** verify file content with Read/Grep tool BEFORE making any claim about line numbers, file structure, or code content
@@ -280,33 +280,34 @@ git checkout -b feature/<次のタスク> origin/develop
 
 ### Critical（毎コミット必須）
 
-| コマンド/スキル | 発動トリガー | 用途 |
-|----------------|------------|------|
-| `security-guidance` (hook) | Edit/Write時 | 自動警告（明示的呼出不要） |
-| `/reflexion:reflect` | タスク完了時 | deep reflect実行（セルフレビュー） |
-| `/code-review:review-local-changes` | 品質ゲート全合格後 | 6並列エージェントレビュー（80点閾値） |
+| コマンド/スキル | 種別 | 発動トリガー | 用途 |
+|----------------|------------|------|------|
+| `security-guidance` | Hook | Edit/Write時 | 自動警告（明示的呼出不要） |
+| `/superpowers:verification-before-completion` | Skill | タスク完了時（reflect前） | 作業完了証拠確認|
+| `/reflexion:reflect` | Skill | タスク完了時・reflect | deep reflect実行（セルフレビュー） |
+| `/code-review:review-local-changes` | Skill | reflect完了後 | 6並列エージェントレビュー（80点閾値） |
 
 ### High（開発標準）
 
-| コマンド/スキル | 発動トリガー | 用途 |
-|----------------|------------|------|
-| `/create-issue` | Issue作成 | Issue駆動開発支援 |
-| `/git:feature`, `/git:hotfix` | ブランチ操作時 | Git Flowブランチ管理 |
-| `/commit`, `/push-pr` | コミット/PR作成時 | 品質チェック付きコミット+日本語PR |
-| `/code-review:review-pr` (CEK) | 重要PR時 | セキュリティ・バグ・API契約レビュー |
-| `/pr-review-toolkit:review-pr` | git push完了後、PR作成前 | 6エージェント品質レビュー |
-| `/test-coverage`, `/generate-tests` | テスト関連時 | カバレッジ分析・テスト生成 |
+| コマンド/スキル | 種別 |  発動トリガー | 用途 |
+|----------------|------------|------|------|
+| `/create-issue` | Skill | Issue作成 | Issue駆動開発支援 |
+| `/git:feature`, `/git:hotfix` | Command | ブランチ作成時 | Git Flowブランチ管理 |
+| `/commit`, `/push-pr` | Skill | コミット/Push・PR作成時 | 品質チェック付きコミット+日本語PR |
+| `/code-review:review-pr` (CEK) | Skill | 重要PR時 | セキュリティ・バグ・API契約レビュー |
+| `/pr-review-toolkit:review-pr` | Skill | git push完了後、PR作成前 | 6エージェント品質レビュー |
+| `/test-coverage`, `/generate-tests` | Command | テスト関連時 | カバレッジ分析・テスト生成 |
 
 ### Medium（必要時）
 
-| コマンド/スキル | 発動トリガー | 用途 |
-|----------------|------------|------|
-| `/sc:document` | ドキュメント作成時 | コンポーネント/API/ガイド生成 |
-| `/docs:update-docs` | 実装後ドキュメント更新時 | マルチエージェント品質レビュー |
-| `/docs-maintenance` | ドキュメント品質監査時 | リンク検証・スタイル一貫性 |
-| `/decision-helper` | 2+選択肢の比較評価時 | Pros/Cons・Decision Matrix・ICEフレームワーク |
-| `/fact-checker` | 主張・データの事実確認時 | 証拠ベースのファクトチェック・情報信頼性評価 |
-| `/prompt-lookup`, `/skill-lookup` | 検索時 | テンプレート/スキル発見 |
+| コマンド/スキル |  種別 | 発動トリガー | 用途 |
+|----------------|------------|------|------|
+| `/sc:document` |  Command |ドキュメント作成時 | コンポーネント/API/ガイド生成 |
+| `/docs:update-docs` | Command | 実装後ドキュメント更新時 | マルチエージェント品質レビュー |
+| `/docs-maintenance` | Command | ドキュメント品質監査時 | リンク検証・スタイル一貫性 |
+| `/decision-helper` | Skill | 2+選択肢の比較評価時 | Pros/Cons・Decision Matrix・ICEフレームワーク |
+| `/fact-checker` | Skill | 主張・データの事実確認時 | 証拠ベースのファクトチェック・情報信頼性評価 |
+| `/prompt-lookup`, `/skill-lookup` | Skill | 検索時 | プロンプト/スキル発見 |
 
 <!-- preserve-on-compact: Development Workflow -->
 ## 🔄 開発ワークフロー（標準コマンド実行順序）
@@ -327,13 +328,12 @@ git checkout -b feature/<次のタスク> origin/develop
    → If it feels hacky, ask: "Given what I know now, what's the most elegant approach?"
    → Skip for obvious single-line fixes
 4. 作業完了確認 → `/superpowers:verification-before-completion` を Skill tool で実行
-   → 未完了作業あり: 修正 → 3. 品質ゲートに戻る
+   → 未完了作業あり: 修正 → 3. 品質ゲートに戻る（最大3回まで。4回連続失敗時はユーザーに報告して停止）
 5. reflect(タスクごとに実施) → `/reflexion:reflect` を Skill tool で実行
    引数: deep reflect if less than 90% confidence. 日本語で簡潔に回答
-   自動ループ: 信頼度90%未満 → 改善して再実行（各反復で信頼度と改善理由を簡潔に示す）/ 90%以上 → 終了
-   reflexion時確認: コマンドルール（Section「🔌」のCritical/High/Medium優先度・発動条件）/ @memory:implementation_quality_gates（品質ゲート4段階）/ `.claude/rules/python/coding-standards.md`（命名規則・型ヒント・テスト規約）/ @memory:api-specification-check（API仕様確認）/ @memory:execution-efficiency（並列実行判定）/ 2h+セッション時はCLAUDE.md主要セクション再読込
-   "Would a staff engineer approve this?"（観点: 1責務/ネスト≤3段/命名の明確さ）
-   → No: reflexion再実行。3回でもNoなら理由をユーザー報告 → 明示承認後のみ続行（承認スコープはそのタスク限定）
+   自動ループ:
+    - 信頼度90%未満: 改善して再実行（各反復で信頼度と改善理由を簡潔に示す）/ 90%以上 → 終了 - 最大3回まで
+    - 4回連続失敗時（信頼度90%未満継続）はユーザーに報告して停止
 6. コミット前レビュー → /code-review:review-local-changes (80点閾値)
 7. コミット   → /commit【git commit禁止】
 
