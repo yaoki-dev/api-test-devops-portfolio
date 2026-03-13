@@ -322,7 +322,7 @@ workflow:
 
 | ツール | 種別 | 発動トリガー | 用途 |
 |--------|------|------------|------|
-| `/create-issue` | SKill |Issue作成 | Issue駆動開発支援 |
+| `/create-issue` | Skill | Issue作成 | Issue駆動開発支援 |
 | `/commit` | Skill | コミット作成時 | ステージング+コミット |
 | `/push-pr` | Skill | PR作成時 | プッシュ→PR作成 |
 | `/pr-review-toolkit:review-pr` | Skill | git push完了後、PR作成前 | 6エージェント包括レビュー |
@@ -335,7 +335,7 @@ workflow:
 | ツール | 種別 | 発動トリガー | 用途 |
 |--------|------|------------|------|
 | `/sc:document` | Command | 新規ドキュメント作成時 | コンポーネント/API/ガイド生成 |
-| `/docs:update-docs` | Skill | 実装後ドキュメント更新時 | Git連携+マルチエージェント品質レビュー |
+| `/docs:update-docs` | Command | 実装後ドキュメント更新時 | Git連携+マルチエージェント品質レビュー |
 | `/docs-maintenance` | Command | ドキュメント品質監査時 | リンク検証・スタイル一貫性・自動同期 |
 | `/troubleshooting-guide` | Command | トラブルシューティング時 | 診断手順・共通問題・自動解決 |
 | `/decision-helper` | Skill | 2+選択肢の比較評価時 | 構造化意思決定フレームワーク（Pros/Cons, Decision Matrix, ICE） |

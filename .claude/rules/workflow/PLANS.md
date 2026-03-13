@@ -90,14 +90,14 @@ AskUserQuestion の回答・設計判断を記録する。
 - [ ] `uv run pytest -n auto -m "(unit or integration) and not external"` 全pass
 - [ ] `uv run ruff check .` エラー0件
 - [ ] `uv run mypy utils/ config/ models/` エラー0件
-- [ ] `/superpowers:verification-before-completion`（全タスク完了確認 — 未完了検出時は修正 → 品質ゲート → `/superpowers:verification-before-completion` を再実行）
+- [ ] `/superpowers:verification-before-completion`（全タスク完了確認 — 未完了検出時: 修正 → 品質ゲート → 再実行 - 最大3回まで）
 - [ ] `/reflexion:reflect`（信頼度90%以上）
 - [ ] `/code-review:review-local-changes`（80点閾値通過）
 
 **ドキュメント実装（.md 変更）**:
 
 - [ ] `npm run lint:md && npm run lint:text` 全pass
-- [ ] `/superpowers:verification-before-completion`（全タスク完了確認 — 未完了検出時は修正 → 品質ゲート → `/superpowers:verification-before-completion` を再実行）
+- [ ] `/superpowers:verification-before-completion`（全タスク完了確認 — 未完了検出時: 修正 → 品質ゲート → 再実行 - 最大3回まで）
 - [ ] `/reflexion:reflect`（信頼度90%以上）
 - [ ] `/pr-review-toolkit:review-pr`
 - ※ PRレビューは CLAUDE.md Step 8 ELSE節（`/pr-review-toolkit:review-pr`）に委譲

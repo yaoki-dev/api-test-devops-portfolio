@@ -306,8 +306,8 @@ git checkout -b feature/<次のタスク> origin/develop
 | `/docs:update-docs` | Command | 実装後ドキュメント更新時 | マルチエージェント品質レビュー |
 | `/docs-maintenance` | Command | ドキュメント品質監査時 | リンク検証・スタイル一貫性 |
 | `/decision-helper` | Skill | 2+選択肢の比較評価時 | Pros/Cons・Decision Matrix・ICEフレームワーク |
-| `/fact-checker` |  Skill | 主張・データの事実確認時 | 証拠ベースのファクトチェック・情報信頼性評価 |
-| `/prompt-lookup`, `/skill-lookup` | 検索時 | テンプレート/スキル発見 |
+| `/fact-checker` | Skill | 主張・データの事実確認時 | 証拠ベースのファクトチェック・情報信頼性評価 |
+| `/prompt-lookup`, `/skill-lookup` | Skill | 検索時 | プロンプト/スキル発見 |
 
 <!-- preserve-on-compact: Development Workflow -->
 ## 🔄 開発ワークフロー（標準コマンド実行順序）
@@ -331,7 +331,9 @@ git checkout -b feature/<次のタスク> origin/develop
    → 未完了作業あり: 修正 → 3. 品質ゲートに戻る（最大3回まで。4回連続失敗時はユーザーに報告して停止）
 5. reflect(タスクごとに実施) → `/reflexion:reflect` を Skill tool で実行
    引数: deep reflect if less than 90% confidence. 日本語で簡潔に回答
-   自動ループ: 信頼度90%未満 → 改善して再実行（各反復で信頼度と改善理由を簡潔に示す）/ 90%以上 → 終了
+   自動ループ:
+    - 信頼度90%未満: 改善して再実行（各反復で信頼度と改善理由を簡潔に示す）/ 90%以上 → 終了 - 最大3回まで
+    - 4回連続失敗時（信頼度90%未満継続）はユーザーに報告して停止
 6. コミット前レビュー → /code-review:review-local-changes (80点閾値)
 7. コミット   → /commit【git commit禁止】
 
