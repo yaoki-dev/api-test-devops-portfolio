@@ -352,7 +352,7 @@ git checkout -b feature/<次のタスク> origin/develop
 ```
 
 <!-- preserve-on-compact: Quality Gates -->
-**※1 worktree**: 固定worktree運用（/Users/yuta/projects/python/.worktrees/wt-feature0[1-3]）。セッション開始時にwatch_directoryの設定を確認する（list_watched_paths）
+**※1 worktree**: 固定worktree運用（/Users/yuta/projects/python/.worktrees/wt-feature0[1-3]）。セッション開始時にwatch_directoryの設定を確認する（mcp__CodeGraphContext__list_watched_paths）
 **※2 品質ゲート**: `uv run pytest -n auto -m "(unit or integration) and not external" --cov=utils --cov=config --cov=models --cov-report=term-missing &&
 uv run ruff check . && uv run mypy utils/ config/ models/`
 
