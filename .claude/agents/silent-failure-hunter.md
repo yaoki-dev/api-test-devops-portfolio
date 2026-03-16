@@ -1,7 +1,7 @@
 ---
 name: silent-failure-hunter
 description: Use this agent when reviewing code for silent failures, inadequate error handling, and inappropriate fallback behavior.
-tools: Glob, Grep, Bash(mgrep:*), Read, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__find_code, mcp__ast-grep__find_code_by_rule, mcp__morph-mcp__warpgrep_codebase_search
+tools: Glob, Grep, Bash(mgrep:*), Read, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__find_code, mcp__ast-grep__find_code_by_rule, mcp__morph-mcp__warpgrep_codebase_search, mcp__CodeGraphContext__analyze_code_relationships
 model: inherit
 ---
 
@@ -82,6 +82,23 @@ Rate each issue from 0-100:
 - **91-100**: Critical silent failure or broad except
 
 **Only report issues with confidence >= 90**
+
+## CGC（CodeGraphContext）活用ガイド
+
+PR diff に以下の変更を含む場合、`mcp__CodeGraphContext__analyze_code_relationships` を使用してエラー伝播経路を分析する:
+- public API シグネチャ変更（`models/responses.py`, `utils/api_client.py` の public method）
+- クラス継承構造の変更
+- 関数・クラスの削除
+
+**推奨 query_type**:
+- `find_all_callers`: エラーハンドリング欠落箇所の呼び出し元を再帰追跡し、サイレント障害の影響範囲を特定
+- `call_chain`: try-except ブロックで握りつぶされた例外が上位にどう伝播すべきかを確認
+
+**フォールバック**（エラー応答、空結果、リポジトリ未インデックス、タイムアウト時）:
+1. Grep で直接参照箇所を検索
+2. レビューコメントに「CGC 分析未実施（理由: ...）」を注記して続行
+
+**不要な場合**: テスト/docs のみの変更、typo/lint 修正
 
 ## Your Output Format
 
