@@ -57,12 +57,14 @@ PR diff に関数・クラスの削除を含む場合、`mcp__CodeGraphContext__
 **活用方法**:
 - `find_dead_code` で未使用関数を検出し、テストが存在しない正当な理由（未使用のため）を判別
 - `exclude_decorated_with` パラメータで以下のデコレータ付き関数を除外:
-  `["pytest.fixture", "pytest.mark.asyncio", "pytest.mark.unit", "pytest.mark.integration", "pytest.mark.external", "pytest.mark.parametrize", "pytest.mark.smoke", "pytest.mark.slow", "respx.mock"]`
+  - ビルトイン/サードパーティ: `["pytest.fixture", "pytest.mark.asyncio", "pytest.mark.parametrize", "respx.mock"]`
+  - プロジェクトマーカー（`pyproject.toml` `[tool.pytest.ini_options]` markers と同期）: `["pytest.mark.unit", "pytest.mark.integration", "pytest.mark.external", "pytest.mark.smoke", "pytest.mark.slow"]`
 - 検出された未使用関数は「テスト不要（未使用コード）」として報告し、削除を推奨
 
 **フォールバック**（エラー応答、空結果、リポジトリ未インデックス、タイムアウト時）:
 - 代替ツールなし（ruff には関数レベルの未使用コード検出ルールがない）。未使用関数分析は省略して続行
-- レビューコメントに「CGC 未使用関数分析未実施（理由: ...）」を注記
+- レビューコメントに「CGC 未使用関数分析未実施（理由: [エラー種別], 対象: [関数名/ファイル]）」を注記
+  例: 「CGC 未使用関数分析未実施（理由: 空結果, 対象: utils/helper.py）」
 
 **不要な場合**: テスト/docs のみの変更、設定ファイルのみの変更
 
