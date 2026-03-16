@@ -9,7 +9,6 @@ docs/tools/**
 reports/**
 node_modules/**
 .venv/**
-.worktrees/**
 .taskmaster/**
 .spec-workflow/**
 obsidian-vault-local/**
