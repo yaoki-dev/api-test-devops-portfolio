@@ -40,7 +40,7 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
     1. No output dependency between tasks (no A→B ordering constraint)
     2. No simultaneous edits to the same file
     3. No conflicting **writes** to shared resources (examples: conftest.py, pyproject.toml, uv.lock, config files, .env files — read-only access does not count as conflicting; when write conflicts cannot be ruled out, treat as shared)
-  - Worktree isolation: instruct each agent to use fixed worktrees at `/Users/yuta/projects/python/.worktrees/wt-feature0[1-3]`
+  - Worktree isolation: instruct each agent to use fixed worktrees at `${HOME}/projects/python/.worktrees/wt-feature0[1-3]`（個人環境ごとにカスタマイズ）
   - Exception: if one task has 3x+ more TodoWrite sub-items (or estimated file changes) than the other, sequential execution is acceptable
   - On failure: if **any** agent reports failure or partial completion, the parent agent must (1) allow already-running invocations to complete (Task tool has no cancel API), (2) collect and log agent statuses (success/failure/unknown), and (3) report full status summary to user before further action
   - Silent continuation after ambiguous/empty results is prohibited
