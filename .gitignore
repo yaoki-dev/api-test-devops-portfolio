@@ -73,9 +73,6 @@ reports/
 # Claude Code
 .claude/settings.local.json
 
-# Git Worktrees (parallel development branches)
-.worktrees/
-
 # MCP and AI Tools
 .mcp.json
 .serena/*

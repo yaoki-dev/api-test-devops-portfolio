@@ -106,7 +106,7 @@ jobs:
 
       - name: Run markdownlint
         id: markdownlint
-        run: npx markdownlint '**/*.md' --ignore node_modules --ignore .venv --ignore .worktrees
+        run: npx markdownlint '**/*.md' --ignore node_modules --ignore .venv
         continue-on-error: true
 
       - name: Run textlint
@@ -485,7 +485,6 @@ jobs:
           find . -name '*.md' \
             -not -path './node_modules/*' \
             -not -path './.venv/*' \
-            -not -path './.worktrees/*' \
             -not -path './docs/archive/*' \
             -not -path './docs/coverage/*' \
             -not -path './docs/main/6週プラン/*' \
@@ -519,7 +518,6 @@ jobs:
           find . -name '*.md' \
             -not -path './node_modules/*' \
             -not -path './.venv/*' \
-            -not -path './.worktrees/*' \
             -not -path './docs/archive/*' \
             -not -path './docs/coverage/*' \
             -not -path './docs/main/6週プラン/*' \

@@ -317,8 +317,8 @@ git checkout -b feature/<次のタスク> origin/develop
 ```
 【準備フェーズ】
 0. 大規模タスク（複数セッション）: `.claude/rules/workflow/RULES.md` 「Task Management (Persistent Layer)」参照（todo.md活用）
-1. Worktree作成 → /using-git-worktrees（常時※1）
-   → ブランチ作成も含む
+1. 固定Worktreeでブランチ作成 → /git:feature（常時※1）
+   → 固定WT: /Users/yuta/projects/python/.worktrees/wt-feature0[1-3]
    → 計画ファイル作成が必要な場合: claudedocs/plans/ に作成（閾値詳細: .claude/rules/workflow/PLANS.md §使用閾値）
 
 【実装フェーズ】
@@ -352,7 +352,7 @@ git checkout -b feature/<次のタスク> origin/develop
 ```
 
 <!-- preserve-on-compact: Quality Gates -->
-**※1 worktree**: 並列Claude Code作業のため常時使用
+**※1 worktree**: 固定worktree運用（/Users/yuta/projects/python/.worktrees/wt-feature0[1-3]）。セッション開始時にwatch_directoryの設定を確認する（list_watched_paths）
 **※2 品質ゲート**: `uv run pytest -n auto -m "(unit or integration) and not external" --cov=utils --cov=config --cov=models --cov-report=term-missing &&
 uv run ruff check . && uv run mypy utils/ config/ models/`
 
