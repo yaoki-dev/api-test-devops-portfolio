@@ -58,7 +58,7 @@ PR diff に関数・クラスの削除を含む場合、`mcp__CodeGraphContext__
 - `find_dead_code` で未使用関数を検出し、テストが存在しない正当な理由（未使用のため）を判別
 - `exclude_decorated_with` パラメータで以下のデコレータ付き関数を除外:
   - ビルトイン/サードパーティ: `["pytest.fixture", "pytest.mark.asyncio", "pytest.mark.parametrize", "respx.mock"]`
-  - プロジェクトマーカー（`pyproject.toml` `[tool.pytest.ini_options]` markers と同期）: `["pytest.mark.unit", "pytest.mark.integration", "pytest.mark.external", "pytest.mark.smoke", "pytest.mark.slow"]`
+  - プロジェクトマーカー（`pyproject.toml` `[tool.pytest.ini_options]` markers と同期）: `["pytest.mark.unit", "pytest.mark.integration", "pytest.mark.e2e", "pytest.mark.performance", "pytest.mark.external", "pytest.mark.smoke", "pytest.mark.slow"]`
 - 検出された未使用関数は「テスト不要（未使用コード）」として報告し、削除を推奨
 
 **フォールバック**（エラー応答、空結果、リポジトリ未インデックス、タイムアウト時）:
