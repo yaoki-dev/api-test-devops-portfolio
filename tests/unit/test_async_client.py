@@ -2030,48 +2030,6 @@ async def test_async_client_timeout_zero_not_overridden() -> None:
         )
 
 
-async def test_async_client_retry_count_zero_not_overridden() -> None:
-    """retry_count=0がデフォルト設定値に上書きされないことを確認（r2850768833回帰テスト）
-
-    retry_count=0 はリトライ無効化を意味する有効な設定値。
-    falsyな値として `or` パターンで設定値に上書きされてはならない。
-
-    AsyncAPIClientは非同期コンテキストマネージャーのため通常 async with で使用するが、
-    retry_count属性は __init__ で設定が完了するため、エントリーの有無に関わらず検証可能。
-
-    学習ポイント:
-    - is not None パターンの必要性: 0/0.0/False 等の有効なfalsy値を保護する
-    - retry_count=0 の用途: リトライを行わず即座に失敗させたい場合に使用
-    - 非同期クライアントでも同期クライアントと同じコンストラクタ挙動を持つ
-    """
-    async with AsyncAPIClient(retry_count=0) as client:
-        assert client.retry_count == 0, (
-            "retry_count=0 はリトライ無効化を意味する有効な設定値のため"
-            "デフォルト設定値に上書きされてはならない"
-        )
-
-
-async def test_async_client_retry_delay_zero_not_overridden() -> None:
-    """retry_delay=0.0がデフォルト設定値に上書きされないことを確認（r2850768833回帰テスト）
-
-    retry_delay=0.0 はリトライ間の遅延なしを意味する有効な設定値。
-    falsyな値として `or` パターンで設定値に上書きされてはならない。
-
-    AsyncAPIClientは非同期コンテキストマネージャーのため通常 async with で使用するが、
-    retry_delay属性は __init__ で設定が完了するため、エントリーの有無に関わらず検証可能。
-
-    学習ポイント:
-    - is not None パターンの必要性: 0/0.0/False 等の有効なfalsy値を保護する
-    - retry_delay=0.0 の用途: リトライ間隔を0にして即座にリトライしたい場合に使用
-    - 非同期クライアントでも同期クライアントと同じコンストラクタ挙動を持つ
-    """
-    async with AsyncAPIClient(retry_delay=0.0) as client:
-        assert client.retry_delay == 0.0, (
-            "retry_delay=0.0 はリトライ遅延なしを意味する有効な設定値のため"
-            "デフォルト設定値に上書きされてはならない"
-        )
-
-
 # ===============================================================================
 # Test: AsyncJSONPlaceholderClient.get_users() - ユーザー一覧取得
 # ===============================================================================
@@ -2222,30 +2180,42 @@ def test_async_client_whitespace_base_url_raises_value_error() -> None:
 
 
 async def test_async_client_falsy_values_not_overridden() -> None:
-    """retry_count=0, timeout=0.0, retry_delay=0.0 がFalsy判定で設定値に上書きされないことを検証
+    """falsy値(0, 0.0)がデフォルト設定値に上書きされないことを検証
 
-    退行防止: 修正前の `x or default` パターンでは retry_count=0 や
+    退行防止（r2850768833回帰テスト）:
+    修正前の `x or default` パターンでは retry_count=0 や
     timeout=0.0 がFalsyと判定され設定値で上書きされていた。
     `x if x is not None else default` への修正が正しく動作することを保証する。
+
+    Note: 全属性は __init__ で設定完了するため async with は不要。
+    直接インスタンス化で検証する。
+
+    学習ポイント:
+    - is not None パターンの必要性: 0/0.0/False 等の有効なfalsy値を保護する
+    - retry_delay=0.0: コンストラクタ直接指定時のみ有効
+      （Pydantic ge=0.1制約を迂回）
+    - 環境変数 API__RETRY_DELAY=0.0 では
+      Pydantic Field制約(ge=0.1)によりValidationErrorとなる
+    - retry_count=0 の用途: リトライを行わず即座に失敗させたい場合に使用
     """
-    async with AsyncAPIClient(
+    client = AsyncAPIClient(
         base_url="https://jsonplaceholder.typicode.com",
         retry_count=0,
         timeout=0.0,
         retry_delay=0.0,
-    ) as client:
-        assert client.retry_count == 0, (
-            "retry_count=0 should NOT be overridden by settings. "
-            "Regression guard against `x or default` pattern."
-        )
-        assert client.timeout == 0.0, (
-            "timeout=0.0 should NOT be overridden by settings. "
-            "Regression guard against `x or default` pattern."
-        )
-        assert client.retry_delay == 0.0, (
-            "retry_delay=0.0 should NOT be overridden by settings. "
-            "Regression guard against `x or default` pattern."
-        )
+    )
+    assert client.retry_count == 0, (
+        "retry_count=0 should NOT be overridden by settings. "
+        "Regression guard against `x or default` pattern."
+    )
+    assert client.timeout == 0.0, (
+        "timeout=0.0 should NOT be overridden by settings. "
+        "Regression guard against `x or default` pattern."
+    )
+    assert client.retry_delay == 0.0, (
+        "retry_delay=0.0 should NOT be overridden by settings. "
+        "Regression guard against `x or default` pattern."
+    )
 
 
 # ===============================================================================

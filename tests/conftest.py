@@ -329,8 +329,10 @@ def reset_settings():
     """
     clear_dns_cache()
     reload_settings()
-    yield
-    clear_dns_cache()
+    try:
+        yield
+    finally:
+        clear_dns_cache()
 
 
 # =============================================================================
