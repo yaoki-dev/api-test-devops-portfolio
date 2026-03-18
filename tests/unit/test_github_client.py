@@ -12,7 +12,6 @@ from unittest.mock import ANY, Mock, patch
 import httpx
 import pytest
 import respx
-import structlog
 from structlog.testing import capture_logs
 
 from utils.github_client import (
@@ -368,7 +367,6 @@ async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
         httpx.Response(503, headers={"X-RateLimit-Remaining": "60"}),
     ]
 
-    structlog.reset_defaults()  # cache_logger_on_first_use キャッシュをクリア
     with capture_logs() as log_output:
         async with AsyncGitHubClient(max_retries=3) as client:
             with pytest.raises(GitHubServerError) as exc_info:
@@ -379,13 +377,12 @@ async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
     assert mock_backoff.call_count == 2  # 3試行 → attempt=0,1でバックオフ（attempt=2は発生しない）
 
     # リトライ中間試行のログ出力検証（Issue #229）
-    retry_logs = [
-        log
-        for log in log_output
-        if log.get("event") == "retrying_server_error" and log.get("log_level") == "warning"
-    ]
+    retry_logs = [log for log in log_output if log.get("event") == "retrying_server_error"]
+    assert all(log.get("log_level") == "warning" for log in retry_logs), (
+        f"log_level が warning でないエントリが存在する: {retry_logs}"
+    )
     assert len(retry_logs) == 2, (
-        f"retrying_server_error warning ログが2件出力されることを期待 (実際: {len(retry_logs)}件)"
+        f"retrying_server_error ログが2件出力されることを期待 (実際: {len(retry_logs)}件)"
     )
     for idx, log_entry in enumerate(retry_logs):
         assert log_entry["status_code"] == 503
@@ -416,7 +413,6 @@ async def test_httpx_status_error_5xx_defensive_path(mock_backoff: Mock) -> None
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
     route.side_effect = [error_503, error_503, error_503]
 
-    structlog.reset_defaults()  # cache_logger_on_first_use キャッシュをクリア
     with capture_logs() as log_output:
         async with AsyncGitHubClient(max_retries=3) as client:
             with pytest.raises(GitHubServerError) as exc_info:
@@ -427,14 +423,12 @@ async def test_httpx_status_error_5xx_defensive_path(mock_backoff: Mock) -> None
     assert mock_backoff.call_count == 2  # 3試行 → attempt=0,1でバックオフ（attempt=2は発生しない）
 
     # リトライ中間試行のログ出力検証（Issue #229 — 防御的パス）
-    retry_logs = [
-        log
-        for log in log_output
-        if log.get("event") == "retrying_http_status_error" and log.get("log_level") == "warning"
-    ]
+    retry_logs = [log for log in log_output if log.get("event") == "retrying_http_status_error"]
+    assert all(log.get("log_level") == "warning" for log in retry_logs), (
+        f"log_level が warning でないエントリが存在する: {retry_logs}"
+    )
     assert len(retry_logs) == 2, (
-        f"retrying_http_status_error warning ログが2件出力されることを期待"
-        f" (実際: {len(retry_logs)}件)"
+        f"retrying_http_status_error ログが2件出力されることを期待 (実際: {len(retry_logs)}件)"
     )
     for idx, log_entry in enumerate(retry_logs):
         assert log_entry["status_code"] == 503
