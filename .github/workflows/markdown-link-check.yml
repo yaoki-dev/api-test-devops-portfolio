@@ -40,4 +40,6 @@ jobs:
 
       - name: Run verbose check on failure (debug)
         if: failure()
-        run: npm run lint:links:verbose || true
+        run: |
+          echo "::warning::Link check failed, running verbose check..."
+          npm run lint:links:verbose || echo "::error::Verbose check also failed"
