@@ -40,7 +40,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
       | Empty / Unparseable | **STOP** + report to user |
       | WORKTREE_ROOT not found | **STOP** + mismatch report |
       | 1 entry | Run WORKTREE_ROOT confirmation command → Match: Notify "single-worktree mode (WORKTREE_ROOT: {absolute path})" + continue / Mismatch: **STOP** + mismatch report |
-      | 2+ entries | Notify "multi-worktree mode" → confirm WORKTREE_ROOT → **on failure: STOP + mismatch report** / on success: confirm scope with user → 承認: **continue** / 拒否: **STOP** + 理由をユーザーに報告（正しいworktreeパスを確認の上、セッションを再起動してください） |
+      | 2+ entries | Notify "multi-worktree mode" → confirm WORKTREE_ROOT → **on failure: STOP + mismatch report** / on success: use AskUserQuestion tool for scope confirmation (options: "Approve and continue" / "Reject and stop" / "Free text input") → Approve: **continue** / Reject: **STOP** + report reason to user (verify correct worktree path and restart session) / Free text: act per user input; if ambiguous, ask for clarification before proceeding |
 
       > **Evaluation order (required)**: Evaluate table rows top to bottom (check WORKTREE_ROOT containment before entry count): ① command failed → STOP ② empty/Unparseable → STOP ③ WORKTREE_ROOT containment check (if not found, STOP + mismatch report regardless of entry count) ④ entry count check (1 or 2+ entries)
       > **Note on pipeline exit codes**: `grep` returning exit 1 due to 0 matches is NOT "command failed" — treat as empty output (→ STOP at ②). Only treat as "command failed" when `git worktree list` itself returns non-zero exit code.
@@ -348,7 +348,6 @@ git checkout -b feature/<次のタスク> origin/develop
 10. PR作成     → /push-pr【gh pr create禁止】
 11. レビュー対応 → 修正 → 品質ゲート → /commit → push
 12. マージ実行  → マージ戦略【※4参照】
-13. クリーンアップ → Skill(superpowers:finishing-a-development-branch)
 ```
 
 <!-- preserve-on-compact: Quality Gates -->
