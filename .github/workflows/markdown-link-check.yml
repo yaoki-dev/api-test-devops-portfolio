@@ -36,7 +36,6 @@ jobs:
 
       - name: Run markdown link check
         run: npm run lint:links
-        continue-on-error: ${{ github.event_name == 'schedule' }}
 
       - name: Run verbose check on failure (debug)
         if: failure()
