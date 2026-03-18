@@ -40,4 +40,4 @@ jobs:
 
       - name: Run verbose check on failure (debug)
         if: failure()
-        run: npm run lint:links:verbose || true
+        run: npm run lint:links:verbose
