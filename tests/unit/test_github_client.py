@@ -7,6 +7,7 @@ GitHub API非同期クライアントのUnit Tests
 - カバレッジ目標: 80%以上
 """
 
+import asyncio
 from unittest.mock import ANY, Mock, patch
 
 import httpx
@@ -483,3 +484,50 @@ async def test_json_decode_error():
             await client.get_user("octocat")
 
     assert route.call_count == 1  # GETリクエストが1回発行されたことを確認
+
+
+# =============================================================================
+# システム例外伝播テスト（Issue #222）
+# =============================================================================
+
+
+async def test_system_exit_propagates_through_request():
+    """SystemExitが_requestメソッドを透過的に伝播することを検証
+
+    SystemExitはgraceful shutdown対応に不可欠であり、
+    汎用の例外ハンドラで捕捉・ラップしてはならない。
+    catchされるとプロセス終了シグナルが握りつぶされ、
+    コンテナオーケストレーション（K8s等）のライフサイクル管理が破綻する。
+    """
+    async with AsyncGitHubClient() as client:
+        with patch.object(client._client, "request", side_effect=SystemExit(1)):
+            with pytest.raises(SystemExit):
+                await client.get_user("octocat")
+
+
+async def test_memory_error_propagates_through_request():
+    """MemoryErrorが_requestメソッドを透過的に伝播することを検証
+
+    MemoryErrorはK8s OOMKilled等のリソース枯渇検知に不可欠であり、
+    汎用の例外ハンドラで捕捉・ラップしてはならない。
+    catchされるとOOM状態が隠蔽され、Podの再スケジューリングや
+    アラート発火が遅延し、カスケード障害の原因となる。
+    """
+    async with AsyncGitHubClient() as client:
+        with patch.object(client._client, "request", side_effect=MemoryError("Out of memory")):
+            with pytest.raises(MemoryError):
+                await client.get_user("octocat")
+
+
+async def test_cancelled_error_propagates_through_request():
+    """asyncio.CancelledErrorが_requestメソッドを透過的に伝播することを検証
+
+    CancelledErrorはasyncioタスクキャンセル伝播に不可欠であり、
+    汎用の例外ハンドラで捕捉・ラップしてはならない。
+    catchされるとTaskGroup/gather等のキャンセルチェーンが途切れ、
+    リソースリーク（未クローズのコネクション等）やデッドロックの原因となる。
+    """
+    async with AsyncGitHubClient() as client:
+        with patch.object(client._client, "request", side_effect=asyncio.CancelledError()):
+            with pytest.raises(asyncio.CancelledError):
+                await client.get_user("octocat")

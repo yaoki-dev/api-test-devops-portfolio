@@ -222,6 +222,40 @@ def test_sync_client_timeout_zero_not_overridden() -> None:
     )
 
 
+def test_sync_client_retry_count_zero_not_overridden() -> None:
+    """retry_count=0がデフォルト設定値に上書きされないことを確認（r2850768833回帰テスト）
+
+    retry_count=0 はリトライ無効化を意味する有効な設定値。
+    falsyな値として `or` パターンで設定値に上書きされてはならない。
+
+    学習ポイント:
+    - is not None パターンの必要性: 0/0.0/False 等の有効なfalsy値を保護する
+    - retry_count=0 の用途: リトライを行わず即座に失敗させたい場合に使用
+    """
+    client = SyncAPIClient(retry_count=0)
+    assert client.retry_count == 0, (
+        "retry_count=0 はリトライ無効化を意味する有効な設定値のため"
+        "デフォルト設定値に上書きされてはならない"
+    )
+
+
+def test_sync_client_retry_delay_zero_not_overridden() -> None:
+    """retry_delay=0.0がデフォルト設定値に上書きされないことを確認（r2850768833回帰テスト）
+
+    retry_delay=0.0 はリトライ間の遅延なしを意味する有効な設定値。
+    falsyな値として `or` パターンで設定値に上書きされてはならない。
+
+    学習ポイント:
+    - is not None パターンの必要性: 0/0.0/False 等の有効なfalsy値を保護する
+    - retry_delay=0.0 の用途: リトライ間隔を0にして即座にリトライしたい場合に使用
+    """
+    client = SyncAPIClient(retry_delay=0.0)
+    assert client.retry_delay == 0.0, (
+        "retry_delay=0.0 はリトライ遅延なしを意味する有効な設定値のため"
+        "デフォルト設定値に上書きされてはならない"
+    )
+
+
 # =============================================================================
 # 学習ポイント:
 #

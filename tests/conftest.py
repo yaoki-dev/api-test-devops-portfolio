@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 import pytest_asyncio
 
-from config.settings import reload_settings
+from config.settings import _resolve_hostname_cached, reload_settings
 from utils.api_client import AsyncAPIClient
 
 # =============================================================================
@@ -327,8 +327,10 @@ def reset_settings():
     将来的な並列実行（pytest -n auto）導入時に、
     グローバルシングルトンsettingsのテスト間汚染を防止
     """
+    _resolve_hostname_cached.cache_clear()
     reload_settings()
     yield
+    _resolve_hostname_cached.cache_clear()
 
 
 # =============================================================================
