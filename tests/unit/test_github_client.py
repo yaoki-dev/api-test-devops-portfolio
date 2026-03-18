@@ -14,7 +14,6 @@ import pytest
 import respx
 from structlog.testing import capture_logs
 
-from tests.unit.helpers import assert_warning_log_count
 from utils.github_client import (
     AsyncGitHubClient,
     GitHubAPIError,
@@ -358,8 +357,8 @@ async def test_httpx_status_error_4xx():
 async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
     """httpx.HTTPStatusError（5xx）処理の検証
 
-    L328-343 の response.status_code >= 500 パスをテスト。
-    リトライ動作に加え、retrying_server_error ログ出力を検証する。
+    response.status_code >= 500 のリトライパスをテスト。
+    リトライ動作に加え、retrying_server_error ログ出力を検証する（Issue #229）。
     """
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
     route.side_effect = [
@@ -378,8 +377,14 @@ async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
     assert mock_backoff.call_count == 2  # 3試行 → attempt=0,1でバックオフ（attempt=2は発生しない）
 
     # リトライ中間試行のログ出力検証（Issue #229）
-    assert_warning_log_count(log_output, "retrying_server_error", 2)
-    retry_logs = [log for log in log_output if log.get("event") == "retrying_server_error"]
+    retry_logs = [
+        log
+        for log in log_output
+        if log.get("event") == "retrying_server_error" and log.get("log_level") == "warning"
+    ]
+    assert len(retry_logs) == 2, (
+        f"retrying_server_error warning ログが2件出力されることを期待 (実際: {len(retry_logs)}件)"
+    )
     for idx, log_entry in enumerate(retry_logs):
         assert log_entry["status_code"] == 503
         assert log_entry["attempt"] == idx + 1  # attempt+1 で記録（1始まり）
@@ -392,8 +397,8 @@ async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
 async def test_httpx_status_error_5xx_defensive_path(mock_backoff: Mock) -> None:
     """httpx.HTTPStatusError（5xx）防御的コードパスの検証
 
-    L368 の except httpx.HTTPStatusError パスを直接テストする。
-    通常L328-343で先に処理されるが、HTTPStatusErrorが直接発生した場合の
+    except httpx.HTTPStatusError パスを直接テストする。
+    通常 response.status_code >= 500 パスで先に処理されるが、HTTPStatusErrorが直接発生した場合の
     バックオフ・ログ・リトライ動作を検証する。
 
     検証項目:
@@ -419,8 +424,15 @@ async def test_httpx_status_error_5xx_defensive_path(mock_backoff: Mock) -> None
     assert mock_backoff.call_count == 2  # 3試行 → attempt=0,1でバックオフ（attempt=2は発生しない）
 
     # リトライ中間試行のログ出力検証（Issue #229 — 防御的パス）
-    assert_warning_log_count(log_output, "retrying_http_status_error", 2)
-    retry_logs = [log for log in log_output if log.get("event") == "retrying_http_status_error"]
+    retry_logs = [
+        log
+        for log in log_output
+        if log.get("event") == "retrying_http_status_error" and log.get("log_level") == "warning"
+    ]
+    assert len(retry_logs) == 2, (
+        f"retrying_http_status_error warning ログが2件出力されることを期待"
+        f" (実際: {len(retry_logs)}件)"
+    )
     for idx, log_entry in enumerate(retry_logs):
         assert log_entry["status_code"] == 503
         assert log_entry["attempt"] == idx + 1  # attempt+1 で記録（1始まり）
