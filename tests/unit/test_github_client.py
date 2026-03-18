@@ -12,7 +12,9 @@ from unittest.mock import ANY, Mock, patch
 import httpx
 import pytest
 import respx
+from structlog.testing import capture_logs
 
+from tests.unit.helpers import assert_warning_log_count
 from utils.github_client import (
     AsyncGitHubClient,
     GitHubAPIError,
@@ -354,7 +356,11 @@ async def test_httpx_status_error_4xx():
 @respx.mock
 @patch("utils.github_client.exponential_backoff_with_jitter", return_value=0.0)
 async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
-    """httpx.HTTPStatusError（5xx）処理の検証"""
+    """httpx.HTTPStatusError（5xx）処理の検証
+
+    L328-343 の response.status_code >= 500 パスをテスト。
+    リトライ動作に加え、retrying_server_error ログ出力を検証する。
+    """
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
     route.side_effect = [
         httpx.Response(503, headers={"X-RateLimit-Remaining": "60"}),
@@ -362,13 +368,23 @@ async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
         httpx.Response(503, headers={"X-RateLimit-Remaining": "60"}),
     ]
 
-    async with AsyncGitHubClient(max_retries=3) as client:
-        with pytest.raises(GitHubServerError) as exc_info:
-            await client.get_user("octocat")
+    with capture_logs() as log_output:
+        async with AsyncGitHubClient(max_retries=3) as client:
+            with pytest.raises(GitHubServerError) as exc_info:
+                await client.get_user("octocat")
 
     assert "Server error: 503" in str(exc_info.value)
     assert route.call_count == 3
     assert mock_backoff.call_count == 2  # 3試行 → attempt=0,1でバックオフ（attempt=2は発生しない）
+
+    # リトライ中間試行のログ出力検証（Issue #229）
+    assert_warning_log_count(log_output, "retrying_server_error", 2)
+    retry_logs = [log for log in log_output if log.get("event") == "retrying_server_error"]
+    for idx, log_entry in enumerate(retry_logs):
+        assert log_entry["status_code"] == 503
+        assert log_entry["attempt"] == idx + 1  # attempt+1 で記録（1始まり）
+        assert log_entry["max_retries"] == 3
+        assert "delay" in log_entry
 
 
 @respx.mock
@@ -393,13 +409,25 @@ async def test_httpx_status_error_5xx_defensive_path(mock_backoff: Mock) -> None
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
     route.side_effect = [error_503, error_503, error_503]
 
-    async with AsyncGitHubClient(max_retries=3) as client:
-        with pytest.raises(GitHubServerError) as exc_info:
-            await client.get_user("octocat")
+    with capture_logs() as log_output:
+        async with AsyncGitHubClient(max_retries=3) as client:
+            with pytest.raises(GitHubServerError) as exc_info:
+                await client.get_user("octocat")
 
     assert "Failed after 3 attempts" in str(exc_info.value)
     assert route.call_count == 3
     assert mock_backoff.call_count == 2  # 3試行 → attempt=0,1でバックオフ（attempt=2は発生しない）
+
+    # リトライ中間試行のログ出力検証（Issue #229 — 防御的パス）
+    assert_warning_log_count(log_output, "retrying_http_status_error", 2)
+    retry_logs = [log for log in log_output if log.get("event") == "retrying_http_status_error"]
+    for idx, log_entry in enumerate(retry_logs):
+        assert log_entry["status_code"] == 503
+        assert log_entry["attempt"] == idx + 1  # attempt+1 で記録（1始まり）
+        assert log_entry["max_retries"] == 3
+        assert log_entry["endpoint"] == "/users/octocat"
+        assert log_entry["method"] == "GET"
+        assert "delay" in log_entry
 
 
 @respx.mock
