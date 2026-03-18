@@ -1027,67 +1027,49 @@ class TestResolveHostname(DNSCacheClearMixin):
         assert result is None
         assert "SSRF試行の可能性" in caplog.text
 
-    def test_resolve_hostname_gaierror_logs_dns_warning(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    @pytest.mark.parametrize(
+        ("exc_factory", "expected_log_message"),
+        [
+            pytest.param(
+                lambda: socket.gaierror("Name resolution failed"),
+                "DNS解決失敗",
+                id="gaierror",
+            ),
+            pytest.param(
+                lambda: socket.herror("Host resolution failed"),
+                "DNS解決失敗",
+                id="herror",
+            ),
+            pytest.param(
+                lambda: OSError("Network error"),
+                "予期しないネットワークエラー",
+                id="os_error",
+            ),
+        ],
+    )
+    def test_resolve_hostname_network_exception_logs_warning(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        exc_factory: Callable[[], Exception],
+        expected_log_message: str,
     ) -> None:
-        """socket.gaierror（DNS解決失敗）時にwarningレベルでログが出力される
+        """ネットワーク関連例外時にwarningレベルでログが出力されNoneを返す
 
         Design Rationale:
-            DNS解決失敗はFail-Closedを発動し正当なリクエストをブロックするため、
-            サービス影響度に基づきwarningレベルで記録する。
-            本番環境（INFO以上）でも可視化され、運用チームによる障害検知が可能。
+            socket.gaierror/herror（DNS解決失敗）と汎用OSError（ネットワーク障害）は
+            いずれもNone返却+warningログ出力だが、ログメッセージで区別する。
+            各例外型を個別ケースとしてテストし、将来のリファクタリングで
+            except節から誤って除外されないことを保証する（退行防止）。
         """
 
-        def raise_gaierror(hostname: str) -> str:
-            raise socket.gaierror(f"Name resolution failed: {hostname}")
+        def raise_exc(hostname: str) -> str:
+            raise exc_factory()
 
-        monkeypatch.setattr(socket, "gethostbyname", raise_gaierror)
+        monkeypatch.setattr(socket, "gethostbyname", raise_exc)
 
         with caplog.at_level(logging.WARNING, logger="config.settings"):
             result = _resolve_hostname("nonexistent.invalid")
 
         assert result is None
-        assert "DNS解決失敗" in caplog.text
-
-    def test_resolve_hostname_herror_logs_dns_warning(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """socket.herror（DNSサーバーエラー）時にwarningレベルでログが出力される
-
-        Design Rationale:
-            socket.herror はDNSサーバー自体のエラー（SERVFAIL等）で発生する。
-            gaierror と同じ except 節で捕捉されるが、将来のリファクタリングで
-            誤って除外されないよう個別にテストする（退行防止）。
-        """
-
-        def raise_herror(hostname: str) -> str:
-            raise socket.herror(f"Host resolution failed: {hostname}")
-
-        monkeypatch.setattr(socket, "gethostbyname", raise_herror)
-
-        with caplog.at_level(logging.WARNING, logger="config.settings"):
-            result = _resolve_hostname("invalid")
-
-        assert result is None
-        assert "DNS解決失敗" in caplog.text
-
-    def test_resolve_hostname_os_error_logs_network_warning(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """汎用OSError時に「予期しないネットワークエラー」のwarningログが出力される
-
-        Design Rationale:
-            socket.herror/gaierror以外のOSError（PermissionError, TimeoutError等）は
-            DNS解決失敗として誤分類しないよう、別メッセージで記録する。
-        """
-
-        def raise_os_error(hostname: str) -> str:
-            raise OSError(f"Network error: {hostname}")
-
-        monkeypatch.setattr(socket, "gethostbyname", raise_os_error)
-
-        with caplog.at_level(logging.WARNING, logger="config.settings"):
-            result = _resolve_hostname("nonexistent.invalid")
-
-        assert result is None
-        assert "予期しないネットワークエラー" in caplog.text
+        assert expected_log_message in caplog.text
