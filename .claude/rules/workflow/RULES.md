@@ -219,11 +219,12 @@ uv run pytest --cov-fail-under=[target] && uv run ruff check . && uv run mypy ut
 ---
 
 ## Category: Tool Optimization
-**Trigger:** Multi-step operations | **Priority:** Recommended
+**Trigger:** Multi-step operations, user-specified tool instructions | **Priority:** Important
 
 - Choose: MCP > Native > Basic
 - Parallelize independent operations
 - Use MultiEdit for 3+ file changes; Grep > bash grep
+- **Explicit Tool Compliance**: When the user explicitly specifies tools in their prompt (e.g., `use ast-grep`, `use CodeGraphContext mcp`, `use mgrep`), those tools MUST be used. If technically inapplicable, report the reason in one sentence (implicit omission is prohibited). When dispatching subagents, include a "Tool Usage Evidence" section in the output format (usage result or inapplicability reason for each specified tool)
 
 ---
 
