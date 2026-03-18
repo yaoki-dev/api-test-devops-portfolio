@@ -25,10 +25,7 @@ Users/                         # 誤配置ディレクトリ
 memory/                        # 旧Memory実装
 .spec-workflow/                # Spec Workflow（テンプレート含む）
 
-# === 3. Git Worktrees（Important） ===
-.worktrees/                    # 並列開発ブランチ（重複コンテキスト防止）
-
-# === 4. レポート・生成物（Important） ===
+# === 3. レポート・生成物（Important） ===
 reports/                         # テスト・カバレッジレポート（大容量HTML）
 docs/coverage/                   # カバレッジドキュメント
 coverage.json                    # カバレッジデータ
@@ -39,7 +36,7 @@ claudedocs/                      # Claude生成ドキュメント
 **/CLAUDE.md                     # サブディレクトリのCLAUDE.md
 .github/instructions/snyk_rules.instructions.md  # Snyk自動生成
 
-# === 5. Python開発環境 ===
+# === 4. Python開発環境 ===
 .venv/
 venv/
 __pycache__/
@@ -53,12 +50,12 @@ htmlcov/
 .ruff_cache/
 .pre-commit-cache/
 
-# === 6. Node.js依存関係 ===
+# === 5. Node.js依存関係 ===
 node_modules/
 .npm/
 .pnpm-store/
 
-# === 7. ビルド・キャッシュ・システム ===
+# === 6. ビルド・キャッシュ・システム ===
 dist/
 build/
 *.egg-info/

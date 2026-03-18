@@ -106,7 +106,7 @@ jobs:
 
       - name: Run markdownlint
         id: markdownlint
-        run: npx markdownlint '**/*.md' --ignore node_modules --ignore .venv --ignore .worktrees
+        run: npx markdownlint '**/*.md' --ignore node_modules --ignore .venv
         continue-on-error: true
 
       - name: Run textlint
@@ -309,7 +309,7 @@ jobs:
         run: uv sync --dev
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Set image tag
         id: image-tag
@@ -485,7 +485,6 @@ jobs:
           find . -name '*.md' \
             -not -path './node_modules/*' \
             -not -path './.venv/*' \
-            -not -path './.worktrees/*' \
             -not -path './docs/archive/*' \
             -not -path './docs/coverage/*' \
             -not -path './docs/main/6週プラン/*' \
@@ -519,7 +518,6 @@ jobs:
           find . -name '*.md' \
             -not -path './node_modules/*' \
             -not -path './.venv/*' \
-            -not -path './.worktrees/*' \
             -not -path './docs/archive/*' \
             -not -path './docs/coverage/*' \
             -not -path './docs/main/6週プラン/*' \
@@ -557,7 +555,7 @@ jobs:
 
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: artifacts/
         continue-on-error: true
