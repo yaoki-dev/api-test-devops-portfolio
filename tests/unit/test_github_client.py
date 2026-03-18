@@ -389,7 +389,7 @@ async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
         assert log_entry["status_code"] == 503
         assert log_entry["attempt"] == idx + 1  # attempt+1 で記録（1始まり）
         assert log_entry["max_retries"] == 3
-        assert "delay" in log_entry
+        assert log_entry["delay"] == 0.0
 
 
 @respx.mock
@@ -439,7 +439,7 @@ async def test_httpx_status_error_5xx_defensive_path(mock_backoff: Mock) -> None
         assert log_entry["max_retries"] == 3
         assert log_entry["endpoint"] == "/users/octocat"
         assert log_entry["method"] == "GET"
-        assert "delay" in log_entry
+        assert log_entry["delay"] == 0.0
 
 
 @respx.mock
