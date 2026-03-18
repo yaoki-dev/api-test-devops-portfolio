@@ -355,7 +355,7 @@ async def test_httpx_status_error_4xx():
 @respx.mock
 @patch("utils.github_client.exponential_backoff_with_jitter", return_value=0.0)
 async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
-    """httpx.HTTPStatusError（5xx）処理の検証
+    """5xxステータスコード（response.status_code >= 500）リトライパスの検証
 
     response.status_code >= 500 のリトライパスをテスト。
     リトライ動作に加え、retrying_server_error ログ出力を検証する（Issue #229）。
@@ -367,8 +367,8 @@ async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
         httpx.Response(503, headers={"X-RateLimit-Remaining": "60"}),
     ]
 
-    with capture_logs() as log_output:
-        async with AsyncGitHubClient(max_retries=3) as client:
+    async with AsyncGitHubClient(max_retries=3) as client:
+        with capture_logs() as log_output:
             with pytest.raises(GitHubServerError) as exc_info:
                 await client.get_user("octocat")
 
@@ -378,11 +378,11 @@ async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
 
     # リトライ中間試行のログ出力検証（Issue #229）
     retry_logs = [log for log in log_output if log.get("event") == "retrying_server_error"]
-    assert all(log.get("log_level") == "warning" for log in retry_logs), (
-        f"log_level が warning でないエントリが存在する: {retry_logs}"
-    )
     assert len(retry_logs) == 2, (
         f"retrying_server_error ログが2件出力されることを期待 (実際: {len(retry_logs)}件)"
+    )
+    assert all(log["log_level"] == "warning" for log in retry_logs), (
+        f"log_level が warning でないエントリが存在する: {retry_logs}"
     )
     for idx, log_entry in enumerate(retry_logs):
         assert log_entry["status_code"] == 503
@@ -397,7 +397,8 @@ async def test_httpx_status_error_5xx_defensive_path(mock_backoff: Mock) -> None
     """httpx.HTTPStatusError（5xx）防御的コードパスの検証
 
     except httpx.HTTPStatusError パスを直接テストする。
-    通常 response.status_code >= 500 パスで先に処理されるが、HTTPStatusErrorが直接発生した場合の
+    通常 response.status_code >= 500 パスで先に処理されるため理論上到達しないが、
+    HTTPStatusErrorが直接発生した場合の
     バックオフ・ログ・リトライ動作を検証する。
 
     検証項目:
@@ -413,8 +414,8 @@ async def test_httpx_status_error_5xx_defensive_path(mock_backoff: Mock) -> None
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
     route.side_effect = [error_503, error_503, error_503]
 
-    with capture_logs() as log_output:
-        async with AsyncGitHubClient(max_retries=3) as client:
+    async with AsyncGitHubClient(max_retries=3) as client:
+        with capture_logs() as log_output:
             with pytest.raises(GitHubServerError) as exc_info:
                 await client.get_user("octocat")
 
@@ -424,11 +425,11 @@ async def test_httpx_status_error_5xx_defensive_path(mock_backoff: Mock) -> None
 
     # リトライ中間試行のログ出力検証（Issue #229 — 防御的パス）
     retry_logs = [log for log in log_output if log.get("event") == "retrying_http_status_error"]
-    assert all(log.get("log_level") == "warning" for log in retry_logs), (
-        f"log_level が warning でないエントリが存在する: {retry_logs}"
-    )
     assert len(retry_logs) == 2, (
         f"retrying_http_status_error ログが2件出力されることを期待 (実際: {len(retry_logs)}件)"
+    )
+    assert all(log["log_level"] == "warning" for log in retry_logs), (
+        f"log_level が warning でないエントリが存在する: {retry_logs}"
     )
     for idx, log_entry in enumerate(retry_logs):
         assert log_entry["status_code"] == 503
