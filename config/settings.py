@@ -105,6 +105,15 @@ def _resolve_hostname_cached(hostname: str) -> str:
     return socket.gethostbyname(hostname)
 
 
+def clear_dns_cache() -> None:
+    """DNSキャッシュをクリアする
+
+    テストフィクスチャ等でテスト間のDNSキャッシュ汚染を防止するために使用。
+    内部で _resolve_hostname_cached の lru_cache をクリアする。
+    """
+    _resolve_hostname_cached.cache_clear()
+
+
 def _resolve_hostname(hostname: str) -> str | None:
     """ホスト名をDNS解決してIPアドレス文字列を返す（失敗時はNone）
 

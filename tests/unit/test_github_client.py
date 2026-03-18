@@ -489,6 +489,8 @@ async def test_json_decode_error():
 # =============================================================================
 # システム例外伝播テスト（Issue #222）
 # =============================================================================
+# KeyboardInterruptはpytest自体がSIGINTハンドラとして処理するためunitテストでの検証は省略
+# SystemExit / MemoryError / CancelledError の3種で例外伝播パスをカバー
 
 
 async def test_system_exit_propagates_through_request():

@@ -2036,8 +2036,8 @@ async def test_async_client_retry_count_zero_not_overridden() -> None:
     retry_count=0 はリトライ無効化を意味する有効な設定値。
     falsyな値として `or` パターンで設定値に上書きされてはならない。
 
-    AsyncAPIClientは非同期コンテキストマネージャーのため async with で使用するが、
-    retry_count属性は __init__ で設定されるため、エントリー直後に検証可能。
+    AsyncAPIClientは非同期コンテキストマネージャーのため通常 async with で使用するが、
+    retry_count属性は __init__ で設定が完了するため、エントリーの有無に関わらず検証可能。
 
     学習ポイント:
     - is not None パターンの必要性: 0/0.0/False 等の有効なfalsy値を保護する
@@ -2057,8 +2057,8 @@ async def test_async_client_retry_delay_zero_not_overridden() -> None:
     retry_delay=0.0 はリトライ間の遅延なしを意味する有効な設定値。
     falsyな値として `or` パターンで設定値に上書きされてはならない。
 
-    AsyncAPIClientは非同期コンテキストマネージャーのため async with で使用するが、
-    retry_delay属性は __init__ で設定されるため、エントリー直後に検証可能。
+    AsyncAPIClientは非同期コンテキストマネージャーのため通常 async with で使用するが、
+    retry_delay属性は __init__ で設定が完了するため、エントリーの有無に関わらず検証可能。
 
     学習ポイント:
     - is not None パターンの必要性: 0/0.0/False 等の有効なfalsy値を保護する
