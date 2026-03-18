@@ -27,6 +27,8 @@ from models.responses import (
     sanitize_user_content,
 )
 
+pytestmark = pytest.mark.unit
+
 # =============================================================================
 # XSS テストベクター（OWASP XSS Prevention Cheat Sheet 準拠）
 # Reference: https://cheatsheetseries.owasp.org/cheatsheets/XSS_Filter_Evasion_Cheat_Sheet.html
