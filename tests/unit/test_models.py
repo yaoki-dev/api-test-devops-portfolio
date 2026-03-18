@@ -20,43 +20,39 @@ from models.responses import (
     sanitize_user_content,
 )
 
+pytestmark = pytest.mark.unit
+
 
 class TestSanitizeUserContent:
     """sanitize_user_content関数のテスト"""
 
-    @pytest.mark.unit
     def test_sanitize_basic_html(self) -> None:
         """基本的なHTMLタグをエスケープする"""
         result = sanitize_user_content("<script>alert('XSS')</script>")
         assert "&lt;script&gt;" in result
         assert "<script>" not in result
 
-    @pytest.mark.unit
     def test_sanitize_quotes(self) -> None:
         """シングル・ダブルクォートをエスケープする"""
         result = sanitize_user_content("test'\"value")
         assert "&#x27;" in result  # シングルクォート
         assert "&quot;" in result  # ダブルクォート
 
-    @pytest.mark.unit
     def test_sanitize_ampersand(self) -> None:
         """アンパサンドをエスケープする"""
         result = sanitize_user_content("foo & bar")
         assert "&amp;" in result
 
-    @pytest.mark.unit
     def test_sanitize_none_returns_empty(self) -> None:
         """Noneの場合は空文字列を返す"""
         result = sanitize_user_content(None)
         assert result == ""
 
-    @pytest.mark.unit
     def test_sanitize_empty_string(self) -> None:
         """空文字列はそのまま返す"""
         result = sanitize_user_content("")
         assert result == ""
 
-    @pytest.mark.unit
     def test_sanitize_normal_text(self) -> None:
         """通常テキストは変更されない"""
         text = "Hello World 123"
@@ -67,7 +63,6 @@ class TestSanitizeUserContent:
 class TestPostModel:
     """Postモデルのテスト"""
 
-    @pytest.mark.unit
     def test_post_creation(self) -> None:
         """正常なPost作成"""
         post = Post(id=1, userId=1, title="Test Title", body="Test Body")
@@ -76,7 +71,6 @@ class TestPostModel:
         assert post.title == "Test Title"
         assert post.body == "Test Body"
 
-    @pytest.mark.unit
     def test_post_xss_sanitization(self) -> None:
         """PostのXSSサニタイゼーション"""
         post = Post(
@@ -89,20 +83,17 @@ class TestPostModel:
         assert "<img" not in post.body
         assert "&lt;script&gt;" in post.title
 
-    @pytest.mark.unit
     def test_post_alias_mapping(self) -> None:
         """userIdからuser_idへのエイリアスマッピング"""
         post = Post(id=1, userId=99, title="Test", body="Body")
         assert post.user_id == 99
 
-    @pytest.mark.unit
     def test_post_invalid_id_zero_raises_validation_error(self) -> None:
         """id=0でValidationErrorが発生する（境界値テスト: ge=1）"""
         with pytest.raises(ValidationError) as exc_info:
             Post(id=0, userId=1, title="Test", body="Body")
         assert "id" in str(exc_info.value)
 
-    @pytest.mark.unit
     def test_post_title_exceeds_max_length_raises_validation_error(self) -> None:
         """title>200文字でValidationErrorが発生する（境界値テスト: max_length=200）"""
         long_title = "a" * 201
@@ -114,7 +105,6 @@ class TestPostModel:
 class TestCommentModel:
     """Commentモデルのテスト"""
 
-    @pytest.mark.unit
     def test_comment_creation(self) -> None:
         """正常なComment作成"""
         comment = Comment(
@@ -128,7 +118,6 @@ class TestCommentModel:
         assert comment.post_id == 1
         assert comment.name == "John Doe"
 
-    @pytest.mark.unit
     def test_comment_xss_sanitization(self) -> None:
         """CommentのXSSサニタイゼーション"""
         comment = Comment(
@@ -146,7 +135,6 @@ class TestCommentModel:
 class TestUserModel:
     """Userモデルのテスト"""
 
-    @pytest.mark.unit
     def test_user_creation(self) -> None:
         """正常なUser作成"""
         user = User(
@@ -173,7 +161,6 @@ class TestUserModel:
         assert user.name == "John Doe"
         assert user.company.name == "ACME Corp"
 
-    @pytest.mark.unit
     def test_user_xss_sanitization(self) -> None:
         """UserのXSSサニタイゼーション"""
         user = User(
@@ -204,7 +191,6 @@ class TestUserModel:
 class TestTodoModel:
     """Todoモデルのテスト"""
 
-    @pytest.mark.unit
     def test_todo_creation(self) -> None:
         """正常なTodo作成"""
         todo = Todo(id=1, userId=1, title="Buy groceries", completed=False)
@@ -213,7 +199,6 @@ class TestTodoModel:
         assert todo.title == "Buy groceries"
         assert todo.completed is False
 
-    @pytest.mark.unit
     def test_todo_xss_sanitization(self) -> None:
         """TodoのXSSサニタイゼーション"""
         todo = Todo(id=1, userId=1, title="<script>malicious()</script>", completed=True)
@@ -224,7 +209,6 @@ class TestTodoModel:
 class TestAlbumModel:
     """Albumモデルのテスト"""
 
-    @pytest.mark.unit
     def test_album_creation(self) -> None:
         """正常なAlbum作成"""
         album = Album(id=1, userId=1, title="Vacation Photos")
@@ -232,7 +216,6 @@ class TestAlbumModel:
         assert album.user_id == 1
         assert album.title == "Vacation Photos"
 
-    @pytest.mark.unit
     def test_album_xss_sanitization(self) -> None:
         """AlbumのXSSサニタイゼーション"""
         album = Album(id=1, userId=1, title="<script>bad()</script>")
@@ -242,7 +225,6 @@ class TestAlbumModel:
 class TestPhotoModel:
     """Photoモデルのテスト"""
 
-    @pytest.mark.unit
     def test_photo_creation(self) -> None:
         """正常なPhoto作成"""
         photo = Photo(
@@ -256,7 +238,6 @@ class TestPhotoModel:
         assert photo.album_id == 1
         assert photo.title == "Beach Sunset"
 
-    @pytest.mark.unit
     def test_photo_xss_sanitization(self) -> None:
         """PhotoのXSSサニタイゼーション"""
         photo = Photo(
