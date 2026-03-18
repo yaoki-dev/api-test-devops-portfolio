@@ -42,4 +42,4 @@ jobs:
         if: failure()
         run: |
           echo "::warning::Link check failed, running verbose check..."
-          npm run lint:links:verbose || echo "::error::Verbose check also failed"
+          npm run lint:links:verbose
