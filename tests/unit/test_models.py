@@ -20,6 +20,8 @@ from models.responses import (
     sanitize_user_content,
 )
 
+pytestmark = pytest.mark.unit
+
 
 class TestSanitizeUserContent:
     """sanitize_user_content関数のテスト"""
