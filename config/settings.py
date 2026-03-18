@@ -105,11 +105,15 @@ def _resolve_hostname_cached(hostname: str) -> str:
     return socket.gethostbyname(hostname)
 
 
-def clear_dns_cache() -> None:
-    """DNSキャッシュをクリアする
+def _clear_dns_cache_for_testing() -> None:
+    """DNSキャッシュをクリアする（テスト専用）
 
     テストフィクスチャ等でテスト間のDNSキャッシュ汚染を防止するために使用。
     内部で _resolve_hostname_cached の lru_cache をクリアする。
+
+    Note:
+        アンダースコアプレフィックスはテスト専用であることを明示し、
+        プロダクションコードでの誤用（SSRF防止用DNSキャッシュの意図しないクリア）を防止する。
     """
     _resolve_hostname_cached.cache_clear()
 

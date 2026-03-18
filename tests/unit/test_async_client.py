@@ -2187,9 +2187,6 @@ async def test_async_client_falsy_values_not_overridden() -> None:
     timeout=0.0 がFalsyと判定され設定値で上書きされていた。
     `x if x is not None else default` への修正が正しく動作することを保証する。
 
-    Note: 全属性は __init__ で設定完了するため async with は不要。
-    直接インスタンス化で検証する。
-
     学習ポイント:
     - is not None パターンの必要性: 0/0.0/False 等の有効なfalsy値を保護する
     - retry_delay=0.0: コンストラクタ直接指定時のみ有効
@@ -2198,24 +2195,24 @@ async def test_async_client_falsy_values_not_overridden() -> None:
       Pydantic Field制約(ge=0.1)によりValidationErrorとなる
     - retry_count=0 の用途: リトライを行わず即座に失敗させたい場合に使用
     """
-    client = AsyncAPIClient(
+    async with AsyncAPIClient(
         base_url="https://jsonplaceholder.typicode.com",
         retry_count=0,
         timeout=0.0,
         retry_delay=0.0,
-    )
-    assert client.retry_count == 0, (
-        "retry_count=0 should NOT be overridden by settings. "
-        "Regression guard against `x or default` pattern."
-    )
-    assert client.timeout == 0.0, (
-        "timeout=0.0 should NOT be overridden by settings. "
-        "Regression guard against `x or default` pattern."
-    )
-    assert client.retry_delay == 0.0, (
-        "retry_delay=0.0 should NOT be overridden by settings. "
-        "Regression guard against `x or default` pattern."
-    )
+    ) as client:
+        assert client.retry_count == 0, (
+            "retry_count=0 should NOT be overridden by settings. "
+            "Regression guard against `x or default` pattern."
+        )
+        assert client.timeout == 0.0, (
+            "timeout=0.0 should NOT be overridden by settings. "
+            "Regression guard against `x or default` pattern."
+        )
+        assert client.retry_delay == 0.0, (
+            "retry_delay=0.0 should NOT be overridden by settings. "
+            "Regression guard against `x or default` pattern."
+        )
 
 
 # ===============================================================================

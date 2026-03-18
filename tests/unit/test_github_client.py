@@ -493,6 +493,7 @@ async def test_json_decode_error():
 # SystemExit / MemoryError / CancelledError の3種で例外伝播パスをカバー
 
 
+@respx.mock
 async def test_system_exit_propagates_through_request():
     """SystemExitが_requestメソッドを透過的に伝播することを検証
 
@@ -507,6 +508,7 @@ async def test_system_exit_propagates_through_request():
                 await client.get_user("octocat")
 
 
+@respx.mock
 async def test_memory_error_propagates_through_request():
     """MemoryErrorが_requestメソッドを透過的に伝播することを検証
 
@@ -521,6 +523,7 @@ async def test_memory_error_propagates_through_request():
                 await client.get_user("octocat")
 
 
+@respx.mock
 async def test_cancelled_error_propagates_through_request():
     """asyncio.CancelledErrorが_requestメソッドを透過的に伝播することを検証
 

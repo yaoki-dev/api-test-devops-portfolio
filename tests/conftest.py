@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 import pytest_asyncio
 
-from config.settings import clear_dns_cache, reload_settings
+from config.settings import _clear_dns_cache_for_testing, reload_settings
 from utils.api_client import AsyncAPIClient
 
 # =============================================================================
@@ -324,15 +324,15 @@ def reset_settings():
     """
     各テスト実行前に設定をリロードしてテスト独立性を保証
 
-    将来的な並列実行（pytest -n auto）導入時に、
+    並列実行（pytest -n auto）環境での
     グローバルシングルトンsettingsのテスト間汚染を防止
     """
-    clear_dns_cache()
+    _clear_dns_cache_for_testing()
     reload_settings()
     try:
         yield
     finally:
-        clear_dns_cache()
+        _clear_dns_cache_for_testing()
 
 
 # =============================================================================
