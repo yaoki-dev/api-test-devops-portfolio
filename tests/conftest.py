@@ -329,7 +329,6 @@ def reset_settings():
     """
     reload_settings()
     yield
-    reload_settings()
 
 
 # =============================================================================
