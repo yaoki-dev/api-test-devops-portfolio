@@ -367,8 +367,8 @@ async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
         httpx.Response(503, headers={"X-RateLimit-Remaining": "60"}),
     ]
 
-    async with AsyncGitHubClient(max_retries=3) as client:
-        with capture_logs() as log_output:
+    with capture_logs() as log_output:
+        async with AsyncGitHubClient(max_retries=3) as client:
             with pytest.raises(GitHubServerError) as exc_info:
                 await client.get_user("octocat")
 
@@ -414,8 +414,8 @@ async def test_httpx_status_error_5xx_defensive_path(mock_backoff: Mock) -> None
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
     route.side_effect = [error_503, error_503, error_503]
 
-    async with AsyncGitHubClient(max_retries=3) as client:
-        with capture_logs() as log_output:
+    with capture_logs() as log_output:
+        async with AsyncGitHubClient(max_retries=3) as client:
             with pytest.raises(GitHubServerError) as exc_info:
                 await client.get_user("octocat")
 
