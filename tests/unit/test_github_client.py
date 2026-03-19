@@ -397,9 +397,9 @@ async def test_httpx_status_error_5xx_defensive_path(mock_backoff: Mock) -> None
     """httpx.HTTPStatusError（5xx）防御的コードパスの検証
 
     except httpx.HTTPStatusError パスを直接テストする。
-    通常 response.status_code >= 500 パスで先に処理されるため理論上到達しないが、
-    HTTPStatusErrorが直接発生した場合の
-    バックオフ・ログ・リトライ動作を検証する。
+    通常は response.status_code >= 500 の分岐で処理され、
+    raise_for_status() に到達しないため理論上到達しないが、
+    HTTPStatusErrorが直接発生した場合のバックオフ・ログ・リトライ動作を検証する。
 
     検証項目:
     - retrying_http_status_error ログイベント出力
