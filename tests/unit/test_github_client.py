@@ -611,7 +611,7 @@ def test_repo_validation_dot_series_currently_allowed() -> None:
         pytest.param("../etc/passwd", id="path_traversal"),
         # 文字数上限超過（101文字 > 上限100文字）
         pytest.param("a" * 101, id="too_long"),
-        # not repoによる短絡評価 + REGEXも{1,100}により空文字列を拒否
+        # not repoによる短絡評価で拒否（REGEX は実行されない）
         pytest.param("", id="empty_string"),
         # 特殊文字（スペース・!はREGEX許可文字外）
         pytest.param("repo name!", id="special_chars"),
