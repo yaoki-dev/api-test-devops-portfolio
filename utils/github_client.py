@@ -231,6 +231,27 @@ class AsyncGitHubClient:
             raise GitHubAPIError(f"Expected dict response, got {type(result).__name__}")
         return result
 
+    def _parse_rate_limit_header(self, headers: httpx.Headers, name: str, default: int) -> int:
+        """Rate Limitヘッダーを安全にパースする。
+
+        Args:
+            headers: HTTPレスポンスヘッダー
+            name: ヘッダー名（例: "X-RateLimit-Remaining"）
+            default: パース失敗時のフォールバック値
+
+        Returns:
+            パース済み整数値、またはデフォルト値
+        """
+        try:
+            return int(headers.get(name, default))
+        except ValueError:
+            self.logger.warning(
+                "invalid_rate_limit_header",
+                header=name,
+                value=headers.get(name),
+            )
+            return default
+
     async def _request(  # noqa: C901 - 統合HTTPリクエスト処理（Rate Limit/ETag/リトライ統合）のため許容
         self,
         method: str,
@@ -279,25 +300,13 @@ class AsyncGitHubClient:
                 )
 
                 # Rate Limit監視
-                try:
-                    remaining = int(response.headers.get("X-RateLimit-Remaining", 999))
-                except ValueError:
-                    self.logger.warning(
-                        "invalid_rate_limit_header",
-                        header="X-RateLimit-Remaining",
-                        value=response.headers.get("X-RateLimit-Remaining"),
-                    )
-                    remaining = 999  # フォールバック: 残量十分と見なす
+                remaining = self._parse_rate_limit_header(
+                    response.headers, "X-RateLimit-Remaining", 999
+                )  # フォールバック: 残量十分と見なす
                 if remaining < 10:
-                    try:
-                        reset_time = int(response.headers.get("X-RateLimit-Reset", 0))
-                    except ValueError:
-                        self.logger.warning(
-                            "invalid_rate_limit_header",
-                            header="X-RateLimit-Reset",
-                            value=response.headers.get("X-RateLimit-Reset"),
-                        )
-                        reset_time = 0  # フォールバック: リセット時刻不明
+                    reset_time = self._parse_rate_limit_header(
+                        response.headers, "X-RateLimit-Reset", 0
+                    )  # フォールバック: リセット時刻不明
                     reset_dt = datetime.fromtimestamp(reset_time, tz=UTC)
                     self.logger.warning(
                         "rate_limit_low",
@@ -327,26 +336,14 @@ class AsyncGitHubClient:
 
                 if response.status_code == 403:
                     # 403判定: Rate Limit超過 vs その他のアクセス禁止
-                    try:
-                        rate_remaining = int(response.headers.get("X-RateLimit-Remaining", -1))
-                    except ValueError:
-                        self.logger.warning(
-                            "invalid_rate_limit_header",
-                            header="X-RateLimit-Remaining",
-                            value=response.headers.get("X-RateLimit-Remaining"),
-                        )
-                        rate_remaining = -1  # フォールバック: rate limit起因でないと見なす
+                    rate_remaining = self._parse_rate_limit_header(
+                        response.headers, "X-RateLimit-Remaining", -1
+                    )  # フォールバック: rate limit起因でないと見なす
                     if rate_remaining == 0:
                         # Rate Limit超過確定
-                        try:
-                            reset_time = int(response.headers.get("X-RateLimit-Reset", 0))
-                        except ValueError:
-                            self.logger.warning(
-                                "invalid_rate_limit_header",
-                                header="X-RateLimit-Reset",
-                                value=response.headers.get("X-RateLimit-Reset"),
-                            )
-                            reset_time = 0  # フォールバック: リセット時刻不明
+                        reset_time = self._parse_rate_limit_header(
+                            response.headers, "X-RateLimit-Reset", 0
+                        )  # フォールバック: リセット時刻不明
                         raise RateLimitError(reset_time)
                     # その他の403エラー（IPブロック、アクセス権限不足等）
                     error_message = "Access forbidden"
