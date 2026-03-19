@@ -13,6 +13,7 @@ Note:
 
 import json
 import sys
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -99,8 +100,6 @@ def test_sync_context_manager_cleanup() -> None:
         patch.objectでhttpx.Clientのcloseメソッドをスパイし、
         コンテキストマネージャー終了時に呼ばれることを確認する。
     """
-    from unittest.mock import patch
-
     client_instance = SyncAPIClient()
     with patch.object(client_instance._client, "close") as mock_close:
         with client_instance:
@@ -841,11 +840,24 @@ def test_sync_client_whitespace_base_url_raises_value_error() -> None:
 
 
 def test_sync_client_falsy_values_not_overridden() -> None:
-    """retry_count=0, timeout=0.0, retry_delay=0.0 がFalsy判定で設定値に上書きされないことを検証
+    """falsy値(0, 0.0)がデフォルト設定値に上書きされないことを検証
 
-    退行防止: 修正前の `x or default` パターンでは retry_count=0 や
+    退行防止（r2850768833回帰テスト）:
+    修正前の `x or default` パターンでは retry_count=0 や
     timeout=0.0 がFalsyと判定され設定値で上書きされていた。
     `x if x is not None else default` への修正が正しく動作することを保証する。
+
+    学習ポイント:
+    - is not None パターンの必要性: 0/0.0/False 等の有効なfalsy値を保護する
+    - retry_delay=0.0: コンストラクタ直接指定時のみ有効
+      （Pydantic ge=0.1制約を迂回）
+    - 環境変数 API__RETRY_DELAY=0.0 では
+      Pydantic Field制約(ge=0.1)によりValidationErrorとなる
+    - timeout=0.0: コンストラクタ直接指定時のみ有効
+      （Pydantic ge=1.0制約を迂回）
+    - 環境変数 API__TIMEOUT=0.0 では
+      Pydantic Field制約(ge=1.0)によりValidationErrorとなる
+    - retry_count=0 の用途: リトライを行わず即座に失敗させたい場合に使用
     """
     with SyncAPIClient(
         base_url="https://jsonplaceholder.typicode.com",
@@ -1000,3 +1012,39 @@ def test_sync_create_todo() -> None:
     assert request_body["title"] == "Buy groceries"
     assert request_body["userId"] == 1
     assert request_body["completed"] is False
+
+
+# =============================================================================
+# システム例外伝播テスト（Issue #222 — S4対応）
+# =============================================================================
+# AsyncAPIClient (test_async_client.py) との対称性維持。
+# KeyboardInterruptはpytest自体がSIGINTハンドラとして処理するためunitテストでの検証は省略。
+# CancelledErrorはasyncio専用のため同期クライアントでは不要。
+
+
+@pytest.mark.parametrize(
+    ("exception_class", "exception_args"),
+    [
+        pytest.param(SystemExit, (1,), id="SystemExit"),
+        pytest.param(MemoryError, ("Out of memory",), id="MemoryError"),
+    ],
+)
+def test_sync_health_check_system_exception_propagates(
+    exception_class: type[BaseException],
+    exception_args: tuple[object, ...],
+) -> None:
+    """システム例外がhealth_checkのexcept APIClientErrorで握りつぶされないことを検証
+
+    SyncAPIClient.health_check() は except APIClientError の前に
+    SystemExit, MemoryError を明示的に re-raise する。
+    （KeyboardInterruptはpytest自体がSIGINTハンドラとして処理するためunitテストでの検証は省略）
+    この設計により:
+    - SystemExit: graceful shutdown シグナルがプロセス外へ正しく伝播
+    - MemoryError: K8s OOMKilled 検知が遅延しない
+
+    回帰テスト: except 節の順序変更や削除による退行を検出。
+    """
+    with SyncJSONPlaceholderClient() as client:
+        with patch.object(client, "get", side_effect=exception_class(*exception_args)):
+            with pytest.raises(exception_class):
+                client.health_check()
