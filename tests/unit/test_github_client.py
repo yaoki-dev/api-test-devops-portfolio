@@ -551,7 +551,7 @@ def test_repo_validation_invalid() -> None:
     with pytest.raises(ValueError, match="Invalid GitHub repository name"):
         validate_github_repo("a" * 101)
 
-    # 空文字列（not repoでキャッチ）
+    # 空文字列（`not repo` が True → REGEX到達前にValueError）
     with pytest.raises(ValueError, match="Invalid GitHub repository name"):
         validate_github_repo("")
 
