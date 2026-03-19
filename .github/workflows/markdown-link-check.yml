@@ -1,5 +1,7 @@
 # Markdown Link Check Workflow
 # Validates internal and external links in all markdown files
+# Role: Gate check — fails the workflow on broken links (pass/fail verdict)
+# Counterpart: ci.yml weekly-link-check job collects detailed per-file logs as artifact
 # Runs on PR (markdown changes), weekly schedule, and manual dispatch
 
 name: Markdown Link Check

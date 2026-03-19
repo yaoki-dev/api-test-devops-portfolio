@@ -456,6 +456,9 @@ jobs:
 
   # ============================================================
   # Stage 3.5: Weekly Link Check
+  # Role: Detailed log collection — runs all files with continue-on-error
+  #   and saves results as artifact (does not fail the workflow)
+  # Counterpart: markdown-link-check.yml acts as gate check (fails on broken links)
   # Triggers: schedule (Sunday 00:00 UTC)
   # Checks: markdown-link-check (external/internal links)
   # ============================================================
