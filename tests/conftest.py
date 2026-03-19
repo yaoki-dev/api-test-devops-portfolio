@@ -324,8 +324,8 @@ def reset_settings():
     """
     各テスト実行前に設定をリロードしてテスト独立性を保証
 
-    並列実行（pytest -n auto）環境での
-    グローバルシングルトンsettingsのテスト間汚染を防止
+    同一プロセス内での逐次テスト間、
+    グローバルシングルトンsettingsのテスト間汚染（環境変数変更の残留等）を防止
     """
     _resolve_hostname_cached.cache_clear()
     reload_settings()
@@ -333,6 +333,7 @@ def reset_settings():
         yield
     finally:
         _resolve_hostname_cached.cache_clear()
+        reload_settings()
 
 
 # =============================================================================

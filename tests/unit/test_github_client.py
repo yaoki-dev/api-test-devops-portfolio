@@ -513,9 +513,9 @@ async def test_base_exception_propagates_through_request(
     @respx.mockは不要。
 
     Note:
-        CancelledErrorはPython 3.8+でBaseExceptionサブクラスのため、
-        except Exceptionでは捕捉されない。本テストはexcept BaseExceptionへの
-        将来的な変更に対する安全網として機能する。
+        CancelledErrorはPython 3.8+でBaseExceptionサブクラス。
+        実装のexcept節から明示的re-raise対象が削除・変更された場合の
+        退行検出として機能する安全網テスト。
     """
     async with AsyncGitHubClient() as client:
         with patch.object(client._client, "request", side_effect=exception_class(*exception_args)):
