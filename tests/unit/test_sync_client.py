@@ -13,6 +13,7 @@ Note:
 
 import json
 import sys
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -99,8 +100,6 @@ def test_sync_context_manager_cleanup() -> None:
         patch.objectでhttpx.Clientのcloseメソッドをスパイし、
         コンテキストマネージャー終了時に呼ばれることを確認する。
     """
-    from unittest.mock import patch
-
     client_instance = SyncAPIClient()
     with patch.object(client_instance._client, "close") as mock_close:
         with client_instance:
@@ -840,6 +839,7 @@ def test_sync_client_whitespace_base_url_raises_value_error() -> None:
         SyncAPIClient(base_url="   ")
 
 
+@respx.mock
 def test_sync_client_falsy_values_not_overridden() -> None:
     """falsy値(0, 0.0)がデフォルト設定値に上書きされないことを検証
 
@@ -1009,3 +1009,38 @@ def test_sync_create_todo() -> None:
     assert request_body["title"] == "Buy groceries"
     assert request_body["userId"] == 1
     assert request_body["completed"] is False
+
+
+# =============================================================================
+# システム例外伝播テスト（Issue #222 — S4対応）
+# =============================================================================
+# AsyncAPIClient (test_async_client.py) との対称性維持。
+# KeyboardInterruptはpytest自体がSIGINTハンドラとして処理するためunitテストでの検証は省略。
+# CancelledErrorはasyncio専用のため同期クライアントでは不要。
+
+
+@pytest.mark.parametrize(
+    ("exception_class", "exception_args"),
+    [
+        pytest.param(SystemExit, (1,), id="SystemExit"),
+        pytest.param(MemoryError, ("Out of memory",), id="MemoryError"),
+    ],
+)
+def test_sync_health_check_system_exception_propagates(
+    exception_class: type[BaseException],
+    exception_args: tuple[object, ...],
+) -> None:
+    """システム例外がhealth_checkのexcept APIClientErrorで握りつぶされないことを検証
+
+    SyncAPIClient.health_check() は except APIClientError の前に
+    KeyboardInterrupt, SystemExit, MemoryError を明示的に re-raise する。
+    この設計により:
+    - SystemExit: graceful shutdown シグナルがプロセス外へ正しく伝播
+    - MemoryError: K8s OOMKilled 検知が遅延しない
+
+    回帰テスト: except 節の順序変更や削除による退行を検出。
+    """
+    with SyncJSONPlaceholderClient() as client:
+        with patch.object(client, "get", side_effect=exception_class(*exception_args)):
+            with pytest.raises(exception_class):
+                client.health_check()

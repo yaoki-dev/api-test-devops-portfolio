@@ -493,46 +493,22 @@ async def test_json_decode_error():
 # SystemExit / MemoryError / CancelledError の3種で例外伝播パスをカバー
 
 
-@respx.mock
-async def test_system_exit_propagates_through_request():
-    """SystemExitが_requestメソッドを透過的に伝播することを検証
+@pytest.mark.parametrize(
+    "exc",
+    [
+        pytest.param(SystemExit(1), id="SystemExit"),
+        pytest.param(MemoryError("OOM"), id="MemoryError"),
+        pytest.param(asyncio.CancelledError(), id="CancelledError"),
+    ],
+)
+async def test_base_exception_propagates_through_request(exc):
+    """システム例外が_requestメソッドを透過的に伝播することを検証
 
-    SystemExitはgraceful shutdown対応に不可欠であり、
-    汎用の例外ハンドラで捕捉・ラップしてはならない。
-    catchされるとプロセス終了シグナルが握りつぶされ、
-    コンテナオーケストレーション（K8s等）のライフサイクル管理が破綻する。
+    SystemExit/MemoryError/CancelledErrorは汎用の例外ハンドラで
+    捕捉・ラップしてはならない。patch.objectでHTTPレイヤーを直接置換する
+    ため@respx.mockは不要。
     """
     async with AsyncGitHubClient() as client:
-        with patch.object(client._client, "request", side_effect=SystemExit(1)):
-            with pytest.raises(SystemExit):
-                await client.get_user("octocat")
-
-
-@respx.mock
-async def test_memory_error_propagates_through_request():
-    """MemoryErrorが_requestメソッドを透過的に伝播することを検証
-
-    MemoryErrorはK8s OOMKilled等のリソース枯渇検知に不可欠であり、
-    汎用の例外ハンドラで捕捉・ラップしてはならない。
-    catchされるとOOM状態が隠蔽され、Podの再スケジューリングや
-    アラート発火が遅延し、カスケード障害の原因となる。
-    """
-    async with AsyncGitHubClient() as client:
-        with patch.object(client._client, "request", side_effect=MemoryError("Out of memory")):
-            with pytest.raises(MemoryError):
-                await client.get_user("octocat")
-
-
-@respx.mock
-async def test_cancelled_error_propagates_through_request():
-    """asyncio.CancelledErrorが_requestメソッドを透過的に伝播することを検証
-
-    CancelledErrorはasyncioタスクキャンセル伝播に不可欠であり、
-    汎用の例外ハンドラで捕捉・ラップしてはならない。
-    catchされるとTaskGroup/gather等のキャンセルチェーンが途切れ、
-    リソースリーク（未クローズのコネクション等）やデッドロックの原因となる。
-    """
-    async with AsyncGitHubClient() as client:
-        with patch.object(client._client, "request", side_effect=asyncio.CancelledError()):
-            with pytest.raises(asyncio.CancelledError):
+        with patch.object(client._client, "request", side_effect=exc):
+            with pytest.raises(type(exc)):
                 await client.get_user("octocat")
