@@ -620,7 +620,8 @@ async def test_invalid_rate_limit_header_403():
     検証項目:
     - RateLimitError ではなく GitHubAPIError（Access forbidden）が発生すること
     - invalid_rate_limit_header warning ログが2件出力されること
-      （共通Rate Limit監視パス + 403固有パスの両方でValueErrorが発生）
+      （X-RateLimit-Remainingを共通パス（remaining監視）と403固有パス
+       （rate_remaining判定）の2箇所で読み取り、どちらもValueError発生）
     - header/value フィールドがログに含まれること
     """
     respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
