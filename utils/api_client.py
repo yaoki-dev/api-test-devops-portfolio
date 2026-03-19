@@ -47,6 +47,21 @@ def exponential_backoff_with_jitter(
     return max(0.1, delay)
 
 
+def _validate_optional_int(value: int | None, name: str, min_value: int) -> None:
+    """オプショナルな整数パラメータの最小値バリデーション。
+
+    Args:
+        value: 検証対象の値（Noneの場合はスキップ）
+        name: パラメータ名（エラーメッセージ用）
+        min_value: 最小許容値（含む）
+
+    Raises:
+        ValueError: valueがmin_valueより小さい場合
+    """
+    if value is not None and value < min_value:
+        raise ValueError(f"{name} must be >= {min_value}")
+
+
 # =============================================================================
 # 例外クラス
 # =============================================================================
@@ -410,10 +425,8 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         Raises:
             ValueError: limit < 0 または user_id < 1 の場合
         """
-        if limit is not None and limit < 0:
-            raise ValueError("limit must be >= 0")
-        if user_id is not None and user_id < 1:
-            raise ValueError("user_id must be >= 1")
+        _validate_optional_int(limit, "limit", 0)
+        _validate_optional_int(user_id, "user_id", 1)
 
         params = {}
         if limit is not None:
@@ -463,10 +476,8 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         Raises:
             ValueError: limit < 0 または user_id < 1 の場合
         """
-        if limit is not None and limit < 0:
-            raise ValueError("limit must be >= 0")
-        if user_id is not None and user_id < 1:
-            raise ValueError("user_id must be >= 1")
+        _validate_optional_int(limit, "limit", 0)
+        _validate_optional_int(user_id, "user_id", 1)
 
         params = {}
         if user_id is not None:
@@ -505,8 +516,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         Raises:
             ValueError: post_id < 1 の場合
         """
-        if post_id is not None and post_id < 1:
-            raise ValueError("post_id must be >= 1")
+        _validate_optional_int(post_id, "post_id", 1)
 
         if post_id is not None:
             response = self.get(f"/posts/{post_id}/comments")
@@ -524,8 +534,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         Raises:
             ValueError: user_id < 1 の場合
         """
-        if user_id is not None and user_id < 1:
-            raise ValueError("user_id must be >= 1")
+        _validate_optional_int(user_id, "user_id", 1)
 
         params = {}
         if user_id is not None:
@@ -543,8 +552,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         Raises:
             ValueError: album_id < 1 の場合
         """
-        if album_id is not None and album_id < 1:
-            raise ValueError("album_id must be >= 1")
+        _validate_optional_int(album_id, "album_id", 1)
 
         if album_id is not None:
             response = self.get(f"/albums/{album_id}/photos")
@@ -869,10 +877,8 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         Raises:
             ValueError: limit < 0 または user_id < 1 の場合
         """
-        if limit is not None and limit < 0:
-            raise ValueError("limit must be >= 0")
-        if user_id is not None and user_id < 1:
-            raise ValueError("user_id must be >= 1")
+        _validate_optional_int(limit, "limit", 0)
+        _validate_optional_int(user_id, "user_id", 1)
 
         params = {}
         if limit is not None:
@@ -932,10 +938,8 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         Raises:
             ValueError: limit < 0 または user_id < 1 の場合
         """
-        if limit is not None and limit < 0:
-            raise ValueError("limit must be >= 0")
-        if user_id is not None and user_id < 1:
-            raise ValueError("user_id must be >= 1")
+        _validate_optional_int(limit, "limit", 0)
+        _validate_optional_int(user_id, "user_id", 1)
 
         params = {}
         if user_id is not None:
@@ -1073,8 +1077,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         Raises:
             ValueError: post_id < 1 の場合
         """
-        if post_id is not None and post_id < 1:
-            raise ValueError("post_id must be >= 1")
+        _validate_optional_int(post_id, "post_id", 1)
 
         if post_id is not None:
             response = await self.get(f"/posts/{post_id}/comments")
@@ -1092,8 +1095,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         Raises:
             ValueError: user_id < 1 の場合
         """
-        if user_id is not None and user_id < 1:
-            raise ValueError("user_id must be >= 1")
+        _validate_optional_int(user_id, "user_id", 1)
 
         params = {}
         if user_id is not None:
@@ -1111,8 +1113,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         Raises:
             ValueError: album_id < 1 の場合
         """
-        if album_id is not None and album_id < 1:
-            raise ValueError("album_id must be >= 1")
+        _validate_optional_int(album_id, "album_id", 1)
 
         if album_id is not None:
             response = await self.get(f"/albums/{album_id}/photos")
