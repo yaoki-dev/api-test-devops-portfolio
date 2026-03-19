@@ -7,6 +7,7 @@ GitHub API非同期クライアントのUnit Tests
 - カバレッジ目標: 80%以上
 """
 
+import asyncio
 from unittest.mock import ANY, Mock, patch
 
 import httpx
@@ -539,3 +540,40 @@ async def test_json_decode_error():
             await client.get_user("octocat")
 
     assert route.call_count == 1  # GETリクエストが1回発行されたことを確認
+
+
+# =============================================================================
+# システム例外伝播テスト（Issue #222）
+# =============================================================================
+# KeyboardInterruptはpytest自体がSIGINTハンドラとして処理するためunitテストでの検証は省略
+# SystemExit / MemoryError / CancelledError の3種で例外伝播パスをカバー
+
+
+@pytest.mark.parametrize(
+    ("exception_class", "exception_args"),
+    [
+        pytest.param(SystemExit, (1,), id="SystemExit"),
+        pytest.param(MemoryError, ("OOM",), id="MemoryError"),
+        pytest.param(asyncio.CancelledError, (), id="CancelledError"),
+    ],
+)
+async def test_base_exception_propagates_through_request(
+    exception_class: type[BaseException],
+    exception_args: tuple[object, ...],
+) -> None:
+    """システム例外が_requestメソッドを透過的に伝播することを検証
+
+    SystemExit/MemoryError/CancelledErrorは汎用の例外ハンドラで
+    捕捉・ラップしてはならない。httpx.AsyncClientのrequestメソッドを
+    patch.objectで直接置換するため、respxのHTTPインターセプト層を経由しない。
+    @respx.mockは不要。
+
+    Note:
+        CancelledErrorはPython 3.8+でBaseExceptionサブクラス。
+        実装のexcept節から明示的re-raise対象が削除・変更された場合の
+        退行検出として機能する安全網テスト。
+    """
+    async with AsyncGitHubClient() as client:
+        with patch.object(client._client, "request", side_effect=exception_class(*exception_args)):
+            with pytest.raises(exception_class):
+                await client.get_user("octocat")

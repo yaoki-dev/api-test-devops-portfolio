@@ -2180,11 +2180,24 @@ def test_async_client_whitespace_base_url_raises_value_error() -> None:
 
 
 async def test_async_client_falsy_values_not_overridden() -> None:
-    """retry_count=0, timeout=0.0, retry_delay=0.0 がFalsy判定で設定値に上書きされないことを検証
+    """falsy値(0, 0.0)がデフォルト設定値に上書きされないことを検証
 
-    退行防止: 修正前の `x or default` パターンでは retry_count=0 や
+    退行防止（r2850768833回帰テスト）:
+    修正前の `x or default` パターンでは retry_count=0 や
     timeout=0.0 がFalsyと判定され設定値で上書きされていた。
     `x if x is not None else default` への修正が正しく動作することを保証する。
+
+    学習ポイント:
+    - is not None パターンの必要性: 0/0.0/False 等の有効なfalsy値を保護する
+    - retry_delay=0.0: コンストラクタ直接指定時のみ有効
+      （Pydantic ge=0.1制約を迂回）
+    - 環境変数 API__RETRY_DELAY=0.0 では
+      Pydantic Field制約(ge=0.1)によりValidationErrorとなる
+    - timeout=0.0: コンストラクタ直接指定時のみ有効
+      （Pydantic ge=1.0制約を迂回）
+    - 環境変数 API__TIMEOUT=0.0 では
+      Pydantic Field制約(ge=1.0)によりValidationErrorとなる
+    - retry_count=0 の用途: リトライを行わず即座に失敗させたい場合に使用
     """
     async with AsyncAPIClient(
         base_url="https://jsonplaceholder.typicode.com",
