@@ -392,12 +392,7 @@ class AsyncGitHubClient:
                 self.logger.warning("request_timeout", endpoint=endpoint, method=method)
                 raise GitHubAPIError(f"Request timeout: {e}") from e
 
-            except (  # fmt: skip  # noqa: E722 - Python 3構文（括弧必須）、ruff-format除外
-                KeyboardInterrupt,
-                SystemExit,
-                MemoryError,
-                asyncio.CancelledError,
-            ):
+            except KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError:
                 # システム例外は再発生
                 # - KeyboardInterrupt/SystemExit: graceful shutdown対応
                 # - MemoryError: K8s OOMKilled等のリソース枯渇検知
