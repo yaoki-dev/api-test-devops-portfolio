@@ -494,21 +494,25 @@ async def test_json_decode_error():
 
 
 @pytest.mark.parametrize(
-    "exc",
+    ("exception_class", "exception_args"),
     [
-        pytest.param(SystemExit(1), id="SystemExit"),
-        pytest.param(MemoryError("OOM"), id="MemoryError"),
-        pytest.param(asyncio.CancelledError(), id="CancelledError"),
+        pytest.param(SystemExit, (1,), id="SystemExit"),
+        pytest.param(MemoryError, ("OOM",), id="MemoryError"),
+        pytest.param(asyncio.CancelledError, (), id="CancelledError"),
     ],
 )
-async def test_base_exception_propagates_through_request(exc):
+async def test_base_exception_propagates_through_request(
+    exception_class: type[BaseException],
+    exception_args: tuple[object, ...],
+) -> None:
     """システム例外が_requestメソッドを透過的に伝播することを検証
 
     SystemExit/MemoryError/CancelledErrorは汎用の例外ハンドラで
-    捕捉・ラップしてはならない。patch.objectでHTTPレイヤーを直接置換する
-    ため@respx.mockは不要。
+    捕捉・ラップしてはならない。httpx.AsyncClientのrequestメソッドを
+    patch.objectで直接置換するため、respxのHTTPインターセプト層を経由しない。
+    @respx.mockは不要。
     """
     async with AsyncGitHubClient() as client:
-        with patch.object(client._client, "request", side_effect=exc):
-            with pytest.raises(type(exc)):
+        with patch.object(client._client, "request", side_effect=exception_class(*exception_args)):
+            with pytest.raises(exception_class):
                 await client.get_user("octocat")

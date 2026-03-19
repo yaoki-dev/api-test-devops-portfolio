@@ -839,7 +839,6 @@ def test_sync_client_whitespace_base_url_raises_value_error() -> None:
         SyncAPIClient(base_url="   ")
 
 
-@respx.mock
 def test_sync_client_falsy_values_not_overridden() -> None:
     """falsy値(0, 0.0)がデフォルト設定値に上書きされないことを検証
 
