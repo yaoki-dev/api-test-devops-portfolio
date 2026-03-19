@@ -40,9 +40,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
       | Empty / Unparseable | **STOP** + report to user |
       | WORKTREE_ROOT not found | **STOP** + mismatch report |
       | 1 entry | Run WORKTREE_ROOT confirmation command → Match: Notify "single-worktree mode (WORKTREE_ROOT: {absolute path})" + continue / Mismatch: **STOP** + mismatch report |
-      | 2+ entries | Notify "multi-worktree mode" → confirm WORKTREE_ROOT → **on failure: STOP + mismatch report** / on success: use AskUserQuestion tool for scope confirmation (options: "Approve and continue" / "Reject and stop" / "Free text input") → Approve: **continue** / Reject: **STOP** + report reason to user (verify correct worktree path and restart session) / Free text: see **Free text rules** note below |
+      | 2+ entries | Notify "multi-worktree mode" → confirm WORKTREE_ROOT → **on failure: STOP + mismatch report** / on success: use AskUserQuestion tool for scope confirmation (options: "Approve and continue" / "Reject and stop" / "Free text input") — if AskUserQuestion tool fails or returns an error: **STOP** + report tool failure to user → Approve: **continue** / Reject: **STOP** + report reason to user (verify correct worktree path and restart session) / Free text: see **Free text rules** note below |
 
-      > **Free text rules** (2+ entries scope confirmation only): interpret user input — (a) input contains an absolute path (starts with `/`): treat as worktree path specification → **STOP** + report specified path + instruct session restart at correct worktree; (b) all other cases: treat as ambiguous → use AskUserQuestion tool to re-ask with closed-list options ["Approve and continue" / "Reject and stop"] **once**; if still unresolved, treat as Reject and **STOP** — silent continuation is NEVER permitted
+      > **Free text rules** (2+ entries scope confirmation only): interpret user input — (a) input contains an absolute path (starts with `/`): treat as worktree path specification → **STOP** + report specified path + instruct session restart at correct worktree; (b) all other cases: treat as ambiguous → use AskUserQuestion tool to re-ask with closed-list options ["Approve and continue" / "Reject and stop"] **once**; if still unresolved, treat as Reject and **STOP** — report to user: (i) unrecognized input was received, (ii) instruct to restart session and select from the provided options explicitly — silent continuation is NEVER permitted
       > **Evaluation order (required)**: Evaluate table rows top to bottom (check WORKTREE_ROOT containment before entry count): ① command failed → STOP ② empty/Unparseable → STOP ③ WORKTREE_ROOT containment check (if not found, STOP + mismatch report regardless of entry count) ④ entry count check (1 or 2+ entries)
       > **Note on pipeline exit codes**: `grep` returning exit 1 due to 0 matches is NOT "command failed" — treat as empty output (→ STOP at ②). Only treat as "command failed" when `git worktree list` itself returns non-zero exit code.
       > **Pipeline exit code caveat**: The pipeline `git worktree list --porcelain | grep ... | sed ...` exit code reflects `sed`'s exit, NOT `git`'s — meaning `git worktree list` failure is invisible to the pipeline exit code regardless of stdout content. **Mandatory (no exceptions)**: Always run `git worktree list --porcelain` as a standalone command first and verify its exit code independently (non-zero → STOP immediately); proceed to the pipeline only if exit code is 0.
@@ -64,7 +64,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
         other errors:
           - permissions: report to user, WARN that Rule 15b (Edit) will fail this session; await explicit confirmation before continuing (same confirmation requirements as corruption/broken symlink)
           - corruption / broken symlink: report to user, WARN that Edit operations will fail this session; await explicit confirmation before continuing
-            （閉鎖リスト確認 — Rule 15 共通定義参照）
+            (closed-list confirmation — Rule 15 common definition)
           - any other identifiable error (ETIMEDOUT, EMFILE, EIO, etc.): treat same as corruption — report to user, WARN that Edit operations may fail this session; await explicit confirmation before continuing (same confirmation requirements as corruption/broken symlink)
     b) **After correction**: Update immediately when receiving ANY explicit correction or negative feedback
        - Detection signals: "that's wrong", "not X but Y", "fix this", "you misunderstood"
@@ -78,7 +78,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
        - Write rule: Use Edit tool to append ONLY. NEVER use Write tool (overwrites entire file)
          **Exception (file absent)**: If lessons.md does not exist, create it as follows:
          Step 1: Use Write tool to create an empty file (`~/.claude/tasks/lessons.md`).
-           - If Step 1 fails (directory absent, permission denied, disk full, etc.): (1) report to user with exact error detail (2) output content in chat (3) await explicit confirmation (閉鎖リスト確認 — Rule 15 共通定義参照) (4) NEVER retry in the same session.
+           - If Step 1 fails (directory absent, permission denied, disk full, etc.): (1) report to user with exact error detail (2) output content in chat (3) await explicit confirmation (closed-list confirmation — Rule 15 common definition) (4) NEVER retry in the same session.
            - If Step 1 succeeds: proceed to Step 2.
          Step 2: Use Edit tool to append content.
            - If Step 2 fails: follow「If Edit fails AFTER Write succeeds」procedure below.
@@ -91,12 +91,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
                 (d) 次セッションで Rule 15a の「空ファイル」警告が発生することの予告 → 手動削除推奨: `rm ~/.claude/tasks/lessons.md`
          2. Report to user with exact error detail
          3. Output content in chat
-         4. Await explicit confirmation before continuing (silent continuation prohibited; 閉鎖リスト確認 — Rule 15 共通定義参照)
+         4. Await explicit confirmation before continuing (silent continuation prohibited; closed-list confirmation — Rule 15 common definition)
          5. **NEVER retry the same Write→Edit sequence in the same session** after step 4; await user direction only
          **If Edit fails on existing file**:
          1. Report to user with exact error detail (if a corruption, unidentifiable error, or empty-file warning was reported at session start per Rule 15a, re-state that warning here — the current Edit failure may be caused by that initial error)
          2. Output the intended content in chat
-         3. Await explicit confirmation before continuing (silent continuation prohibited; 閉鎖リスト確認 — Rule 15 共通定義参照)
+         3. Await explicit confirmation before continuing (silent continuation prohibited; closed-list confirmation — Rule 15 common definition)
          4. **NEVER retry Edit in the same session** after step 3; await user direction only
        - Cleanup: when entries exceed ~20 (no fixed monthly cadence)
        - Recurring pattern alert: If 2+ similar corrections appear for the same project (same Root Cause category), report to user for structural rule improvement
@@ -406,15 +406,3 @@ uv run mypy --show-error-codes --pretty utils/ config/ models/
 1. 公式ドキュメントを再確認（仕様変更/誤解の可能性）
 2. GitHub Issuesで既知の問題を検索
 3. 削除/代替案を検討（機能の必要性を再評価）
-
-<claude-mem-context>
-# Recent Activity
-
-<!-- This section is auto-generated by claude-mem. Edit content outside the tags. -->
-
-### Mar 4, 2026
-
-| ID | Time | T | Title | Read |
-|----|------|---|-------|------|
-| #13185 | 11:00 AM | ✅ | CLAUDE.md Development Workflow Updated: Integrated PLANS.md Framework Reference | ~427 |
-</claude-mem-context>
