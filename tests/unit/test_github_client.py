@@ -20,6 +20,7 @@ from utils.github_client import (
     GitHubServerError,
     NotFoundError,
     RateLimitError,
+    validate_github_repo,
 )
 
 pytestmark = pytest.mark.unit
@@ -521,3 +522,39 @@ async def test_base_exception_propagates_through_request(
         with patch.object(client._client, "request", side_effect=exception_class(*exception_args)):
             with pytest.raises(exception_class):
                 await client.get_user("octocat")
+
+
+# =============================================================================
+# validate_github_repo バリデーションテスト
+# =============================================================================
+
+
+def test_repo_validation_valid() -> None:
+    """有効なリポジトリ名でValueError未発生を確認"""
+    validate_github_repo("my-repo")
+    validate_github_repo("a")
+    validate_github_repo("a" * 100)  # 上限（100文字）
+
+
+def test_repo_validation_invalid() -> None:
+    """無効なリポジトリ名でValueError発生（セキュリティ境界テスト）
+
+    GITHUB_REPO_PATTERN = r"^[a-zA-Z0-9._-]{1,100}$" に基づく検証。
+    Path Traversal・文字数超過・空文字列・特殊文字の4境界をテストする。
+    バリデーションはHTTPリクエスト前に完了するため非同期不要。
+    """
+    # Path Traversal攻撃パターン（'/'はREGEX許可文字外）
+    with pytest.raises(ValueError, match="Invalid GitHub repository name"):
+        validate_github_repo("../etc/passwd")
+
+    # 文字数上限超過（101文字 > 上限100文字）
+    with pytest.raises(ValueError, match="Invalid GitHub repository name"):
+        validate_github_repo("a" * 101)
+
+    # 空文字列（not repoでキャッチ）
+    with pytest.raises(ValueError, match="Invalid GitHub repository name"):
+        validate_github_repo("")
+
+    # 特殊文字（スペース・! はREGEX許可文字外）
+    with pytest.raises(ValueError, match="Invalid GitHub repository name"):
+        validate_github_repo("repo name!")
