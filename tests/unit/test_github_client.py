@@ -362,7 +362,7 @@ async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
     リトライ動作に加え、retrying_server_error ログ出力を検証する（Issue #229）。
 
     検証項目:
-    - attempt 値の存在性（{1, 2}）と昇順順序
+    - attempt 値の連続性・順序・件数（list(range(1, MAX_RETRIES)) との等価比較）
     - endpoint / method フィールドが存在しないこと（retrying_http_status_error との設計差異）
     - status_code / max_retries / delay フィールドの値
     """
