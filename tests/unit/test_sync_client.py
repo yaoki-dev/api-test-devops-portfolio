@@ -853,6 +853,10 @@ def test_sync_client_falsy_values_not_overridden() -> None:
       （Pydantic ge=0.1制約を迂回）
     - 環境変数 API__RETRY_DELAY=0.0 では
       Pydantic Field制約(ge=0.1)によりValidationErrorとなる
+    - timeout=0.0: コンストラクタ直接指定時のみ有効
+      （Pydantic ge=1.0制約を迂回）
+    - 環境変数 API__TIMEOUT=0.0 では
+      Pydantic Field制約(ge=1.0)によりValidationErrorとなる
     - retry_count=0 の用途: リトライを行わず即座に失敗させたい場合に使用
     """
     with SyncAPIClient(

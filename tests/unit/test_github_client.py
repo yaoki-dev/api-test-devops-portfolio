@@ -511,6 +511,11 @@ async def test_base_exception_propagates_through_request(
     捕捉・ラップしてはならない。httpx.AsyncClientのrequestメソッドを
     patch.objectで直接置換するため、respxのHTTPインターセプト層を経由しない。
     @respx.mockは不要。
+
+    Note:
+        CancelledErrorはPython 3.8+でBaseExceptionサブクラスのため、
+        except Exceptionでは捕捉されない。本テストはexcept BaseExceptionへの
+        将来的な変更に対する安全網として機能する。
     """
     async with AsyncGitHubClient() as client:
         with patch.object(client._client, "request", side_effect=exception_class(*exception_args)):
