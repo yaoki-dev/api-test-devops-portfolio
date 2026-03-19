@@ -25,6 +25,7 @@ from utils.github_client import (
 pytestmark = pytest.mark.unit
 
 GITHUB_API_BASE_URL = "https://api.github.com"
+MAX_RETRIES = 3
 
 # =============================================================================
 # 基本機能テスト（正常系）
@@ -368,7 +369,7 @@ async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
     ]
 
     with capture_logs() as log_output:
-        async with AsyncGitHubClient(max_retries=3) as client:
+        async with AsyncGitHubClient(max_retries=MAX_RETRIES) as client:
             with pytest.raises(GitHubServerError) as exc_info:
                 await client.get_user("octocat")
 
@@ -381,13 +382,12 @@ async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
     assert len(retry_logs) == 2, (
         f"retrying_server_error ログが2件出力されることを期待 (実際: {len(retry_logs)}件)"
     )
-    assert all(log["log_level"] == "warning" for log in retry_logs), (
-        f"log_level が warning でないエントリが存在する: {retry_logs}"
-    )
+    bad_level = [log for log in retry_logs if log["log_level"] != "warning"]
+    assert not bad_level, f"log_level が warning でないエントリ: {bad_level}"
     for idx, log_entry in enumerate(retry_logs):
         assert log_entry["status_code"] == 503
         assert log_entry["attempt"] == idx + 1  # attempt+1 で記録（1始まり）
-        assert log_entry["max_retries"] == 3
+        assert log_entry["max_retries"] == MAX_RETRIES
         assert log_entry["delay"] == 0.0
 
 
@@ -415,7 +415,7 @@ async def test_httpx_status_error_5xx_defensive_path(mock_backoff: Mock) -> None
     route.side_effect = [error_503, error_503, error_503]
 
     with capture_logs() as log_output:
-        async with AsyncGitHubClient(max_retries=3) as client:
+        async with AsyncGitHubClient(max_retries=MAX_RETRIES) as client:
             with pytest.raises(GitHubServerError) as exc_info:
                 await client.get_user("octocat")
 
@@ -428,13 +428,12 @@ async def test_httpx_status_error_5xx_defensive_path(mock_backoff: Mock) -> None
     assert len(retry_logs) == 2, (
         f"retrying_http_status_error ログが2件出力されることを期待 (実際: {len(retry_logs)}件)"
     )
-    assert all(log["log_level"] == "warning" for log in retry_logs), (
-        f"log_level が warning でないエントリが存在する: {retry_logs}"
-    )
+    bad_level = [log for log in retry_logs if log["log_level"] != "warning"]
+    assert not bad_level, f"log_level が warning でないエントリ: {bad_level}"
     for idx, log_entry in enumerate(retry_logs):
         assert log_entry["status_code"] == 503
         assert log_entry["attempt"] == idx + 1  # attempt+1 で記録（1始まり）
-        assert log_entry["max_retries"] == 3
+        assert log_entry["max_retries"] == MAX_RETRIES
         assert log_entry["endpoint"] == "/users/octocat"
         assert log_entry["method"] == "GET"
         assert log_entry["delay"] == 0.0
