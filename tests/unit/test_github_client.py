@@ -586,22 +586,20 @@ async def test_base_exception_propagates_through_request(
 # =============================================================================
 
 
-def test_repo_validation_valid() -> None:
+@pytest.mark.parametrize(
+    "repo",
+    [
+        pytest.param("my-repo", id="hyphen"),
+        pytest.param("a", id="single_char"),
+        pytest.param("a" * 100, id="max_length"),  # 上限（100文字）
+        pytest.param("my_repo", id="underscore"),
+        pytest.param("my.repo", id="dot"),
+        pytest.param("123", id="digits_only"),
+    ],
+)
+def test_repo_validation_valid(repo: str) -> None:
     """有効なリポジトリ名でValueError未発生を確認"""
-    validate_github_repo("my-repo")
-    validate_github_repo("a")
-    validate_github_repo("a" * 100)  # 上限（100文字）
-    validate_github_repo("my_repo")  # アンダースコア
-    validate_github_repo("my.repo")  # ドットを含む名前
-    validate_github_repo("123")  # 数字のみ
-
-
-def test_repo_validation_dot_series_currently_allowed() -> None:
-    """'.'/'..': 現在のREGEXをパスする（既知の許容動作）"""
-    # GITHUB_REPO_PATTERN はドットを許可するため '.' と '..' はValueErrorにならない
-    # GitHubでは予約済みだが本バリデーション関数ではブロックしない（許容として文書化）
-    validate_github_repo(".")
-    validate_github_repo("..")
+    assert validate_github_repo(repo) is None
 
 
 @pytest.mark.parametrize(
@@ -617,6 +615,9 @@ def test_repo_validation_dot_series_currently_allowed() -> None:
         pytest.param("repo name!", id="special_chars"),
         # NULLバイトインジェクション（REGEXが[a-zA-Z0-9._-]のみ許可のため拒否）
         pytest.param("repo\x00name", id="null_byte"),
+        # URLパスインジェクション防止（repos/. や repos/.. になる）
+        pytest.param(".", id="dot_single"),
+        pytest.param("..", id="dot_double"),
     ],
 )
 def test_repo_validation_invalid(repo: str) -> None:
