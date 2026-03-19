@@ -593,25 +593,22 @@ def test_repo_validation_valid() -> None:
     validate_github_repo("a" * 100)  # 上限（100文字）
 
 
-def test_repo_validation_invalid() -> None:
-    """無効なリポジトリ名でValueError発生（セキュリティ境界テスト）
-
-    GITHUB_REPO_PATTERN = r"^[a-zA-Z0-9._-]{1,100}$" に基づく検証。
-    Path Traversal・文字数超過・空文字列・特殊文字の4境界をテストする。
-    バリデーションはHTTPリクエスト前に完了するため非同期不要。
-    """
-    # Path Traversal攻撃パターン（'/'はREGEX許可文字外）
+@pytest.mark.parametrize(
+    "repo",
+    [
+        # Path Traversal攻撃パターン（'/'はREGEX許可文字外）
+        pytest.param("../etc/passwd", id="path_traversal"),
+        # 文字数上限超過（101文字 > 上限100文字）
+        pytest.param("a" * 101, id="too_long"),
+        # not repoによる短絡評価 + REGEXも{1,100}により空文字列を拒否
+        pytest.param("", id="empty_string"),
+        # 特殊文字（スペース・!はREGEX許可文字外）
+        pytest.param("repo name!", id="special_chars"),
+        # NULLバイトインジェクション（REGEXが[a-zA-Z0-9._-]のみ許可のため拒否）
+        pytest.param("repo\x00name", id="null_byte"),
+    ],
+)
+def test_repo_validation_invalid(repo: str) -> None:
+    """無効なリポジトリ名でValueError発生（セキュリティ境界テスト）"""
     with pytest.raises(ValueError, match="Invalid GitHub repository name"):
-        validate_github_repo("../etc/passwd")
-
-    # 文字数上限超過（101文字 > 上限100文字）
-    with pytest.raises(ValueError, match="Invalid GitHub repository name"):
-        validate_github_repo("a" * 101)
-
-    # 空文字列（`not repo` が True → REGEX到達前にValueError）
-    with pytest.raises(ValueError, match="Invalid GitHub repository name"):
-        validate_github_repo("")
-
-    # 特殊文字（スペース・! はREGEX許可文字外）
-    with pytest.raises(ValueError, match="Invalid GitHub repository name"):
-        validate_github_repo("repo name!")
+        validate_github_repo(repo)
