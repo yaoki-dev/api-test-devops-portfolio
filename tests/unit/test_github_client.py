@@ -13,6 +13,7 @@ from unittest.mock import ANY, Mock, patch
 import httpx
 import pytest
 import respx
+from structlog.testing import capture_logs
 
 from utils.github_client import (
     AsyncGitHubClient,
@@ -25,6 +26,7 @@ from utils.github_client import (
 pytestmark = pytest.mark.unit
 
 GITHUB_API_BASE_URL = "https://api.github.com"
+MAX_RETRIES = 3
 
 # =============================================================================
 # 基本機能テスト（正常系）
@@ -173,14 +175,14 @@ async def test_retry_on_server_error(mock_backoff: Mock) -> None:
         httpx.Response(500, headers={"X-RateLimit-Remaining": "50"}),
     ]
 
-    async with AsyncGitHubClient(max_retries=3) as client:
+    async with AsyncGitHubClient(max_retries=MAX_RETRIES) as client:
         with pytest.raises(GitHubServerError) as exc_info:
             await client.get_user("octocat")
 
-    assert route.call_count == 3
+    assert route.call_count == MAX_RETRIES
     assert "Server error: 500" in str(exc_info.value)
-    assert "after 3 attempts" in str(exc_info.value)
-    assert mock_backoff.call_count == 2  # 3試行 → attempt=0,1でバックオフ（attempt=2は発生しない）
+    assert f"after {MAX_RETRIES} attempts" in str(exc_info.value)
+    assert mock_backoff.call_count == MAX_RETRIES - 1  # MAX_RETRIES試行 → 最終試行以外でバックオフ
 
 
 @respx.mock
@@ -355,7 +357,15 @@ async def test_httpx_status_error_4xx():
 @respx.mock
 @patch("utils.github_client.exponential_backoff_with_jitter", return_value=0.0)
 async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
-    """httpx.HTTPStatusError（5xx）処理の検証"""
+    """5xxステータスコード（response.status_code >= 500）リトライパスの検証
+
+    リトライ動作に加え、retrying_server_error ログ出力を検証する（Issue #229）。
+
+    検証項目:
+    - attempt 値の連続性・順序・件数（list(range(1, MAX_RETRIES)) との等価比較）
+    - endpoint / method フィールドが存在しないこと（retrying_http_status_error との設計差異）
+    - status_code / max_retries / delay フィールドの値
+    """
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
     route.side_effect = [
         httpx.Response(503, headers={"X-RateLimit-Remaining": "60"}),
@@ -363,13 +373,39 @@ async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
         httpx.Response(503, headers={"X-RateLimit-Remaining": "60"}),
     ]
 
-    async with AsyncGitHubClient(max_retries=3) as client:
-        with pytest.raises(GitHubServerError) as exc_info:
-            await client.get_user("octocat")
+    with capture_logs() as log_output:
+        async with AsyncGitHubClient(max_retries=MAX_RETRIES) as client:
+            with pytest.raises(GitHubServerError) as exc_info:
+                await client.get_user("octocat")
 
     assert "Server error: 503" in str(exc_info.value)
-    assert route.call_count == 3
-    assert mock_backoff.call_count == 2  # 3試行 → attempt=0,1でバックオフ（attempt=2は発生しない）
+    assert route.call_count == MAX_RETRIES
+    assert mock_backoff.call_count == MAX_RETRIES - 1  # MAX_RETRIES試行 → 最終試行以外でバックオフ
+
+    # リトライ中間試行のログ出力検証（Issue #229）
+    retry_logs = [log for log in log_output if log.get("event") == "retrying_server_error"]
+    assert len(retry_logs) == MAX_RETRIES - 1, (
+        f"retrying_server_error ログが{MAX_RETRIES - 1}件を期待 (実際: {len(retry_logs)}件)"
+    )
+    bad_level = [log for log in retry_logs if log.get("log_level") != "warning"]
+    assert not bad_level, f"log_level が warning でないエントリ: {bad_level}"
+    # 順序・値・件数の統合検証: リトライがattempt 1〜MAX_RETRIES-1の昇順で実行されること
+    actual_attempts = [log_entry.get("attempt") for log_entry in retry_logs]
+    assert actual_attempts == list(range(1, MAX_RETRIES)), f"attempt 値不一致: {actual_attempts}"
+    # フィールド検証（順序非依存）
+    # Note: retrying_server_error は endpoint/method を含まない
+    #       （retrying_http_status_error との実装上の設計差異）
+    for log_entry in retry_logs:
+        assert "endpoint" not in log_entry, (
+            f"retrying_server_error に endpoint フィールドが存在: {log_entry}"
+        )
+        assert "method" not in log_entry, (
+            f"retrying_server_error に method フィールドが存在: {log_entry}"
+        )
+        assert log_entry["status_code"] == 503
+        assert log_entry["max_retries"] == MAX_RETRIES
+        # delay は @patch(return_value=0.0) のモック値に対応
+        assert log_entry["delay"] == 0.0
 
 
 @respx.mock
@@ -377,9 +413,10 @@ async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
 async def test_httpx_status_error_5xx_defensive_path(mock_backoff: Mock) -> None:
     """httpx.HTTPStatusError（5xx）防御的コードパスの検証
 
-    L368 の except httpx.HTTPStatusError パスを直接テストする。
-    通常L328-343で先に処理されるが、HTTPStatusErrorが直接発生した場合の
-    バックオフ・ログ・リトライ動作を検証する。
+    except httpx.HTTPStatusError パスを直接テストする。
+    通常は response.status_code >= 500 の分岐で処理され、
+    raise_for_status() に到達しないため理論上到達しないが、
+    HTTPStatusErrorが直接発生した場合のバックオフ・ログ・リトライ動作を検証する。
 
     検証項目:
     - retrying_http_status_error ログイベント出力
@@ -394,13 +431,33 @@ async def test_httpx_status_error_5xx_defensive_path(mock_backoff: Mock) -> None
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
     route.side_effect = [error_503, error_503, error_503]
 
-    async with AsyncGitHubClient(max_retries=3) as client:
-        with pytest.raises(GitHubServerError) as exc_info:
-            await client.get_user("octocat")
+    with capture_logs() as log_output:
+        async with AsyncGitHubClient(max_retries=MAX_RETRIES) as client:
+            with pytest.raises(GitHubServerError) as exc_info:
+                await client.get_user("octocat")
 
-    assert "Failed after 3 attempts" in str(exc_info.value)
-    assert route.call_count == 3
-    assert mock_backoff.call_count == 2  # 3試行 → attempt=0,1でバックオフ（attempt=2は発生しない）
+    assert f"Failed after {MAX_RETRIES} attempts" in str(exc_info.value)
+    assert route.call_count == MAX_RETRIES
+    assert mock_backoff.call_count == MAX_RETRIES - 1  # MAX_RETRIES試行 → 最終試行以外でバックオフ
+
+    # リトライ中間試行のログ出力検証（Issue #229 — 防御的パス）
+    retry_logs = [log for log in log_output if log.get("event") == "retrying_http_status_error"]
+    assert len(retry_logs) == MAX_RETRIES - 1, (
+        f"retrying_http_status_error ログが{MAX_RETRIES - 1}件を期待 (実際: {len(retry_logs)}件)"
+    )
+    bad_level = [log for log in retry_logs if log.get("log_level") != "warning"]
+    assert not bad_level, f"log_level が warning でないエントリ: {bad_level}"
+    # 順序・値・件数の統合検証: リトライがattempt 1〜MAX_RETRIES-1の昇順で実行されること
+    actual_attempts = [log_entry.get("attempt") for log_entry in retry_logs]
+    assert actual_attempts == list(range(1, MAX_RETRIES)), f"attempt 値不一致: {actual_attempts}"
+    # フィールド検証（順序非依存）
+    for log_entry in retry_logs:
+        assert log_entry["status_code"] == 503
+        assert log_entry["max_retries"] == MAX_RETRIES
+        assert log_entry["endpoint"] == "/users/octocat"
+        assert log_entry["method"] == "GET"
+        # delay は @patch(return_value=0.0) のモック値に対応
+        assert log_entry["delay"] == 0.0
 
 
 @respx.mock
