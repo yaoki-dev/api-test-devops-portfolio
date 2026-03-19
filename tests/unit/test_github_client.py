@@ -687,3 +687,45 @@ async def test_invalid_rate_limit_reset_header_low_remaining():
     # フォールバック: reset_time=0 → epoch（1970-01-01T00:00:00+00:00）
     expected_reset_time = datetime(1970, 1, 1, 0, 0, tzinfo=UTC).isoformat()
     assert rate_limit_low_logs[0]["reset_time"] == expected_reset_time
+
+
+@respx.mock
+async def test_invalid_rate_limit_reset_header_rate_limit_exceeded():
+    """rate_remaining==0かつX-RateLimit-Resetが不正値の場合、警告ログ後RateLimitError発生
+
+    検証項目:
+    - RateLimitError が発生すること（rate_remaining==0のため）
+    - invalid_rate_limit_header warning ログが2件出力されること
+      （L293の共通remaining<10チェックパス + L341の403固有rate_remaining==0パスの両方）
+    - rate_limit_low warning ログが1件出力されること（remaining=0 < 10）
+    - header="X-RateLimit-Reset", value="broken" がログに含まれること
+    """
+    respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+        status_code=403,
+        json={"message": "Forbidden"},
+        headers={
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": "broken",
+        },
+    )
+
+    with capture_logs() as log_output:
+        async with AsyncGitHubClient() as client:
+            with pytest.raises(RateLimitError):
+                await client.get_user("octocat")
+
+    # invalid_rate_limit_header warningが2件（共通パス + 403固有パス）
+    invalid_header_logs = [
+        log for log in log_output if log.get("event") == "invalid_rate_limit_header"
+    ]
+    assert len(invalid_header_logs) == 2
+    for log_entry in invalid_header_logs:
+        assert log_entry["log_level"] == "warning"
+        assert log_entry["header"] == "X-RateLimit-Reset"
+        assert log_entry["value"] == "broken"
+
+    # rate_limit_low warningが1件（remaining=0 < 10）
+    rate_limit_low_logs = [log for log in log_output if log.get("event") == "rate_limit_low"]
+    assert len(rate_limit_low_logs) == 1
+    assert rate_limit_low_logs[0]["log_level"] == "warning"
+    assert rate_limit_low_logs[0]["remaining"] == 0
