@@ -40,7 +40,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
       | Empty / Unparseable | **STOP** + report to user |
       | WORKTREE_ROOT not found | **STOP** + mismatch report |
       | 1 entry | Run WORKTREE_ROOT confirmation command → Match: Notify "single-worktree mode (WORKTREE_ROOT: {absolute path})" + continue / Mismatch: **STOP** + mismatch report |
-      | 2+ entries | Notify "multi-worktree mode" → confirm WORKTREE_ROOT → **on failure: STOP + mismatch report** / on success: use AskUserQuestion tool for scope confirmation (options: "Approve and continue" / "Reject and stop" / "Free text input") → Approve: **continue** / Reject: **STOP** + report reason to user (verify correct worktree path and restart session) / Free text: interpret user intent; if user specifies correct worktree path → **STOP** + report specified path and instruct session restart at correct worktree; if maps to Approve → **continue**; if ambiguous, ask for clarification before proceeding |
+      | 2+ entries | Notify "multi-worktree mode" → confirm WORKTREE_ROOT → **on failure: STOP + mismatch report** / on success: use AskUserQuestion tool for scope confirmation (options: "Approve and continue" / "Reject and stop" / "Free text input") → Approve: **continue** / Reject: **STOP** + report reason to user (verify correct worktree path and restart session) / Free text: interpret user intent; if user specifies correct worktree path → **STOP** + report specified path and instruct session restart at correct worktree; if ambiguous, ask for clarification before proceeding |
 
       > **Evaluation order (required)**: Evaluate table rows top to bottom (check WORKTREE_ROOT containment before entry count): ① command failed → STOP ② empty/Unparseable → STOP ③ WORKTREE_ROOT containment check (if not found, STOP + mismatch report regardless of entry count) ④ entry count check (1 or 2+ entries)
       > **Note on pipeline exit codes**: `grep` returning exit 1 due to 0 matches is NOT "command failed" — treat as empty output (→ STOP at ②). Only treat as "command failed" when `git worktree list` itself returns non-zero exit code.
@@ -49,7 +49,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
       > **"Unparseable" definition**: output of `git worktree list --porcelain | grep "^worktree " | sed 's/^worktree //'` is empty, OR any extracted line does not start with `/` (not an absolute path; empty lines are excluded from this check) — unified to porcelain format (same pipeline as WORKTREE_ROOT confirmation command above)
       > **When WORKTREE_ROOT not found** (user manual execution — AI autonomous execution prohibited): `git rev-parse --is-inside-work-tree` (true → user re-confirms correct WORKTREE_ROOT then restart session / false → navigate to correct project directory then restart session. ⚠️ `git init` prohibited — risk of destroying existing repository)
       > **AI report content on mismatch (required)**: ① result of `git rev-parse --show-toplevel` (value stored at session start) ② raw output of `git worktree list` (all lines) ③ candidate causes: symbolic link resolution difference / path mapping difference in CI/Docker environment
-      > **Stderr warnings**: `git worktree list --porcelain` may output warnings to stderr (e.g., "warning: gitdir file points to non-existent location") for broken worktree entries while still returning exit 0. These broken entries still appear in stdout and may match WORKTREE_ROOT. If stderr output is detected alongside worktree list output, report the warnings to the user and await explicit acknowledgment before proceeding with boundary checks (acknowledgment = any user response; 閉鎖リスト確認 is NOT required here — warnings are informational, not error recovery).
+      > **Stderr warnings**: `git worktree list --porcelain` may output warnings to stderr (e.g., "warning: gitdir file points to non-existent location") for broken worktree entries while still returning exit 0. These broken entries still appear in stdout and may match WORKTREE_ROOT. If stderr output is detected alongside worktree list output, report the warnings to the user and await explicit acknowledgment before proceeding with boundary checks (acknowledgment = any user response; closed-list confirmation (Rule 15) is NOT required here — warnings are informational, not error recovery).
 
     - For files outside WORKTREE_ROOT:
       - Autonomous edit: **NEVER**
@@ -348,6 +348,7 @@ git checkout -b feature/<次のタスク> origin/develop
 10. PR作成     → /push-pr【gh pr create禁止】
 11. レビュー対応 → 修正 → 品質ゲート → /commit → push
 12. マージ実行  → マージ戦略【※4参照】
+13. クリーンアップ → `git fetch --prune origin` + `/git:clean-gone`（worktree: 固定運用のため削除しない）
 ```
 
 <!-- preserve-on-compact: Quality Gates -->
