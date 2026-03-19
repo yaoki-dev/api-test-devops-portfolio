@@ -641,3 +641,50 @@ async def test_invalid_rate_limit_header_403():
         assert log_entry["log_level"] == "warning"
         assert log_entry["header"] == "X-RateLimit-Remaining"
         assert log_entry["value"] == "invalid"
+
+
+@respx.mock
+async def test_invalid_rate_limit_reset_header_low_remaining():
+    """remaining<10かつX-RateLimit-Resetが不正値の場合、2つのwarningログを出力して処理継続
+
+    検証項目:
+    - ValueError が外部に伝播しないこと（正常完了）
+    - invalid_rate_limit_header warning ログが出力されること
+      （header="X-RateLimit-Reset", value="not-a-timestamp"）
+    - rate_limit_low warning ログが出力されること（remaining=5）
+    - reset_time はフォールバック値（epoch: 1970-01-01T00:00:00+00:00）になること
+    """
+    from datetime import UTC, datetime
+
+    respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+        status_code=200,
+        json={"login": "octocat"},
+        headers={
+            "X-RateLimit-Remaining": "5",
+            "X-RateLimit-Reset": "not-a-timestamp",
+        },
+    )
+
+    with capture_logs() as log_output:
+        async with AsyncGitHubClient() as client:
+            result = await client.get_user("octocat")
+
+    assert result["login"] == "octocat"
+
+    # invalid_rate_limit_header warning（X-RateLimit-Reset不正値）
+    invalid_header_logs = [
+        log for log in log_output if log.get("event") == "invalid_rate_limit_header"
+    ]
+    assert len(invalid_header_logs) == 1
+    assert invalid_header_logs[0]["log_level"] == "warning"
+    assert invalid_header_logs[0]["header"] == "X-RateLimit-Reset"
+    assert invalid_header_logs[0]["value"] == "not-a-timestamp"
+
+    # rate_limit_low warning（remaining=5 < 10）
+    rate_limit_low_logs = [log for log in log_output if log.get("event") == "rate_limit_low"]
+    assert len(rate_limit_low_logs) == 1
+    assert rate_limit_low_logs[0]["log_level"] == "warning"
+    assert rate_limit_low_logs[0]["remaining"] == 5
+    # フォールバック: reset_time=0 → epoch（1970-01-01T00:00:00+00:00）
+    expected_reset_time = datetime(1970, 1, 1, 0, 0, tzinfo=UTC).isoformat()
+    assert rate_limit_low_logs[0]["reset_time"] == expected_reset_time
