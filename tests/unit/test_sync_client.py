@@ -1036,7 +1036,8 @@ def test_sync_health_check_system_exception_propagates(
     """システム例外がhealth_checkのexcept APIClientErrorで握りつぶされないことを検証
 
     SyncAPIClient.health_check() は except APIClientError の前に
-    KeyboardInterrupt, SystemExit, MemoryError を明示的に re-raise する。
+    SystemExit, MemoryError を明示的に re-raise する。
+    （KeyboardInterruptはpytest自体がSIGINTハンドラとして処理するためunitテストでの検証は省略）
     この設計により:
     - SystemExit: graceful shutdown シグナルがプロセス外へ正しく伝播
     - MemoryError: K8s OOMKilled 検知が遅延しない
