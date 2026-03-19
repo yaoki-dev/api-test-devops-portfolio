@@ -578,3 +578,66 @@ async def test_base_exception_propagates_through_request(
         with patch.object(client._client, "request", side_effect=exception_class(*exception_args)):
             with pytest.raises(exception_class):
                 await client.get_user("octocat")
+
+
+# =============================================================================
+# Rate Limitヘッダー不正値テスト（Issue #230）
+# =============================================================================
+
+
+@respx.mock
+async def test_invalid_rate_limit_header_remaining():
+    """X-RateLimit-Remaining に不正値が含まれる場合、warningログ出力して処理継続
+
+    検証項目:
+    - ValueError が外部に伝播しないこと（正常完了）
+    - invalid_rate_limit_header warning ログが出力されること
+    - header/value フィールドがログに含まれること
+    """
+    respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+        status_code=200,
+        json={"login": "octocat"},
+        headers={"X-RateLimit-Remaining": "N/A"},
+    )
+
+    with capture_logs() as log_output:
+        async with AsyncGitHubClient() as client:
+            result = await client.get_user("octocat")
+
+    assert result["login"] == "octocat"
+    warning_logs = [log for log in log_output if log.get("event") == "invalid_rate_limit_header"]
+    assert len(warning_logs) == 1
+    assert warning_logs[0]["log_level"] == "warning"
+    assert warning_logs[0]["header"] == "X-RateLimit-Remaining"
+    assert warning_logs[0]["value"] == "N/A"
+
+
+@respx.mock
+async def test_invalid_rate_limit_header_403():
+    """403応答時に X-RateLimit-Remaining が不正値の場合、warningログ後 GitHubAPIError 発生
+
+    検証項目:
+    - RateLimitError ではなく GitHubAPIError（Access forbidden）が発生すること
+    - invalid_rate_limit_header warning ログが2件出力されること
+      （共通Rate Limit監視パス + 403固有パスの両方でValueErrorが発生）
+    - header/value フィールドがログに含まれること
+    """
+    respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+        status_code=403,
+        json={"message": "Forbidden"},
+        headers={"X-RateLimit-Remaining": "invalid"},
+    )
+
+    with capture_logs() as log_output:
+        async with AsyncGitHubClient() as client:
+            with pytest.raises(GitHubAPIError, match="Access forbidden") as exc_info:
+                await client.get_user("octocat")
+
+    assert not isinstance(exc_info.value, RateLimitError)
+    warning_logs = [log for log in log_output if log.get("event") == "invalid_rate_limit_header"]
+    # 共通パス（remaining監視）と403固有パス（rate_remaining判定）の2箇所でwarning発生
+    assert len(warning_logs) == 2
+    for log_entry in warning_logs:
+        assert log_entry["log_level"] == "warning"
+        assert log_entry["header"] == "X-RateLimit-Remaining"
+        assert log_entry["value"] == "invalid"

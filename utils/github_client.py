@@ -279,9 +279,25 @@ class AsyncGitHubClient:
                 )
 
                 # Rate Limit監視
-                remaining = int(response.headers.get("X-RateLimit-Remaining", 999))
+                try:
+                    remaining = int(response.headers.get("X-RateLimit-Remaining", 999))
+                except ValueError:
+                    self.logger.warning(
+                        "invalid_rate_limit_header",
+                        header="X-RateLimit-Remaining",
+                        value=response.headers.get("X-RateLimit-Remaining"),
+                    )
+                    remaining = 999  # フォールバック: 残量十分と見なす
                 if remaining < 10:
-                    reset_time = int(response.headers.get("X-RateLimit-Reset", 0))
+                    try:
+                        reset_time = int(response.headers.get("X-RateLimit-Reset", 0))
+                    except ValueError:
+                        self.logger.warning(
+                            "invalid_rate_limit_header",
+                            header="X-RateLimit-Reset",
+                            value=response.headers.get("X-RateLimit-Reset"),
+                        )
+                        reset_time = 0  # フォールバック: リセット時刻不明
                     reset_dt = datetime.fromtimestamp(reset_time, tz=UTC)
                     self.logger.warning(
                         "rate_limit_low",
@@ -311,10 +327,26 @@ class AsyncGitHubClient:
 
                 if response.status_code == 403:
                     # 403判定: Rate Limit超過 vs その他のアクセス禁止
-                    rate_remaining = int(response.headers.get("X-RateLimit-Remaining", -1))
+                    try:
+                        rate_remaining = int(response.headers.get("X-RateLimit-Remaining", -1))
+                    except ValueError:
+                        self.logger.warning(
+                            "invalid_rate_limit_header",
+                            header="X-RateLimit-Remaining",
+                            value=response.headers.get("X-RateLimit-Remaining"),
+                        )
+                        rate_remaining = -1  # フォールバック: rate limit起因でないと見なす
                     if rate_remaining == 0:
                         # Rate Limit超過確定
-                        reset_time = int(response.headers.get("X-RateLimit-Reset", 0))
+                        try:
+                            reset_time = int(response.headers.get("X-RateLimit-Reset", 0))
+                        except ValueError:
+                            self.logger.warning(
+                                "invalid_rate_limit_header",
+                                header="X-RateLimit-Reset",
+                                value=response.headers.get("X-RateLimit-Reset"),
+                            )
+                            reset_time = 0  # フォールバック: リセット時刻不明
                         raise RateLimitError(reset_time)
                     # その他の403エラー（IPブロック、アクセス権限不足等）
                     error_message = "Access forbidden"
@@ -392,7 +424,7 @@ class AsyncGitHubClient:
                 self.logger.warning("request_timeout", endpoint=endpoint, method=method)
                 raise GitHubAPIError(f"Request timeout: {e}") from e
 
-            except (KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError):
+            except KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError:
                 # システム例外は再発生
                 # - KeyboardInterrupt/SystemExit: graceful shutdown対応
                 # - MemoryError: K8s OOMKilled等のリソース枯渇検知
