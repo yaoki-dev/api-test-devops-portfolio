@@ -599,13 +599,14 @@ async def test_base_exception_propagates_through_request(
 )
 def test_repo_validation_valid(repo: str) -> None:
     """有効なリポジトリ名でValueError未発生を確認"""
-    assert validate_github_repo(repo) is None
+    validate_github_repo(repo)  # -> None: ValueError未発生 = 成功（例外がpytestに伝播すれば失敗）
 
 
 @pytest.mark.parametrize(
     "repo",
     [
-        # Path Traversal攻撃パターン（'/'はREGEX許可文字外）
+        # Path Traversal: '/'がREGEX許可文字外（[a-zA-Z0-9._-]）のため拒否
+        # （先頭の'..'はREGEX通過するが、'/'を含む文字列全体が拒否される）
         pytest.param("../etc/passwd", id="path_traversal"),
         # 文字数上限超過（101文字 > 上限100文字）
         pytest.param("a" * 101, id="too_long"),
@@ -615,7 +616,8 @@ def test_repo_validation_valid(repo: str) -> None:
         pytest.param("repo name!", id="special_chars"),
         # NULLバイトインジェクション（REGEXが[a-zA-Z0-9._-]のみ許可のため拒否）
         pytest.param("repo\x00name", id="null_byte"),
-        # URLパスインジェクション防止（repos/. や repos/.. になる）
+        # URLパスインジェクション防止: '.'/'..'' は REGEX許可文字 [a-zA-Z0-9._-] を通過するが
+        # repo in {".", ".."} の明示チェックで拒否（repos/. や repos/.. を防ぐ）
         pytest.param(".", id="dot_single"),
         pytest.param("..", id="dot_double"),
     ],
