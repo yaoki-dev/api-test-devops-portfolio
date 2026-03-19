@@ -360,6 +360,11 @@ async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
     """5xxステータスコード（response.status_code >= 500）リトライパスの検証
 
     リトライ動作に加え、retrying_server_error ログ出力を検証する（Issue #229）。
+
+    検証項目:
+    - attempt 値の存在性（{1, 2}）と昇順順序
+    - endpoint / method フィールドが存在しないこと（retrying_http_status_error との設計差異）
+    - status_code / max_retries / delay フィールドの値
     """
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
     route.side_effect = [
