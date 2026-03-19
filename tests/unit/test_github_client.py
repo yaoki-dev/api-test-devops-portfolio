@@ -382,10 +382,10 @@ async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
     assert len(retry_logs) == 2, (
         f"retrying_server_error ログが2件出力されることを期待 (実際: {len(retry_logs)}件)"
     )
-    bad_level = [log for log in retry_logs if log["log_level"] != "warning"]
+    bad_level = [log for log in retry_logs if log.get("log_level") != "warning"]
     assert not bad_level, f"log_level が warning でないエントリ: {bad_level}"
     # 存在性検証: 期待するattempt値が全て存在すること
-    actual_attempts = [log_entry["attempt"] for log_entry in retry_logs]
+    actual_attempts = [log_entry.get("attempt") for log_entry in retry_logs]
     assert set(actual_attempts) == {1, 2}, f"attempt 値が期待値と不一致: {actual_attempts}"
     # 順序検証: リトライが昇順で実行されること（逐次forループ仕様）
     assert actual_attempts == sorted(actual_attempts), f"リトライ順序が不正: {actual_attempts}"
@@ -393,6 +393,12 @@ async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
     # Note: retrying_server_error は endpoint/method を含まない
     #       （retrying_http_status_error との実装上の設計差異）
     for log_entry in retry_logs:
+        assert "endpoint" not in log_entry, (
+            f"retrying_server_error に endpoint フィールドが存在: {log_entry}"
+        )
+        assert "method" not in log_entry, (
+            f"retrying_server_error に method フィールドが存在: {log_entry}"
+        )
         assert log_entry["status_code"] == 503
         assert log_entry["max_retries"] == MAX_RETRIES
         assert log_entry["delay"] == 0.0
@@ -435,10 +441,10 @@ async def test_httpx_status_error_5xx_defensive_path(mock_backoff: Mock) -> None
     assert len(retry_logs) == 2, (
         f"retrying_http_status_error ログが2件出力されることを期待 (実際: {len(retry_logs)}件)"
     )
-    bad_level = [log for log in retry_logs if log["log_level"] != "warning"]
+    bad_level = [log for log in retry_logs if log.get("log_level") != "warning"]
     assert not bad_level, f"log_level が warning でないエントリ: {bad_level}"
     # 存在性検証: 期待するattempt値が全て存在すること
-    actual_attempts = [log_entry["attempt"] for log_entry in retry_logs]
+    actual_attempts = [log_entry.get("attempt") for log_entry in retry_logs]
     assert set(actual_attempts) == {1, 2}, f"attempt 値が期待値と不一致: {actual_attempts}"
     # 順序検証: リトライが昇順で実行されること（逐次forループ仕様）
     assert actual_attempts == sorted(actual_attempts), f"リトライ順序が不正: {actual_attempts}"
