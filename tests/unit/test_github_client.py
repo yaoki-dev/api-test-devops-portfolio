@@ -433,7 +433,7 @@ async def test_httpx_status_error_5xx_defensive_path(mock_backoff: Mock) -> None
             with pytest.raises(GitHubServerError) as exc_info:
                 await client.get_user("octocat")
 
-    assert "Failed after 3 attempts" in str(exc_info.value)
+    assert f"Failed after {MAX_RETRIES} attempts" in str(exc_info.value)
     assert route.call_count == MAX_RETRIES
     assert mock_backoff.call_count == MAX_RETRIES - 1  # MAX_RETRIES試行 → 最終試行以外でバックオフ
 
