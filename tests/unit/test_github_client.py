@@ -591,6 +591,17 @@ def test_repo_validation_valid() -> None:
     validate_github_repo("my-repo")
     validate_github_repo("a")
     validate_github_repo("a" * 100)  # 上限（100文字）
+    validate_github_repo("my_repo")  # アンダースコア
+    validate_github_repo("my.repo")  # ドットを含む名前
+    validate_github_repo("123")  # 数字のみ
+
+
+def test_repo_validation_dot_series_currently_allowed() -> None:
+    """'.'/'..': 現在のREGEXをパスする（既知の許容動作）"""
+    # GITHUB_REPO_PATTERN はドットを許可するため '.' と '..' はValueErrorにならない
+    # GitHubでは予約済みだが本バリデーション関数ではブロックしない（許容として文書化）
+    validate_github_repo(".")
+    validate_github_repo("..")
 
 
 @pytest.mark.parametrize(
