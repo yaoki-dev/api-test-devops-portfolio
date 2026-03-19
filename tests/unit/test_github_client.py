@@ -8,6 +8,7 @@ GitHub API非同期クライアントのUnit Tests
 """
 
 import asyncio
+from datetime import UTC, datetime
 from unittest.mock import ANY, Mock, patch
 
 import httpx
@@ -654,8 +655,6 @@ async def test_invalid_rate_limit_reset_header_low_remaining():
     - rate_limit_low warning ログが出力されること（remaining=5）
     - reset_time はフォールバック値（epoch: 1970-01-01T00:00:00+00:00）になること
     """
-    from datetime import UTC, datetime
-
     respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=200,
         json={"login": "octocat"},
