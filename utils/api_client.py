@@ -1288,7 +1288,7 @@ def main() -> None:
             print(f"  - Created post ID: {new_post.get('id', 'N/A')}")
             print(f"  - Title: {new_post.get('title', 'N/A')}")
 
-        except Exception as e:
+        except APIClientError as e:
             print(f"エラーが発生しました: {e}")
             if settings.debug:
                 import traceback
