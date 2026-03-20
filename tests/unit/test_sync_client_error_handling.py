@@ -21,9 +21,11 @@ from unittest.mock import Mock, patch
 import httpx
 import pytest
 import respx
+from structlog.testing import capture_logs
 
 from tests.constants import BASE_URL
 from utils.api_client import (
+    APIClientError,
     APIConnectionError,
     APIHTTPError,
     APIRetryError,
@@ -303,6 +305,63 @@ def test_sync_post_with_retry(mock_backoff: Mock) -> None:
     assert response.status_code == 201
     # バックオフが1回呼ばれることを確認（attempt 0で502失敗→backoff、attempt 1で成功）
     assert mock_backoff.call_count == 1
+
+
+# =============================================================================
+# Log Bypass Tests（Issue #224: _map_request_error raiseでログが失われない検証）
+# =============================================================================
+
+
+@respx.mock
+def test_sync_too_many_redirects_logs_before_raise() -> None:
+    """TooManyRedirects時にlogger.warningが_map_request_error前に実行される
+
+    _map_request_errorはTooManyRedirectsで即座にraiseするが、
+    ログ出力はその前に実行されるため、デバッグ情報が失われない。
+    """
+    route = respx.get(f"{BASE_URL}/posts/1")
+    route.side_effect = httpx.TooManyRedirects("Max redirects exceeded")
+
+    with capture_logs() as log_output:
+        with pytest.raises(APIClientError, match="Non-retryable request error"):
+            with SyncAPIClient(retry_count=0) as client:
+                client.get("/posts/1")
+
+    # ログが出力されていることを検証（ログバイパスが修正済み）
+    warning_logs = [
+        log
+        for log in log_output
+        if log.get("log_level") == "warning" and log.get("event") == "Request error"
+    ]
+    assert len(warning_logs) == 1, f"Expected 1 warning log, got: {log_output}"
+    assert warning_logs[0]["method"] == "GET"
+    assert warning_logs[0]["endpoint"] == "/posts/1"
+
+
+@respx.mock
+def test_sync_invalid_url_logs_before_raise() -> None:
+    """InvalidURL時にlogger.warningが_map_request_error前に実行される
+
+    _map_request_errorはInvalidURLで即座にraiseするが、
+    ログ出力はその前に実行されるため、デバッグ情報が失われない。
+    """
+    route = respx.get(f"{BASE_URL}/posts/1")
+    route.side_effect = httpx.InvalidURL("Invalid URL format")
+
+    with capture_logs() as log_output:
+        with pytest.raises(APIClientError, match="Non-retryable request error"):
+            with SyncAPIClient(retry_count=0) as client:
+                client.get("/posts/1")
+
+    # ログが出力されていることを検証（ログバイパスが修正済み）
+    warning_logs = [
+        log
+        for log in log_output
+        if log.get("log_level") == "warning" and log.get("event") == "Request error"
+    ]
+    assert len(warning_logs) == 1, f"Expected 1 warning log, got: {log_output}"
+    assert warning_logs[0]["method"] == "GET"
+    assert warning_logs[0]["endpoint"] == "/posts/1"
 
 
 # =============================================================================

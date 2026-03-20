@@ -280,8 +280,9 @@ class SyncAPIClient:
                 response = self._client.request(method, endpoint, **kwargs)
             except (httpx.RequestError, httpx.InvalidURL) as e:
                 # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
-                last_exception = _map_request_error(e)
+                # ログを先に出力（_map_request_errorが即座にraiseする場合に備える）
                 self.logger.warning("Request error", method=method, endpoint=endpoint, error=str(e))
+                last_exception = _map_request_error(e)
             else:
                 # ネットワーク成功時のみHTTPステータス処理
                 try:
@@ -726,13 +727,14 @@ class AsyncAPIClient:
                 response = await self._client.request(method, endpoint, **kwargs)
             except (httpx.RequestError, httpx.InvalidURL) as e:
                 # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
-                last_exception = _map_request_error(e)
+                # ログを先に出力（_map_request_errorが即座にraiseする場合に備える）
                 self.logger.warning(
                     "Async request error",
                     method=method,
                     endpoint=endpoint,
                     error=str(e),
                 )
+                last_exception = _map_request_error(e)
             else:
                 # ネットワーク成功時のみHTTPステータス処理
                 try:
