@@ -291,7 +291,10 @@ class AsyncGitHubClient:
             X-RateLimit-Remaining ヘッダーが不正値の場合:
             - 監視パス: フォールバック999（残量十分と見なし、rate_limit_low警告なし）
             - 403判定パス: フォールバック-1（Rate Limit超過と判定せず、GitHubAPIError発生）
-            いずれのパスでも不正値検出時は invalid_rate_limit_header warningを出力する。
+            いずれのパスでも不正値（ValueError）検出時は
+            invalid_rate_limit_header warningを出力する。
+            なお、ヘッダー自体が未設定（None）の場合は
+            warningを出力せずフォールバック値を返す。
         """
         if not self._client:
             raise RuntimeError("Client not initialized. Use 'async with' context.")
