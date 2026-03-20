@@ -639,7 +639,7 @@ async def test_invalid_rate_limit_header_403():
     assert not isinstance(exc_info.value, RateLimitError)
     warning_logs = [log for log in log_output if log.get("event") == "invalid_rate_limit_header"]
     # 共通パス（remaining監視）と403固有パス（rate_remaining判定）の2箇所でwarning発生
-    assert len(warning_logs) >= 1
+    assert len(warning_logs) == 2
     for log_entry in warning_logs:
         assert log_entry["log_level"] == "warning"
         assert log_entry["header"] == "X-RateLimit-Remaining"
@@ -698,7 +698,8 @@ async def test_invalid_rate_limit_reset_header_rate_limit_exceeded():
     検証項目:
     - RateLimitError が発生すること（rate_remaining==0のため）
     - invalid_rate_limit_header warning ログが2件出力されること
-      （L293の共通remaining<10チェックパス + L341の403固有rate_remaining==0パスの両方）
+      （共通remaining<10チェックパスにおけるX-RateLimit-Resetパース +
+       403固有rate_remaining==0パスにおけるX-RateLimit-Resetパース の2箇所で発生）
     - rate_limit_low warning ログが1件出力されること（remaining=0 < 10）
     - header="X-RateLimit-Reset", value="broken" がログに含まれること
     """
@@ -720,7 +721,7 @@ async def test_invalid_rate_limit_reset_header_rate_limit_exceeded():
     invalid_header_logs = [
         log for log in log_output if log.get("event") == "invalid_rate_limit_header"
     ]
-    assert len(invalid_header_logs) >= 1
+    assert len(invalid_header_logs) == 2
     for log_entry in invalid_header_logs:
         assert log_entry["log_level"] == "warning"
         assert log_entry["header"] == "X-RateLimit-Reset"
