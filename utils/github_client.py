@@ -242,7 +242,7 @@ class AsyncGitHubClient:
             self.logger.warning(
                 "invalid_rate_limit_header",
                 header=name,
-                value=raw,
+                value=repr(raw)[:100],
             )
             return default
 
@@ -331,8 +331,8 @@ class AsyncGitHubClient:
                 if response.status_code == 403:
                     # 403判定: Rate Limit超過 vs その他のアクセス禁止
                     rate_remaining = self._parse_rate_limit_header(
-                        response.headers, "X-RateLimit-Remaining", -1
-                    )  # フォールバック -1（不正値時はRateLimitError未発生リスクあり）
+                        response.headers, "X-RateLimit-Remaining", 0
+                    )  # フォールバック 0（不正値時はRate Limit超過として扱う）
                     if rate_remaining == 0:
                         # Rate Limit超過確定
                         reset_time = self._parse_rate_limit_header(

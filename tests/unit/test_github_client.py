@@ -611,15 +611,15 @@ async def test_invalid_rate_limit_header_remaining():
     assert len(warning_logs) == 1
     assert warning_logs[0]["log_level"] == "warning"
     assert warning_logs[0]["header"] == "X-RateLimit-Remaining"
-    assert warning_logs[0]["value"] == "N/A"
+    assert warning_logs[0]["value"] == repr("N/A")
 
 
 @respx.mock
 async def test_invalid_rate_limit_header_403():
-    """403応答時に X-RateLimit-Remaining が不正値の場合、warningログ後 GitHubAPIError 発生
+    """403応答時に X-RateLimit-Remaining が不正値の場合、warningログ後 RateLimitError 発生
 
     検証項目:
-    - RateLimitError ではなく GitHubAPIError（Access forbidden）が発生すること
+    - フォールバック 0 により rate_remaining == 0 となり RateLimitError が発生すること
     - invalid_rate_limit_header warning ログが2件出力されること
       （X-RateLimit-Remainingを共通パス（remaining監視）と403固有パス
        （rate_remaining判定）の2箇所で読み取り、どちらもValueError発生）
@@ -633,17 +633,16 @@ async def test_invalid_rate_limit_header_403():
 
     with capture_logs() as log_output:
         async with AsyncGitHubClient() as client:
-            with pytest.raises(GitHubAPIError, match="Access forbidden") as exc_info:
+            with pytest.raises(RateLimitError):
                 await client.get_user("octocat")
 
-    assert not isinstance(exc_info.value, RateLimitError)
     warning_logs = [log for log in log_output if log.get("event") == "invalid_rate_limit_header"]
     # 共通パス（remaining監視）と403固有パス（rate_remaining判定）の2箇所でwarning発生
     assert len(warning_logs) == 2
     for log_entry in warning_logs:
         assert log_entry["log_level"] == "warning"
         assert log_entry["header"] == "X-RateLimit-Remaining"
-        assert log_entry["value"] == "invalid"
+        assert log_entry["value"] == repr("invalid")
 
 
 @respx.mock
@@ -679,7 +678,7 @@ async def test_invalid_rate_limit_reset_header_low_remaining():
     assert len(invalid_header_logs) == 1
     assert invalid_header_logs[0]["log_level"] == "warning"
     assert invalid_header_logs[0]["header"] == "X-RateLimit-Reset"
-    assert invalid_header_logs[0]["value"] == "not-a-timestamp"
+    assert invalid_header_logs[0]["value"] == repr("not-a-timestamp")
 
     # rate_limit_low warning（remaining=5 < 10）
     rate_limit_low_logs = [log for log in log_output if log.get("event") == "rate_limit_low"]
@@ -725,7 +724,7 @@ async def test_invalid_rate_limit_reset_header_rate_limit_exceeded():
     for log_entry in invalid_header_logs:
         assert log_entry["log_level"] == "warning"
         assert log_entry["header"] == "X-RateLimit-Reset"
-        assert log_entry["value"] == "broken"
+        assert log_entry["value"] == repr("broken")
 
     # rate_limit_low warningが1件（remaining=0 < 10）
     rate_limit_low_logs = [log for log in log_output if log.get("event") == "rate_limit_low"]
