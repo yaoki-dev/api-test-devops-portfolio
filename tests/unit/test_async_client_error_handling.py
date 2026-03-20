@@ -22,6 +22,7 @@ import httpx
 import pytest
 import respx
 
+from tests.constants import BASE_URL
 from utils.api_client import (
     APIConnectionError,
     APIHTTPError,
@@ -32,8 +33,6 @@ from utils.api_client import (
 
 # Module-level marker: All tests in this file are unit tests
 pytestmark = pytest.mark.unit
-
-BASE_URL = "https://jsonplaceholder.typicode.com"
 
 
 # =============================================================================

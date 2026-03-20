@@ -30,6 +30,7 @@ from httpx import Response
 from structlog.testing import capture_logs
 
 # テストヘルパー
+from tests.constants import BASE_URL
 from tests.unit.helpers import assert_warning_log_count
 
 # プロジェクト内モジュール
@@ -42,9 +43,6 @@ from utils.api_client import (
 
 # Module-level marker: All tests in this file are unit tests
 pytestmark = pytest.mark.unit
-
-# Constants
-BASE_URL = "https://jsonplaceholder.typicode.com"
 
 # ===============================================================================
 # テスト用フィクスチャ・設定

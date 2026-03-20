@@ -19,12 +19,11 @@ import httpx
 import pytest
 import respx
 
+from tests.constants import BASE_URL
 from tests.unit.helpers import mock_get_route
 from utils.api_client import SyncAPIClient, SyncJSONPlaceholderClient
 
 pytestmark = pytest.mark.unit
-
-BASE_URL = "https://jsonplaceholder.typicode.com"
 
 
 # =============================================================================
