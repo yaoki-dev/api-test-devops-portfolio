@@ -148,7 +148,7 @@ uv run mypy utils/ config/ models/  # 型チェック
 
 # セキュリティ（週次）
 uv run bandit -r utils/ config/ models/
-uv run safety check
+uv run safety scan
 ```
 
 ### pre-commit（軽量版）
