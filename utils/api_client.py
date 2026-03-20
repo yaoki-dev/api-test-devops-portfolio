@@ -280,8 +280,9 @@ class SyncAPIClient:
                 response = self._client.request(method, endpoint, **kwargs)
             except (httpx.RequestError, httpx.InvalidURL) as e:
                 # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
-                # ログを先に出力（_map_request_errorが即座にraiseする場合に備える）
-                self.logger.warning("Request error", method=method, endpoint=endpoint, error=str(e))
+                # 全エラーパスでログを確実に出力するため先行記録
+                # （TooManyRedirects/InvalidURL は即 raise のため後続行に到達しない）
+                self.logger.warning("request_error", method=method, endpoint=endpoint, error=str(e))
                 last_exception = _map_request_error(e)
             else:
                 # ネットワーク成功時のみHTTPステータス処理
@@ -681,7 +682,7 @@ class AsyncAPIClient:
         """クライアントのクローズ"""
         if self._client:
             await self._client.aclose()
-            self.logger.info("AsyncAPIClient closed")
+            self.logger.info("async_api_client_closed")
 
     async def _make_request_with_retry(
         self,
@@ -727,9 +728,10 @@ class AsyncAPIClient:
                 response = await self._client.request(method, endpoint, **kwargs)
             except (httpx.RequestError, httpx.InvalidURL) as e:
                 # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
-                # ログを先に出力（_map_request_errorが即座にraiseする場合に備える）
+                # 全エラーパスでログを確実に出力するため先行記録
+                # （TooManyRedirects/InvalidURL は即 raise のため後続行に到達しない）
                 self.logger.warning(
-                    "Async request error",
+                    "async_request_error",
                     method=method,
                     endpoint=endpoint,
                     error=str(e),

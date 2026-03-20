@@ -330,7 +330,7 @@ async def test_async_too_many_redirects_logs_before_raise() -> None:
     warning_logs = [
         log
         for log in log_output
-        if log.get("log_level") == "warning" and log.get("event") == "Async request error"
+        if log.get("log_level") == "warning" and log.get("event") == "async_request_error"
     ]
     assert len(warning_logs) == 1, f"Expected 1 warning log, got: {log_output}"
     assert warning_logs[0]["method"] == "GET"
@@ -356,7 +356,7 @@ async def test_async_invalid_url_logs_before_raise() -> None:
     warning_logs = [
         log
         for log in log_output
-        if log.get("log_level") == "warning" and log.get("event") == "Async request error"
+        if log.get("log_level") == "warning" and log.get("event") == "async_request_error"
     ]
     assert len(warning_logs) == 1, f"Expected 1 warning log, got: {log_output}"
     assert warning_logs[0]["method"] == "GET"
