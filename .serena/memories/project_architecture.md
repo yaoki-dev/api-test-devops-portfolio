@@ -6,8 +6,8 @@
 **Tech Stack**: Python 3.14 / httpx / pytest / Pydantic Settings / structlog / Docker / GitHub Actions
 
 ## Key Metrics (2026-03-07)
-- Test Coverage: 92.73% (target: 85% ✅達成、CI条件: unit+integration, not external)
-- Test Count: 551 tests (全件) / 483件 (CI条件: unit+integration)
+- Test Coverage: 93.39% (target: 85% ✅達成、CI条件: unit+integration, not external)
+- Test Count: 581 tests (全件) / 573件 (CI条件: unit+integration)
 - Code Lines: ~2,500 (utils/config/models)
 - SOLID Compliance: 85%
 
