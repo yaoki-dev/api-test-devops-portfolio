@@ -30,6 +30,7 @@ from httpx import Response
 from structlog.testing import capture_logs
 
 # テストヘルパー
+from tests.constants import BASE_URL
 from tests.unit.helpers import assert_warning_log_count
 
 # プロジェクト内モジュール
@@ -42,9 +43,6 @@ from utils.api_client import (
 
 # Module-level marker: All tests in this file are unit tests
 pytestmark = pytest.mark.unit
-
-# Constants
-BASE_URL = "https://jsonplaceholder.typicode.com"
 
 # ===============================================================================
 # テスト用フィクスチャ・設定
@@ -2200,7 +2198,7 @@ async def test_async_client_falsy_values_not_overridden() -> None:
     - retry_count=0 の用途: リトライを行わず即座に失敗させたい場合に使用
     """
     async with AsyncAPIClient(
-        base_url="https://jsonplaceholder.typicode.com",
+        base_url=BASE_URL,
         retry_count=0,
         timeout=0.0,
         retry_delay=0.0,

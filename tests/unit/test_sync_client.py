@@ -19,12 +19,11 @@ import httpx
 import pytest
 import respx
 
+from tests.constants import BASE_URL
 from tests.unit.helpers import mock_get_route
 from utils.api_client import SyncAPIClient, SyncJSONPlaceholderClient
 
 pytestmark = pytest.mark.unit
-
-BASE_URL = "https://jsonplaceholder.typicode.com"
 
 
 # =============================================================================
@@ -860,7 +859,7 @@ def test_sync_client_falsy_values_not_overridden() -> None:
     - retry_count=0 の用途: リトライを行わず即座に失敗させたい場合に使用
     """
     with SyncAPIClient(
-        base_url="https://jsonplaceholder.typicode.com",
+        base_url=BASE_URL,
         retry_count=0,
         timeout=0.0,
         retry_delay=0.0,

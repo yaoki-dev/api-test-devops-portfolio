@@ -22,6 +22,7 @@ import httpx
 import pytest
 import respx
 
+from tests.constants import BASE_URL
 from utils.api_client import (
     APIConnectionError,
     APIHTTPError,
@@ -31,8 +32,6 @@ from utils.api_client import (
 )
 
 pytestmark = pytest.mark.unit
-
-BASE_URL = "https://jsonplaceholder.typicode.com"
 
 # =============================================================================
 # Retry Logic Tests（条件2: エラーパス）
