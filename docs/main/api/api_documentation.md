@@ -486,7 +486,7 @@ jobs:
     - name: Security Testing (CI/CD品質ゲート)
       run: |
         uv run bandit -r . -ll
-        uv run safety check
+        uv run safety scan
         uv run pip-audit
 
     - name: Performance Testing
