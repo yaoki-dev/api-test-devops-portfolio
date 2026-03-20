@@ -57,7 +57,7 @@ def validate_github_repo(repo: str) -> None:
         ValueError: バリデーション失敗
 
     """
-    if not repo or not GITHUB_REPO_PATTERN.match(repo):
+    if not repo or repo in {".", ".."} or not GITHUB_REPO_PATTERN.match(repo):
         raise ValueError(f"Invalid GitHub repository name: '{repo}'")
 
 
