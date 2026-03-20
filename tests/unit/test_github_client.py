@@ -616,10 +616,10 @@ async def test_invalid_rate_limit_header_remaining():
 
 @respx.mock
 async def test_invalid_rate_limit_header_403():
-    """403応答時に X-RateLimit-Remaining が不正値の場合、warningログ後 RateLimitError 発生
+    """403応答時にX-RateLimit-Remainingが不正値の場合、warningログ後 GitHubAPIError 発生
 
     検証項目:
-    - フォールバック 0 により rate_remaining == 0 となり RateLimitError が発生すること
+    - フォールバック -1 により rate_remaining == 0 は偽 → GitHubAPIError("Access forbidden") が発生
     - invalid_rate_limit_header warning ログが2件出力されること
       （X-RateLimit-Remainingを共通パス（remaining監視）と403固有パス
        （rate_remaining判定）の2箇所で読み取り、どちらもValueError発生）
@@ -633,11 +633,12 @@ async def test_invalid_rate_limit_header_403():
 
     with capture_logs() as log_output:
         async with AsyncGitHubClient() as client:
-            with pytest.raises(RateLimitError):
+            with pytest.raises(GitHubAPIError):
                 await client.get_user("octocat")
 
     warning_logs = [log for log in log_output if log.get("event") == "invalid_rate_limit_header"]
-    # 共通パス（remaining監視）と403固有パス（rate_remaining判定）の2箇所でwarning発生
+    # 共通パス(default=999)と403固有パス(default=-1)の2箇所でwarning発生
+    # 999 >= 10 のため rate_limit_low は未発生、invalid_rate_limit_header のみ2件
     assert len(warning_logs) == 2
     for log_entry in warning_logs:
         assert log_entry["log_level"] == "warning"
@@ -731,6 +732,9 @@ async def test_invalid_rate_limit_reset_header_rate_limit_exceeded():
     assert len(rate_limit_low_logs) == 1
     assert rate_limit_low_logs[0]["log_level"] == "warning"
     assert rate_limit_low_logs[0]["remaining"] == 0
+    # フォールバック: reset_time=0 → epoch（1970-01-01T00:00:00+00:00）
+    expected_reset_time = datetime(1970, 1, 1, 0, 0, tzinfo=UTC).isoformat()
+    assert rate_limit_low_logs[0]["reset_time"] == expected_reset_time
 
 
 # =============================================================================
