@@ -13,6 +13,8 @@ from typing import Any
 import httpx
 import pytest
 
+from tests.constants import BASE_URL
+
 # Module-level marker: All tests in this file are integration tests
 pytestmark = pytest.mark.integration
 
@@ -24,7 +26,7 @@ pytestmark = pytest.mark.integration
 def test_jsonplaceholder_api_accessible():
     """JSONPlaceholder APIへの基本的な接続確認"""
     # Given: JSONPlaceholder APIのエンドポイント
-    url = "https://jsonplaceholder.typicode.com/todos/1"
+    url = f"{BASE_URL}/todos/1"
 
     # When: 同期HTTPクライアントでリクエスト実行
     with httpx.Client() as client:
@@ -51,7 +53,7 @@ def test_jsonplaceholder_api_accessible():
 def test_todos_endpoint_returns_list():
     """TODOsエンドポイントが配列を返すことを確認"""
     # Given: TODOsリストのエンドポイント
-    url = "https://jsonplaceholder.typicode.com/todos"
+    url = f"{BASE_URL}/todos"
 
     # When: リクエスト実行（上限5件で制限）
     with httpx.Client() as client:
@@ -74,7 +76,7 @@ def test_todos_endpoint_returns_list():
 def test_users_endpoint_response_structure():
     """ユーザーエンドポイントのレスポンス構造確認"""
     # Given: 特定ユーザーのエンドポイント
-    url = "https://jsonplaceholder.typicode.com/users/1"
+    url = f"{BASE_URL}/users/1"
 
     # When: リクエスト実行
     with httpx.Client() as client:
@@ -161,7 +163,7 @@ async def test_concurrent_requests(async_client):
 def test_todo_user_mapping(todo_id: int, expected_user_id: int) -> None:
     """TODOとユーザーIDのマッピング確認（パラメータ化テスト）"""
     # Given: 特定のTODO ID
-    url = f"https://jsonplaceholder.typicode.com/todos/{todo_id}"
+    url = f"{BASE_URL}/todos/{todo_id}"
 
     # When: TODO情報を取得
     with httpx.Client() as client:
@@ -180,7 +182,7 @@ def test_todo_user_mapping(todo_id: int, expected_user_id: int) -> None:
 def test_all_endpoints_accessible(endpoint: str) -> None:
     """全エンドポイントのアクセス確認"""
     # Given: 各種エンドポイント
-    url = f"https://jsonplaceholder.typicode.com{endpoint}"
+    url = f"{BASE_URL}{endpoint}"
 
     # When: リクエスト実行（件数制限付き）
     with httpx.Client() as client:
@@ -201,7 +203,7 @@ def test_all_endpoints_accessible(endpoint: str) -> None:
 def test_nonexistent_resource_returns_404():
     """存在しないリソースで404エラーを確認"""
     # Given: 存在しないリソースのURL
-    url = "https://jsonplaceholder.typicode.com/todos/99999"
+    url = f"{BASE_URL}/todos/99999"
 
     # When: リクエスト実行
     with httpx.Client() as client:
@@ -214,7 +216,7 @@ def test_nonexistent_resource_returns_404():
 def test_invalid_endpoint_returns_404():
     """無効なエンドポイントで404エラーを確認"""
     # Given: 無効なエンドポイント
-    url = "https://jsonplaceholder.typicode.com/invalid-endpoint"
+    url = f"{BASE_URL}/invalid-endpoint"
 
     # When: リクエスト実行
     with httpx.Client() as client:

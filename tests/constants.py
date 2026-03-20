@@ -1,3 +1,3 @@
 """テスト共通定数."""
 
-BASE_URL = "https://jsonplaceholder.typicode.com"
+BASE_URL: str = "https://jsonplaceholder.typicode.com"

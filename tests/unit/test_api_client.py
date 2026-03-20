@@ -3,6 +3,7 @@ from unittest.mock import patch
 import httpx
 import pytest
 
+from tests.constants import BASE_URL
 from utils.api_client import (
     SyncAPIClient,
 )
@@ -14,7 +15,7 @@ pytestmark = pytest.mark.unit
 # Mock settings for testing purposes, as the actual SyncAPIClient uses config.settings
 class MockAPISettings:
     def __init__(self):
-        self.base_url = "https://jsonplaceholder.typicode.com"
+        self.base_url = BASE_URL
         self.timeout = 30.0
         self.retry_count = 3
         self.retry_delay = 0.1
@@ -60,7 +61,7 @@ def test_context_manager_basic():
 def test_base_client_uses_default_settings_if_not_provided():
     """引数がない場合にデフォルト設定が使用されることを確認"""
     client = SyncAPIClient()  # Uses mock_settings_instance
-    assert client.base_url == "https://jsonplaceholder.typicode.com"
+    assert client.base_url == BASE_URL
     assert client.timeout == 30.0
     assert client.retry_count == 3
 

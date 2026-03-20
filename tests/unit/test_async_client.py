@@ -2198,7 +2198,7 @@ async def test_async_client_falsy_values_not_overridden() -> None:
     - retry_count=0 の用途: リトライを行わず即座に失敗させたい場合に使用
     """
     async with AsyncAPIClient(
-        base_url="https://jsonplaceholder.typicode.com",
+        base_url=BASE_URL,
         retry_count=0,
         timeout=0.0,
         retry_delay=0.0,
