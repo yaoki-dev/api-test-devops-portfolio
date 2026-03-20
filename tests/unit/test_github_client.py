@@ -21,6 +21,7 @@ from utils.github_client import (
     GitHubServerError,
     NotFoundError,
     RateLimitError,
+    validate_github_repo,
 )
 
 pytestmark = pytest.mark.unit
@@ -578,3 +579,42 @@ async def test_base_exception_propagates_through_request(
         with patch.object(client._client, "request", side_effect=exception_class(*exception_args)):
             with pytest.raises(exception_class):
                 await client.get_user("octocat")
+
+
+# =============================================================================
+# validate_github_repo バリデーションテスト
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    "repo",
+    [
+        pytest.param("my-repo", id="hyphen"),
+        pytest.param("a", id="single_char"),
+        pytest.param("a" * 100, id="max_length"),  # 上限（100文字）
+        pytest.param("my_repo", id="underscore"),
+        pytest.param("my.repo", id="dot"),
+        pytest.param("123", id="digits_only"),
+    ],
+)
+def test_repo_validation_valid(repo: str) -> None:
+    """有効なリポジトリ名でValueError未発生を確認"""
+    validate_github_repo(repo)
+
+
+@pytest.mark.parametrize(
+    "repo",
+    [
+        pytest.param("../etc/passwd", id="path_traversal"),
+        pytest.param("a" * 101, id="too_long"),
+        pytest.param("", id="empty_string"),
+        pytest.param("repo name!", id="special_chars"),
+        pytest.param("repo\x00name", id="null_byte"),
+        pytest.param(".", id="dot_single"),
+        pytest.param("..", id="dot_double"),
+    ],
+)
+def test_repo_validation_invalid(repo: str) -> None:
+    """無効なリポジトリ名でValueError発生（セキュリティ境界テスト）"""
+    with pytest.raises(ValueError, match="Invalid GitHub repository name"):
+        validate_github_repo(repo)
