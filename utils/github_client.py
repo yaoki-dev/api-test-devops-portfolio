@@ -231,6 +231,33 @@ class AsyncGitHubClient:
             raise GitHubAPIError(f"Expected dict response, got {type(result).__name__}")
         return result
 
+    def _parse_rate_limit_header(self, headers: httpx.Headers, name: str, default: int) -> int:
+        """Rate Limitヘッダーを安全にパースする。
+
+        Args:
+            headers: HTTPレスポンスヘッダー
+            name: ヘッダー名（例: "X-RateLimit-Remaining"）
+            default: パース失敗時のフォールバック値
+
+        Returns:
+            パースされた整数値。ヘッダー未設定またはパース失敗時は default を返す。
+
+        Note:
+            ValueErrorをキャッチし、warningログを出力してフォールバック値を返す。
+        """
+        raw = headers.get(name)
+        if raw is None:
+            return default
+        try:
+            return int(raw)
+        except ValueError:
+            self.logger.warning(
+                "invalid_rate_limit_header",
+                header=name,
+                value=repr(raw)[:100],
+            )
+            return default
+
     async def _request(  # noqa: C901 - 統合HTTPリクエスト処理（Rate Limit/ETag/リトライ統合）のため許容
         self,
         method: str,
@@ -260,6 +287,14 @@ class AsyncGitHubClient:
             GitHubServerError: 5xxエラー（リトライ上限後）
             GitHubAPIError: タイムアウト等の予期しないエラー
 
+        Note:
+            X-RateLimit-Remaining ヘッダーが不正値の場合:
+            - 監視パス: フォールバック999（残量十分と見なし、rate_limit_low警告なし）
+            - 403判定パス: フォールバック-1（Rate Limit超過と判定せず、GitHubAPIError発生）
+            いずれのパスでも不正値（ValueError）検出時は
+            invalid_rate_limit_header warningを出力する。
+            なお、ヘッダー自体が未設定（None）の場合は
+            warningを出力せずフォールバック値を返す。
         """
         if not self._client:
             raise RuntimeError("Client not initialized. Use 'async with' context.")
@@ -278,10 +313,15 @@ class AsyncGitHubClient:
                     headers=headers,
                 )
 
-                # Rate Limit監視
-                remaining = int(response.headers.get("X-RateLimit-Remaining", 999))
+                # Rate Limit監視: 残量少でwarning出力
+                # フォールバック999 = 残量十分と見なす
+                remaining = self._parse_rate_limit_header(
+                    response.headers, "X-RateLimit-Remaining", 999
+                )  # フォールバック: 残量十分と見なす
                 if remaining < 10:
-                    reset_time = int(response.headers.get("X-RateLimit-Reset", 0))
+                    reset_time = self._parse_rate_limit_header(
+                        response.headers, "X-RateLimit-Reset", 0
+                    )  # フォールバック: リセット時刻不明
                     reset_dt = datetime.fromtimestamp(reset_time, tz=UTC)
                     self.logger.warning(
                         "rate_limit_low",
@@ -310,11 +350,16 @@ class AsyncGitHubClient:
                     raise NotFoundError(f"Resource not found: {endpoint}")
 
                 if response.status_code == 403:
-                    # 403判定: Rate Limit超過 vs その他のアクセス禁止
-                    rate_remaining = int(response.headers.get("X-RateLimit-Remaining", -1))
+                    # 403分類: Rate Limit超過 vs その他の403を判別
+                    # フォールバック -1 = 不正値時はRate Limit超過と判定せずGitHubAPIErrorへ
+                    rate_remaining = self._parse_rate_limit_header(
+                        response.headers, "X-RateLimit-Remaining", -1
+                    )
                     if rate_remaining == 0:
                         # Rate Limit超過確定
-                        reset_time = int(response.headers.get("X-RateLimit-Reset", 0))
+                        reset_time = self._parse_rate_limit_header(
+                            response.headers, "X-RateLimit-Reset", 0
+                        )  # フォールバック: リセット時刻不明
                         raise RateLimitError(reset_time)
                     # その他の403エラー（IPブロック、アクセス権限不足等）
                     error_message = "Access forbidden"
