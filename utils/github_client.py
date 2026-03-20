@@ -232,23 +232,17 @@ class AsyncGitHubClient:
         return result
 
     def _parse_rate_limit_header(self, headers: httpx.Headers, name: str, default: int) -> int:
-        """Rate Limitヘッダーを安全にパースする。
-
-        Args:
-            headers: HTTPレスポンスヘッダー
-            name: ヘッダー名（例: "X-RateLimit-Remaining"）
-            default: パース失敗時のフォールバック値
-
-        Returns:
-            パース済み整数値、またはデフォルト値
-        """
+        """Rate Limitヘッダーを安全にパースする。失敗時は default を返す。"""
+        raw = headers.get(name)
+        if raw is None:
+            return default
         try:
-            return int(headers.get(name, default))
-        except ValueError:
+            return int(raw)
+        except ValueError, TypeError:
             self.logger.warning(
                 "invalid_rate_limit_header",
                 header=name,
-                value=headers.get(name),
+                value=raw,
             )
             return default
 
@@ -338,7 +332,7 @@ class AsyncGitHubClient:
                     # 403判定: Rate Limit超過 vs その他のアクセス禁止
                     rate_remaining = self._parse_rate_limit_header(
                         response.headers, "X-RateLimit-Remaining", -1
-                    )  # フォールバック: rate limit起因でないと見なす
+                    )  # フォールバック -1（不正値時はRateLimitError未発生リスクあり）
                     if rate_remaining == 0:
                         # Rate Limit超過確定
                         reset_time = self._parse_rate_limit_header(
