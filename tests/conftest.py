@@ -17,6 +17,7 @@ import pytest
 import pytest_asyncio
 
 from config.settings import _resolve_hostname_cached, reload_settings
+from tests.constants import BASE_URL
 from utils.api_client import AsyncAPIClient
 
 # =============================================================================
@@ -92,7 +93,7 @@ def test_config() -> dict[str, Any]:
     """テスト用設定データ"""
     return {
         "api": {
-            "base_url": "https://jsonplaceholder.typicode.com",
+            "base_url": BASE_URL,
             "timeout": 10,
             "retry_count": 1,
             "retry_delay": 0.5,
