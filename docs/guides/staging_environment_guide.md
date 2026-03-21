@@ -71,6 +71,6 @@ pydantic_core._pydantic_core.ValidationError: 1 validation error for Settings
 
 ## 参考
 
-- `config/settings.py` L491-532: バリデータ実装（`validate_production_secrets` / `validate_production_https`）
+- `config/settings.py`: バリデータ実装（`validate_production_secrets` / `validate_production_https`）
 - `.env.example`: 環境変数テンプレート
 - [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)
