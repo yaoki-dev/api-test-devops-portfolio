@@ -325,10 +325,11 @@ def test_sync_post_with_retry(mock_backoff: Mock) -> None:
 def test_sync_non_retryable_error_logs_before_raise(
     exc: httpx.TooManyRedirects | httpx.InvalidURL, expected_error: str
 ) -> None:
-    """非リトライエラー時にlogger.warningが_map_request_error前に実行される
+    """非リトライエラー時にlogger.errorが_map_request_error前に実行される
 
     _map_request_errorは非リトライエラーで即座にraiseするが、
     ログ出力はその前に実行されるため、デバッグ情報が失われない。
+    非リトライエラー（TooManyRedirects/InvalidURL）はERRORレベルで記録される。
     """
     route = respx.get(f"{BASE_URL}/posts/1")
     route.side_effect = exc
@@ -338,16 +339,16 @@ def test_sync_non_retryable_error_logs_before_raise(
             with SyncAPIClient(retry_count=0) as client:
                 client.get("/posts/1")
 
-    # ログが出力されていることを検証（ログバイパスが修正済み）
-    warning_logs = [
+    # ERRORレベルのログが出力されていることを検証（ログバイパスが修正済み）
+    error_logs = [
         log
         for log in log_output
-        if log.get("log_level") == "warning" and log.get("event") == "request_error"
+        if log.get("log_level") == "error" and log.get("event") == "request_error_non_retryable"
     ]
-    assert len(warning_logs) == 1, f"Expected 1 warning log, got: {log_output}"
-    assert warning_logs[0]["method"] == "GET"
-    assert warning_logs[0]["endpoint"] == "/posts/1"
-    assert expected_error in warning_logs[0]["error"]  # error フィールド検証
+    assert len(error_logs) == 1, f"Expected 1 error log, got: {log_output}"
+    assert error_logs[0]["method"] == "GET"
+    assert error_logs[0]["endpoint"] == "/posts/1"
+    assert expected_error in error_logs[0]["error"]  # error フィールド検証
 
 
 @respx.mock

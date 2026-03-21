@@ -286,7 +286,19 @@ class SyncAPIClient:
                 response = self._client.request(method, endpoint, **kwargs)
             except (httpx.RequestError, httpx.InvalidURL) as e:
                 # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
-                self.logger.warning("request_error", method=method, endpoint=endpoint, error=str(e))
+                if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
+                    # 非リトライエラー: 即 raise される致命的エラーのため ERROR レベルで記録
+                    self.logger.error(
+                        "request_error_non_retryable",
+                        method=method,
+                        endpoint=endpoint,
+                        error=str(e),
+                        error_type=type(e).__name__,
+                    )
+                else:
+                    self.logger.warning(
+                        "request_error", method=method, endpoint=endpoint, error=str(e)
+                    )
                 # TooManyRedirects/InvalidURL の場合は内部で即 raise するため代入されない
                 last_exception = _map_request_error(e)
             else:
@@ -739,12 +751,22 @@ class AsyncAPIClient:
                 response = await self._client.request(method, endpoint, **kwargs)
             except (httpx.RequestError, httpx.InvalidURL) as e:
                 # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
-                self.logger.warning(
-                    "async_request_error",
-                    method=method,
-                    endpoint=endpoint,
-                    error=str(e),
-                )
+                if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
+                    # 非リトライエラー: 即 raise される致命的エラーのため ERROR レベルで記録
+                    self.logger.error(
+                        "async_request_error_non_retryable",
+                        method=method,
+                        endpoint=endpoint,
+                        error=str(e),
+                        error_type=type(e).__name__,
+                    )
+                else:
+                    self.logger.warning(
+                        "async_request_error",
+                        method=method,
+                        endpoint=endpoint,
+                        error=str(e),
+                    )
                 # TooManyRedirects/InvalidURL の場合は内部で即 raise するため代入されない
                 last_exception = _map_request_error(e)
             else:
