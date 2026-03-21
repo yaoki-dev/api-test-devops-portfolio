@@ -482,7 +482,7 @@ grep -rn "$DELETED_CMD" ~/.claude --include="*.md" | grep -v "/debug/"
 | `test-driven-development` | TDD強制 | AIが自動判断して呼び出し |
 | `systematic-debugging` | 体系的デバッグ | AIが自動判断して呼び出し |
 | `verification-before-completion` | 完了前検証 | AIが自動判断して呼び出し |
-| `dispatching-parallel-agents` | 並列エージェント | AIが自動判断して呼び出し |
+| `subagent-driven-development` | 並列エージェント | AIが自動判断して呼び出し |
 | `requesting-code-review` | コードレビュー依頼 | 手動呼び出し（※レビュースキル不足注意） |
 
 **スキル発動ルール**: 1%でも適用可能性があればAIが自動で呼び出します

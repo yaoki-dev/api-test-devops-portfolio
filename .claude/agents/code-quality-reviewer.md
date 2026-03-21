@@ -1,7 +1,7 @@
 ---
 name: code-quality-reviewer
 description: Use this agent when you need to review code for quality, maintainability, and adherence to best practices.
-tools: Glob, Grep, Bash(mgrep:*), Read, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__find_code, mcp__ast-grep__find_code_by_rule, mcp__morph-mcp__warpgrep_codebase_search, mcp__CodeGraphContext__analyze_code_relationships,mcp__CodeGraphContext__find_dead_code,mcp__CodeGraphContext__find_most_complex_functions
+tools: Glob, Grep, Bash(mgrep:*), Read, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__find_code, mcp__ast-grep__find_code_by_rule, mcp__morph-mcp__warpgrep_codebase_search, mcp__CodeGraphContext__analyze_code_relationships, mcp__CodeGraphContext__find_dead_code, mcp__CodeGraphContext__find_most_complex_functions
 model: inherit
 ---
 
