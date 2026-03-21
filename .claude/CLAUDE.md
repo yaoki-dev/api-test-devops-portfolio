@@ -21,7 +21,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 9. **ALWAYS** invoke `/xxx` skills via Skill tool when user requests
 10. **ALWAYS** follow development workflow order → Section「🔄 開発ワークフロー」
 11. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `/superpowers:verification-before-completion` → then `/reflexion:reflect`
-12. **ALWAYS** after task classification, per RULES.md exception conditions → invoke `superpowers:subagent-driven-development` skill
+12. **ALWAYS** when 2+ independent tasks exist, after task classification, per RULES.md exception conditions → invoke `superpowers:subagent-driven-development` skill
     (reason: keep the main context window clean by leveraging subagents aggressively)
 13. **ALWAYS** verify file content with Read/Grep tool BEFORE making any claim about line numbers, file structure, or code content
 14. **ALWAYS** enforce worktree boundary:

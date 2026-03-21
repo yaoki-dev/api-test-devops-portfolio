@@ -93,7 +93,7 @@ AskUserQuestion の回答・設計判断を記録する。
 - [ ] `Skill(fact-checker)` (証拠ベースの事実検証)
 - [ ] `Skill(superpowers:verification-before-completion)`（全タスク完了確認 — 未完了検出時: 修正 → 品質ゲート → 再実行 - 最大3回まで）
 - [ ] `Skill(reflexion:reflect)` （信頼度90%以上）
-- [ ] `/code-review:review-local-changes`（80点閾値通過）
+- [ ] `Skill(code-review:review-local-changes)`（80点閾値通過）
 
 **ドキュメント実装（.md 変更）**:
 
