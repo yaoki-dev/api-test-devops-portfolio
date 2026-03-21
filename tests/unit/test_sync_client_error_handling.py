@@ -8,12 +8,14 @@ Note:
     例外クラス・_safe_parse_json・_map_request_error のテストは
     test_api_client_shared.py に統合済み。
 
-テストケース一覧（12件）:
+テストケース一覧（13件）:
     - Retry (3件): exponential_backoff, 4xx_no_retry, retry_exhausted
     - Timeout (2件): timeout_error_retry, timeout_then_success
     - Connection (2件): connection_error_retry, connection_then_success
     - Mixed Errors (2件): mixed_then_success, mixed_exhaust_retries
     - HTTP Methods (3件): post_with_retry, put_4xx_no_retry, delete_with_retry
+    - Log Bypass (3件): non_retryable_error_logs_before_raise[TooManyRedirects-...],
+      non_retryable_error_logs_before_raise[InvalidURL-...], non_retryable_error_skips_retry
 """
 
 from unittest.mock import Mock, patch
@@ -312,56 +314,63 @@ def test_sync_post_with_retry(mock_backoff: Mock) -> None:
 # =============================================================================
 
 
+@pytest.mark.parametrize(
+    "exc,expected_error",
+    [
+        (httpx.TooManyRedirects("Max redirects exceeded"), "Max redirects exceeded"),
+        (httpx.InvalidURL("Invalid URL format"), "Invalid URL format"),
+    ],
+)
 @respx.mock
-def test_sync_too_many_redirects_logs_before_raise() -> None:
-    """TooManyRedirects時にlogger.warningが_map_request_error前に実行される
+def test_sync_non_retryable_error_logs_before_raise(exc: Exception, expected_error: str) -> None:
+    """非リトライエラー時にlogger.warningが_map_request_error前に実行される
 
-    _map_request_errorはTooManyRedirectsで即座にraiseするが、
+    _map_request_errorは非リトライエラーで即座にraiseするが、
     ログ出力はその前に実行されるため、デバッグ情報が失われない。
+    """
+    route = respx.get(f"{BASE_URL}/posts/1")
+    route.side_effect = exc
+
+    with capture_logs() as log_output:
+        with pytest.raises(APIClientError, match="Non-retryable request error"):
+            with SyncAPIClient(retry_count=0) as client:
+                client.get("/posts/1")
+
+    # ログが出力されていることを検証（ログバイパスが修正済み）
+    warning_logs = [
+        log
+        for log in log_output
+        if log.get("log_level") == "warning" and log.get("event") == "request_error"
+    ]
+    assert len(warning_logs) == 1, f"Expected 1 warning log, got: {log_output}"
+    assert warning_logs[0]["method"] == "GET"
+    assert warning_logs[0]["endpoint"] == "/posts/1"
+    assert expected_error in warning_logs[0]["error"]  # error フィールド検証
+
+
+@respx.mock
+def test_sync_non_retryable_error_skips_retry() -> None:
+    """retry_count>=1設定時でも非リトライエラーはリトライされない
+
+    TooManyRedirects/InvalidURL は即 raise のため、
+    retry_count を増やしても1回のみの試行で APIClientError が発生する。
     """
     route = respx.get(f"{BASE_URL}/posts/1")
     route.side_effect = httpx.TooManyRedirects("Max redirects exceeded")
 
     with capture_logs() as log_output:
         with pytest.raises(APIClientError, match="Non-retryable request error"):
-            with SyncAPIClient(retry_count=0) as client:
+            with SyncAPIClient(retry_count=2) as client:
                 client.get("/posts/1")
 
-    # ログが出力されていることを検証（ログバイパスが修正済み）
+    # リトライされていないことを確認
+    assert route.call_count == 1, "非リトライエラーは1回のみ試行される"
     warning_logs = [
         log
         for log in log_output
         if log.get("log_level") == "warning" and log.get("event") == "request_error"
     ]
-    assert len(warning_logs) == 1, f"Expected 1 warning log, got: {log_output}"
-    assert warning_logs[0]["method"] == "GET"
-    assert warning_logs[0]["endpoint"] == "/posts/1"
-
-
-@respx.mock
-def test_sync_invalid_url_logs_before_raise() -> None:
-    """InvalidURL時にlogger.warningが_map_request_error前に実行される
-
-    _map_request_errorはInvalidURLで即座にraiseするが、
-    ログ出力はその前に実行されるため、デバッグ情報が失われない。
-    """
-    route = respx.get(f"{BASE_URL}/posts/1")
-    route.side_effect = httpx.InvalidURL("Invalid URL format")
-
-    with capture_logs() as log_output:
-        with pytest.raises(APIClientError, match="Non-retryable request error"):
-            with SyncAPIClient(retry_count=0) as client:
-                client.get("/posts/1")
-
-    # ログが出力されていることを検証（ログバイパスが修正済み）
-    warning_logs = [
-        log
-        for log in log_output
-        if log.get("log_level") == "warning" and log.get("event") == "request_error"
-    ]
-    assert len(warning_logs) == 1, f"Expected 1 warning log, got: {log_output}"
-    assert warning_logs[0]["method"] == "GET"
-    assert warning_logs[0]["endpoint"] == "/posts/1"
+    assert len(warning_logs) == 1, "ログは1件のみ出力される（リトライなし）"
 
 
 # =============================================================================

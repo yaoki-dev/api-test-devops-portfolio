@@ -1,4 +1,4 @@
-"""基本的な同期HTTPAPIクライアント
+"""同期・非同期HTTPAPIクライアント
 
 学習目標:
 - HTTPクライアントの設計パターン
@@ -258,6 +258,11 @@ class SyncAPIClient:
             APIHTTPError: HTTPステータスエラー
             APIRetryError: リトライ上限エラー
 
+        Note:
+            TooManyRedirects/InvalidURL は _map_request_error() 内で即 raise されるため、
+            APIRetryError ではなく APIClientError として呼び出し元に届く。
+            呼び出し元は APIClientError で捕捉すること。
+
         """
         last_exception: APIClientError | None = None
 
@@ -280,9 +285,8 @@ class SyncAPIClient:
                 response = self._client.request(method, endpoint, **kwargs)
             except (httpx.RequestError, httpx.InvalidURL) as e:
                 # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
-                # 全エラーパスでログを確実に出力するため先行記録
-                # （TooManyRedirects/InvalidURL は即 raise のため後続行に到達しない）
                 self.logger.warning("request_error", method=method, endpoint=endpoint, error=str(e))
+                # 注意: logger.warning()が例外をスローした場合、_map_request_errorは呼ばれない
                 last_exception = _map_request_error(e)
             else:
                 # ネットワーク成功時のみHTTPステータス処理
@@ -706,6 +710,11 @@ class AsyncAPIClient:
             APIHTTPError: HTTPステータスエラー
             APIRetryError: リトライ上限エラー
 
+        Note:
+            TooManyRedirects/InvalidURL は _map_request_error() 内で即 raise されるため、
+            APIRetryError ではなく APIClientError として呼び出し元に届く。
+            呼び出し元は APIClientError で捕捉すること。
+
         """
         last_exception: APIClientError | None = None
 
@@ -728,14 +737,13 @@ class AsyncAPIClient:
                 response = await self._client.request(method, endpoint, **kwargs)
             except (httpx.RequestError, httpx.InvalidURL) as e:
                 # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
-                # 全エラーパスでログを確実に出力するため先行記録
-                # （TooManyRedirects/InvalidURL は即 raise のため後続行に到達しない）
                 self.logger.warning(
                     "async_request_error",
                     method=method,
                     endpoint=endpoint,
                     error=str(e),
                 )
+                # 注意: logger.warning()が例外をスローした場合、_map_request_errorは呼ばれない
                 last_exception = _map_request_error(e)
             else:
                 # ネットワーク成功時のみHTTPステータス処理
