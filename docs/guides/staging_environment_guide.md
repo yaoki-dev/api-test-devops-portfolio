@@ -4,11 +4,7 @@
 
 ## 概要
 
-Staging環境はproduction同等のセキュリティポリシーが適用されます。
-`config/settings.py` の `_PRODUCTION_LIKE_ENVIRONMENTS` により、
-staging と production は同一のバリデーションを受けます。
-
-**影響範囲**: シークレット必須化 + HTTPS強制
+Staging環境はproduction同等のセキュリティポリシー（シークレット必須化・HTTPS強制）が適用されます。
 
 ## 必須環境変数
 
@@ -17,28 +13,28 @@ Staging環境（`ENVIRONMENT=staging`）では以下が必須です。
 ### シークレット（いずれか1つ以上）
 
 ```bash
-SECURITY__API_KEY="your-api-key"       # API認証キー
-SECURITY__JWT_SECRET="your-jwt-secret" # JWT署名シークレット
+SECURITY__API_KEY=<REPLACE_WITH_API_KEY>        # API認証キー
+SECURITY__JWT_SECRET=<REPLACE_WITH_JWT_SECRET>  # JWT署名シークレット
 ```
 
 `api_key` と `jwt_secret` の少なくとも一方を設定してください。
-両方未設定の場合、アプリケーション起動時に `ValueError` が発生します。
+両方未設定の場合、アプリケーション起動時に `ValidationError` が発生します。
 
 ### HTTPS必須
 
 ```bash
-API__BASE_URL=https://staging-api.example.com  # https:// 必須
+API__BASE_URL=https://<REPLACE_WITH_STAGING_API_URL>  # https:// 必須
 ```
 
-`http://` を指定すると `ValueError` が発生します。
+`http://` を指定すると `ValidationError` が発生します。
 
 ## .envファイル例（staging用）
 
 ```bash
 ENVIRONMENT=staging
 DEBUG=false
-API__BASE_URL=https://staging-api.example.com
-SECURITY__API_KEY="your-staging-key"  # placeholder example
+API__BASE_URL=https://<REPLACE_WITH_STAGING_API_URL>
+SECURITY__API_KEY=<REPLACE_WITH_STAGING_API_KEY>
 LOG__LEVEL=INFO
 SENTRY__ENABLED=true
 SENTRY__ENVIRONMENT=staging
@@ -56,7 +52,8 @@ SENTRY__ENVIRONMENT=staging
 ### シークレット未設定
 
 ```text
-ValueError: Staging environment requires at least one of: SECURITY__API_KEY or SECURITY__JWT_SECRET
+pydantic_core._pydantic_core.ValidationError: 1 validation error for Settings
+  Value error, Staging environment requires at least one of: SECURITY__API_KEY or SECURITY__JWT_SECRET [type=value_error, ...]
 ```
 
 **対処**: `SECURITY__API_KEY` または `SECURITY__JWT_SECRET` を `.env` に追加してください。
@@ -64,26 +61,14 @@ ValueError: Staging environment requires at least one of: SECURITY__API_KEY or S
 ### HTTP URL使用
 
 ```text
-ValueError: Staging environment requires HTTPS. Set API__BASE_URL to an https:// URL.
+pydantic_core._pydantic_core.ValidationError: 1 validation error for Settings
+  Value error, Staging environment requires HTTPS. Set API__BASE_URL to an https:// URL. [type=value_error, ...]
 ```
 
 **対処**: `API__BASE_URL` を `https://` で始まるURLに変更してください。
 
-## 技術的背景
-
-バリデーションは `config/settings.py` の以下のバリデータで実行されます。
-
-- `validate_production_secrets`（model_validator）: シークレット存在チェック
-- `validate_production_https`（model_validator）: HTTPS強制チェック
-
-対象環境の定義:
-
-```python
-_PRODUCTION_LIKE_ENVIRONMENTS = frozenset({Environment.PRODUCTION, Environment.STAGING})
-```
-
 ## 参考
 
-- `config/settings.py` L424-532: バリデータ実装
+- `config/settings.py` L492-532: バリデータ実装（`validate_production_secrets` / `validate_production_https`）
 - `.env.example`: 環境変数テンプレート
 - [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)
