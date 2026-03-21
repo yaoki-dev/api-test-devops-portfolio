@@ -340,7 +340,7 @@ class TestProductionSecretValidation:
 
     def test_staging_without_secrets_raises_error(self):
         """ステージング環境でシークレット未設定時にエラー (STAGING=本番同等ポリシー)"""
-        with pytest.raises(ValidationError, match="Staging environment requires"):
+        with pytest.raises(ValidationError, match="SECURITY__API_KEY or SECURITY__JWT_SECRET"):
             Settings(
                 environment=Environment.STAGING,
                 api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),

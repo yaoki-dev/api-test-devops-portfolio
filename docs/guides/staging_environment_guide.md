@@ -34,7 +34,7 @@ API__BASE_URL=https://<REPLACE_WITH_STAGING_API_URL>  # https:// 必須
 ENVIRONMENT=staging
 DEBUG=false
 API__BASE_URL=https://<REPLACE_WITH_STAGING_API_URL>
-ALLOWED_DOMAINS=<REPLACE_WITH_STAGING_API_DOMAIN>
+ALLOWED_DOMAINS=<REPLACE_WITH_STAGING_API_DOMAIN>  # デフォルトリストを上書き（置換）。複数ドメイン必要な場合はカンマ区切りで全て列挙
 SECURITY__API_KEY=<REPLACE_WITH_STAGING_API_KEY>
 LOG__LEVEL=INFO
 SENTRY__ENABLED=true
@@ -47,7 +47,7 @@ SENTRY__DSN=<REPLACE_WITH_SENTRY_DSN>
 1. `.env` の `ENVIRONMENT` を `staging` に変更
 2. `SECURITY__API_KEY` または `SECURITY__JWT_SECRET` を設定
 3. `API__BASE_URL` を `https://` URLに変更
-4. アプリ起動時にValidationErrorが発生しなければ設定は正常です。
+4. アプリ起動時（Pydantic Settingsインスタンス化）にValidationErrorが発生しなければ設定は正常である。
 
 ## エラーメッセージと対処法
 
