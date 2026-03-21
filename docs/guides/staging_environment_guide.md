@@ -45,7 +45,9 @@ SENTRY__ENVIRONMENT=staging
 1. `.env` の `ENVIRONMENT` を `staging` に変更
 2. `SECURITY__API_KEY` または `SECURITY__JWT_SECRET` を設定
 3. `API__BASE_URL` を `https://` URLに変更
-4. `uv run python -c "from config.settings import settings; print(settings.environment)"` で検証
+4. `uv run python -c "from config.settings import settings; print(f'環境: {settings.environment}')"` で検証
+   - `環境: staging` → 成功
+   - `環境: development` → `.env` の `ENVIRONMENT=staging` 設定を確認（プロジェクトルートで実行すること）
 
 ## エラーメッセージと対処法
 
