@@ -98,10 +98,10 @@ AskUserQuestion の回答・設計判断を記録する。
 **ドキュメント実装（.md 変更）**:
 
 - [ ] `npm run lint:md && npm run lint:text` 全pass
-- [ ] `/superpowers:verification-before-completion`（全タスク完了確認 — 未完了検出時: 修正 → 品質ゲート → 再実行 - 最大3回まで）
-- [ ] `/reflexion:reflect`（信頼度90%以上）
-- [ ] `/pr-review-toolkit:review-pr`
-- ※ PRレビューは CLAUDE.md Step 8 ELSE節（`/pr-review-toolkit:review-pr`）に委譲
+- [ ] `Skill(superpowers:verification-before-completion)`（全タスク完了確認 — 未完了検出時: 修正 → 品質ゲート → 再実行 - 最大3回まで）
+- [ ] `Skill(reflexion:reflect)`（信頼度90%以上）
+- [ ] `Skill(pr-review-toolkit:review-pr)`
+- ※ PRレビューは CLAUDE.md Step 8 ELSE節（`Skill(pr-review-toolkit:review-pr)`）に委譲
 
 **設定ファイル変更（*.yml / pyproject.toml / config/）**:
 
