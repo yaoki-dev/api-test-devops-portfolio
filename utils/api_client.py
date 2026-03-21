@@ -1,4 +1,4 @@
-"""基本的な同期HTTPAPIクライアント
+"""同期・非同期HTTPAPIクライアント
 
 学習目標:
 - HTTPクライアントの設計パターン
@@ -126,7 +126,7 @@ def _map_request_error(e: httpx.RequestError | httpx.InvalidURL) -> APIClientErr
     """httpxネットワーク例外をカスタム例外にマッピング
 
     Args:
-        e: httpx.RequestError または そのサブクラス
+        e: httpx.RequestError または httpx.InvalidURL（またはそのサブクラス）
 
     Returns:
         適切なAPIClientErrorサブクラス
@@ -257,6 +257,12 @@ class SyncAPIClient:
             APITimeoutError: タイムアウトエラー
             APIHTTPError: HTTPステータスエラー
             APIRetryError: リトライ上限エラー
+            APIClientError: 非リトライエラー（TooManyRedirects / InvalidURL）
+
+        Note:
+            TooManyRedirects/InvalidURL は _map_request_error() 内で即 raise されるため、
+            APIRetryError ではなく APIClientError として呼び出し元に届く。
+            呼び出し元は APIClientError で捕捉すること。
 
         """
         last_exception: APIClientError | None = None
@@ -280,8 +286,21 @@ class SyncAPIClient:
                 response = self._client.request(method, endpoint, **kwargs)
             except (httpx.RequestError, httpx.InvalidURL) as e:
                 # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
+                if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
+                    # 非リトライエラー: 即 raise される致命的エラーのため ERROR レベルで記録
+                    self.logger.error(
+                        "request_error_non_retryable",
+                        method=method,
+                        endpoint=endpoint,
+                        error=str(e),
+                        error_type=type(e).__name__,
+                    )
+                else:
+                    self.logger.warning(
+                        "request_error", method=method, endpoint=endpoint, error=str(e)
+                    )
+                # TooManyRedirects/InvalidURL の場合は内部で即 raise するため代入されない
                 last_exception = _map_request_error(e)
-                self.logger.warning("Request error", method=method, endpoint=endpoint, error=str(e))
             else:
                 # ネットワーク成功時のみHTTPステータス処理
                 try:
@@ -680,7 +699,7 @@ class AsyncAPIClient:
         """クライアントのクローズ"""
         if self._client:
             await self._client.aclose()
-            self.logger.info("AsyncAPIClient closed")
+            self.logger.info("async_api_client_closed")
 
     async def _make_request_with_retry(
         self,
@@ -703,6 +722,12 @@ class AsyncAPIClient:
             APITimeoutError: タイムアウトエラー
             APIHTTPError: HTTPステータスエラー
             APIRetryError: リトライ上限エラー
+            APIClientError: 非リトライエラー（TooManyRedirects / InvalidURL）
+
+        Note:
+            TooManyRedirects/InvalidURL は _map_request_error() 内で即 raise されるため、
+            APIRetryError ではなく APIClientError として呼び出し元に届く。
+            呼び出し元は APIClientError で捕捉すること。
 
         """
         last_exception: APIClientError | None = None
@@ -726,13 +751,24 @@ class AsyncAPIClient:
                 response = await self._client.request(method, endpoint, **kwargs)
             except (httpx.RequestError, httpx.InvalidURL) as e:
                 # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
+                if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
+                    # 非リトライエラー: 即 raise される致命的エラーのため ERROR レベルで記録
+                    self.logger.error(
+                        "async_request_error_non_retryable",
+                        method=method,
+                        endpoint=endpoint,
+                        error=str(e),
+                        error_type=type(e).__name__,
+                    )
+                else:
+                    self.logger.warning(
+                        "async_request_error",
+                        method=method,
+                        endpoint=endpoint,
+                        error=str(e),
+                    )
+                # TooManyRedirects/InvalidURL の場合は内部で即 raise するため代入されない
                 last_exception = _map_request_error(e)
-                self.logger.warning(
-                    "Async request error",
-                    method=method,
-                    endpoint=endpoint,
-                    error=str(e),
-                )
             else:
                 # ネットワーク成功時のみHTTPステータス処理
                 try:
