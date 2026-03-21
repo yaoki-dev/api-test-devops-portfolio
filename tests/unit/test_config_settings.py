@@ -361,7 +361,7 @@ class TestProductionSecretValidation:
         settings = Settings(
             environment=Environment.STAGING,
             security=SecurityConfig(jwt_secret=SecretStr("test-secret")),
-            api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),
+            api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),  # HTTPS必須
         )
         assert settings.environment == Environment.STAGING
 
