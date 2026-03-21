@@ -286,7 +286,6 @@ class SyncAPIClient:
             except (httpx.RequestError, httpx.InvalidURL) as e:
                 # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
                 self.logger.warning("request_error", method=method, endpoint=endpoint, error=str(e))
-                # 注意: logger.warning()が例外をスローした場合、_map_request_errorは呼ばれない
                 last_exception = _map_request_error(e)
             else:
                 # ネットワーク成功時のみHTTPステータス処理
@@ -743,7 +742,6 @@ class AsyncAPIClient:
                     endpoint=endpoint,
                     error=str(e),
                 )
-                # 注意: logger.warning()が例外をスローした場合、_map_request_errorは呼ばれない
                 last_exception = _map_request_error(e)
             else:
                 # ネットワーク成功時のみHTTPステータス処理

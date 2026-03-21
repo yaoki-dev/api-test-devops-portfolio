@@ -8,7 +8,7 @@ Note:
     例外クラス・_safe_parse_json・_map_request_error のテストは
     test_api_client_shared.py に統合済み。
 
-テストケース一覧（13件）:
+テストケース一覧（15件）:
     - Retry (3件): server_error_then_success, exhausted, 4xx_no_retry
     - Timeout (2件): timeout_error_retry, timeout_then_success
     - Connection (2件): connection_error_retry, connection_then_success
@@ -324,7 +324,7 @@ async def test_async_delete_with_retry(mock_backoff: Mock) -> None:
 )
 @respx.mock
 async def test_async_non_retryable_error_logs_before_raise(
-    exc: httpx.RequestError, expected_error: str
+    exc: httpx.TooManyRedirects | httpx.InvalidURL, expected_error: str
 ) -> None:
     """非リトライエラー時にlogger.warningが_map_request_error前に実行される
 
