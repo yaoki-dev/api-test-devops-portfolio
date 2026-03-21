@@ -1,6 +1,6 @@
 # Staging環境セットアップガイド
 
-*最終更新: 2026年03月20日*
+*最終更新: 2026年03月21日*
 
 ## 概要
 
@@ -34,10 +34,12 @@ API__BASE_URL=https://<REPLACE_WITH_STAGING_API_URL>  # https:// 必須
 ENVIRONMENT=staging
 DEBUG=false
 API__BASE_URL=https://<REPLACE_WITH_STAGING_API_URL>
+ALLOWED_DOMAINS=<REPLACE_WITH_STAGING_API_DOMAIN>
 SECURITY__API_KEY=<REPLACE_WITH_STAGING_API_KEY>
 LOG__LEVEL=INFO
 SENTRY__ENABLED=true
 SENTRY__ENVIRONMENT=staging
+SENTRY__DSN=<REPLACE_WITH_SENTRY_DSN>
 ```
 
 ## 移行手順（development → staging）
@@ -45,9 +47,7 @@ SENTRY__ENVIRONMENT=staging
 1. `.env` の `ENVIRONMENT` を `staging` に変更
 2. `SECURITY__API_KEY` または `SECURITY__JWT_SECRET` を設定
 3. `API__BASE_URL` を `https://` URLに変更
-4. `uv run python -c "from config.settings import settings; print(f'環境: {settings.environment}')"` で検証
-   - `環境: staging` → 成功
-   - `環境: development` → `.env` の `ENVIRONMENT=staging` 設定を確認（プロジェクトルートで実行すること）
+4. アプリ起動時にValidationErrorが発生しなければ設定は正常です。
 
 ## エラーメッセージと対処法
 
@@ -69,8 +69,16 @@ pydantic_core._pydantic_core.ValidationError: 1 validation error for Settings
 
 **対処**: `API__BASE_URL` を `https://` で始まるURLに変更してください。
 
+### Domain not in allowlist
+
+```text
+pydantic_core._pydantic_core.ValidationError: 1 validation error for Settings
+  Value error, SSRF Prevention: Domain not in allowlist: <staging-domain>. Allowed domains count: N [type=value_error, ...]
+```
+
+**対処**: `ALLOWED_DOMAINS=<staging-domain>` を `.env` に追加してください。
+
 ## 参考
 
 - `config/settings.py`: バリデータ実装（`validate_production_secrets` / `validate_production_https`）
 - `.env.example`: 環境変数テンプレート
-- [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)
