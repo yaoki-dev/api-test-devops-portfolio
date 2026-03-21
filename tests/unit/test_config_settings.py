@@ -356,6 +356,17 @@ class TestProductionSecretValidation:
         )
         assert settings.environment == Environment.STAGING
 
+    def test_staging_with_jwt_secret_valid(self):
+        """ステージング環境でjwt_secret設定時は有効"""
+        settings = Settings(
+            environment=Environment.STAGING,
+            security=SecurityConfig(jwt_secret=SecretStr("test-secret")),
+            api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),
+        )
+        assert settings.environment == Environment.STAGING
+        assert settings.security.jwt_secret is not None
+        assert settings.security.api_key is None
+
 
 class TestProductionHTTPSValidation:
     """本番環境でのHTTPS強制テスト"""

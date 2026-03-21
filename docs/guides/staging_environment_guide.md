@@ -17,7 +17,7 @@ SECURITY__API_KEY=<REPLACE_WITH_API_KEY>        # API認証キー
 SECURITY__JWT_SECRET=<REPLACE_WITH_JWT_SECRET>  # JWT署名シークレット
 ```
 
-`api_key` と `jwt_secret` の少なくとも一方を設定してください。
+`SECURITY__API_KEY` と `SECURITY__JWT_SECRET` の少なくとも一方を設定してください。
 両方未設定の場合、アプリケーション起動時に `ValidationError` が発生します。
 
 ### HTTPS必須
@@ -69,6 +69,6 @@ pydantic_core._pydantic_core.ValidationError: 1 validation error for Settings
 
 ## 参考
 
-- `config/settings.py` L492-532: バリデータ実装（`validate_production_secrets` / `validate_production_https`）
+- `config/settings.py` L491-532: バリデータ実装（`validate_production_secrets` / `validate_production_https`）
 - `.env.example`: 環境変数テンプレート
 - [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)
