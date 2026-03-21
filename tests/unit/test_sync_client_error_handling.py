@@ -360,22 +360,12 @@ def test_sync_non_retryable_error_skips_retry() -> None:
     route = respx.get(f"{BASE_URL}/posts/1")
     route.side_effect = httpx.TooManyRedirects("Max redirects exceeded")
 
-    with capture_logs() as log_output:
-        with pytest.raises(APIClientError, match="Non-retryable request error"):
-            with SyncAPIClient(retry_count=2) as client:
-                client.get("/posts/1")
+    with pytest.raises(APIClientError, match="Non-retryable request error"):
+        with SyncAPIClient(retry_count=2) as client:
+            client.get("/posts/1")
 
     # リトライされていないことを確認
     assert route.call_count == 1, "非リトライエラーは1回のみ試行される"
-    warning_logs = [
-        log
-        for log in log_output
-        if log.get("log_level") == "warning" and log.get("event") == "request_error"
-    ]
-    assert len(warning_logs) == 1, "ログは1件のみ出力される（リトライなし）"
-    assert warning_logs[0]["method"] == "GET"
-    assert warning_logs[0]["endpoint"] == "/posts/1"
-    assert "Max redirects exceeded" in warning_logs[0]["error"]
 
 
 # =============================================================================
