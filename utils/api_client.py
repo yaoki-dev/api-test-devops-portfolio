@@ -126,7 +126,7 @@ def _map_request_error(e: httpx.RequestError | httpx.InvalidURL) -> APIClientErr
     """httpxネットワーク例外をカスタム例外にマッピング
 
     Args:
-        e: httpx.RequestError または そのサブクラス
+        e: httpx.RequestError または httpx.InvalidURL（またはそのサブクラス）
 
     Returns:
         適切なAPIClientErrorサブクラス
@@ -287,6 +287,7 @@ class SyncAPIClient:
             except (httpx.RequestError, httpx.InvalidURL) as e:
                 # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
                 self.logger.warning("request_error", method=method, endpoint=endpoint, error=str(e))
+                # TooManyRedirects/InvalidURL の場合は内部で即 raise するため代入されない
                 last_exception = _map_request_error(e)
             else:
                 # ネットワーク成功時のみHTTPステータス処理
@@ -744,6 +745,7 @@ class AsyncAPIClient:
                     endpoint=endpoint,
                     error=str(e),
                 )
+                # TooManyRedirects/InvalidURL の場合は内部で即 raise するため代入されない
                 last_exception = _map_request_error(e)
             else:
                 # ネットワーク成功時のみHTTPステータス処理
