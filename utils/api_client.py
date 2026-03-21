@@ -257,6 +257,7 @@ class SyncAPIClient:
             APITimeoutError: タイムアウトエラー
             APIHTTPError: HTTPステータスエラー
             APIRetryError: リトライ上限エラー
+            APIClientError: 非リトライエラー（TooManyRedirects / InvalidURL）
 
         Note:
             TooManyRedirects/InvalidURL は _map_request_error() 内で即 raise されるため、
@@ -708,6 +709,7 @@ class AsyncAPIClient:
             APITimeoutError: タイムアウトエラー
             APIHTTPError: HTTPステータスエラー
             APIRetryError: リトライ上限エラー
+            APIClientError: 非リトライエラー（TooManyRedirects / InvalidURL）
 
         Note:
             TooManyRedirects/InvalidURL は _map_request_error() 内で即 raise されるため、

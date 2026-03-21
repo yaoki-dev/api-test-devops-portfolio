@@ -352,7 +352,7 @@ def test_sync_non_retryable_error_logs_before_raise(
 
 @respx.mock
 def test_sync_non_retryable_error_skips_retry() -> None:
-    """retry_count>=1設定時でも非リトライエラーはリトライされない
+    """retry_count>=1設定時でも非リトライエラーはリトライループを即 raise で脱出する
 
     TooManyRedirects/InvalidURL は即 raise のため、
     retry_count を増やしても1回のみの試行で APIClientError が発生する。
@@ -373,6 +373,9 @@ def test_sync_non_retryable_error_skips_retry() -> None:
         if log.get("log_level") == "warning" and log.get("event") == "request_error"
     ]
     assert len(warning_logs) == 1, "ログは1件のみ出力される（リトライなし）"
+    assert warning_logs[0]["method"] == "GET"
+    assert warning_logs[0]["endpoint"] == "/posts/1"
+    assert "Max redirects exceeded" in warning_logs[0]["error"]
 
 
 # =============================================================================
