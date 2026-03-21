@@ -13,15 +13,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 1. **ALWAYS** respond in `Japanese` for all outputs, including skill usage
 2. **ALWAYS** create a task list using `todowrite` before starting any work (exception: obvious single-step trivial tasks; RULES.md Workflow Rules "TodoWrite (3+ tasks)" qualifier)
 3. **ALWAYS** use AskUserQuestion for 2+ distinct user choices
-4. **NEVER** use `git commit` → **ALWAYS** use `/commit`
-5. **NEVER** use `gh pr create` → **ALWAYS** use `/push-pr`
-6. **NEVER** use `gh issue create` → **ALWAYS** use `/create-issue`
+4. **NEVER** use `git commit` → **ALWAYS** use `Skill(commit)`
+5. **NEVER** use `gh pr create` → **ALWAYS** use `Skill(push-pr)`
+6. **NEVER** use `gh issue create` → **ALWAYS** use `Skill(create-issue)`
 7. **ALWAYS** pass quality gates before commit → @memory:implementation_quality_gates
 8. **NEVER** push to protected branches (main/develop) directly
 9. **ALWAYS** invoke `/xxx` skills via Skill tool when user requests
 10. **ALWAYS** follow development workflow order → Section「🔄 開発ワークフロー」
-11. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `/superpowers:verification-before-completion` → then `/reflexion:reflect`
-12. **ALWAYS** when 2+ independent tasks exist, after task classification, per RULES.md exception conditions → invoke `superpowers:subagent-driven-development` skill
+11. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `Skill(superpowers:verification-before-completion)` → then `Skill(reflexion:reflect)`
+12. **ALWAYS** when 2+ independent tasks exist, after task classification, per RULES.md exception conditions → invoke `Skill(superpowers:subagent-driven-development)` skill
     (reason: keep the main context window clean by leveraging subagents aggressively)
 13. **ALWAYS** verify file content with Read/Grep tool BEFORE making any claim about line numbers, file structure, or code content
 14. **ALWAYS** enforce worktree boundary:
@@ -285,19 +285,19 @@ git checkout -b feature/<次のタスク> origin/develop
 | コマンド/スキル | 種別 | 発動トリガー | 用途 |
 |----------------|------------|------|------|
 | `security-guidance` | Hook | Edit/Write時 | 自動警告（明示的呼出不要） |
-| `/superpowers:verification-before-completion` | Skill | タスク完了時（reflect前） | 作業完了証拠確認|
-| `/reflexion:reflect` | Skill | タスク完了時・reflect | deep reflect実行（セルフレビュー） |
-| `/code-review:review-local-changes` | Skill | reflect完了後 | 6並列エージェントレビュー（80点閾値） |
+| `Skill(superpowers:verification-before-completion)` | Skill | タスク完了時（reflect前） | 作業完了証拠確認|
+| `Skill(reflexion:reflect)` | Skill | タスク完了時・reflect | deep reflect実行（セルフレビュー） |
+| `Skill(code-review:review-local-changes)` | Skill | reflect完了後 | 6並列エージェントレビュー（80点閾値） |
 
 ### High（開発標準）
 
 | コマンド/スキル | 種別 |  発動トリガー | 用途 |
 |----------------|------------|------|------|
-| `/create-issue` | Skill | Issue作成 | Issue駆動開発支援 |
+| `Skill(create-issue)` | Skill | Issue作成 | Issue駆動開発支援 |
 | `/git:feature`, `/git:hotfix` | Command | ブランチ作成時 | Git Flowブランチ管理 |
-| `/commit`, `/push-pr` | Skill | コミット/Push・PR作成時 | 品質チェック付きコミット+日本語PR |
-| `/code-review:review-pr` (CEK) | Skill | 重要PR時 | セキュリティ・バグ・API契約レビュー |
-| `/pr-review-toolkit:review-pr` | Skill | git push完了後、PR作成前 | 6エージェント品質レビュー |
+| `Skill(commit)`, `Skill(push-pr)` | Skill | コミット/Push・PR作成時 | 品質チェック付きコミット+日本語PR |
+| `Skill(code-review:review-pr)` (CEK) | Skill | 重要PR時 | セキュリティ・バグ・API契約レビュー |
+| `Skill(pr-review-toolkit:review-pr)` | Skill | git push完了後、PR作成前 | 6エージェント品質レビュー |
 | `/test-coverage`, `/generate-tests` | Command | テスト関連時 | カバレッジ分析・テスト生成 |
 
 ### Medium（必要時）
@@ -307,9 +307,9 @@ git checkout -b feature/<次のタスク> origin/develop
 | `/sc:document` |  Command |ドキュメント作成時 | コンポーネント/API/ガイド生成 |
 | `/docs:update-docs` | Command | 実装後ドキュメント更新時 | マルチエージェント品質レビュー |
 | `/docs-maintenance` | Command | ドキュメント品質監査時 | リンク検証・スタイル一貫性 |
-| `/decision-helper` | Skill | 2+選択肢の比較評価時 | Pros/Cons・Decision Matrix・ICEフレームワーク |
-| `/fact-checker` | Skill | 主張・データの事実確認時 | 証拠ベースのファクトチェック・情報信頼性評価 |
-| `/prompt-lookup`, `/skill-lookup` | Skill | 検索時 | プロンプト/スキル発見 |
+| `Skill(decision-helper)` | Skill | 2+選択肢の比較評価時 | Pros/Cons・Decision Matrix・ICEフレームワーク |
+| `Skill(fact-checker)` | Skill | 主張・データの事実確認時 | 証拠ベースのファクトチェック・情報信頼性評価 |
+| `Skill(prompt-lookup)`, `Skill(skill-lookup)` | Skill | 検索時 | プロンプト/スキル発見 |
 
 <!-- preserve-on-compact: Development Workflow -->
 ## 🔄 開発ワークフロー（標準コマンド実行順序）
@@ -329,26 +329,26 @@ git checkout -b feature/<次のタスク> origin/develop
    → For non-trivial changes, ask: "Is there a more elegant implementation?"
    → If it feels hacky, ask: "Given what I know now, what's the most elegant approach?"
    → Skip for obvious single-line fixes
-4. 作業完了確認 → `/superpowers:verification-before-completion` を Skill tool で実行
+4. 作業完了確認 → `Skill(superpowers:verification-before-completion)` を実行
    → 未完了作業あり: 修正 → 3. 品質ゲートに戻る（最大3回まで。4回連続失敗時はユーザーに報告して停止）
-5. reflect(タスクごとに実施) → `/reflexion:reflect` を Skill tool で実行
+5. reflect(タスクごとに実施) → `Skill(reflexion:reflect)` を Skill tool で実行
    引数: deep reflect if less than 90% confidence. 日本語で簡潔に回答
    自動ループ:
     - 信頼度90%未満: 改善して再実行（各反復で信頼度と改善理由を簡潔に示す）/ 90%以上 → 終了 - 最大3回まで
     - 4回連続失敗時（信頼度90%未満継続）はユーザーに報告して停止
-6. コミット前レビュー → /code-review:review-local-changes (80点閾値)
-7. コミット   → /commit【git commit禁止】
+6. コミット前レビュー → Skill(code-review:review-local-changes) (80点閾値)
+7. コミット   → Skill(commit)【git commit禁止】
 
 【レビューフェーズ】
 8. IF (≥200行 OR セキュリティ OR API OR hotfix):
-      → /code-review:review-pr（CEK）
+      → Skill(code-review:review-pr)（CEK）
     ELSE(Include doc update):
-      → /pr-review-toolkit:review-pr
+      → Skill(pr-review-toolkit:review-pr)
 
 【PUSH/PR/マージフェーズ】
 9. PR前レビュー → 規模判定ルール適用【※3参照】
-10. PR作成     → /push-pr【gh pr create禁止】
-11. レビュー対応 → 修正 → 品質ゲート → /commit → push
+10. PR作成     → Skill(push-pr)【gh pr create禁止】
+11. レビュー対応 → 修正 → 品質ゲート → Skill(commit) → push
 12. マージ実行  → マージ戦略【※4参照】
 13. クリーンアップ → `git fetch --prune origin` + `/git:clean-gone`（worktree: 固定運用のため削除しない）
 ```
@@ -362,8 +362,8 @@ uv run ruff check . && uv run mypy utils/ config/ models/`
 
 | 条件 | レビューツール |
 |------|--------------|
-| セキュリティファイル変更 OR ≥200行 OR API契約変更 | `/code-review:review-pr` (CEK) |
-| <200行 AND 非セキュリティ | `/pr-review-toolkit:review-pr` |
+| セキュリティファイル変更 OR ≥200行 OR API契約変更 | `Skill(code-review:review-pr)` (CEK) |
+| <200行 AND 非セキュリティ | `Skill(pr-review-toolkit:review-pr)` |
 
 セキュリティ関連: `utils/sentry_init.py`, `utils/logger.py`, `config/settings.py`, `*.env*`
 API契約変更対象: `models/responses.py`, `utils/api_client.py` public methods
