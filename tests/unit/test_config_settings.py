@@ -179,7 +179,7 @@ class TestSettingsEnvironmentValidation:
             settings = Settings(
                 environment=env_input,  # type: ignore[arg-type]
                 security=SecurityConfig(api_key=SecretStr("test-key")),
-                api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),
+                api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),  # https required
             )
         else:
             settings = Settings(environment=env_input)  # type: ignore[arg-type]
@@ -361,7 +361,7 @@ class TestProductionSecretValidation:
         settings = Settings(
             environment=Environment.STAGING,
             security=SecurityConfig(jwt_secret=SecretStr("test-secret")),
-            api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),  # HTTPS必須
+            api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),  # https required
         )
         assert settings.environment == Environment.STAGING
 
