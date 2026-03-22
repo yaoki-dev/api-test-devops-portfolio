@@ -24,7 +24,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     **GSD使用時**: 詳細は開発ワークフロー Step 4参照
 12. **ALWAYS** when 2+ independent tasks exist, after task classification, per RULES.md exception conditions → invoke `Skill(superpowers:subagent-driven-development)` skill
     (reason: keep the main context window clean by leveraging subagents aggressively)
-    **例外**: RULES.md「GSD exception」参照（wave判定基準・フェイルセーフ・コンテキスト圧縮時の対処を含む）。
+    **例外**: RULES.md「Workflow Rules」カテゴリ「Parallel Dispatch Rule」内の「GSD exception」参照（wave判定基準・フェイルセーフ・コンテキスト圧縮時の対処を含む）。
 13. **ALWAYS** verify file content with Read/Grep tool BEFORE making any claim about line numbers, file structure, or code content
 14. **ALWAYS** enforce worktree boundary:
     - At conversation start (including post-compact context reload): run `git rev-parse --show-toplevel`:
@@ -342,10 +342,12 @@ git checkout -b feature/<次のタスク> origin/develop
    → Skip for obvious single-line fixes
 4. 作業完了確認 → `Skill(superpowers:verification-before-completion)` を実行（GSD使用時は下記フロー参照）
    → GSD使用時: /gsd:verify-work → Skill(superpowers:verification-before-completion) → Skill(reflexion:reflect)
-     （GSDフローが完走した場合のみStep 5をスキップ。完走の定義: /gsd:verify-workが明示的な成功応答（非エラー・非空応答）を返し、全waveの完了がコンテキスト上確認できる場合のみ。それ以外はStep 5を実行する（false-negative禁止）。ループ発動時はGSDフロー未完走のためStep 5を実行する）
+     （GSDフロー完走時のみ Step 5 をスキップ:
+       - 完走定義: `/gsd:verify-work` が明示的な成功応答（非エラー・非空応答）を返した場合のみ
+       - 未完走・その他すべての場合は Step 5 を実行する（false-negative 禁止）
+       - ループ発動時は GSD フロー未完走とみなし Step 5 を実行する）
    → 未完了作業あり: 修正 → 3. 品質ゲートに戻る（最大3回まで。4回連続失敗時はユーザーに報告して停止）
 5. reflect(タスクごとに実施) → `Skill(reflexion:reflect)` を Skill tool で実行
-   **GSD使用時**: Step 4 GSDフローが完走した場合のみスキップ（完走定義・ループ発動時の扱いはStep 4参照）
    **非GSD時のみ以下を適用**:
    引数: deep reflect if less than 90% confidence. 日本語で簡潔に回答
    自動ループ:
@@ -422,4 +424,3 @@ uv run mypy --show-error-codes --pretty utils/ config/ models/
 1. 公式ドキュメントを再確認（仕様変更/誤解の可能性）
 2. GitHub Issuesで既知の問題を検索
 3. 削除/代替案を検討（機能の必要性を再評価）
-
