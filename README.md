@@ -268,7 +268,7 @@ if init_sentry():
 
 | 種別 | 件数 | CI対象 | 備考 |
 |------|------|--------|------|
-| Unit tests | 549件 | ✅ | ビジネスロジック検証（Performance/Slow含む） |
+| Unit tests | 549件 | ✅ | ビジネスロジック検証（Performance 5件・Slow 1件含む） |
 | Integration tests | 36件（CI対象: 31件） | ✅（external 5件除外） | API統合検証 |
 | **CI合計（カバレッジ計測対象）** | **580件** | | |
 | **カバレッジ** | **93.39%** | | unit+integration条件 |
@@ -306,7 +306,7 @@ graph TB
 - **Integration (25%)**: API・DB接続の検証（中速・実環境近似）
 - **E2E (5%)**: クリティカルパスのみ（低速・高信頼）
 
-> **Note**: Performance/Slow testsはunit markerを併用のためCI対象(580件)に含む。External testsはintegration markerを併用のためIntegration(36件)の内数。Smoke tests(3件)のみCI対象外。
+> **Note**: Performance testsはintegration、Slow testsはunitマーカーを併用のためCI対象(580件)に含む。External testsはintegration markerを併用のためIntegration(36件)の内数。Smoke tests(3件)のみCI対象外。
 
 ### テスト実行特性（CI最適化）
 
@@ -314,13 +314,13 @@ graph TB
 |---------|------|-----------------|
 | `unit` | 単体テスト | 全PR |
 | `integration` | 統合テスト | 全PR |
-| `smoke` | 基本機能確認 | 全PR |
-| `slow` | 実行時間 >3秒 | 週次のみ |
+| `smoke` | 基本機能確認 | CI対象外（実環境依存） |
+| `slow` | 実行時間 >3秒 | 週次のみ（unitまたはintegration併用時は全PR） |
 | `external` | 外部API依存 | 週次のみ |
-| `performance` | 性能測定 | 週次のみ |
+| `performance` | 性能測定 | 週次のみ（unitまたはintegration併用時は全PR） |
 | `e2e` | E2Eテスト | Playwright導入後 |
 
-> **CI最適化戦略**: `slow`/`external`/`performance`マーカーを週次実行に分離し、PRバリデーションを高速化（目標: 10分以内）
+> **CI最適化戦略**: `external`マーカーを週次実行に分離し、PRバリデーションを高速化（目標: 10分以内）
 
 ### CI/CD 4段階パイプライン
 
