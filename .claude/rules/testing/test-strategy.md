@@ -4,8 +4,8 @@
 
 ## エグゼクティブサマリー
 
-**現在のカバレッジ**: 93.39%（CI条件: unit+integration, not external） | **目標達成**: ✅
-**テスト資産**: 580件（CI条件）/ 全588件
+**現在のカバレッジ**: 93.43%（CI条件: unit+integration, not external） | **目標達成**: ✅
+**テスト資産**: 575件（CI条件）/ 全588件
 **最優先改善領域**: utils/github_client.py (86.67%)
 
 ---
@@ -58,7 +58,7 @@ uv run pytest -n auto -m "(unit or integration) and not external" \
 |------|------|------|---------|
 | 1-2 | 60-65% | — | 単体テスト基盤 |
 | 3-4 | 65-70% | — | Docker/CI-CD |
-| 5-6 | 80-85% | 93.39% ✅ | 非同期/e2e |
+| 5-6 | 80-85% | 93.43% ✅ | 非同期/e2e |
 
 **優先モジュール**: utils/github_client.py (86.67%) → 最優先
 

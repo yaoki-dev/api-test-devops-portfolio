@@ -7,7 +7,7 @@
 このプロジェクトは、APIテストとDevOps技術を統合した実践的なポートフォリオです。
 
 [![CI/CD Pipeline](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml/badge.svg)](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/badge/coverage-93.39%25-brightgreen)](https://yuta158.github.io/api-test-portfolio/htmlcov/)
+[![Coverage](https://img.shields.io/badge/coverage-93.43%25-brightgreen)](https://yuta158.github.io/api-test-portfolio/htmlcov/)
 ![Python](https://img.shields.io/badge/Python-3.14-blue)
 [![Docker](https://img.shields.io/badge/docker-multi--stage-blue)](./Dockerfile)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
@@ -16,13 +16,13 @@
 [![Security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 [![Dependencies: safety](https://img.shields.io/badge/dependencies-safety--checked-green.svg)](https://safetycli.com/)
 
-> **Python/Docker/CI/CDを統合したAPIテスト自動化ポートフォリオ。588件のテスト（CI品質ゲート: 580件/93.39%）。**
+> **Python/Docker/CI/CDを統合したAPIテスト自動化ポートフォリオ。588件のテスト（CI品質ゲート: 575件/93.43%）。**
 
 ## 概要
 
-- **588件のテストスイート**: Unit(549, うちSlow 1件含む) / Integration(36, うちExternal 5件含む) / Smoke(3) / E2E(実装予定)
-- **カバレッジ: 93.39%**（unit+integration条件）: 継続的な品質向上
-- **CI実行テスト: 580件**（unit+integration, external除外）
+- **588件のテストスイート**: Unit(549, うちSlow 1件含む) / Integration(31, うちExternal 5件含む) / Performance(5, 週次のみ) / Smoke(3) / E2E(実装予定)
+- **カバレッジ: 93.43%**（unit+integration条件）: 継続的な品質向上
+- **CI実行テスト: 575件**（unit+integration, external・performance除外）
 - **CI/CD自動化**: GitHub Actions による4段階パイプライン
 - **セキュリティ**: CI/CD品質ゲート（pytest + ruff + mypy + Trivy）
 - **GitHub API統合**: 実務的なAPI統合スキルを証明（Rate Limit管理、ETag活用、非同期処理）
@@ -33,7 +33,7 @@
 
 ### 1. テスト実行
 
-![Test Demo - pytest実行で基本テスト19件合格（全588件中の抽出実行、CI環境での全体カバレッジ: 93.39%）。テスト自動化スキルを実証](assets/demo-test.gif)
+![Test Demo - pytest実行で基本テスト19件合格（全588件中の抽出実行、CI環境での全体カバレッジ: 93.43%）。テスト自動化スキルを実証](assets/demo-test.gif)
 
 > **📝 デモ内容**: クイック実行例（基本テスト19件、デモ時間短縮のため抽出。全588件は約60秒）
 > **🔍 全588件を今すぐ確認**: [GitHub Actions CI/CD](https://github.com/yuta158/api-test-portfolio/actions) でフルテスト結果＋カバレッジレポートを閲覧
@@ -269,28 +269,29 @@ if init_sentry():
 | 種別 | 件数 | CI対象 | 備考 |
 |------|------|--------|------|
 | Unit tests | 549件 | ✅ | ビジネスロジック検証（Slow 1件含む） |
-| Integration tests | 36件（CI対象: 31件） | ✅（external 5件除外） | API統合検証 |
-| **CI合計（カバレッジ計測対象）** | **580件** | | |
-| **カバレッジ** | **93.39%** | | unit+integration条件 |
+| Integration tests | 31件（CI対象: 26件） | ✅（external 5件除外） | API統合検証 |
+| **CI合計（カバレッジ計測対象）** | **575件** | | |
+| **カバレッジ** | **93.43%** | | unit+integration条件 |
 
 **カバレッジ計測対象外テスト**
 
 | 種別 | 件数 | 除外理由 |
 |------|------|---------|
-| External API tests | 5件 | 実ネットワーク依存（Integration 36件の内数） |
+| Performance tests | 5件 | 週次のみ実行（performanceマーカーのみ、PR CI除外） |
+| External API tests | 5件 | 実ネットワーク依存（Integration 31件の内数） |
 | Smoke tests | 3件 | カバレッジ計測対象外（--no-covで実行） |
 | E2E tests | 実装予定 | — |
 
-> **合計テスト数（参考）**: 588件（全テスト）/ CI計測対象: 580件
+> **合計テスト数（参考）**: 588件（全テスト）/ CI計測対象: 575件
 > カバレッジはCI安定性確保のため、決定論的テスト（unit + integration）のみを計測対象としています。
 
 ### テストピラミッド
 
 ```mermaid
 graph TB
-    subgraph "Test Pyramid - 588件（CI対象: 580件）"
+    subgraph "Test Pyramid - 588件（CI対象: 575件）"
         E2E["🔝 E2E<br/>0件 → 5%目標"]
-        Integration["🔗 Integration<br/>36件（CI対象: 31件）→ 25%目標"]
+        Integration["🔗 Integration<br/>31件（CI対象: 26件）→ 25%目標"]
         Unit["🧱 Unit<br/>549件 → 70%目標"]
     end
     E2E --> Integration --> Unit
@@ -306,7 +307,7 @@ graph TB
 - **Integration (25%)**: API・DB接続の検証（中速・実環境近似）
 - **E2E (5%)**: クリティカルパスのみ（低速・高信頼）
 
-> **Note**: Performance testsはintegration、Slow testsはunitマーカーを併用のためCI対象(580件)に含む。External testsはintegration markerを併用のためIntegration(36件)の内数。Smoke tests(3件)のみカバレッジCI対象外（全PRに--no-covで実行）。
+> **Note**: Slow testsはunit/integrationマーカーを併用のためCI対象(575件)に含む。Performance tests(5件)はweeklyのみ実行（PR CI除外）。External testsはintegration markerを併用のためIntegration(31件)の内数。Smoke tests(3件)のみカバレッジCI対象外（全PRに--no-covで実行）。
 
 ### テスト実行特性（CI最適化）
 
@@ -315,9 +316,9 @@ graph TB
 | `unit` | 単体テスト | 全PR |
 | `integration` | 統合テスト | 全PR |
 | `smoke` | 基本機能確認 | 全PR（--no-cov、実API疎通確認） |
-| `slow` | 実行時間 >3秒 | 全PR（unitマーカー併用テストのみCI対象） |
+| `slow` | 実行時間 >3秒 | 全PR（unit/integrationマーカー併用テストのみCI対象） |
 | `external` | 外部API依存 | 週次のみ |
-| `performance` | 性能測定 | 全PR（integration併用） |
+| `performance` | 性能測定 | 週次のみ |
 | `e2e` | E2Eテスト | Playwright導入後 |
 
 > **CI最適化戦略**: `external`マーカーを週次実行に分離し、PRバリデーションを高速化（目標: 10分以内）
