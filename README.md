@@ -306,7 +306,7 @@ graph TB
 - **Integration (25%)**: API・DB接続の検証（中速・実環境近似）
 - **E2E (5%)**: クリティカルパスのみ（低速・高信頼）
 
-> **Note**: Performance testsはintegration、Slow testsはunitマーカーを併用のためCI対象(580件)に含む。External testsはintegration markerを併用のためIntegration(36件)の内数。Smoke tests(3件)のみCI対象外。
+> **Note**: Performance testsはintegration、Slow testsはunitマーカーを併用のためCI対象(580件)に含む。External testsはintegration markerを併用のためIntegration(36件)の内数。Smoke tests(3件)のみカバレッジCI対象外（全PRに--no-covで実行）。
 
 ### テスト実行特性（CI最適化）
 
