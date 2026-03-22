@@ -98,7 +98,7 @@ AskUserQuestion の回答・設計判断を記録する。
 
 - [ ] `npm run lint:md && npm run lint:text` 全pass
 - [ ] `Skill(superpowers:verification-before-completion)`（全タスク完了確認 — 未完了検出時: 修正 → 品質ゲート → 再実行 - 最大3回まで）
-- [ ] `Skill(fact-checker)` (証拠ベースの事実検証)
+- [ ] `Skill(fact-checker)` (事実主張・数値データを含む変更の場合のみ — CLAUDE.md Medium「必要時」定義準拠)
 - [ ] `Skill(reflexion:reflect)`（信頼度90%以上）
 - [ ] `Skill(pr-review-toolkit:review-pr)`
 - ※ PRレビューは CLAUDE.md Step 8 ELSE節（`Skill(pr-review-toolkit:review-pr)`）に委譲
