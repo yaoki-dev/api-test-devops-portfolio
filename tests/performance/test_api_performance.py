@@ -291,12 +291,8 @@ class TestPerformanceRegression:
             print(f"  - 現在の性能: {current_performance:.3f}s")
             print(f"  - 性能比率: {performance_ratio:.2f}x")
 
-            if performance_ratio > self.REGRESSION_THRESHOLD * 2:
-                t = self.REGRESSION_THRESHOLD * 2
-                msg = f"深刻なパフォーマンス回帰: {performance_ratio:.2f}x (閾値: {t:.1f}x)"
-                raise AssertionError(msg)
             if performance_ratio > self.REGRESSION_THRESHOLD:
-                print(f"⚠️ パフォーマンス警告: {performance_ratio:.2f}x")
+                raise AssertionError(f"Performance regression detected: {performance_ratio:.2f}x")
             else:
                 print("✅ パフォーマンス回帰なし")
 
@@ -316,43 +312,6 @@ class TestPerformanceRegression:
             raise
         finally:
             metrics.record_response_time(time.time() - start_time)
-
-
-# パフォーマンステストレポート生成
-def generate_performance_report(
-    metrics_list: list[PerformanceMetrics],
-    output_file: str = "reports/performance-report.json",
-) -> None:
-    """パフォーマンステストレポート生成"""
-    import json
-    from pathlib import Path
-
-    summaries = [metrics.get_summary() for metrics in metrics_list]
-    report = {
-        "timestamp": time.time(),
-        "test_results": summaries,
-        "summary": {
-            "total_tests": len(metrics_list),
-            "avg_response_time": statistics.mean(
-                [
-                    summary["response_times"]["mean"]
-                    for summary in summaries
-                    if "response_times" in summary
-                ],
-            )
-            if metrics_list
-            else 0,
-        },
-    }
-
-    # レポートディレクトリ作成
-    Path(output_file).parent.mkdir(parents=True, exist_ok=True)
-
-    # レポート出力
-    with Path(output_file).open("w") as f:
-        json.dump(report, f, indent=2)
-
-    print(f"📊 パフォーマンステストレポートを生成しました: {output_file}")
 
 
 # =============================================================================
