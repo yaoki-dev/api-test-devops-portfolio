@@ -16,13 +16,13 @@
 [![Security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 [![Dependencies: safety](https://img.shields.io/badge/dependencies-safety--checked-green.svg)](https://safetycli.com/)
 
-> **Python/Docker/CI/CDを統合したAPIテスト自動化ポートフォリオ。581件のテスト（CI品質ゲート: 573件/93.39%）。**
+> **Python/Docker/CI/CDを統合したAPIテスト自動化ポートフォリオ。588件のテスト（CI品質ゲート: 580件/93.39%）。**
 
 ## 概要
 
-- **581件のテストスイート**: Unit(452) / Integration(36) / Performance(5) / External(5) / Smoke(3) / Slow(1) / マーカーなし(60) / E2E(実装予定)
+- **588件のテストスイート**: Unit(549, うちPerformance 5件・Slow 1件含む) / Integration(36, うちExternal 5件含む) / Smoke(3) / E2E(実装予定)
 - **カバレッジ: 93.39%**（unit+integration条件）: 継続的な品質向上
-- **CI実行テスト: 573件**（unit+integration, external除外）
+- **CI実行テスト: 580件**（unit+integration, external除外）
 - **CI/CD自動化**: GitHub Actions による4段階パイプライン
 - **セキュリティ**: CI/CD品質ゲート（pytest + ruff + mypy + Trivy）
 - **GitHub API統合**: 実務的なAPI統合スキルを証明（Rate Limit管理、ETag活用、非同期処理）
@@ -35,20 +35,20 @@
 
 ![Test Demo - pytest実行で19件テスト合格、カバレッジ64%を5秒で確認。テスト自動化スキルを実証](assets/demo-test.gif)
 
-> **📝 デモ内容**: クイック実行例（基本テスト19件、デモ時間短縮のため抽出。全581件は約60秒）
-> **🔍 全581件を今すぐ確認**: [GitHub Actions CI/CD](https://github.com/yuta158/api-test-portfolio/actions) でフルテスト結果＋カバレッジレポートを閲覧
+> **📝 デモ内容**: クイック実行例（基本テスト19件、デモ時間短縮のため抽出。全588件は約60秒）
+> **🔍 全588件を今すぐ確認**: [GitHub Actions CI/CD](https://github.com/yuta158/api-test-portfolio/actions) でフルテスト結果＋カバレッジレポートを閲覧
 
 **何がわかるか**:
 
 - pytest + pytest-covによる自動テスト実行
 - カバレッジレポートによる品質可視化
-- テスト実行: 基本19件 ~5秒、全581件 ~60秒
+- テスト実行: 基本19件 ~5秒、全588件 ~60秒
 
 <details>
-<summary>全テスト実行コマンド（581件、約60秒）</summary>
+<summary>全テスト実行コマンド（588件、約60秒）</summary>
 
 ```bash
-# 全テスト実行（581件）
+# 全テスト実行（588件）
 uv run pytest --cov=utils --cov=config --cov=models --cov-report=term -q --color=yes
 
 # クイック実行（unit tests）
@@ -180,7 +180,7 @@ api-test-devops-portfolio/
 ├── config/              # 設定管理（Pydantic Settings）
 ├── utils/               # ユーティリティ（APIクライアント等）
 ├── models/              # データモデル
-├── tests/               # テストスイート（581件）
+├── tests/               # テストスイート（588件）
 │   ├── unit/            # 単体テスト
 │   ├── integration/     # 統合テスト
 │   ├── performance/     # パフォーマンステスト
@@ -268,22 +268,19 @@ if init_sentry():
 
 | 種別 | 件数 | CI対象 | 備考 |
 |------|------|--------|------|
-| Unit tests | 452件 | ✅ | ビジネスロジック検証 |
+| Unit tests | 549件 | ✅ | ビジネスロジック検証（Performance/Slow含む） |
 | Integration tests | 36件（CI対象: 31件） | ✅（external 5件除外） | API統合検証 |
-| **CI合計（カバレッジ計測対象）** | **573件** | | |
+| **CI合計（カバレッジ計測対象）** | **580件** | | |
 | **カバレッジ** | **93.39%** | | unit+integration条件 |
 
 **カバレッジ計測対象外テスト**
 
 | 種別 | 件数 | 除外理由 |
 |------|------|---------|
-| Performance tests | 5件 | 実API依存・実行時間変動 |
 | External API tests | 5件 | 実ネットワーク依存 |
 | Smoke tests | 3件 | 実環境依存 |
-| Slow tests | 1件 | タイムアウト対象（>3秒） |
 | E2E tests | 実装予定 | — |
-| マーカーなし | 60件 | マーカー付与予定（test_responses_models等） |
-| **全件合計** | **581件** | |
+| **全件合計** | **588件** | |
 
 > カバレッジはCI安定性確保のため、決定論的テスト（unit + integration）のみを計測対象としています。
 
@@ -291,10 +288,10 @@ if init_sentry():
 
 ```mermaid
 graph TB
-    subgraph "Test Pyramid - 581件（CI対象: 573件）"
+    subgraph "Test Pyramid - 588件（CI対象: 580件）"
         E2E["🔝 E2E<br/>0件 → 5%目標"]
         Integration["🔗 Integration<br/>36件（CI対象: 31件）→ 25%目標"]
-        Unit["🧱 Unit<br/>452件 (82%) → 70%目標"]
+        Unit["🧱 Unit<br/>549件 (93%) → 70%目標"]
     end
     E2E --> Integration --> Unit
 
@@ -309,7 +306,7 @@ graph TB
 - **Integration (25%)**: API・DB接続の検証（中速・実環境近似）
 - **E2E (5%)**: クリティカルパスのみ（低速・高信頼）
 
-> **Note**: pytestパラメータ化テストにより、テスト関数 → pytest収集581件（CI対象: 573件）。カテゴリ別件数はマーカー別集計のため合計は581件と一致しない（マーカー重複・未付与テスト60件含む）
+> **Note**: Performance/Slow testsはunit markerを併用のためCI対象(580件)に含む。External testsはintegration markerを併用のためIntegration(36件)の内数。Smoke tests(3件)のみCI対象外。
 
 ### テスト実行特性（CI最適化）
 

@@ -7,7 +7,7 @@
 
 ## Key Metrics (2026-03-07)
 - Test Coverage: 93.39% (target: 85% ✅達成、CI条件: unit+integration, not external)
-- Test Count: 581 tests (全件) / 573件 (CI条件: unit+integration)
+- Test Count: 588 tests (全件) / 580件 (CI条件: unit+integration)
 - Code Lines: ~2,500 (utils/config/models)
 - SOLID Compliance: 85%
 
@@ -24,7 +24,7 @@
 | models/responses.py | 350 | 7 Pydantic response models |
 
 ### Test Layer
-- **Total**: 551 tests across ~19 test files (CI対象: 483件)
+- **Total**: 588 tests across ~19 test files (CI対象: 580件)
 - **Distribution**: unit(~11) / security(3) / integration(2) / regression(1) / performance(1) / validation(1)
 - **Infrastructure**: conftest.py shared fixtures
 
