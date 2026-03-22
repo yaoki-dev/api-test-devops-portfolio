@@ -43,29 +43,29 @@ graph LR
 |---------|----------|------|----------------|
 | **要件定義** | `sdd:brainstorm` | 対話型アイデア発想 | - |
 | | `sdd:create-ideas` | 単発アイデア生成（確率分布） | - |
-| | `/brainstorm` | アイデア発想・要件整理 | - |
+| | `Skill(brainstorm)` | アイデア発想・要件整理 | - |
 | | `/sc:brainstorm` | 7種類Persona協働 | architect, product-manager |
 | | `spec-workflow MCP` | 仕様書作成（自然言語） | - |
 | **仕様作成** | `sdd:01-specify` | 機能仕様書作成（spec-checklist検証） | business-analyst |
-| | `/write-plan` | 実装計画作成（TDD Iron Law） | - |
+| | `Skill(write-plan)` | 実装計画作成（TDD Iron Law） | - |
 | | `/sc:workflow` | PRD → 実装計画変換 | tech-lead, architect |
 | **設計** | `sdd:02-plan` | アーキテクチャ設計（3案比較） | software-architect, researcher |
 | | `/sc:implement` | マルチPersona協働実装 | architect, developer |
 | | `@tech-lead (agent)` | タスク分解・依存関係整理 | - |
 | **実装** | `sdd:04-implement` | Phase単位実装 | developer（Phase実行） |
 | | `/implement` | 仕様書ベース実装 | developer |
-| | `/execute-plan` | 計画自律実行（バッチ） | - |
-| | `/subagent-driven-development` | タスク実行（2段階レビュー） | - |
+| | `Skill(execute-plan)` | 計画自律実行（バッチ） | - |
+| | `Skill(subagent-driven-development)` | タスク実行（2段階レビュー） | - |
 | | `@developer (agent)` | コード生成 | - |
 | **ドキュメント** | `sdd:05-document` | 実装ドキュメント自動生成 | tech-writer |
 | **テスト** | `/test` | コンテキスト検出テスト | - |
 | | `/generate-tests` | テスト自動生成 | - |
 | | `@qa-expert (agent)` | テスト戦略設計 | - |
-| **レビュー** | `/code-review:review-local-changes` | 6並列エージェント（80点閾値） | code-reviewer |
-| | `/pr-review-toolkit:review-pr` | 6エージェント包括レビュー | silent-failure-hunter, security-code-reviewer |
-| | `/superpowers:verification-before-completion` | 作業完了証拠確認（reflect前） | - |
-| | `/reflexion:reflect` | 自己改善フィードバック | - |
-| **デプロイ** | `/push-pr` | PR作成 | - |
+| **レビュー** | `Skill(code-review:re(view-local-changes)` | 6並列エージェント（80点閾値） | code-reviewer |
+| | `Skill(pr-review-toolkit:review-pr` | 6エージェント包括レビュー | silent-failure-hunter, security-code-reviewer |
+| | `Skill(superpowers:verification-before-completion)` | 作業完了証拠確認（reflect前） | - |
+| | `Skill(reflexion:reflect)` | 自己改善フィードバック | - |
+| **デプロイ** | `Skill(push-pr)` | PR作成 | - |
 | | `/docs:update-docs` | ドキュメント自動更新 | tech-writer |
 
 ### マルチエージェントオーケストレーション
@@ -314,19 +314,19 @@ workflow:
 | ツール | 種別 | 発動トリガー | 用途 |
 |--------|------|------------|------|
 | `security-guidance` | Hook | Edit/Write/MultiEdit時 | 自動セキュリティ警告（9パターン検出） |
-| `/superpowers:verification-before-completion` | Skill | タスク完了時（reflect前） | 作業完了証拠確認|
-| `/reflexion:reflect` | Skill | タスク完了時 | deep reflect実行（セルフレビュー） |
-| `/code-review:review-local-changes` | Skill | 品質ゲート全合格後（※1） | 6並列エージェントレビュー（80点閾値） |
+| `Skill(superpowers:verification-before-completion）` | Skill | タスク完了時（reflect前） | 作業完了証拠確認|
+| `Skill(reflexion:reflect)` | Skill | タスク完了時 | deep reflect実行（セルフレビュー） |
+| `Skill(code-review:review-local-changes)` | Skill | 品質ゲート全合格後（※1） | 6並列エージェントレビュー（80点閾値） |
 
 #### High（開発標準）
 
 | ツール | 種別 | 発動トリガー | 用途 |
 |--------|------|------------|------|
-| `/create-issue` | Skill | Issue作成 | Issue駆動開発支援 |
-| `/commit` | Skill | コミット作成時 | ステージング+コミット |
-| `/push-pr` | Skill | PR作成時 | プッシュ→PR作成 |
-| `/pr-review-toolkit:review-pr` | Skill | git push完了後、PR作成前 | 6エージェント包括レビュー |
-| `/code-review:review-pr (CEK)` | Skill | 重要PR時 | 6エージェント防御レビュー（セキュリティ・バグ・API契約） |
+| `Skill(create-issue）` | Skill | Issue作成 | Issue駆動開発支援 |
+| `Skill(commit)` | Skill | コミット作成時 | ステージング+コミット |
+| `Skill(push-pr)` | Skill | PR作成時 | プッシュ→PR作成 |
+| `Skill(pr-review-toolkit:review-pr)` | Skill | git push完了後、PR作成前 | 6エージェント包括レビュー |
+| `Skill(code-review:review-pr） (CEK)` | Skill | 重要PR時 | 6エージェント防御レビュー（セキュリティ・バグ・API契約） |
 | `/test-coverage` | Command | テスト関連時 | カバレッジ分析 |
 | `/generate-tests` | Command | テスト関連時 | テスト生成 |
 
@@ -338,10 +338,10 @@ workflow:
 | `/docs:update-docs` | Command | 実装後ドキュメント更新時 | Git連携+マルチエージェント品質レビュー |
 | `/docs-maintenance` | Command | ドキュメント品質監査時 | リンク検証・スタイル一貫性・自動同期 |
 | `/troubleshooting-guide` | Command | トラブルシューティング時 | 診断手順・共通問題・自動解決 |
-| `/decision-helper` | Skill | 2+選択肢の比較評価時 | 構造化意思決定フレームワーク（Pros/Cons, Decision Matrix, ICE） |
-| `/fact-checker` | Skill | 主張・データの事実確認時 | 証拠ベースの事実検証・情報信頼性評価（6段階Verdictスケール） |
-| `/prompt-lookup` | Skill | プロンプト検索時 | プロンプトテンプレート発見・改善 |
-| `/skill-lookup` | Skill | スキル検索時 | 再利用可能なAI機能発見・インストール |
+| `Skill(decision-helper)` | Skill | 2+選択肢の比較評価時 | 構造化意思決定フレームワーク（Pros/Cons, Decision Matrix, ICE） |
+| `Skill(fact-checker)` | Skill | 主張・データの事実確認時 | 証拠ベースの事実検証・情報信頼性評価（6段階Verdictスケール） |
+| `Skill(prompt-lookup)` | Skill | プロンプト検索時 | プロンプトテンプレート発見・改善 |
+| `Skill(skill-lookup)` | Skill | スキル検索時 | 再利用可能なAI機能発見・インストール |
 
 
 ### ユースケース別推奨フロー
@@ -471,19 +471,19 @@ grep -rn "$DELETED_CMD" ~/.claude --include="*.md" | grep -v "/debug/"
 
 | コマンド | 用途 | 主要機能 | 例 |
 |---------|------|---------|-----|
-| `/brainstorm` | アイデア発想・要件整理 | 段階的質問、対話型検証 | 新機能検討時 |
-| `/write-plan` | 実装計画作成 | bite-sized tasks、TDD Iron Law | 設計完了後 |
-| `/execute-plan` | 計画の自律実行 | バッチ実行、チェックポイント付き | Plan承認後 |
+| `Skill(brainstorm)` | アイデア発想・要件整理 | 段階的質問、対話型検証 | 新機能検討時 |
+| `Skill(write-plan)` | 実装計画作成 | bite-sized tasks、TDD Iron Law | 設計完了後 |
+| `Skill(execute-plan)` | 計画の自律実行 | バッチ実行、チェックポイント付き | Plan承認後 |
 
 ### superpowersスキル（主要）
 
 | スキル | 用途 | 発動方法 |
 |--------|------|----------|
-| `test-driven-development` | TDD強制 | AIが自動判断して呼び出し |
-| `systematic-debugging` | 体系的デバッグ | AIが自動判断して呼び出し |
-| `verification-before-completion` | 完了前検証 | AIが自動判断して呼び出し |
-| `subagent-driven-development` | 並列エージェント | AIが自動判断して呼び出し |
-| `requesting-code-review` | コードレビュー依頼 | 手動呼び出し（※レビュースキル不足注意） |
+| `Skill(test-driven-development)` | TDD強制 | AIが自動判断して呼び出し |
+| `Skill(systematic-debugging)` | 体系的デバッグ | AIが自動判断して呼び出し |
+| `Skill(verification-before-completion)` | 完了前検証 | AIが自動判断して呼び出し |
+| `Skill(subagent-driven-development)` | 並列エージェント | AIが自動判断して呼び出し |
+| `Skill(requesting-code-review)` | コードレビュー依頼 | 手動呼び出し（※レビュースキル不足注意） |
 
 **スキル発動ルール**: 1%でも適用可能性があればAIが自動で呼び出します
 
