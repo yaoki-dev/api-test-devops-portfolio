@@ -117,8 +117,8 @@ workflow:
 | Git操作 | 推奨Plugin | 発動タイミング |
 |---------|-----------|--------------|
 | Feature開始 | `/git:feature <name>` | Issue作成後 |
-| コミット | `/commit` | 品質ゲート全合格後 |
-| PR作成 | `/push-pr` | `/pr-review-toolkit:review-pr` 完了後 |
+| コミット | `Skill(commit)` | 品質ゲート全合格後 |
+| PR作成 | `Skill(push-pr)` | `Skill(pr-review-toolkit:review-pr)` 完了後 |
 | マージ | `gh pr merge --squash` | レビュー承認後 |
 | ブランチ削除 | `/finishing-a-development-branch` | マージ完了後 |
 
@@ -350,16 +350,16 @@ workflow:
 ```
 1. 学習開始 → (コード作成)
 2. テスト作成後 → `/test-coverage`
-3. 実装完了後 → `/code-review:review-local-changes`
-4. コミット時 → security-guidance自動警告 + `/commit`
+3. 実装完了後 → `Skill(code-review:review-local-changes)`
+4. コミット時 → security-guidance自動警告 + `Skill(commit)`
 ```
 
 #### ポートフォリオ実装フェーズ
 ```
 1. 機能開発開始 → `/git:feature <name>`
-2. 実装中の変更保存 → `/commit`
-3. 実装完了・PR作成前 → `/pr-review-toolkit:review-pr`
-4. PR作成 → `/push-pr`
+2. 実装中の変更保存 → `Skill(commit)`
+3. 実装完了・PR作成前 → `Skill(pr-review-toolkit:review-pr)`
+4. PR作成 → `Skill(push-pr)`
 5. マージ後 → `/clean_gone`
 <!-- 6. リリース準備 → `/release <version>` -->
 7. リリース完了 → `/clean-gone`
@@ -367,8 +367,8 @@ workflow:
 
 #### 実案件対応フェーズ
 ```
-1. 品質ゲート全合格後 → `/code-review:review-local-changes` (Critical必須)
-2. PR作成時 → `/pr-review-toolkit:review-pr` (High標準)
+1. 品質ゲート全合格後 → `Skill(code-review:review-local-changes)` (Critical必須)
+2. PR作成時 → `Skill(pr-review-toolkit:review-pr)` (High標準)
 3. ドキュメント保守時 → `/docs-maintenance` (Medium必要時)
 ```
 

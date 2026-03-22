@@ -18,7 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 6. **NEVER** use `gh issue create` → **ALWAYS** use `Skill(create-issue)`
 7. **ALWAYS** pass quality gates before commit → @memory:implementation_quality_gates
 8. **NEVER** push to protected branches (main/develop) directly
-9. **ALWAYS** invoke `/xxx` skills via Skill tool when user requests
+9. **ALWAYS** invoke skills via Skill(skill-name) notation when user requests
 10. **ALWAYS** follow development workflow order → Section「🔄 開発ワークフロー」
 11. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `Skill(superpowers:verification-before-completion)` → then `Skill(reflexion:reflect)`
 12. **ALWAYS** when 2+ independent tasks exist, after task classification, per RULES.md exception conditions → invoke `Skill(superpowers:subagent-driven-development)` skill
