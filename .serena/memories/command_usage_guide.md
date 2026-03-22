@@ -43,19 +43,19 @@ graph LR
 |---------|----------|------|----------------|
 | **要件定義** | `sdd:brainstorm` | 対話型アイデア発想 | - |
 | | `sdd:create-ideas` | 単発アイデア生成（確率分布） | - |
-| | `Skill(brainstorm)` | アイデア発想・要件整理 | - |
+| | `Skill(superpowers:brainstorm)` | アイデア発想・要件整理 | - |
 | | `/sc:brainstorm` | 7種類Persona協働 | architect, product-manager |
 | | `spec-workflow MCP` | 仕様書作成（自然言語） | - |
 | **仕様作成** | `sdd:01-specify` | 機能仕様書作成（spec-checklist検証） | business-analyst |
-| | `Skill(write-plan)` | 実装計画作成（TDD Iron Law） | - |
+| | `Skill(superpowers:write-plan)` | 実装計画作成（TDD Iron Law） | - |
 | | `/sc:workflow` | PRD → 実装計画変換 | tech-lead, architect |
 | **設計** | `sdd:02-plan` | アーキテクチャ設計（3案比較） | software-architect, researcher |
 | | `/sc:implement` | マルチPersona協働実装 | architect, developer |
 | | `@tech-lead (agent)` | タスク分解・依存関係整理 | - |
 | **実装** | `sdd:04-implement` | Phase単位実装 | developer（Phase実行） |
 | | `/implement` | 仕様書ベース実装 | developer |
-| | `Skill(execute-plan)` | 計画自律実行（バッチ） | - |
-| | `Skill(subagent-driven-development)` | タスク実行（2段階レビュー） | - |
+| | `Skill(superpowers:execute-plan)` | 計画自律実行（バッチ） | - |
+| | `Skill(superpowers:subagent-driven-development)` | タスク実行（2段階レビュー） | - |
 | | `@developer (agent)` | コード生成 | - |
 | **ドキュメント** | `sdd:05-document` | 実装ドキュメント自動生成 | tech-writer |
 | **テスト** | `/test` | コンテキスト検出テスト | - |
