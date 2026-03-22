@@ -249,13 +249,12 @@ class TestAPIPerformance:
         try:
             response = await client.get(endpoint)
             assert response.status_code == 200
-        except Exception as e:
-            print(f"Request failed for {endpoint}: {e}")
-            raise
-        finally:
             end_time = time.time()
             response_time = end_time - start_time
             metrics.record_response_time(response_time)
+        except Exception as e:
+            print(f"Request failed for {endpoint}: {e}")
+            raise
 
 
 @pytest.mark.performance
@@ -293,9 +292,7 @@ class TestPerformanceRegression:
 
             threshold = self.REGRESSION_THRESHOLD
             if performance_ratio > threshold:
-                print(f"⚠️ パフォーマンス回帰を検出: {performance_ratio:.2f}x > {threshold}x")
-                # 実際のCIでは失敗させるが、学習目的では警告のみ
-                # assert False, f"Performance regression detected: {performance_ratio:.2f}x"
+                raise AssertionError(f"Performance regression detected: {performance_ratio:.2f}x")
             else:
                 print("✅ パフォーマンス回帰なし")
 
@@ -314,13 +311,12 @@ class TestPerformanceRegression:
         try:
             response = await client.get(endpoint)
             assert response.status_code == 200
-        except Exception as e:
-            print(f"Request failed for {endpoint}: {e}")
-            raise
-        finally:
             end_time = time.time()
             response_time = end_time - start_time
             metrics.record_response_time(response_time)
+        except Exception as e:
+            print(f"Request failed for {endpoint}: {e}")
+            raise
 
 
 # パフォーマンステストレポート生成
@@ -332,16 +328,17 @@ def generate_performance_report(
     import json
     from pathlib import Path
 
+    summaries = [metrics.get_summary() for metrics in metrics_list]
     report = {
         "timestamp": time.time(),
-        "test_results": [metrics.get_summary() for metrics in metrics_list],
+        "test_results": summaries,
         "summary": {
             "total_tests": len(metrics_list),
             "avg_response_time": statistics.mean(
                 [
-                    metrics.get_summary()["response_times"]["mean"]
-                    for metrics in metrics_list
-                    if "response_times" in metrics.get_summary()
+                    summary["response_times"]["mean"]
+                    for summary in summaries
+                    if "response_times" in summary
                 ],
             )
             if metrics_list
