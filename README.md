@@ -1,6 +1,6 @@
 # API Test + DevOps Portfolio
 
-*最終更新: 2026年03月06日*
+*最終更新: 2026年03月22日*
 
 ## 概要
 
@@ -278,10 +278,10 @@ if init_sentry():
 | 種別 | 件数 | 除外理由 |
 |------|------|---------|
 | External API tests | 5件 | 実ネットワーク依存（Integration 36件の内数） |
-| Smoke tests | 3件 | 実環境依存 |
+| Smoke tests | 3件 | カバレッジ計測対象外（--no-covで実行） |
 | E2E tests | 実装予定 | — |
-| **全件合計** | **588件** | |
 
+> **合計テスト数（参考）**: 588件（全テスト）/ CI計測対象: 580件
 > カバレッジはCI安定性確保のため、決定論的テスト（unit + integration）のみを計測対象としています。
 
 ### テストピラミッド
@@ -314,7 +314,7 @@ graph TB
 |---------|------|-----------------|
 | `unit` | 単体テスト | 全PR |
 | `integration` | 統合テスト | 全PR |
-| `smoke` | 基本機能確認 | CI対象外（実環境依存） |
+| `smoke` | 基本機能確認 | 全PR（--no-cov、実API疎通確認） |
 | `slow` | 実行時間 >3秒 | 週次のみ（unitまたはintegration併用時は全PR） |
 | `external` | 外部API依存 | 週次のみ |
 | `performance` | 性能測定 | 週次のみ（unitまたはintegration併用時は全PR） |
