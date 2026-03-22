@@ -179,7 +179,7 @@ class TestSettingsEnvironmentValidation:
             settings = Settings(
                 environment=env_input,  # type: ignore[arg-type]
                 security=SecurityConfig(api_key=SecretStr("test-key")),
-                api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),
+                api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),  # https:// 必須
             )
         else:
             settings = Settings(environment=env_input)  # type: ignore[arg-type]
@@ -340,18 +340,27 @@ class TestProductionSecretValidation:
 
     def test_staging_without_secrets_raises_error(self):
         """ステージング環境でシークレット未設定時にエラー (STAGING=本番同等ポリシー)"""
-        with pytest.raises(ValidationError) as exc_info:
+        with pytest.raises(ValidationError, match="SECURITY__API_KEY or SECURITY__JWT_SECRET"):
             Settings(
                 environment=Environment.STAGING,
                 api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),
             )
-        assert "SECURITY__API_KEY or SECURITY__JWT_SECRET" in str(exc_info.value)
 
     def test_staging_with_api_key_valid(self):
         """ステージング環境でapi_key設定時は有効"""
         settings = Settings(
             environment=Environment.STAGING,
             security=SecurityConfig(api_key=SecretStr("test-key")),
+            api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),
+        )
+        assert settings.environment == Environment.STAGING
+
+    def test_staging_with_jwt_secret_valid(self):
+        """ステージング環境でjwt_secret設定時は有効"""
+        settings = Settings(
+            environment=Environment.STAGING,
+            security=SecurityConfig(jwt_secret=SecretStr("test-secret")),
+            # validate_production_https のためHTTPS必須
             api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),
         )
         assert settings.environment == Environment.STAGING
