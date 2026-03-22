@@ -42,7 +42,7 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
     3. No conflicting **writes** to shared resources (examples: conftest.py, pyproject.toml, uv.lock, config files, .env files — read-only access does not count as conflicting; when write conflicts cannot be ruled out, treat as shared)
   - Worktree isolation: instruct each agent to use fixed worktrees at `${HOME}/projects/python/.worktrees/wt-feature0[1-3]`（個人環境ごとにカスタマイズ）
   - Exception: if one task has 3x+ more TodoWrite sub-items (or estimated file changes) than the other, sequential execution is acceptable
-  - **GSD exception**: When `/gsd:execute-phase` is active, skip this rule for wave-internal tasks only (GSD manages its own wave-based parallel execution). Apply this rule normally to independent tasks that arise after wave completion.
+  - **GSD exception**: When `/gsd:execute-phase` is active, skip this rule for wave-internal tasks only (GSD manages its own wave-based parallel execution). Apply this rule normally to independent tasks that arise after wave completion. **判断基準**: `/gsd:execute-phase`の実行が会話コンテキスト内で確認できる場合のみwave内と判断する。確認できない場合はフェイルセーフとしてRule 12を適用する。
   - On failure: if **any** agent reports failure or partial completion, the parent agent must (1) allow already-running invocations to complete (Task tool has no cancel API), (2) collect and log agent statuses (success/failure/unknown), and (3) report full status summary to user before further action
   - Silent continuation after ambiguous/empty results is prohibited
   - On completion: after all parallel agents complete, the parent agent must explicitly verify that each artifact exists in its expected final state before marking the parent task complete

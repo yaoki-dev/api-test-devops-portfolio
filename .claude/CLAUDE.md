@@ -24,7 +24,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     **GSD使用時**: `/gsd:verify-work` → `Skill(superpowers:verification-before-completion)` → `Skill(reflexion:reflect)` の順で実行
 12. **ALWAYS** when 2+ independent tasks exist, after task classification, per RULES.md exception conditions → invoke `Skill(superpowers:subagent-driven-development)` skill
     (reason: keep the main context window clean by leveraging subagents aggressively)
-    **例外**: `/gsd:execute-phase` が直接実行するwave内タスクはスキップ（GSD自体がwave-based並列実行を管理するため）。wave完了後に新たに発生した独立タスクにはRule 12を通常通り適用する。
+    **例外**: RULES.md「GSD exception」参照。**wave内かどうか判断できない場合はRule 12を適用する（フェイルセーフ）。**
 13. **ALWAYS** verify file content with Read/Grep tool BEFORE making any claim about line numbers, file structure, or code content
 14. **ALWAYS** enforce worktree boundary:
     - At conversation start (including post-compact context reload): run `git rev-parse --show-toplevel`:
@@ -329,9 +329,9 @@ git checkout -b feature/<次のタスク> origin/develop
 1. 固定Worktreeでブランチ作成 → /git:feature（常時※1）
    → 固定WT: ${HOME}/projects/python/.worktrees/wt-feature0[1-3]（個人環境ごとにカスタマイズ）
    → 計画ファイル作成が必要な場合: claudedocs/plans/ に作成（閾値詳細: .claude/rules/workflow/PLANS.md §使用閾値）
-   → GSD使用判断（以下いずれか該当時）:
-     (a) 新規モジュール/サブシステムの追加  (b) 3+ファイル変更が見込まれる機能
-     (c) 仕様書が必要な複雑な機能
+   → GSD使用判断（以下いずれか該当時。判断結果はユーザーに明示してから実行）:
+     (a) 新規モジュール/サブシステムの追加  (b) 変更対象ファイルをリストアップした結果3件以上
+     (c) 仕様書が必要と判断した場合（claudedocs/plans/ への計画書作成が必要なもの）
      → /gsd:new-project → /gsd:discuss-phase → /gsd:plan-phase → /gsd:execute-phase
 
 【実装フェーズ】
@@ -344,6 +344,7 @@ git checkout -b feature/<次のタスク> origin/develop
    → GSD使用時: /gsd:verify-work → Skill(superpowers:verification-before-completion) → Skill(reflexion:reflect)
    → 未完了作業あり: 修正 → 3. 品質ゲートに戻る（最大3回まで。4回連続失敗時はユーザーに報告して停止）
 5. reflect(タスクごとに実施) → `Skill(reflexion:reflect)` を Skill tool で実行
+   **GSD使用時**: Step 4で `Skill(reflexion:reflect)` 実施済みのため本ステップはスキップ
    引数: deep reflect if less than 90% confidence. 日本語で簡潔に回答
    自動ループ:
     - 信頼度90%未満: 改善して再実行（各反復で信頼度と改善理由を簡潔に示す）/ 90%以上 → 終了 - 最大3回まで
