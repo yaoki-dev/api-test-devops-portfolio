@@ -291,7 +291,7 @@ graph TB
     subgraph "Test Pyramid - 588件（CI対象: 580件）"
         E2E["🔝 E2E<br/>0件 → 5%目標"]
         Integration["🔗 Integration<br/>36件（CI対象: 31件）→ 25%目標"]
-        Unit["🧱 Unit<br/>549件 (93%) → 70%目標"]
+        Unit["🧱 Unit<br/>549件 → 70%目標"]
     end
     E2E --> Integration --> Unit
 
@@ -315,9 +315,9 @@ graph TB
 | `unit` | 単体テスト | 全PR |
 | `integration` | 統合テスト | 全PR |
 | `smoke` | 基本機能確認 | 全PR（--no-cov、実API疎通確認） |
-| `slow` | 実行時間 >3秒 | 週次のみ（unitまたはintegration併用時は全PR） |
+| `slow` | 実行時間 >3秒 | 全PR（unit併用） |
 | `external` | 外部API依存 | 週次のみ |
-| `performance` | 性能測定 | 週次のみ（unitまたはintegration併用時は全PR） |
+| `performance` | 性能測定 | 全PR（integration併用） |
 | `e2e` | E2Eテスト | Playwright導入後 |
 
 > **CI最適化戦略**: `external`マーカーを週次実行に分離し、PRバリデーションを高速化（目標: 10分以内）
