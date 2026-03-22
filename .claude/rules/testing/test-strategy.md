@@ -30,7 +30,7 @@ uv run pytest -n auto -m "(unit or integration) and not external" \
 |---------|------|---------|
 | `unit` | 単体テスト（モック中心） | `pytest -m unit` |
 | `integration` | 統合テスト（実API） | `pytest -m integration` |
-| `external` | 外部API依存（CI/CDのみ） | `pytest -m "not external"` |
+| `external` | 外部API依存（週次のみ） | `pytest -m "not external"` |
 | `smoke` | スモークテスト（基本動作） | `pytest -m smoke` |
 | `slow` | 低速テスト（>3秒） | `pytest -m "not slow"` |
 
