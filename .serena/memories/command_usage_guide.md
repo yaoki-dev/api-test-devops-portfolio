@@ -61,8 +61,8 @@ graph LR
 | **テスト** | `/test` | コンテキスト検出テスト | - |
 | | `/generate-tests` | テスト自動生成 | - |
 | | `@qa-expert (agent)` | テスト戦略設計 | - |
-| **レビュー** | `Skill(code-review:re(view-local-changes)` | 6並列エージェント（80点閾値） | code-reviewer |
-| | `Skill(pr-review-toolkit:review-pr` | 6エージェント包括レビュー | silent-failure-hunter, security-code-reviewer |
+| **レビュー** | `Skill(code-review:review-local-changes)` | 6並列エージェント（80点閾値） | code-reviewer |
+| | `Skill(pr-review-toolkit:review-pr)` | 6エージェント包括レビュー | silent-failure-hunter, security-code-reviewer |
 | | `Skill(superpowers:verification-before-completion)` | 作業完了証拠確認（reflect前） | - |
 | | `Skill(reflexion:reflect)` | 自己改善フィードバック | - |
 | **デプロイ** | `Skill(push-pr)` | PR作成 | - |
@@ -314,7 +314,7 @@ workflow:
 | ツール | 種別 | 発動トリガー | 用途 |
 |--------|------|------------|------|
 | `security-guidance` | Hook | Edit/Write/MultiEdit時 | 自動セキュリティ警告（9パターン検出） |
-| `Skill(superpowers:verification-before-completion）` | Skill | タスク完了時（reflect前） | 作業完了証拠確認|
+| `Skill(superpowers:verification-before-completion)` | Skill | タスク完了時（reflect前） | 作業完了証拠確認|
 | `Skill(reflexion:reflect)` | Skill | タスク完了時 | deep reflect実行（セルフレビュー） |
 | `Skill(code-review:review-local-changes)` | Skill | 品質ゲート全合格後（※1） | 6並列エージェントレビュー（80点閾値） |
 
@@ -322,11 +322,11 @@ workflow:
 
 | ツール | 種別 | 発動トリガー | 用途 |
 |--------|------|------------|------|
-| `Skill(create-issue）` | Skill | Issue作成 | Issue駆動開発支援 |
+| `Skill(create-issue)` | Skill | Issue作成 | Issue駆動開発支援 |
 | `Skill(commit)` | Skill | コミット作成時 | ステージング+コミット |
 | `Skill(push-pr)` | Skill | PR作成時 | プッシュ→PR作成 |
 | `Skill(pr-review-toolkit:review-pr)` | Skill | git push完了後、PR作成前 | 6エージェント包括レビュー |
-| `Skill(code-review:review-pr） (CEK)` | Skill | 重要PR時 | 6エージェント防御レビュー（セキュリティ・バグ・API契約） |
+| `Skill(code-review:review-pr) (CEK)` | Skill | 重要PR時 | 6エージェント防御レビュー（セキュリティ・バグ・API契約） |
 | `/test-coverage` | Command | テスト関連時 | カバレッジ分析 |
 | `/generate-tests` | Command | テスト関連時 | テスト生成 |
 
