@@ -135,7 +135,7 @@ Usage distinction:
 | 1: Tests | All pass, coverage target met | `pytest -vv` |
 | 2: Linter | 0 errors | `ruff check --fix .` |
 | 3: Types | 0 errors, all hints present | `mypy --strict` |
-| 4: VCS | Committed with conventional message | `git add` + `/commit` |
+| 4: VCS | Committed with conventional message | `git add` + `Skill(commit)` |
 
 **Verification:**
 ```bash

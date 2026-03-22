@@ -471,19 +471,19 @@ grep -rn "$DELETED_CMD" ~/.claude --include="*.md" | grep -v "/debug/"
 
 | コマンド | 用途 | 主要機能 | 例 |
 |---------|------|---------|-----|
-| `Skill(brainstorm)` | アイデア発想・要件整理 | 段階的質問、対話型検証 | 新機能検討時 |
-| `Skill(write-plan)` | 実装計画作成 | bite-sized tasks、TDD Iron Law | 設計完了後 |
-| `Skill(execute-plan)` | 計画の自律実行 | バッチ実行、チェックポイント付き | Plan承認後 |
+| `/superpowers:brainstorm` | アイデア発想・要件整理 | 段階的質問、対話型検証 | 新機能検討時 |
+| `/superpowers:write-plan` | 実装計画作成 | bite-sized tasks、TDD Iron Law | 設計完了後 |
+| `/superpowers:execute-plan` | 計画の自律実行 | バッチ実行、チェックポイント付き | Plan承認後 |
 
 ### superpowersスキル（主要）
 
 | スキル | 用途 | 発動方法 |
 |--------|------|----------|
-| `Skill(test-driven-development)` | TDD強制 | AIが自動判断して呼び出し |
-| `Skill(systematic-debugging)` | 体系的デバッグ | AIが自動判断して呼び出し |
-| `Skill(verification-before-completion)` | 完了前検証 | AIが自動判断して呼び出し |
-| `Skill(subagent-driven-development)` | 並列エージェント | AIが自動判断して呼び出し |
-| `Skill(requesting-code-review)` | コードレビュー依頼 | 手動呼び出し（※レビュースキル不足注意） |
+| `Skill(superpowers:test-driven-development)` | TDD強制 | AIが自動判断して呼び出し |
+| `Skill(superpowers:systematic-debugging)` | 体系的デバッグ | AIが自動判断して呼び出し |
+| `Skill(superpowers:verification-before-completion)` | 完了前検証 | AIが自動判断して呼び出し |
+| `Skill(superpowers:subagent-driven-development)` | 並列エージェント | AIが自動判断して呼び出し |
+| `Skill(superpowers:requesting-code-review)` | コードレビュー依頼 | 手動呼び出し（※レビュースキル不足注意） |
 
 **スキル発動ルール**: 1%でも適用可能性があればAIが自動で呼び出します
 
