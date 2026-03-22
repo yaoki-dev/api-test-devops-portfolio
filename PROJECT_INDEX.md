@@ -287,7 +287,7 @@ uv run pytest && uv run ruff check . && uv run mypy utils/ config/ models/
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Test Coverage | 93.43% | 85% (Week 6) |
+| Test Coverage | 93.43% | 85% (Week 5-6) |
 | Test Files | 19 | - |
 | Python Version | 3.14 | - |
 | Code Quality | ruff + mypy | 0 errors |
