@@ -49,7 +49,7 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
     **Applicability check**: does the task prompt contain 1+ specific file paths (paths resolving to individual files with extension; glob patterns like `utils/*.py` and directory paths like `utils/` count as NO)?
     - YES: Context refinement is optional (when skipping, record reason as `[SKIP: <reason>]` in agent response)
     - NO (includes ambiguous cases): Context refinement is required
-    When applicable (YES case where agent opts in, or NO case where it is required), include `/iterative-retrieval` skill instructions
+    When applicable (YES case where agent opts in, or NO case where it is required), include `Skill(iterative-retrieval)` skill instructions
     (dispatch → evaluate → refine → loop, max 3 cycles per task invocation) in the agent prompt
     - Agent failure definition: empty response, timeout, error message, or partial response (investigation stopped mid-way) — all count as failure; failed cycle output is excluded from convergence evaluation (i.e., not used as comparison baseline for file list stability check) but may inform the next cycle's investigation scope
     - Failed cycles consume 1 cycle each (infinite retry prohibited)
@@ -77,7 +77,7 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
 | Review | `code-review:*`, `pr-review-toolkit:*` (parallel) |
 | Design | `system-architect`, `backend-architect`, `devops-architect` |
 
-**Dispatch Automation**: When 2+ independent tasks exist post-classification, invoke `superpowers:dispatching-parallel-agents` skill via Skill tool. After all agents complete and all TodoWrite tasks are marked done, `/superpowers:verification-before-completion` → `/reflexion:reflect` runs per CLAUDE.md Rule 11 ("ALWAYS after completing all tasks in `todowrite`, Use Skill tool to run `/superpowers:verification-before-completion` → then `/reflexion:reflect`") (this dispatch context already satisfies Rule 11 at the parent agent level — no duplicate call needed within subagents). On verification failure: apply CLAUDE.md Step 4 retry policy (max 3 retries; report to user and stop on 4th consecutive failure — counter resets on success).
+**Dispatch Automation**: When 2+ independent tasks exist post-classification, invoke `Skill(superpowers:subagent-driven-development)` skill via Skill tool. After all agents complete and all TodoWrite tasks are marked done, `Skill(superpowers:verification-before-completion)` → `Skill(reflexion:reflect)` runs per CLAUDE.md Rule 11 ("ALWAYS after completing all tasks in `todowrite`, Use Skill tool to run `Skill(superpowers:verification-before-completion)` → then `Skill(reflexion:reflect)`") (this dispatch context already satisfies Rule 11 at the parent agent level — no duplicate call needed within subagents). On verification failure: apply CLAUDE.md Step 4 retry policy (max 3 retries; report to user and stop on 4th consecutive failure — counter resets on success).
 
 **Good:** Plan → TodoWrite → Execute → Verify | **Bad:** Jump to implementation
 
@@ -107,7 +107,7 @@ Usage distinction:
 ## Category: Task Completion Self-Review
 **Trigger:** TodoWrite task completion | **Priority:** Important
 
-**Learning Phase:** Self-review after each task: `/superpowers:verification-before-completion` → `/reflexion:reflect`. Fix issues before proceeding.
+**Learning Phase:** Self-review after each task: `Skill(superpowers:verification-before-completion)` → `Skill(reflexion:reflect)`. Fix issues before proceeding.
 
 **Production Phase:** Review only when: 3+ files changed, security/API changes, confidence < 90%, new patterns.
 
@@ -135,7 +135,7 @@ Usage distinction:
 | 1: Tests | All pass, coverage target met | `pytest -vv` |
 | 2: Linter | 0 errors | `ruff check --fix .` |
 | 3: Types | 0 errors, all hints present | `mypy --strict` |
-| 4: VCS | Committed with conventional message | `git add` + `/commit` |
+| 4: VCS | Committed with conventional message | `git add` + `Skill(commit)` |
 
 **Verification:**
 ```bash
