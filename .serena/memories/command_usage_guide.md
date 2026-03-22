@@ -362,7 +362,7 @@ workflow:
 4. PR作成 → `Skill(push-pr)`
 5. マージ後 → `/git:clean-gone`
 <!-- 6. リリース準備 → `/release <version>` -->
-7. リリース完了 → `/clean-gone`
+7. リリース完了 → `/git:clean-gone`
 ```
 
 #### 実案件対応フェーズ

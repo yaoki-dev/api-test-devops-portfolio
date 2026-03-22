@@ -336,8 +336,8 @@ git checkout -b feature/<次のタスク> origin/develop
    自動ループ:
     - 信頼度90%未満: 改善して再実行（各反復で信頼度と改善理由を簡潔に示す）/ 90%以上 → 終了 - 最大3回まで
     - 4回連続失敗時（信頼度90%未満継続）はユーザーに報告して停止
-6. コミット前レビュー → Skill(code-review:review-local-changes) (80点閾値)
-7. コミット   → Skill(commit)【git commit禁止】
+6. コミット前レビュー → `Skill(code-review:review-local-changes)` (80点閾値)
+7. コミット   → `Skill(commit)`【git commit禁止】
 
 【レビューフェーズ】
 8. IF (≥200行 OR セキュリティ OR API OR hotfix):
