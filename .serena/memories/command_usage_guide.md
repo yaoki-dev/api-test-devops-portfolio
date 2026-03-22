@@ -360,7 +360,7 @@ workflow:
 2. 実装中の変更保存 → `Skill(commit)`
 3. 実装完了・PR作成前 → `Skill(pr-review-toolkit:review-pr)`
 4. PR作成 → `Skill(push-pr)`
-5. マージ後 → `/clean_gone`
+5. マージ後 → `/git:clean-gone`
 <!-- 6. リリース準備 → `/release <version>` -->
 7. リリース完了 → `/clean-gone`
 ```
