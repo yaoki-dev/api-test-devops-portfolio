@@ -20,7 +20,7 @@
 
 ## 概要
 
-- **588件のテストスイート**: Unit(549, うちPerformance 5件・Slow 1件含む) / Integration(36, うちExternal 5件含む) / Smoke(3) / E2E(実装予定)
+- **588件のテストスイート**: Unit(549, うちSlow 1件含む) / Integration(36, うちExternal 5件含む) / Smoke(3) / E2E(実装予定)
 - **カバレッジ: 93.39%**（unit+integration条件）: 継続的な品質向上
 - **CI実行テスト: 580件**（unit+integration, external除外）
 - **CI/CD自動化**: GitHub Actions による4段階パイプライン
@@ -268,7 +268,7 @@ if init_sentry():
 
 | 種別 | 件数 | CI対象 | 備考 |
 |------|------|--------|------|
-| Unit tests | 549件 | ✅ | ビジネスロジック検証（Performance 5件・Slow 1件含む） |
+| Unit tests | 549件 | ✅ | ビジネスロジック検証（Slow 1件含む） |
 | Integration tests | 36件（CI対象: 31件） | ✅（external 5件除外） | API統合検証 |
 | **CI合計（カバレッジ計測対象）** | **580件** | | |
 | **カバレッジ** | **93.39%** | | unit+integration条件 |
@@ -277,7 +277,7 @@ if init_sentry():
 
 | 種別 | 件数 | 除外理由 |
 |------|------|---------|
-| External API tests | 5件 | 実ネットワーク依存 |
+| External API tests | 5件 | 実ネットワーク依存（Integration 36件の内数） |
 | Smoke tests | 3件 | 実環境依存 |
 | E2E tests | 実装予定 | — |
 | **全件合計** | **588件** | |

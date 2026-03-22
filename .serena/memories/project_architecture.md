@@ -25,7 +25,7 @@
 
 ### Test Layer
 - **Total**: 588 tests across ~19 test files (CI対象: 580件)
-- **Distribution**: unit(14) / integration(3) / performance(1) / smoke(1)
+- **Distribution (test files)**: unit(14) / integration(3) / performance(1) / smoke(1)
 - **Infrastructure**: conftest.py shared fixtures
 
 ### Dependency Structure
