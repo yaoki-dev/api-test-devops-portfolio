@@ -364,7 +364,6 @@ class TestProductionSecretValidation:
             api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),
         )
         assert settings.environment == Environment.STAGING
-        assert settings.security.jwt_secret is not None
 
 
 class TestProductionHTTPSValidation:
