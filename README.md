@@ -35,20 +35,20 @@
 
 ![Test Demo - pytest実行で19件テスト合格、カバレッジ64%を5秒で確認。テスト自動化スキルを実証](assets/demo-test.gif)
 
-> **📝 デモ内容**: クイック実行例（基本テスト19件、デモ時間短縮のため抽出。全551件は約60秒）
-> **🔍 全551件を今すぐ確認**: [GitHub Actions CI/CD](https://github.com/yuta158/api-test-portfolio/actions) でフルテスト結果＋カバレッジレポートを閲覧
+> **📝 デモ内容**: クイック実行例（基本テスト19件、デモ時間短縮のため抽出。全581件は約60秒）
+> **🔍 全581件を今すぐ確認**: [GitHub Actions CI/CD](https://github.com/yuta158/api-test-portfolio/actions) でフルテスト結果＋カバレッジレポートを閲覧
 
 **何がわかるか**:
 
 - pytest + pytest-covによる自動テスト実行
 - カバレッジレポートによる品質可視化
-- テスト実行: 基本19件 ~5秒、全551件 ~60秒
+- テスト実行: 基本19件 ~5秒、全581件 ~60秒
 
 <details>
-<summary>全テスト実行コマンド（551件、約60秒）</summary>
+<summary>全テスト実行コマンド（581件、約60秒）</summary>
 
 ```bash
-# 全テスト実行（551件）
+# 全テスト実行（581件）
 uv run pytest --cov=utils --cov=config --cov=models --cov-report=term -q --color=yes
 
 # クイック実行（unit tests）
@@ -180,7 +180,7 @@ api-test-devops-portfolio/
 ├── config/              # 設定管理（Pydantic Settings）
 ├── utils/               # ユーティリティ（APIクライアント等）
 ├── models/              # データモデル
-├── tests/               # テストスイート（551件）
+├── tests/               # テストスイート（581件）
 │   ├── unit/            # 単体テスト
 │   ├── integration/     # 統合テスト
 │   ├── performance/     # パフォーマンステスト
@@ -283,7 +283,7 @@ if init_sentry():
 | Slow tests | 1件 | タイムアウト対象（>3秒） |
 | E2E tests | 実装予定 | — |
 | マーカーなし | 60件 | マーカー付与予定（test_responses_models等） |
-| **全件合計** | **551件** | |
+| **全件合計** | **581件** | |
 
 > カバレッジはCI安定性確保のため、決定論的テスト（unit + integration）のみを計測対象としています。
 
@@ -291,7 +291,7 @@ if init_sentry():
 
 ```mermaid
 graph TB
-    subgraph "Test Pyramid - 551件（CI対象: 573件）"
+    subgraph "Test Pyramid - 581件（CI対象: 573件）"
         E2E["🔝 E2E<br/>0件 → 5%目標"]
         Integration["🔗 Integration<br/>36件（CI対象: 31件）→ 25%目標"]
         Unit["🧱 Unit<br/>452件 (82%) → 70%目標"]
@@ -309,7 +309,7 @@ graph TB
 - **Integration (25%)**: API・DB接続の検証（中速・実環境近似）
 - **E2E (5%)**: クリティカルパスのみ（低速・高信頼）
 
-> **Note**: pytestパラメータ化テストにより、テスト関数 → pytest収集551件（CI対象: 573件）。カテゴリ別件数はマーカー別集計のため合計は551件と一致しない（マーカー重複・未付与テスト60件含む）
+> **Note**: pytestパラメータ化テストにより、テスト関数 → pytest収集581件（CI対象: 573件）。カテゴリ別件数はマーカー別集計のため合計は581件と一致しない（マーカー重複・未付与テスト60件含む）
 
 ### テスト実行特性（CI最適化）
 
