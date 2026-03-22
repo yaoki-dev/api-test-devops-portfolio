@@ -26,7 +26,7 @@ graph TB
 | **PR Validation** | `pull_request` | Unit + Integration Tests | 10分 | ○ |
 | **PR Security Scan** | `pull_request` | Trivy（Filesystem + Image） | 10分 | ○ |
 | **Post-Merge** | `push to main` | Docker Build + Trivy + Smoke Tests | 8分 | × |
-| **Weekly Comprehensive** | `schedule` (週次) | Performance（全PR含む） + External API | 30分 | × |
+| **Weekly Comprehensive** | `schedule` (週次) | Performance（integration経由でPR CIに含む） + External API | 30分 | × |
 
 ---
 

@@ -33,7 +33,7 @@
 
 ### 1. テスト実行
 
-![Test Demo - pytest実行で19件テスト合格、カバレッジ64%を5秒で確認。テスト自動化スキルを実証](assets/demo-test.gif)
+![Test Demo - pytest実行で基本テスト19件合格（全588件中の抽出実行、CI環境での全体カバレッジ: 93.39%）。テスト自動化スキルを実証](assets/demo-test.gif)
 
 > **📝 デモ内容**: クイック実行例（基本テスト19件、デモ時間短縮のため抽出。全588件は約60秒）
 > **🔍 全588件を今すぐ確認**: [GitHub Actions CI/CD](https://github.com/yuta158/api-test-portfolio/actions) でフルテスト結果＋カバレッジレポートを閲覧
@@ -315,7 +315,7 @@ graph TB
 | `unit` | 単体テスト | 全PR |
 | `integration` | 統合テスト | 全PR |
 | `smoke` | 基本機能確認 | 全PR（--no-cov、実API疎通確認） |
-| `slow` | 実行時間 >3秒 | 全PR（unit併用） |
+| `slow` | 実行時間 >3秒 | 全PR（unitマーカー併用テストのみCI対象） |
 | `external` | 外部API依存 | 週次のみ |
 | `performance` | 性能測定 | 全PR（integration併用） |
 | `e2e` | E2Eテスト | Playwright導入後 |
