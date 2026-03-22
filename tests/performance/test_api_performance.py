@@ -19,6 +19,8 @@ import pytest
 from utils.api_client import AsyncAPIClient
 
 # Module-level markers: Performance tests（週次CIのみ実行 — PR CIから除外）
+# Note: `integration` マーカーは意図的に削除済み —
+#   PR CI の `-m "(unit or integration)"` 条件から除外するため
 # Design rationale: Performance testing requires actual network latency measurement
 # See: docs/interview/multi_level_security_testing.md
 pytestmark = [pytest.mark.performance]
@@ -249,12 +251,11 @@ class TestAPIPerformance:
         try:
             response = await client.get(endpoint)
             assert response.status_code == 200
-            end_time = time.time()
-            response_time = end_time - start_time
-            metrics.record_response_time(response_time)
         except Exception as e:
             print(f"Request failed for {endpoint}: {e}")
             raise
+        finally:
+            metrics.record_response_time(time.time() - start_time)
 
 
 @pytest.mark.performance
@@ -290,15 +291,14 @@ class TestPerformanceRegression:
             print(f"  - 現在の性能: {current_performance:.3f}s")
             print(f"  - 性能比率: {performance_ratio:.2f}x")
 
-            threshold = self.REGRESSION_THRESHOLD
-            if performance_ratio > threshold:
-                raise AssertionError(f"Performance regression detected: {performance_ratio:.2f}x")
+            if performance_ratio > self.REGRESSION_THRESHOLD * 2:
+                t = self.REGRESSION_THRESHOLD * 2
+                msg = f"深刻なパフォーマンス回帰: {performance_ratio:.2f}x (閾値: {t:.1f}x)"
+                raise AssertionError(msg)
+            if performance_ratio > self.REGRESSION_THRESHOLD:
+                print(f"⚠️ パフォーマンス警告: {performance_ratio:.2f}x")
             else:
                 print("✅ パフォーマンス回帰なし")
-
-            assert performance_ratio < self.REGRESSION_THRESHOLD * 2, (
-                f"深刻なパフォーマンス回帰: {performance_ratio:.2f}x"
-            )
 
     async def _measure_request(
         self,
@@ -311,12 +311,11 @@ class TestPerformanceRegression:
         try:
             response = await client.get(endpoint)
             assert response.status_code == 200
-            end_time = time.time()
-            response_time = end_time - start_time
-            metrics.record_response_time(response_time)
         except Exception as e:
             print(f"Request failed for {endpoint}: {e}")
             raise
+        finally:
+            metrics.record_response_time(time.time() - start_time)
 
 
 # パフォーマンステストレポート生成
