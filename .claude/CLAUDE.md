@@ -21,8 +21,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 9. **ALWAYS** invoke skills via Skill(skill-name) notation when user requests
 10. **ALWAYS** follow development workflow order → Section「🔄 開発ワークフロー」
 11. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `Skill(superpowers:verification-before-completion)` → then `Skill(reflexion:reflect)`
+    **GSD使用時**: `/gsd:verify-work` → `Skill(superpowers:verification-before-completion)` → `Skill(reflexion:reflect)` の順で実行
 12. **ALWAYS** when 2+ independent tasks exist, after task classification, per RULES.md exception conditions → invoke `Skill(superpowers:subagent-driven-development)` skill
     (reason: keep the main context window clean by leveraging subagents aggressively)
+    **例外**: `/gsd:execute-phase` 使用時はスキップ（GSD自体がwave-based並列実行を管理するため）
 13. **ALWAYS** verify file content with Read/Grep tool BEFORE making any claim about line numbers, file structure, or code content
 14. **ALWAYS** enforce worktree boundary:
     - At conversation start (including post-compact context reload): run `git rev-parse --show-toplevel`:
@@ -310,6 +312,11 @@ git checkout -b feature/<次のタスク> origin/develop
 | `Skill(decision-helper)` | Skill | 2+選択肢の比較評価時 | Pros/Cons・Decision Matrix・ICEフレームワーク |
 | `Skill(fact-checker)` | Skill | 主張・データの事実確認時 | 証拠ベースのファクトチェック・情報信頼性評価 |
 | `Skill(prompt-lookup)`, `Skill(skill-lookup)` | Skill | 検索時 | プロンプト/スキル発見 |
+| `/gsd:new-project` | GSD | 大規模機能開始時 | 仕様書駆動プロジェクト初期化 |
+| `/gsd:plan-phase`, `/gsd:discuss-phase` | GSD | フェーズ計画時 | 8次元plan-checker付き計画 |
+| `/gsd:execute-phase` | GSD | フェーズ実行時 | wave-based並列実行（Rule 12例外）|
+| `/gsd:verify-work` | GSD | フェーズ検証時 | UAT仕様適合検証 |
+| `/gsd:pause-work`, `/gsd:resume-work` | GSD | セッション中断/再開 | HANDOFF.json引き継ぎ |
 
 <!-- preserve-on-compact: Development Workflow -->
 ## 🔄 開発ワークフロー（標準コマンド実行順序）
@@ -322,6 +329,10 @@ git checkout -b feature/<次のタスク> origin/develop
 1. 固定Worktreeでブランチ作成 → /git:feature（常時※1）
    → 固定WT: ${HOME}/projects/python/.worktrees/wt-feature0[1-3]（個人環境ごとにカスタマイズ）
    → 計画ファイル作成が必要な場合: claudedocs/plans/ に作成（閾値詳細: .claude/rules/workflow/PLANS.md §使用閾値）
+   → GSD使用判断（以下いずれか該当時）:
+     (a) 新規モジュール/サブシステムの追加  (b) 3+ファイル変更が見込まれる機能
+     (c) 仕様書が必要な複雑な機能
+     → /gsd:new-project → /gsd:discuss-phase → /gsd:plan-phase → /gsd:execute-phase
 
 【実装フェーズ】
 2. コード変更 → security-guidance (hook自動)
@@ -330,6 +341,7 @@ git checkout -b feature/<次のタスク> origin/develop
    → If it feels hacky, ask: "Given what I know now, what's the most elegant approach?"
    → Skip for obvious single-line fixes
 4. 作業完了確認 → `Skill(superpowers:verification-before-completion)` を実行
+   → GSD使用時: /gsd:verify-work → Skill(superpowers:verification-before-completion)
    → 未完了作業あり: 修正 → 3. 品質ゲートに戻る（最大3回まで。4回連続失敗時はユーザーに報告して停止）
 5. reflect(タスクごとに実施) → `Skill(reflexion:reflect)` を Skill tool で実行
    引数: deep reflect if less than 90% confidence. 日本語で簡潔に回答
