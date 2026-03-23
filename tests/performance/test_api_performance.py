@@ -72,8 +72,9 @@ class PerformanceMetrics:
                 else (sorted_times[n // 2 - 1] + sorted_times[n // 2]) / 2,
                 "min": sorted_times[0],
                 "max": sorted_times[-1],
-                "p95": sorted_times[int(n * 0.95)] if n > 20 else sorted_times[-1],
-                "p99": sorted_times[int(n * 0.99)] if n > 100 else sorted_times[-1],
+                # -1e-9: n*p が整数の場合（n=100等）に ceil(n*p)-1 と等価にするための補正
+                "p95": sorted_times[int(n * 0.95 - 1e-9)] if n > 20 else sorted_times[-1],
+                "p99": sorted_times[int(n * 0.99 - 1e-9)] if n > 100 else sorted_times[-1],
             },
             "throughput": len(self.response_times) / elapsed if elapsed > 0 else 0.0,
             "memory_usage": {
