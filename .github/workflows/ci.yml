@@ -175,7 +175,7 @@ jobs:
           scan-type: 'filesystem'
 
       - name: Upload filesystem scan results to Security tab
-        uses: github/codeql-action/upload-sarif@b1bff81932f5cdfc8695c7752dcee935dcd061c8 # v4.33.0
+        uses: github/codeql-action/upload-sarif@38697555549f1db7851b81482ff19f1fa5c4fedc # v4.34.1
         if: always() && steps.verify-fs-scan.outcome == 'success' && steps.fs-scan.outcome != 'cancelled' && steps.fs-scan.outcome != 'skipped'
         with:
           sarif_file: 'trivy-fs-scan.sarif'
@@ -245,7 +245,7 @@ jobs:
           scan-type: 'image'
 
       - name: Upload image scan results to Security tab
-        uses: github/codeql-action/upload-sarif@b1bff81932f5cdfc8695c7752dcee935dcd061c8 # v4.33.0
+        uses: github/codeql-action/upload-sarif@38697555549f1db7851b81482ff19f1fa5c4fedc # v4.34.1
         if: always() && steps.verify-image-scan.outcome == 'success' && steps.image-scan.outcome != 'cancelled' && steps.image-scan.outcome != 'skipped'
         with:
           sarif_file: 'trivy-image-scan.sarif'
@@ -351,7 +351,7 @@ jobs:
           scan-type: 'image'
 
       - name: Upload Trivy results to Security tab
-        uses: github/codeql-action/upload-sarif@b1bff81932f5cdfc8695c7752dcee935dcd061c8 # v4.33.0
+        uses: github/codeql-action/upload-sarif@38697555549f1db7851b81482ff19f1fa5c4fedc # v4.34.1
         if: always() && steps.verify-trivy-scan.outcome == 'success'
         with:
           sarif_file: 'trivy-results.sarif'
