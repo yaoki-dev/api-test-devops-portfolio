@@ -29,7 +29,7 @@ CI/CD パイプラインで効率的かつ継続的に実施できます。
 
 **実行環境の使い分け**: Trivy（依存パッケージ・コンテナ）は CI ゲートとして全 PR で自動実行。gitleaks はコミット時の pre-commit フックとして開発者ローカルで実行。bandit・ruff(S) はローカル手動実行を推奨。
 
-登録済み pytest マーカー（`pytest.ini`）:
+登録済み pytest マーカー（`pyproject.toml` の `[tool.pytest.ini_options]`）:
 
 ```ini
 markers =
@@ -173,7 +173,7 @@ uv run ruff check --select S .                   # Security rules
 
 - `.serena/memories/test_strategy.md`: テスト戦略全体
 - `.serena/memories/test_strategy_part3_security_execution.md`: セキュリティテスト実行戦略
-- `pytest.ini`: マーカー定義
+- `pyproject.toml` の `[tool.pytest.ini_options]`: マーカー定義
 
 ---
 

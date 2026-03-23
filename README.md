@@ -315,7 +315,7 @@ graph TB
 | `unit` | 単体テスト | 全PR |
 | `integration` | 統合テスト | 全PR |
 | `smoke` | 基本機能確認 | 全PR（--no-cov、実API疎通確認） |
-| `slow` | 実行時間 >3秒 | 全PR（unit/integrationマーカー併用テストのみCI対象） |
+| `slow` | 実行時間 >3秒 | unit/integration併用テストのみCI対象（slow単独は除外） |
 | `external` | 外部API依存 | 週次のみ |
 | `performance` | 性能測定 | 週次のみ |
 | `e2e` | E2Eテスト | Playwright導入後 |

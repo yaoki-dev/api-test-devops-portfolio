@@ -15,7 +15,7 @@ from typing import Any
 import psutil
 import pytest
 
-from utils.api_client import AsyncAPIClient
+from utils.api_client import APIClientError, AsyncAPIClient
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -99,7 +99,7 @@ async def _measure_request(
     start_time = time.time()
     try:
         response = await client.get(endpoint)
-    except Exception as e:
+    except APIClientError as e:
         logger.warning("request_failed", endpoint=endpoint, error=str(e))
         raise
 
@@ -143,8 +143,8 @@ class TestAPIPerformance:
 
             logger.info(
                 "single_request_performance",
-                response_time=f"{response_time:.3f}s",
-                memory_mb=f"{summary['memory_usage']['start_mb']:.1f}",
+                response_time=round(response_time, 3),
+                memory_mb=round(summary["memory_usage"]["start_mb"], 1),
             )
 
     @pytest.mark.asyncio
@@ -193,10 +193,10 @@ class TestAPIPerformance:
             logger.info(
                 "concurrent_requests_performance",
                 request_count=summary["request_count"],
-                mean_response_time=f"{summary['response_times']['mean']:.3f}s",
-                p95=f"{summary['response_times']['p95']:.3f}s",
-                throughput=f"{summary['throughput']:.1f} req/s",
-                memory_increase_mb=f"{summary['memory_usage']['increase_mb']:.1f}",
+                mean_response_time=round(summary["response_times"]["mean"], 3),
+                p95=round(summary["response_times"]["p95"], 3),
+                throughput=round(summary["throughput"], 1),
+                memory_increase_mb=round(summary["memory_usage"]["increase_mb"], 1),
             )
 
     @pytest.mark.asyncio
@@ -242,13 +242,13 @@ class TestAPIPerformance:
             logger.info(
                 "load_test_simulation",
                 total_requests=summary["request_count"],
-                duration=f"{summary['total_duration']:.1f}s",
-                mean_response_time=f"{summary['response_times']['mean']:.3f}s",
-                min_response_time=f"{summary['response_times']['min']:.3f}s",
-                max_response_time=f"{summary['response_times']['max']:.3f}s",
-                p95=f"{summary['response_times']['p95']:.3f}s",
-                throughput=f"{summary['throughput']:.1f} req/s",
-                memory_increase_mb=f"{summary['memory_usage']['increase_mb']:.1f}",
+                duration=round(summary["total_duration"], 1),
+                mean_response_time=round(summary["response_times"]["mean"], 3),
+                min_response_time=round(summary["response_times"]["min"], 3),
+                max_response_time=round(summary["response_times"]["max"], 3),
+                p95=round(summary["response_times"]["p95"], 3),
+                throughput=round(summary["throughput"], 1),
+                memory_increase_mb=round(summary["memory_usage"]["increase_mb"], 1),
             )
 
     @pytest.mark.asyncio
@@ -276,7 +276,7 @@ class TestAPIPerformance:
             logger.info(
                 "endpoint_comparison",
                 endpoint=endpoint,
-                avg_response_time=f"{avg_time:.3f}s",
+                avg_response_time=round(avg_time, 3),
             )
 
         # 最も遅いエンドポイントが閾値内であることを確認
@@ -290,8 +290,8 @@ class TestPerformanceRegression:
     """パフォーマンス回帰テスト"""
 
     # ベースライン値（実際の測定値に基づいて調整）
-    BASELINE_RESPONSE_TIME = 2.0  # 秒（外部API + CI環境を考慮した保守的な値）
-    REGRESSION_THRESHOLD = 1.5  # 50%の悪化まで許容
+    BASELINE_RESPONSE_TIME = 2.0  # 秒（外部API + CI環境の実測値に基づく保守的な値；旧: 1.0s）
+    REGRESSION_THRESHOLD = 1.5  # 50%悪化まで許容；上限 = 2.0s × 1.5 = 3.0s（旧しきい値と同値）
 
     @pytest.mark.asyncio
     async def test_performance_regression_detection(self):
@@ -315,9 +315,9 @@ class TestPerformanceRegression:
 
             logger.info(
                 "performance_regression_detection",
-                baseline=f"{self.BASELINE_RESPONSE_TIME:.3f}s",
-                current=f"{current_performance:.3f}s",
-                ratio=f"{performance_ratio:.2f}x",
+                baseline=round(self.BASELINE_RESPONSE_TIME, 3),
+                current=round(current_performance, 3),
+                ratio=round(performance_ratio, 2),
             )
 
             assert performance_ratio <= self.REGRESSION_THRESHOLD, (
