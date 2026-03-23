@@ -21,10 +21,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 9. **ALWAYS** invoke skills via Skill(skill-name) notation when user requests
 10. **ALWAYS** follow development workflow order → Section「🔄 開発ワークフロー」
 11. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `Skill(superpowers:verification-before-completion)` → then `Skill(reflexion:reflect)`
-    **GSD使用時**: 詳細は開発ワークフロー Step 4参照
+    **GSD使用時**: `Skill(reflexion:reflect)` の実行可否は開発ワークフロー Step 4 のGSDフロー完走定義に従う（完走時のみ省略可。それ以外は必ず実行）
 12. **ALWAYS** when 2+ independent tasks exist, after task classification, per RULES.md exception conditions → invoke `Skill(superpowers:subagent-driven-development)` skill
     (reason: keep the main context window clean by leveraging subagents aggressively)
-    **例外**: RULES.md「Workflow Rules」カテゴリ「Parallel Dispatch Rule」内の「GSD exception」参照（wave判定基準・フェイルセーフ・コンテキスト圧縮時の対処を含む）。
+    **例外**: `/gsd:execute-phase` の実行がコンテキストで確認できる場合のみ本ルールをスキップ。確認できない場合は STOP + ユーザーへ報告（詳細: RULES.md「Workflow Rules」→「Parallel Dispatch Rule」→ `GSD exception` リスト項目参照）。
 13. **ALWAYS** verify file content with Read/Grep tool BEFORE making any claim about line numbers, file structure, or code content
 14. **ALWAYS** enforce worktree boundary:
     - At conversation start (including post-compact context reload): run `git rev-parse --show-toplevel`:
@@ -344,10 +344,8 @@ git checkout -b feature/<次のタスク> origin/develop
    → GSD使用時: /gsd:verify-work → Skill(superpowers:verification-before-completion) → Skill(reflexion:reflect)
      ⚠️ compact発生時: wave state復元不可 → /gsd:verify-work実行禁止 → STOP + ユーザーに報告 → /gsd:resume-workで再確立後に再実行（詳細: RULES.md「GSD exception」参照）
      （GSDフロー完走時のみ Step 5 をスキップ:
-       - 完走定義: `/gsd:verify-work` が全フェーズ検証完了を明示する成功応答を返した場合のみ
-         （警告付き成功・部分成功・"N/M checks passed"等は未完走とみなす。不明・判定不能な場合も未完走扱い）
-       - ループ発動時（`/gsd:verify-work` が再試行・周回実行を開始し完全な終了シグナルを返さずに次サイクルへ移行した状態）は GSD フロー未完走とみなし Step 5 を実行する
-       - 未完走・その他すべての場合は Step 5 を実行する（false-negative 禁止））
+       - 完走定義: `/gsd:verify-work` が全フェーズ検証完了を明示する成功応答を返した場合のみ。それ以外はすべて Step 5 を実行する（false-negative 禁止））
+     ⚠️ ツールエラー・タイムアウト・空応答の場合: STOP + ユーザーに報告（エラー詳細を含む）→ /gsd:resume-workで再確立後に再実行
    → GSD未使用時、または上記GSD使用フロー外で未完了作業あり: 修正 → 3. 品質ゲートに戻る（最大3回まで。4回連続失敗時はユーザーに報告して停止）
 5. reflect(タスクごとに実施) → `Skill(reflexion:reflect)` を Skill tool で実行
    **非GSD時のみ以下を適用**:
@@ -426,4 +424,3 @@ uv run mypy --show-error-codes --pretty utils/ config/ models/
 1. 公式ドキュメントを再確認（仕様変更/誤解の可能性）
 2. GitHub Issuesで既知の問題を検索
 3. 削除/代替案を検討（機能の必要性を再評価）
-
