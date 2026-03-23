@@ -171,8 +171,7 @@ uv run ruff check --select S .                   # Security rules
 
 ## 5. 関連ドキュメント
 
-- `.serena/memories/test_strategy.md`: テスト戦略全体
-- `.serena/memories/test_strategy_part3_security_execution.md`: セキュリティテスト実行戦略
+- `.claude/rules/testing/test-strategy.md`: テスト戦略全体
 - `pyproject.toml` の `[tool.pytest.ini_options]`: マーカー定義
 
 ---
