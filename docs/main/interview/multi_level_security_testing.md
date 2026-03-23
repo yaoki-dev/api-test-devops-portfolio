@@ -106,9 +106,9 @@ uv run pytest -m security  # 54テスト
 ### Q3: パフォーマンステストも同様のアプローチですか？
 
 **回答例**:
-> はい。パフォーマンステスト（`test_api_performance.py`）もIntegration Levelで実装しています。レスポンス時間測定やスループット計測は、実際のネットワークレイテンシを含む環境でないと意味のあるデータが得られないためです。
+> はい。パフォーマンステスト（`test_api_performance.py`）は実際のネットワーク環境で実行します。レスポンス時間測定やスループット計測は、実際のネットワークレイテンシを含む環境でないと意味のあるデータが得られないためです。`performance`マーカー専用で分類し（`integration`マーカーとは独立）、週次CIでのみ実行します。
 >
-> `performance`マーカーを使用し、`uv run pytest -m performance`で選択的に実行できます（週次CIで実行）。
+> `uv run pytest -m performance`で選択的に実行できます。
 
 ---
 
