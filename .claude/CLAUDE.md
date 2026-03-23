@@ -21,10 +21,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 9. **ALWAYS** invoke skills via Skill(skill-name) notation when user requests
 10. **ALWAYS** follow development workflow order → Section「🔄 開発ワークフロー」
 11. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `Skill(superpowers:verification-before-completion)` → then `Skill(reflexion:reflect)`
-    **GSD使用時**: Step 5 の reflect 仕様（引数・自動ループ）を同様に適用する。
+    **GSD使用時**: ワークフロー Step 5（`Skill(reflexion:reflect)` の引数・自動ループ）を同様に適用する。
 12. **ALWAYS** when 2+ independent tasks exist, after task classification, per RULES.md exception conditions → invoke `Skill(superpowers:subagent-driven-development)` skill
     (reason: keep the main context window clean by leveraging subagents aggressively)
-    **例外**: `/gsd:execute-phase` の `tool_use` ブロックがコンテキストで構造的に確認できる場合のみスキップ。全分岐条件（compact後の回復を含む）: RULES.md **GSD exception** 表参照。
+    **例外**: `/gsd:execute-phase` の `tool_use` ブロックがコンテキストで構造的に確認でき、かつ後続に `/gsd:verify-work` または `/gsd:pause-work` の `tool_use` ブロックが存在しない場合のみスキップ。全分岐条件（compact後の回復を含む）: RULES.md **GSD exception** 表参照。
 13. **ALWAYS** verify file content with Read/Grep tool BEFORE making any claim about line numbers, file structure, or code content
 14. **ALWAYS** enforce worktree boundary:
     - At conversation start (including post-compact context reload): run `git rev-parse --show-toplevel`:
@@ -339,11 +339,11 @@ git checkout -b feature/<次のタスク> origin/develop
    → If it feels hacky, ask: "Given what I know now, what's the most elegant approach?"
    → Skip for obvious single-line fixes
 4. 作業完了確認 → `Skill(superpowers:verification-before-completion)` を実行（GSD使用時は下記フロー参照）
-   → GSD使用時: /gsd:verify-work（failure/timeout/empty → STOP + ユーザーに報告。後続Skill呼び出しに進まないこと）→ Skill(superpowers:verification-before-completion)
+   → GSD使用時: /gsd:verify-work（failure/timeout/empty（= ツール応答が空文字列・ホワイトスペースのみ・または解析可能な検証結果を含まない場合） → STOP + ユーザーに報告。後続Skill呼び出しに進まないこと）→ Skill(superpowers:verification-before-completion)
      ⚠️ compact・エラー時の回復フロー: RULES.md **GSD exception** 表の Row 1 参照（再実行は最大2回まで。上限到達時はユーザーに報告して停止）
    → GSD未使用時、または上記GSD使用フロー外で未完了作業あり: 修正 → 3. 品質ゲートに戻る（最大3回まで。4回連続失敗時はユーザーに報告して停止）
 5. reflect(タスクごとに実施) → `Skill(reflexion:reflect)` を Skill tool で実行
-   （GSD使用時かつ Step 4 の `Skill(reflexion:reflect)` が信頼度90%以上で正常完了済みの場合のみスキップ。partial completion・failure・compact後回復フロー経由はスキップ禁止）
+   （GSD使用時かつ RULES.md **GSD exception** 表 Row 1 の回復フローで `Skill(reflexion:reflect)` が信頼度90%以上で正常完了済みの場合のみスキップ。partial completion（信頼度の値を返さず終了、またはツールエラー終了した場合）・failure・compact後回復フロー経由はスキップ禁止）
    引数: deep reflect if less than 90% confidence. 日本語で簡潔に回答
    自動ループ:
     - 信頼度90%未満: 改善して再実行（各反復で信頼度と改善理由を簡潔に示す）/ 90%以上 → 終了 - 最大3回まで
