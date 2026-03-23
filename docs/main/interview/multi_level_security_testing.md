@@ -108,7 +108,7 @@ uv run pytest -m security  # 54テスト
 **回答例**:
 > はい。パフォーマンステスト（`test_api_performance.py`）もIntegration Levelで実装しています。レスポンス時間測定やスループット計測は、実際のネットワークレイテンシを含む環境でないと意味のあるデータが得られないためです。
 >
-> `performance`と`integration`の複合マーカーを使用し、`uv run pytest -m "performance and integration"`で選択的に実行できます。
+> `performance`マーカーを使用し、`uv run pytest -m performance`で選択的に実行できます（週次CIで実行）。
 
 ---
 

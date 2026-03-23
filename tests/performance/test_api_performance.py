@@ -26,6 +26,22 @@ from utils.api_client import AsyncAPIClient
 pytestmark = [pytest.mark.performance]
 
 
+async def _measure_request(
+    client: AsyncAPIClient,
+    endpoint: str,
+    metrics: PerformanceMetrics,
+) -> None:
+    """リクエスト実行とレスポンス時間測定（成功時のみ記録）"""
+    start_time = time.time()
+    try:
+        response = await client.get(endpoint)
+        assert response.status_code == 200
+        metrics.record_response_time(time.time() - start_time)  # 成功時のみ記録
+    except Exception as e:
+        print(f"Request failed for {endpoint}: {e}")
+        raise
+
+
 class PerformanceMetrics:
     """パフォーマンスメトリクス収集クラス"""
 
@@ -138,7 +154,7 @@ class TestAPIPerformance:
             # 並行リクエストタスク作成
             tasks = []
             for i in range(concurrent_count):
-                tasks.append(self._measure_request(client, f"/posts/{i + 1}", metrics))
+                tasks.append(_measure_request(client, f"/posts/{i + 1}", metrics))
 
             # 並行実行
             await asyncio.gather(*tasks)
@@ -182,7 +198,7 @@ class TestAPIPerformance:
                 batch_tasks = []
                 for i in range(batch, min(batch + batch_size, request_count)):
                     endpoint = f"/posts/{(i % 100) + 1}"  # 1-100のランダムエンドポイント
-                    batch_tasks.append(self._measure_request(client, endpoint, metrics))
+                    batch_tasks.append(_measure_request(client, endpoint, metrics))
 
                 await asyncio.gather(*batch_tasks)
                 await asyncio.sleep(0.1)  # バッチ間隔
@@ -221,7 +237,7 @@ class TestAPIPerformance:
 
                 # 各エンドポイントを5回テスト
                 for _ in range(5):
-                    await self._measure_request(client, endpoint, metrics)
+                    await _measure_request(client, endpoint, metrics)
 
                 metrics.stop_monitoring()
                 summary = metrics.get_summary()
@@ -240,30 +256,13 @@ class TestAPIPerformance:
             f"最も遅いエンドポイントが許容値を超過: {slowest_time:.3f}s"
         )
 
-    async def _measure_request(
-        self,
-        client: AsyncAPIClient,
-        endpoint: str,
-        metrics: PerformanceMetrics,
-    ) -> None:
-        """リクエスト実行とレスポンス時間測定"""
-        start_time = time.time()
-        try:
-            response = await client.get(endpoint)
-            assert response.status_code == 200
-        except Exception as e:
-            print(f"Request failed for {endpoint}: {e}")
-            raise
-        finally:
-            metrics.record_response_time(time.time() - start_time)
-
 
 @pytest.mark.performance
 class TestPerformanceRegression:
     """パフォーマンス回帰テスト"""
 
     # ベースライン値（実際の測定値に基づいて調整）
-    BASELINE_RESPONSE_TIME = 1.0  # 1秒
+    BASELINE_RESPONSE_TIME = 1.0  # 秒（CI環境の実測値に基づき要調整 — 楽観的な初期値）
     REGRESSION_THRESHOLD = 1.5  # 50%の悪化まで許容
 
     @pytest.mark.asyncio
@@ -276,7 +275,7 @@ class TestPerformanceRegression:
 
             # ベースラインテスト（10回実行）
             for _ in range(10):
-                await self._measure_request(client, "/posts/1", metrics)
+                await _measure_request(client, "/posts/1", metrics)
 
             metrics.stop_monitoring()
 
@@ -291,27 +290,11 @@ class TestPerformanceRegression:
             print(f"  - 現在の性能: {current_performance:.3f}s")
             print(f"  - 性能比率: {performance_ratio:.2f}x")
 
-            if performance_ratio > self.REGRESSION_THRESHOLD:
-                raise AssertionError(f"Performance regression detected: {performance_ratio:.2f}x")
-            else:
-                print("✅ パフォーマンス回帰なし")
-
-    async def _measure_request(
-        self,
-        client: AsyncAPIClient,
-        endpoint: str,
-        metrics: PerformanceMetrics,
-    ) -> None:
-        """リクエスト実行とレスポンス時間測定"""
-        start_time = time.time()
-        try:
-            response = await client.get(endpoint)
-            assert response.status_code == 200
-        except Exception as e:
-            print(f"Request failed for {endpoint}: {e}")
-            raise
-        finally:
-            metrics.record_response_time(time.time() - start_time)
+            assert performance_ratio <= self.REGRESSION_THRESHOLD, (
+                f"Performance regression detected: {performance_ratio:.2f}x "
+                f"(current={current_performance:.3f}s, baseline={self.BASELINE_RESPONSE_TIME}s)"
+            )
+            print("✅ パフォーマンス回帰なし")
 
 
 # =============================================================================
