@@ -51,7 +51,7 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
     | `/gsd:execute-phase` NOT visible + GSD signals present | STOP + report to user (do not treat as Dispatch Automation) |
     | After context compression (compact) | STOP + report to user; resume via `/gsd:resume-work` |
 
-    GSD signals: ANY of — (1) HANDOFF.json is referenced, (2) `claudedocs/plans/` files are referenced, (3) any `/gsd:*` command is referenced, (4) the terms "GSD wave" or "GSD phase" appear.
+    GSD signals: ANY of — (1) HANDOFF.json is referenced, (2) any `/gsd:*` command is referenced, (3) the terms "GSD wave" or "GSD phase" appear.
 
     **Subagent context disambiguation** (rows 2–3 apply equally to subagents): A subagent is in undetermined context when ALL of: (1) its task prompt contains no reference to `/gsd:execute-phase`, AND (2) no `/gsd:execute-phase` execution record is visible in its conversation context. Evaluate rows top-to-bottom (row 3 takes priority over row 2 when GSD signals are present). Row 2 fallback: execute `Skill(superpowers:verification-before-completion)` (false-negative prohibited); on error/timeout/empty → STOP + report to parent agent with error detail; on completion → report to parent agent with (a) reason, (b) skill result, (c) affected scope.
   - On failure: if **any** agent reports failure or partial completion, the parent agent must (1) allow already-running invocations to complete (Task tool has no cancel API), (2) collect and log agent statuses (success/failure/unknown), and (3) report full status summary to user before further action

@@ -342,10 +342,9 @@ git checkout -b feature/<次のタスク> origin/develop
    → Skip for obvious single-line fixes
 4. 作業完了確認 → `Skill(superpowers:verification-before-completion)` を実行（GSD使用時は下記フロー参照）
    → GSD使用時: /gsd:verify-work → Skill(superpowers:verification-before-completion) → Skill(reflexion:reflect)
-     ⚠️ compact・ツールエラー・タイムアウト・空応答の場合: STOP + ユーザーに報告（エラー詳細を含む。詳細: RULES.md **GSD exception** 表参照）→ /gsd:resume-workで再確立後に再実行
+     ⚠️ compact・ツールエラー・タイムアウト・空応答・部分成功の場合: STOP + ユーザーに報告（エラー詳細を含む。詳細: RULES.md **GSD exception** 表参照）→ /gsd:resume-workで再確立後に再実行
    → GSD未使用時、または上記GSD使用フロー外で未完了作業あり: 修正 → 3. 品質ゲートに戻る（最大3回まで。4回連続失敗時はユーザーに報告して停止）
 5. reflect(タスクごとに実施) → `Skill(reflexion:reflect)` を Skill tool で実行
-   **非GSD時のみ以下を適用**:
    引数: deep reflect if less than 90% confidence. 日本語で簡潔に回答
    自動ループ:
     - 信頼度90%未満: 改善して再実行（各反復で信頼度と改善理由を簡潔に示す）/ 90%以上 → 終了 - 最大3回まで
