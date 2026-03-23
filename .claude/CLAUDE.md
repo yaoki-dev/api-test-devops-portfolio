@@ -24,7 +24,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     **GSD使用時**: Step 5 の reflect 仕様（引数・自動ループ）を同様に適用する。
 12. **ALWAYS** when 2+ independent tasks exist, after task classification, per RULES.md exception conditions → invoke `Skill(superpowers:subagent-driven-development)` skill
     (reason: keep the main context window clean by leveraging subagents aggressively)
-    **例外**: `/gsd:execute-phase` がコンテキストで確認できる場合のみスキップ（詳細: RULES.md **GSD exception** 表参照）。確認できない場合はGSDシグナルの有無を確認し、シグナルなしはRule 12通常適用、シグナルありは STOP + ユーザーへ報告。
+    **例外**: `/gsd:execute-phase` がコンテキストで確認できる場合のみスキップ（詳細: RULES.md **GSD exception** 表参照）。確認できない場合はGSDシグナルの有無を確認し、シグナルなしはRule 12通常適用、シグナルありは STOP + ユーザーへ報告。なお、compact後はRULES.md **GSD exception** 表の「After context compression」行を最優先で適用すること（本節の「シグナルありはSTOP+報告」より優先）。
 13. **ALWAYS** verify file content with Read/Grep tool BEFORE making any claim about line numbers, file structure, or code content
 14. **ALWAYS** enforce worktree boundary:
     - At conversation start (including post-compact context reload): run `git rev-parse --show-toplevel`:
@@ -329,10 +329,8 @@ git checkout -b feature/<次のタスク> origin/develop
 1. 固定Worktreeでブランチ作成 → /git:feature（常時※1）
    → 固定WT: ${HOME}/projects/python/.worktrees/wt-feature0[1-3]（個人環境ごとにカスタマイズ）
    → 計画ファイル作成が必要な場合: claudedocs/plans/ に作成（閾値詳細: .claude/rules/workflow/PLANS.md §使用閾値）
-   → GSD使用判断（以下いずれか該当時。判断結果はユーザーに明示してから実行）:
-     (a) 新規モジュール/サブシステムの追加
-     (b) 仕様書が必要と判断した場合（claudedocs/plans/ への計画書作成が必要なもの）
-     → /gsd:new-project → /gsd:discuss-phase → /gsd:plan-phase → /gsd:execute-phase
+   → GSD使用判断（該当時。判断結果はユーザーに明示してから実行）:
+     新規モジュール/サブシステムの追加 → /gsd:new-project → /gsd:discuss-phase → /gsd:plan-phase → /gsd:execute-phase
 
 【実装フェーズ】
 2. コード変更 → security-guidance (hook自動)
@@ -342,9 +340,9 @@ git checkout -b feature/<次のタスク> origin/develop
    → Skip for obvious single-line fixes
 4. 作業完了確認 → `Skill(superpowers:verification-before-completion)` を実行（GSD使用時は下記フロー参照）
    → GSD使用時: /gsd:verify-work → Skill(superpowers:verification-before-completion) → Skill(reflexion:reflect)
-     ⚠️ compact・ツールエラー・タイムアウト・空応答・部分成功の場合: STOP + ユーザーに報告（エラー詳細を含む）→ /gsd:resume-workで再確立（失敗時は再度STOP + ユーザーへ報告）→ 再確立成功後: /gsd:verify-work → Skill(superpowers:verification-before-completion) → Skill(reflexion:reflect) を最初から再実行
+     ⚠️ compact・エラー時の回復フロー: RULES.md **GSD exception** 表の「After context compression」行参照（再実行は最大2回まで。上限到達時はユーザーに報告して停止）
    → GSD未使用時、または上記GSD使用フロー外で未完了作業あり: 修正 → 3. 品質ゲートに戻る（最大3回まで。4回連続失敗時はユーザーに報告して停止）
-5. reflect(タスクごとに実施) → `Skill(reflexion:reflect)` を Skill tool で実行
+5. reflect(タスクごとに実施) → `Skill(reflexion:reflect)` を Skill tool で実行（GSD使用時かつ Step 4 で `Skill(reflexion:reflect)` 完了済みの場合はスキップ）
    引数: deep reflect if less than 90% confidence. 日本語で簡潔に回答
    自動ループ:
     - 信頼度90%未満: 改善して再実行（各反復で信頼度と改善理由を簡潔に示す）/ 90%以上 → 終了 - 最大3回まで
