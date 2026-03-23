@@ -46,14 +46,14 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
 
     | Context state | Action |
     |---|---|
-    | `/gsd:execute-phase` active (visible in conversation context) | Skip Rule 12 for wave-internal tasks |
+    | `/gsd:execute-phase` active (= invoked with no subsequent `/gsd:verify-work` or `/gsd:pause-work` visible in context) | Skip Rule 12 for wave-internal tasks |
     | `/gsd:execute-phase` NOT visible + no GSD signals | Apply Rule 12 normally (treat as Dispatch Automation) |
     | `/gsd:execute-phase` NOT visible + GSD signals present | STOP + report to user (do not treat as Dispatch Automation) |
-    | After context compression (compact) | STOP + report to user; resume via `/gsd:resume-work` |
+    | After context compression (compact) | STOP + report to user; resume via `/gsd:resume-work` (failure → re-STOP + report); on success → re-execute: `/gsd:verify-work` → `Skill(superpowers:verification-before-completion)` → `Skill(reflexion:reflect)` from start |
 
     GSD signals: ANY of — (1) HANDOFF.json is referenced, (2) any `/gsd:*` command is referenced, (3) the terms "GSD wave" or "GSD phase" appear.
 
-    **Subagent context disambiguation** (rows 2–3 apply equally to subagents): A subagent is in undetermined context when ALL of: (1) its task prompt contains no reference to `/gsd:execute-phase`, AND (2) no `/gsd:execute-phase` execution record is visible in its conversation context. Evaluate rows top-to-bottom (row 3 takes priority over row 2 when GSD signals are present). Row 2 fallback: execute `Skill(superpowers:verification-before-completion)` (false-negative prohibited); on error/timeout/empty → STOP + report to parent agent with error detail; on completion → report to parent agent with (a) reason, (b) skill result, (c) affected scope.
+    **Subagent context disambiguation**: Rows 2–3 apply equally to subagents. Row 2 fallback: execute `Skill(superpowers:verification-before-completion)` (スキップ禁止); on error/timeout/empty → STOP + report to parent agent with error detail; on completion → report to parent agent with (a) reason, (b) skill result, (c) affected scope.
   - On failure: if **any** agent reports failure or partial completion, the parent agent must (1) allow already-running invocations to complete (Task tool has no cancel API), (2) collect and log agent statuses (success/failure/unknown), and (3) report full status summary to user before further action
   - Silent continuation after ambiguous/empty results is prohibited
   - On completion: after all parallel agents complete, the parent agent must explicitly verify that each artifact exists in its expected final state before marking the parent task complete
