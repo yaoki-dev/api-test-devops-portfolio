@@ -21,10 +21,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 9. **ALWAYS** invoke skills via Skill(skill-name) notation when user requests
 10. **ALWAYS** follow development workflow order → Section「🔄 開発ワークフロー」
 11. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `Skill(superpowers:verification-before-completion)` → then `Skill(reflexion:reflect)`
-    **GSD使用時**: `Skill(reflexion:reflect)` の実行可否は開発ワークフロー Step 4 のGSDフロー完走定義に従う（完走時のみ省略可。それ以外は必ず実行）
+    **GSD使用時（デフォルト：必須）**: `Skill(reflexion:reflect)` は必ず実行する。例外: `/gsd:verify-work` が全フェーズ検証完了を明示する成功応答（応答内に未解決フェーズの言及がなく、エラー・タイムアウト・空応答でない場合）を返した場合に限り省略可（false-negative禁止）。
 12. **ALWAYS** when 2+ independent tasks exist, after task classification, per RULES.md exception conditions → invoke `Skill(superpowers:subagent-driven-development)` skill
     (reason: keep the main context window clean by leveraging subagents aggressively)
-    **例外**: `/gsd:execute-phase` の実行がコンテキストで確認できる場合のみ本ルールをスキップ。確認できない場合は STOP + ユーザーへ報告（詳細: RULES.md「Workflow Rules」→「Parallel Dispatch Rule」→ `GSD exception` リスト項目参照）。
+    **例外**: `/gsd:execute-phase` の実行がコンテキストで確認できる場合のみ本ルールをスキップ。確認の判定基準: タスクプロンプトまたは会話コンテキストに `/gsd:execute-phase` の実行記録が存在すること（compact後はこの確認が不可能なため自動的にSTOP対象）。確認できない場合は STOP + ユーザーへ報告（詳細: RULES.md「Workflow Rules」→「Parallel Dispatch Rule」→ `GSD exception` リスト項目参照）。
 13. **ALWAYS** verify file content with Read/Grep tool BEFORE making any claim about line numbers, file structure, or code content
 14. **ALWAYS** enforce worktree boundary:
     - At conversation start (including post-compact context reload): run `git rev-parse --show-toplevel`:
@@ -330,7 +330,7 @@ git checkout -b feature/<次のタスク> origin/develop
    → 固定WT: ${HOME}/projects/python/.worktrees/wt-feature0[1-3]（個人環境ごとにカスタマイズ）
    → 計画ファイル作成が必要な場合: claudedocs/plans/ に作成（閾値詳細: .claude/rules/workflow/PLANS.md §使用閾値）
    → GSD使用判断（以下いずれか該当時。判断結果はユーザーに明示してから実行）:
-     (a) 新規モジュール/サブシステムの追加  (b) 変更対象ファイルをリストアップした結果3件以上（新規ファイル作成または実装ロジック変更を含む場合。設定・コメント・ドキュメント修正のみは除外）
+     (a) 新規モジュール/サブシステムの追加  (b) 変更対象ファイル3ファイル以上（ファイル単位でカウント。新規ファイル作成または実装ロジック変更を含む場合。設定・コメント・ドキュメント修正のみは除外。初期スコープ調査で見込み数を確認）
      (c) 仕様書が必要と判断した場合（claudedocs/plans/ への計画書作成が必要なもの）
      → /gsd:new-project → /gsd:discuss-phase → /gsd:plan-phase → /gsd:execute-phase
 

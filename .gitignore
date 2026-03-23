@@ -126,4 +126,5 @@ docs/analysis/
 # GSD - local planning artifacts
 .planning/
 gsd-local-patches/
+# GSD session handoff — created by /gsd:pause-work, do not commit
 HANDOFF.json

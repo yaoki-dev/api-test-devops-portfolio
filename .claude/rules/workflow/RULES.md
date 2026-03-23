@@ -42,8 +42,22 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
     3. No conflicting **writes** to shared resources (examples: conftest.py, pyproject.toml, uv.lock, config files, .env files — read-only access does not count as conflicting; when write conflicts cannot be ruled out, treat as shared)
   - Worktree isolation: instruct each agent to use fixed worktrees at `${HOME}/projects/python/.worktrees/wt-feature0[1-3]`（個人環境ごとにカスタマイズ）
   - Exception: if one task has 3x+ more TodoWrite sub-items (or estimated file changes) than the other, sequential execution is acceptable
-  - **GSD exception**: When `/gsd:execute-phase` is active, skip this rule for wave-internal tasks only (GSD manages its own wave-based parallel execution). Apply this rule normally to independent tasks that arise after wave completion. **Decision criteria**: Treat as wave-internal only when `/gsd:execute-phase` execution is confirmed in the conversation context. If not confirmable, the fail-safe is to **stop and report to the user** (applying Rule 12 is prohibited — it would spawn parallel subagents mid-GSD-session, risking duplicate task execution). **After context compression (compact)**: wave state becomes unrecoverable — stop and report to user; resume only after re-establishing the session with `/gsd:resume-work`.
-    **Subagent context disambiguation**: when a subagent cannot determine its own context (Dispatch Automation vs GSD wave-internal), execute `Skill(superpowers:verification-before-completion)` as a failsafe (false-negative prohibited). **Detection criteria for "cannot determine"**: a subagent is in undetermined context when ALL of: (1) its task prompt contains no reference to `/gsd:execute-phase`, AND (2) no `/gsd:execute-phase` execution record is visible in the subagent's conversation context — when both conditions are met, treat as Dispatch Automation context and execute verification. **Context compression exception (GSD exception priority)**: If the two conditions above are met AND there are signs of context compression (the task is GSD-related — defined as ANY of: (1) HANDOFF.json is referenced, (2) claudedocs/plans/ files are referenced, (3) any /gsd:* command is referenced, (4) the terms "GSD wave" or "GSD phase" appear — but no `/gsd:execute-phase` context is present), this also counts as "cannot determine"; GSD exception takes priority: **STOP + report to user** (do not treat as Dispatch Automation). Rationale: context compression may have erased GSD wave state; continuing as Dispatch Automation risks duplicate task execution.
+  - **GSD exception**: When `/gsd:execute-phase` is active, skip this rule for wave-internal tasks only (GSD manages its own wave-based parallel execution). Apply this rule normally to independent tasks that arise after wave completion.
+
+    | Context state | Action |
+    |---|---|
+    | `/gsd:execute-phase` active (visible in conversation context) | Skip Rule 12 for wave-internal tasks |
+    | `/gsd:execute-phase` NOT visible + no GSD signals | Apply Rule 12 normally (treat as Dispatch Automation) |
+    | `/gsd:execute-phase` NOT visible + GSD signals present | STOP + report to user (do not treat as Dispatch Automation) |
+    | After context compression (compact) | STOP + report to user; resume via `/gsd:resume-work` |
+
+    GSD signals: ANY of — (1) HANDOFF.json is referenced, (2) `claudedocs/plans/` files are referenced, (3) any `/gsd:*` command is referenced, (4) the terms "GSD wave" or "GSD phase" appear.
+
+    **Subagent context disambiguation** (rows 2–3 apply equally to subagents): A subagent is in undetermined context when ALL of: (1) its task prompt contains no reference to `/gsd:execute-phase`, AND (2) no `/gsd:execute-phase` execution record is visible in its conversation context. Evaluate rows top-to-bottom (row 3 takes priority over row 2 when GSD signals are present).
+    - Row 2 fallback: execute `Skill(superpowers:verification-before-completion)` (false-negative prohibited).
+      - On error/timeout/empty response: STOP + report to parent agent with error detail.
+      - On completion: ALWAYS report fallback execution to parent agent — include (a) reason for context indetermination, (b) skill result, (c) affected task scope.
+    - Rationale: context compression may have erased GSD wave state; continuing as Dispatch Automation risks duplicate task execution.
   - On failure: if **any** agent reports failure or partial completion, the parent agent must (1) allow already-running invocations to complete (Task tool has no cancel API), (2) collect and log agent statuses (success/failure/unknown), and (3) report full status summary to user before further action
   - Silent continuation after ambiguous/empty results is prohibited
   - On completion: after all parallel agents complete, the parent agent must explicitly verify that each artifact exists in its expected final state before marking the parent task complete
