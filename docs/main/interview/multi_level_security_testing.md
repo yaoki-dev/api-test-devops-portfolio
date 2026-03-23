@@ -42,7 +42,7 @@ markers =
     smoke: Smoke tests (basic operation check)
 ```
 
-（security マーカーは未登録 — セキュリティ検証は CI 静的解析で実施）
+（security マーカーは未登録 — セキュリティ検証として CI 静的解析を採用）
 
 ### 1.3 実行コマンド
 
@@ -155,7 +155,7 @@ uv run ruff check --select S .                   # Security rules
 **設計根拠**:
 
 - Trivy による依存パッケージスキャンを CI ゲートとして全 PR に適用（Shift Left）
-- gitleaks はコミット前に開発者ローカルで検出することで漏洩リスクを最小化
+- gitleaks はコミット前の開発者ローカル検出により漏洩リスクを最小化
 - bandit・ruff(S) はローカル手動実行で補完（CI 未定義）
 - pytest の security マーカーは未使用（未登録）
 

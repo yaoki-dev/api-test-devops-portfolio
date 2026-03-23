@@ -164,7 +164,6 @@ uv run pytest -n auto --cov=utils --cov=config --cov=models --cov-report=term
 # 5. 特定マーカーのテスト実行
 uv run pytest -n auto -m unit        # 単体テストのみ
 uv run pytest -n auto -m integration # 統合テストのみ
-uv run pytest -m security --maxfail=5  # セキュリティテスト（シリアル実行推奨: Rate Limit/認証競合回避）
 
 # 6. 高速実行（並列、manual/external除外）
 uv run pytest -n auto -m "not external and not manual"  # CI/CD相当の自動実行可能テストのみ
