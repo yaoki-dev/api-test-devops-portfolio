@@ -70,7 +70,7 @@ uv run pytest -n auto -m "(unit or integration) and not external" \
 |---------|---------|--------|
 | PR | pull_request | unit + integration |
 | Merge | push main | + smoke |
-| Weekly | schedule | + security + performance |
+| Weekly | schedule | + external + performance |
 
 **品質ゲート**: `uv run pytest --cov-fail-under=${TARGET} && uv run ruff check . && uv run mypy utils/ config/ models/`
 
