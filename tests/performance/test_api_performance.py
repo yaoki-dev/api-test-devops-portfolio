@@ -35,11 +35,15 @@ async def _measure_request(
     start_time = time.time()
     try:
         response = await client.get(endpoint)
-        assert response.status_code == 200
-        metrics.record_response_time(time.time() - start_time)  # 成功時のみ記録
     except Exception as e:
         print(f"Request failed for {endpoint}: {e}")
         raise
+
+    if response.status_code != 200:
+        raise AssertionError(
+            f"Unexpected status code for {endpoint}: expected 200, got {response.status_code}"
+        )
+    metrics.record_response_time(time.time() - start_time)  # 成功時のみ記録
 
 
 class PerformanceMetrics:
@@ -73,8 +77,9 @@ class PerformanceMetrics:
         if not self.response_times:
             return {"error": "No response times recorded"}
 
+        elapsed = self.end_time - self.start_time
         return {
-            "total_duration": self.end_time - self.start_time,
+            "total_duration": elapsed,
             "request_count": len(self.response_times),
             "response_times": {
                 "mean": statistics.mean(self.response_times),
@@ -88,7 +93,7 @@ class PerformanceMetrics:
                 if len(self.response_times) > 100
                 else max(self.response_times),
             },
-            "throughput": len(self.response_times) / (self.end_time - self.start_time),
+            "throughput": len(self.response_times) / elapsed if elapsed > 0 else 0.0,
             "memory_usage": {
                 "start_mb": self.memory_usage[0] if self.memory_usage else 0,
                 "end_mb": self.memory_usage[-1] if self.memory_usage else 0,
@@ -318,5 +323,4 @@ class TestPerformanceRegression:
 # 4. 実用的な測定:
 #    - 統計的分析（パーセンタイル計算）
 #    - エンドポイント別比較
-#    - レポート生成機能
 # =============================================================================
