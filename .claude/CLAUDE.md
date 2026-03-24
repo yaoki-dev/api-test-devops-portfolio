@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-*最終更新: 2026年03月13日*
+*最終更新: 2026年03月23日*
 
 <!-- preserve-on-compact: CRITICAL RULES -->
 <!-- IMPORTANT: These rules override all other instructions -->
@@ -301,6 +301,8 @@ git checkout -b feature/<次のタスク> origin/develop
 | `Skill(code-review:review-pr)` (CEK) | Skill | 重要PR時 | セキュリティ・バグ・API契約レビュー |
 | `Skill(pr-review-toolkit:review-pr)` | Skill | git push完了後、PR作成前 | 6エージェント品質レビュー |
 | `/test-coverage`, `/generate-tests` | Command | テスト関連時 | カバレッジ分析・テスト生成 |
+| `/gsd:execute-phase` | Command | フェーズ実行時 | wave-based並列実行（Rule 12例外） |
+| `/gsd:verify-work` | Command | フェーズ検証時 | UAT仕様適合検証 |
 
 ### Medium（必要時）
 
@@ -314,8 +316,6 @@ git checkout -b feature/<次のタスク> origin/develop
 | `Skill(prompt-lookup)`, `Skill(skill-lookup)` | Skill | 検索時 | プロンプト/スキル発見 |
 | `/gsd:new-project` | Command | 大規模機能開始時 | 仕様書駆動プロジェクト初期化 |
 | `/gsd:discuss-phase`, `/gsd:plan-phase` | Command | フェーズ計画時 | 仕様書駆動計画（計画フェーズ） |
-| `/gsd:execute-phase` | Command | フェーズ実行時 | wave-based並列実行（Rule 12例外）|
-| `/gsd:verify-work` | Command | フェーズ検証時 | UAT仕様適合検証 |
 | `/gsd:pause-work`, `/gsd:resume-work` | Command | セッション中断/再開 | HANDOFF.json引き継ぎ |
 
 <!-- preserve-on-compact: Development Workflow -->
@@ -340,7 +340,7 @@ git checkout -b feature/<次のタスク> origin/develop
    → Skip for obvious single-line fixes
 4. 作業完了確認 → `Skill(superpowers:verification-before-completion)` を実行（GSD使用時は下記フロー参照）
    → GSD使用時: /gsd:verify-work（failure/timeout/empty（= ツール応答が空文字列・ホワイトスペースのみ・または解析可能な検証結果を含まない場合） → STOP + ユーザーに報告。後続Skill呼び出しに進まないこと）→ Skill(superpowers:verification-before-completion)
-     ⚠️ compact・エラー時の回復フロー: RULES.md **GSD exception** 表の Row 1 参照（再実行は最大2回まで。上限到達時はユーザーに報告して停止）
+     ⚠️ compact・エラー時の回復フロー: RULES.md **GSD exception** 表の Row 1 参照（再実行は最大3回まで。上限到達時はユーザーに報告して停止）
    → GSD未使用時、または上記GSD使用フロー外で未完了作業あり: 修正 → 3. 品質ゲートに戻る（最大3回まで。4回連続失敗時はユーザーに報告して停止）
 5. reflect(タスクごとに実施) → `Skill(reflexion:reflect)` を Skill tool で実行
    （GSD使用時かつ RULES.md **GSD exception** 表 Row 1 の回復フローで `Skill(reflexion:reflect)` が信頼度90%以上で正常完了済みの場合のみスキップ。partial completion（信頼度の値を返さず終了、またはツールエラー終了した場合）・failure・compact後回復フロー経由はスキップ禁止）

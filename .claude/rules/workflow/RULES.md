@@ -48,7 +48,7 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
 
     | Row | Context state | Action |
     |-----|---|---|
-    | 1 | After context compression (compact) | STOP + report to user; resume via `/gsd:resume-work` (failure → re-STOP + report); on success → re-execute: `/gsd:verify-work` → `Skill(superpowers:verification-before-completion)` → `Skill(reflexion:reflect)` from start (max 2 retries; on limit → STOP + report to user) |
+    | 1 | After context compression (compact) | STOP + report to user; resume via `/gsd:resume-work` (failure → re-STOP + report); on success → re-execute: `/gsd:verify-work` → `Skill(superpowers:verification-before-completion)` → `Skill(reflexion:reflect)` from start (max 3 retries; on limit → STOP + report to user) |
     | 2 | `/gsd:execute-phase` active (= `tool_use` block confirmed, no subsequent `/gsd:verify-work` or `/gsd:pause-work` `tool_use` block — natural language mentions do NOT qualify) | Skip Rule 12 for wave-internal tasks |
     | 3 | `/gsd:execute-phase` NOT visible + GSD active check: negative | Apply Rule 12 normally (treat as Dispatch Automation) |
     | 4 | Residual GSD signals detected (e.g., GSD-related files/state exist but no `/gsd:execute-phase` `tool_use` block is structurally confirmed) | STOP + report to user (do not treat as Dispatch Automation — possible incomplete GSD session) |
