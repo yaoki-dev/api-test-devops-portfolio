@@ -46,7 +46,7 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
 
     > **適用前提**: 本表は 2+ の独立タスクが存在し Rule 12 の適用判断が必要な場合に評価する（GSD インストール有無を問わず）。GSD 未インストール・未使用環境では Row 4 のシグナル（`.planning/` ディレクトリ・`gsd-local-patches/` ディレクトリ）が存在しないため、自然に Row 3（Rule 12 通常適用）に到達する。
     >
-    > **Evaluation order**: Row 1 first (**unconditional** — evaluate before Rows 2–4 within this table; compact triggers STOP regardless of GSD active state). Rows 2–4: top to bottom.
+    > **Evaluation order**: Row 1 first (**unconditional** — evaluate before Rows 2–4 within this table regardless of GSD active state; "unconditional" refers to evaluation priority, not STOP execution — Row 1's Action has a Rule 14 prerequisite that gates STOP). Rows 2–4: top to bottom.
 
     | Row | Context state | Action |
     |-----|---|---|
