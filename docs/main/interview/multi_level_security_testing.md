@@ -1,151 +1,181 @@
 # マルチレベルセキュリティテスト実装ガイド
 
-*最終更新: 2025年11月29日*
+*最終更新: 2026年03月24日*
 
 ## 概要
 
-本プロジェクトでは、セキュリティテストを複数のテストレベル（Unit/Integration）で実装しています。このドキュメントでは、その設計判断の根拠と業界ベストプラクティスとの整合性を説明します。
+本プロジェクトでは、セキュリティ検証を静的解析ツール（gitleaks / bandit / ruff(S) / Trivy）で実施しています。このドキュメントでは、その設計判断の根拠と業界ベストプラクティスとの整合性を説明します。
 
 ---
 
 ## 1. 実装構成
 
-### 1.1 テストレベル別構成
+### 1.1 セキュリティ検証構成
 
-| レベル | ファイル | テスト数 | マーカー | 実行環境 |
-|-------|---------|---------|---------|---------|
-| **Unit** | test_security_with_mock.py | 38 | `security`, `unit` | ローカル・CI/CD毎回 |
-| **Integration** | test_comprehensive_security.py | 11 | `security`, `integration` | CI/CD・週次 |
-| **Integration** | test_basic_input_validation.py | 5 | `security`, `integration` | CI/CD・週次 |
-| **合計** | 3ファイル | **54テスト** | - | - |
+| 種別 | ツール | 実行タイミング | 目的 |
+|-----|--------|--------------|------|
+| **Secrets Scan** | gitleaks | コミット時（pre-commit） | 認証情報・APIキーの漏洩検出 |
+| **Dependency/Container Scan** | Trivy (fs) | 全PR（CI） | 依存パッケージの既知CVE検査 |
+| **Container Image Scan** | Trivy (image) | main PR・docker label PR（CI） | コンテナイメージの脆弱性検査 |
+| **SAST** | bandit | ローカル手動実行 | Pythonコードの脆弱性検出（SAST） |
+| **Security Linting** | ruff(S) | コミット時（pre-commit） | セキュリティパターン検出（OWASPパターン・ハードコード値） |
 
-### 1.2 マーカー構成
+### 1.2 セキュリティ検証アプローチ
+
+本プロジェクトでは、セキュリティ検証を **pytest テストではなく静的解析ツール** で実施しています。
+
+**設計根拠**: OWASP API Security Top 10 の検証は、実際のAPIエンドポイントに対する統合テストよりも、
+静的解析（SAST）・シークレットスキャン・コンテナスキャンの組み合わせにより、
+CI/CD パイプラインで効率的かつ継続的に実施できます。
+
+**実行環境の使い分け**: Trivy（依存パッケージ・コンテナ）は CI ゲートとして全 PR で自動実行。gitleaks はコミット時の pre-commit フックとして開発者ローカルで実行。bandit はローカル手動実行を推奨。ruff(S) はコミット時 pre-commit フックで自動実行。
+
+登録済み pytest マーカー（`pyproject.toml` の `[tool.pytest.ini_options]`）:
 
 ```ini
-# pytest.ini
 markers =
-    security: Security tests (OWASP Top 10, vulnerability checks)
     unit: Unit tests (fast, isolated, mock-based)
     integration: Integration tests (external dependencies, real API calls)
+    e2e: End-to-end tests (Playwright)
+    slow: Slow tests (>3 seconds)
+    external: External API dependent tests (weekly only)
+    performance: Performance tests (weekly CI only)
+    smoke: Smoke tests (basic operation check)
 ```
+
+（security マーカーは未登録 — セキュリティ検証として CI 静的解析を採用）
 
 ### 1.3 実行コマンド
 
 ```bash
-# Unit Level セキュリティテスト（高速、毎回実行）
-uv run pytest -m "security and unit"  # 38テスト、< 5秒
+# CI セキュリティスキャン（GitHub Actions で自動実行）
+# trivy fs: 依存パッケージ CVE スキャン（全 PR）
+# trivy image: コンテナイメージスキャン（main PR・docker label PR のみ）
 
-# Integration Level セキュリティテスト（実API、週次実行）
-uv run pytest -m "security and integration"  # 16テスト、< 30秒
+# ローカル手動チェックコマンド
+uv run bandit -r utils/ config/ models/          # SAST（手動実行）
+uv run ruff check --select S .                   # Security rules（S ルール単独確認用 — pre-commit では全ルールで自動実行済み）
 
-# 全セキュリティテスト（リリース前）
-uv run pytest -m security  # 54テスト
+# コミット時（pre-commit フック — 自動実行）
+# gitleaks: secrets scan
+# ruff: 全ルール（S 含む）check + fix
 ```
 
 ---
 
 ## 2. 設計判断の根拠
 
-### 2.1 なぜ複数レベルで実装するのか？
+### 2.1 なぜ CI 静的解析でセキュリティ検証を実施するのか？
 
 **Shift Left + Defense in Depth** アプローチに基づいています。
 
 ```
-                    ┌─────────────────────────────┐
-                    │   Integration Level         │
-                    │   - 実API脆弱性検証         │
-                    │   - OWASP Top 10実環境テスト │
-                    │   - Rate Limiting検証       │
-                    └───────────┬─────────────────┘
-                                │
-            ┌───────────────────┴───────────────────┐
-            │           Unit Level                   │
-            │   - Mock使用、高速フィードバック       │
-            │   - インジェクション検出ロジック検証   │
-            │   - 入力バリデーション単体テスト       │
-            └───────────────────────────────────────┘
+            ┌─────────────────────────────────────────────────┐
+            │   CI Static Analysis Layer                      │
+            │   - Trivy fs: dependency scan（全PR）           │
+            │   - Trivy image: container scan（main/docker PR）│
+            └─────────────────────────────────────────────────┘
+            ┌─────────────────────────────────────────────────┐
+            │   Developer Local Layer                         │
+            │   - gitleaks: secrets scan（pre-commit）        │
+            │   - bandit: Python SAST（手動）                 │
+            │   - ruff(S): security linting（pre-commit）       │
+            └─────────────────────────────────────────────────┘
 ```
 
-### 2.2 レベル別の役割
+### 2.2 ツール別の役割
 
-| レベル | 目的 | 検出できる問題 | 実行コスト |
+| ツール | 目的 | 検出できる問題 | 実行コスト |
 |-------|------|--------------|-----------|
-| **Unit** | 早期検出 | バリデーションロジックのバグ、正規表現の誤り | 低（< 5秒） |
-| **Integration** | 実環境検証 | API境界での脆弱性、実際のレスポンス動作 | 中（< 30秒） |
+| **gitleaks** | 漏洩防止 | APIキー・パスワード・トークンのコミット混入 | 低（< 10秒） |
+| **bandit** | SAST | SQLインジェクション・eval使用・弱い暗号化 | 低（< 10秒） |
+| **ruff (S rules)** | セキュリティLint | OWASPパターン・危険な関数使用・ハードコード値 | 低（< 5秒） |
+| **Trivy** | コンテナ検査 | 脆弱な依存パッケージ・OSパッケージの既知CVE | 中（< 60秒） |
 
 ### 2.3 業界ベストプラクティスとの整合性
 
 | 参照元 | 推奨事項 | 本プロジェクトの実装 |
 |-------|---------|-------------------|
-| **OWASP Testing Guide** | 複数レベルでのセキュリティテスト | Unit + Integration 2層 |
-| **Google Testing Blog** | テストピラミッド構造 | Security/Performanceはレベル横断 |
-| **NIST Secure SDLC** | Shift Left Testing | CI/CDでUnit Securityを毎回実行 |
+| **OWASP Testing Guide** | Shift Left Security | PR毎の静的解析で早期検出 |
+| **Google Testing Blog** | テストピラミッド構造 | セキュリティは静的解析・Performance/E2Eはテスト層 |
+| **NIST Secure SDLC** | Shift Left Testing | CI/CDで静的解析を毎回実行 |
 
 ---
 
 ## 3. 面接回答例
 
-### Q1: なぜセキュリティテストを複数レベルで実装したのですか？
+### Q1: なぜセキュリティ検証を pytest テストではなく静的解析ツールで実施しているのですか？
 
 **回答例**:
 > 「Shift Left」と「Defense in Depth」の2つの原則に基づいています。
 >
-> **Shift Left**: Unit Levelのセキュリティテスト（38テスト）をCI/CDで毎回実行することで、脆弱性を開発の早い段階で検出します。Mock使用により5秒以内で完了するため、開発フローを妨げません。
+> **Shift Left**: gitleaks を pre-commit フックとして開発者ローカルで実行し、シークレット漏洩をコミット前に検出します。ruff(S) は pre-commit フックでコミット時に自動実行。bandit はローカル手動実行で SAST を補完します。
 >
-> **Defense in Depth**: Integration Levelのテスト（16テスト）では実際のAPIを使用し、Unit Testでは検出できない境界での問題（Rate Limiting、実際のレスポンス形式）を週次で検証します。
+> **Defense in Depth**: Trivy の依存パッケージスキャン（fs）を全 PR で CI 実行し、コンテナイメージスキャン（image）は main PR・docker ラベル付き PR のみに限定してコストを最適化します。
 >
-> この2層構造により、コストと品質のバランスを取りながら、OWASP API Security Top 10に準拠したセキュリティ検証を実現しています。
+> この多層構造により、OWASP API Security Top 10 に準拠したセキュリティ検証を効率的に実現しています。
 
-### Q2: Unit Level と Integration Level のテストはどう使い分けていますか？
+### Q2: セキュリティ検証ツールはどのように使い分けていますか？
 
 **回答例**:
-> Unit Level（`test_security_with_mock.py`）はMockを使用した高速テストで、インジェクション検出ロジック、入力バリデーション、サニタイゼーション処理を検証します。毎回のコミット前に実行し、即座にフィードバックを得られます。
+> 検出対象に応じて4つのツールを使い分けています。
 >
-> Integration Level（`test_comprehensive_security.py`, `test_basic_input_validation.py`）は実際のAPIを呼び出し、OWASP Top 10に基づく包括的な脆弱性検証を行います。実行時間が長いため週次・リリース前に実行しますが、実環境でしか発見できない問題を検出できます。
+> **gitleaks**（コミット時・pre-commit）はコミットに混入した APIキー・パスワード・トークンなどの機密情報を開発者ローカルで検出します。コードロジックとは独立してシークレットスキャンを行います。
+>
+> **bandit**（ローカル手動実行）はPythonコードのSAST（静的アプリケーションセキュリティテスト）で、SQLインジェクション・eval使用・弱い暗号化アルゴリズムなどを検出します。
+>
+> **ruff(S rules)**（コミット時・pre-commit）はOWASP関連のコードパターンやハードコードされた値を Lint レベルで検出します。
+>
+> **Trivy fs**（全PR・CI）は依存パッケージの既知CVEをスキャンします。**Trivy image**（main PR・docker ラベル付き PR・CI）はコンテナイメージの脆弱性を検査します。image スキャンは実行時間が長いため対象 PR を限定してCIコストを最適化しています。
 
 ### Q3: パフォーマンステストも同様のアプローチですか？
 
 **回答例**:
-> はい。パフォーマンステスト（`test_api_performance.py`）もIntegration Levelで実装しています。レスポンス時間測定やスループット計測は、実際のネットワークレイテンシを含む環境でないと意味のあるデータが得られないためです。
+> はい。パフォーマンステスト（`test_api_performance.py`）は実際のネットワーク環境で実行します。レスポンス時間測定やスループット計測は、実際のネットワークレイテンシを含む環境でないと意味のあるデータが得られないためです。`performance`マーカー専用で分類し（`integration`マーカーとは独立）、週次CIでのみ実行します。
 >
-> `performance`と`integration`の複合マーカーを使用し、`uv run pytest -m "performance and integration"`で選択的に実行できます。
+> `uv run pytest -m performance`で選択的に実行できます。
 
 ---
 
 ## 4. 技術詳細
 
-### 4.1 pytestmarkモジュールレベル定義
+### 4.1 CI ワークフロー構成
 
-```python
-# tests/security/test_comprehensive_security.py
-pytestmark = [
-    pytest.mark.security,
-    pytest.mark.integration,  # Uses AsyncAPIClient for real API calls
-]
+```yaml
+# .github/workflows/ （抜粋）
+# 全 PR で実行されるセキュリティスキャン
+# - trivy fs scan: 依存パッケージの既知CVE検査
+# main PR・docker ラベル付き PR のみ実行
+# - trivy image scan: コンテナイメージの脆弱性検査
+
+# ローカル（pre-commit / 手動）
+# - gitleaks: secrets scan（コミット時・pre-commit）
+# - bandit: Python SAST（手動）
+# - ruff --select S: security linting（コミット時・pre-commit）
 ```
 
 **設計根拠**:
 
-- 全テストに一括適用（DRY原則）
-- 既存の個別`@pytest.mark`と共存可能
-- `test_security_with_mock.py`と一貫したパターン
+- Trivy による依存パッケージスキャンを CI ゲートとして全 PR に適用（Shift Left）
+- gitleaks はコミット前の開発者ローカル検出により漏洩リスクを最小化
+- ruff(S) は pre-commit フックでコミット時に自動実行（CI 未定義）
+- bandit はローカル手動実行で補完（CI 未定義）
+- pytest の security マーカーは未使用（未登録）
 
-### 4.2 テスト分離の基準
+### 4.2 ツール実行基準
 
-| 基準 | Unit Level | Integration Level |
-|-----|-----------|-------------------|
-| 外部依存 | Mock使用 | 実API呼び出し |
-| 実行時間 | < 0.5秒/test | 1-3秒/test |
-| 実行頻度 | 毎回コミット前 | 週次・リリース前 |
-| 検出対象 | ロジックエラー | 境界・環境問題 |
+| 基準 | gitleaks | bandit | ruff(S) | Trivy (fs) | Trivy (image) |
+|-----|---------|--------|---------|------------|---------------|
+| 実行タイミング | コミット時（pre-commit） | ローカル手動 | コミット時（pre-commit） | 全PR（CI） | main PR・docker label PR（CI） |
+| 実行時間 | < 10秒 | < 10秒 | < 5秒 | < 60秒 | < 60秒 |
+| 対象 | シークレット漏洩 | PythonSAST | OWASPパターン | 依存パッケージCVE | コンテナイメージCVE |
 
 ---
 
 ## 5. 関連ドキュメント
 
-- `.serena/memories/test_strategy.md`: テスト戦略全体
-- `.serena/memories/test_strategy_part3_security_execution.md`: セキュリティテスト実行戦略
-- `pytest.ini`: マーカー定義
+- `.claude/rules/testing/test-strategy.md`: テスト戦略全体
+- `pyproject.toml` の `[tool.pytest.ini_options]`: マーカー定義
 
 ---
 
@@ -154,3 +184,6 @@ pytestmark = [
 | 日付 | 内容 |
 |------|------|
 | 2025-11-29 | 初版作成。マルチレベルセキュリティテスト実装完了 |
+| 2026-03-23 | PR #278 レビュー対応。実在しないテストファイル参照・未登録 security マーカー記述を削除し、実際の CI 静的解析ツール（gitleaks/bandit/ruff(S)/Trivy）の説明に全面改訂 |
+| 2026-03-23 | CI 構成記述を正確化。gitleaks（pre-commit）、bandit/ruff(S)（ローカル手動）、Trivy fs（全PR CI）・Trivy image（main PR・docker label PR CI）に修正 |
+| 2026-03-24 | ruff(S)実行タイミングをpre-commit自動実行に修正（.pre-commit-config.yaml検証に基づく） |
