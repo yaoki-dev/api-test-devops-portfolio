@@ -167,7 +167,7 @@ class TestAPIPerformance:
             results = await asyncio.gather(*tasks, return_exceptions=True)
             failures = [r for r in results if isinstance(r, BaseException)]
             if failures:
-                failure_summary = "\n".join(str(e) for e in failures)
+                failure_summary = "\n".join(f"{type(e).__name__}: {e}" for e in failures)
                 raise AssertionError(
                     f"{len(failures)}/{len(tasks)} リクエスト失敗:\n{failure_summary}"
                 )
@@ -223,7 +223,7 @@ class TestAPIPerformance:
                 results = await asyncio.gather(*batch_tasks, return_exceptions=True)
                 failures = [r for r in results if isinstance(r, BaseException)]
                 if failures:
-                    failure_summary = "\n".join(str(e) for e in failures)
+                    failure_summary = "\n".join(f"{type(e).__name__}: {e}" for e in failures)
                     raise AssertionError(
                         f"{len(failures)}/{len(batch_tasks)} リクエスト失敗:\n{failure_summary}"
                     )
