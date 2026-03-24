@@ -90,10 +90,9 @@ Kubernetesへの移行も設計を考慮しています。
 
 **A**: 複数ツールを組み合わせています。
 
-- **bandit**: Python SAST
-- **safety**: 依存関係脆弱性
-- **semgrep**: 高度な静的解析
-- **カスタムチェック**: 設定ファイル・機密情報
+- **gitleaks**: シークレット検出（pre-commit）
+- **Trivy**: 依存関係CVE・コンテナイメージ脆弱性スキャン（全PR + main）
+- **ruff (S rules)**: flake8-bandit互換セキュリティLint（ローカル開発・pre-commit）
 
 CI/CDに統合し、プルリクエスト時とスケジュール実行で
 継続的なセキュリティチェックを実現しています。

@@ -9,6 +9,7 @@ APIパフォーマンステスト - 基盤実装
 """
 
 import asyncio
+import statistics
 import time
 from typing import Any
 
@@ -72,9 +73,12 @@ class PerformanceMetrics:
                 else (sorted_times[n // 2 - 1] + sorted_times[n // 2]) / 2,
                 "min": sorted_times[0],
                 "max": sorted_times[-1],
-                # -1e-9: n*p が整数の場合（n=100等）に ceil(n*p)-1 と等価にするための補正
-                "p95": sorted_times[int(n * 0.95 - 1e-9)] if n > 20 else sorted_times[-1],
-                "p99": sorted_times[int(n * 0.99 - 1e-9)] if n > 100 else sorted_times[-1],
+                "p95": statistics.quantiles(self.response_times, n=20)[18]
+                if len(self.response_times) >= 2
+                else self.response_times[0],
+                "p99": statistics.quantiles(self.response_times, n=100)[98]
+                if len(self.response_times) >= 2
+                else self.response_times[0],
             },
             "throughput": len(self.response_times) / elapsed if elapsed > 0 else 0.0,
             "memory_usage": {
@@ -104,12 +108,12 @@ async def _measure_request(
         logger.warning("request_failed", endpoint=endpoint, error=str(e))
         raise
 
-    metrics.record_response_time(time.time() - start_time)
-
     if response.status_code != 200:
         raise AssertionError(
             f"Unexpected status code for {endpoint}: expected 200, got {response.status_code}"
         )
+
+    metrics.record_response_time(time.time() - start_time)  # status_code検証後に記録
 
 
 class TestAPIPerformance:
@@ -165,12 +169,12 @@ class TestAPIPerformance:
 
             # 並行実行
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            failures = [r for r in results if isinstance(r, BaseException)]
+            failures: list[BaseException] = [r for r in results if isinstance(r, BaseException)]
             if failures:
                 failure_summary = "\n".join(f"{type(e).__name__}: {e}" for e in failures)
                 raise AssertionError(
                     f"{len(failures)}/{len(tasks)} リクエスト失敗:\n{failure_summary}"
-                )
+                ) from failures[0]
             metrics.stop_monitoring()
 
             summary = metrics.get_summary()
@@ -221,12 +225,12 @@ class TestAPIPerformance:
                     batch_tasks.append(_measure_request(client, endpoint, metrics))
 
                 results = await asyncio.gather(*batch_tasks, return_exceptions=True)
-                failures = [r for r in results if isinstance(r, BaseException)]
+                failures: list[BaseException] = [r for r in results if isinstance(r, BaseException)]
                 if failures:
                     failure_summary = "\n".join(f"{type(e).__name__}: {e}" for e in failures)
                     raise AssertionError(
                         f"{len(failures)}/{len(batch_tasks)} リクエスト失敗:\n{failure_summary}"
-                    )
+                    ) from failures[0]
                 await asyncio.sleep(0.1)  # バッチ間隔
 
             metrics.stop_monitoring()
