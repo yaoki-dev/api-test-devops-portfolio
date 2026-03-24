@@ -23,6 +23,7 @@
 - **588件のテストスイート**: Unit(549, うちSlow 1件含む) / Integration(31, うちExternal 5件含む) / Performance(5, 週次のみ) / Smoke(3) / E2E(実装予定)
 - **カバレッジ: 93.43%**（unit+integration条件）: 継続的な品質向上
 - **CI実行テスト: 575件**（unit+integration条件, external・performance・smoke除外）
+  - 内訳: Unit 549件 + Integration 26件（31件のうちexternal 5件を除外）
 - **CI/CD自動化**: GitHub Actions による4段階パイプライン
 - **セキュリティ**: CI/CD品質ゲート（pytest + ruff + mypy + Trivy）
 - **GitHub API統合**: 実務的なAPI統合スキルを証明（Rate Limit管理、ETag活用、非同期処理）

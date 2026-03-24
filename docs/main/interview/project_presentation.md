@@ -66,7 +66,7 @@
 **🔒 包括的セキュリティ**
 
 - **OWASP API Security Top 10** 準拠テスト
-- **自動脆弱性スキャン** (bandit, safety, semgrep)
+- **自動脆弱性スキャン** (gitleaks, Trivy, ruff S-rules)
 - **継続監視** (依存関係、設定ファイル)
 - **レポート自動生成** (詳細分析・修正提案)
 

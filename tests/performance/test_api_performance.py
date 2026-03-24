@@ -60,6 +60,10 @@ class PerformanceMetrics:
         if not self.response_times:
             return {"error": "No response times recorded"}
 
+        if self.end_time == 0:
+            raise RuntimeError(
+                "get_summary() called before stop_monitoring(). Call stop_monitoring() first."
+            )
         elapsed = self.end_time - self.start_time
         return {
             "total_duration": elapsed,
@@ -70,11 +74,11 @@ class PerformanceMetrics:
                 "min": min(self.response_times),
                 "max": max(self.response_times),
                 # Note: quantiles()はlen>=2で動作するが、サンプル数が少ない場合は
-                # 線形補間による近似値。テスト目的（異常値検出）には十分。
-                "p95": statistics.quantiles(self.response_times, n=20)[18]
+                # inclusive方式で補間のみ（外挿なし）。テスト目的には十分。
+                "p95": statistics.quantiles(self.response_times, n=20, method="inclusive")[18]
                 if len(self.response_times) >= 2
                 else self.response_times[0],
-                "p99": statistics.quantiles(self.response_times, n=100)[98]
+                "p99": statistics.quantiles(self.response_times, n=100, method="inclusive")[98]
                 if len(self.response_times) >= 2
                 else self.response_times[0],
             },
@@ -98,7 +102,7 @@ async def _measure_request(
     endpoint: str,
     metrics: PerformanceMetrics,
 ) -> None:
-    """リクエスト実行とレスポンス時間測定（HTTP応答受信時点で記録）"""
+    """リクエスト実行とレスポンス時間測定（HTTP 200応答確認時点で記録）"""
     start_time = time.time()
     try:
         response = await client.get(endpoint)
@@ -132,8 +136,10 @@ class TestAPIPerformance:
 
         async with AsyncAPIClient() as client:
             metrics.start_monitoring()
-            await _measure_request(client, "/posts/1", metrics)
-            metrics.stop_monitoring()
+            try:
+                await _measure_request(client, "/posts/1", metrics)
+            finally:
+                metrics.stop_monitoring()
 
             summary = metrics.get_summary()
             response_time = summary["response_times"]["mean"]
@@ -166,18 +172,20 @@ class TestAPIPerformance:
                 tasks.append(_measure_request(client, f"/posts/{i + 1}", metrics))
 
             # 並行実行
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            # システム例外（CancelledError, KeyboardInterrupt等）は即再raise
-            for r in results:
-                if isinstance(r, BaseException) and not isinstance(r, Exception):
-                    raise r
-            failures: list[BaseException] = [r for r in results if isinstance(r, BaseException)]
-            if failures:
-                failure_summary = "\n".join(f"{type(e).__name__}: {e}" for e in failures)
-                raise AssertionError(
-                    f"{len(failures)}/{len(tasks)} リクエスト失敗:\n{failure_summary}"
-                ) from failures[0]
-            metrics.stop_monitoring()
+            try:
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                # システム例外（CancelledError, KeyboardInterrupt等）は即再raise
+                for r in results:
+                    if isinstance(r, BaseException) and not isinstance(r, Exception):
+                        raise r
+                failures: list[BaseException] = [r for r in results if isinstance(r, BaseException)]
+                if failures:
+                    failure_summary = "\n".join(f"{type(e).__name__}: {e}" for e in failures)
+                    raise AssertionError(
+                        f"{len(failures)}/{len(tasks)} リクエスト失敗:\n{failure_summary}"
+                    ) from failures[0]
+            finally:
+                metrics.stop_monitoring()
 
             summary = metrics.get_summary()
 
@@ -220,26 +228,29 @@ class TestAPIPerformance:
             metrics.start_monitoring()
 
             # バッチごとにリクエスト実行
-            for batch in range(0, request_count, batch_size):
-                batch_tasks = []
-                for i in range(batch, min(batch + batch_size, request_count)):
-                    endpoint = f"/posts/{(i % 100) + 1}"  # 1-100のランダムエンドポイント
-                    batch_tasks.append(_measure_request(client, endpoint, metrics))
+            try:
+                for batch in range(0, request_count, batch_size):
+                    batch_tasks = []
+                    for i in range(batch, min(batch + batch_size, request_count)):
+                        endpoint = f"/posts/{(i % 100) + 1}"  # 1-100のランダムエンドポイント
+                        batch_tasks.append(_measure_request(client, endpoint, metrics))
 
-                results = await asyncio.gather(*batch_tasks, return_exceptions=True)
-                # システム例外（CancelledError, KeyboardInterrupt等）は即再raise
-                for r in results:
-                    if isinstance(r, BaseException) and not isinstance(r, Exception):
-                        raise r
-                failures: list[BaseException] = [r for r in results if isinstance(r, BaseException)]
-                if failures:
-                    failure_summary = "\n".join(f"{type(e).__name__}: {e}" for e in failures)
-                    raise AssertionError(
-                        f"{len(failures)}/{len(batch_tasks)} リクエスト失敗:\n{failure_summary}"
-                    ) from failures[0]
-                await asyncio.sleep(0.1)  # バッチ間隔
-
-            metrics.stop_monitoring()
+                    results = await asyncio.gather(*batch_tasks, return_exceptions=True)
+                    # システム例外（CancelledError, KeyboardInterrupt等）は即再raise
+                    for r in results:
+                        if isinstance(r, BaseException) and not isinstance(r, Exception):
+                            raise r
+                    failures: list[BaseException] = [
+                        r for r in results if isinstance(r, BaseException)
+                    ]
+                    if failures:
+                        failure_summary = "\n".join(f"{type(e).__name__}: {e}" for e in failures)
+                        raise AssertionError(
+                            f"{len(failures)}/{len(batch_tasks)} リクエスト失敗:\n{failure_summary}"
+                        ) from failures[0]
+                    await asyncio.sleep(0.1)  # バッチ間隔
+            finally:
+                metrics.stop_monitoring()
 
             summary = metrics.get_summary()
 
@@ -277,12 +288,12 @@ class TestAPIPerformance:
             for endpoint in endpoints:
                 metrics = PerformanceMetrics()
                 metrics.start_monitoring()
-
-                # 各エンドポイントを5回テスト
-                for _ in range(5):
-                    await _measure_request(client, endpoint, metrics)
-
-                metrics.stop_monitoring()
+                try:
+                    # 各エンドポイントを5回テスト
+                    for _ in range(5):
+                        await _measure_request(client, endpoint, metrics)
+                finally:
+                    metrics.stop_monitoring()
                 summary = metrics.get_summary()
                 results[endpoint] = summary["response_times"]["mean"]
 
@@ -316,12 +327,12 @@ class TestPerformanceRegression:
 
         async with AsyncAPIClient() as client:
             metrics.start_monitoring()
-
-            # ベースラインテスト（10回実行）
-            for _ in range(10):
-                await _measure_request(client, "/posts/1", metrics)
-
-            metrics.stop_monitoring()
+            try:
+                # ベースラインテスト（10回実行）
+                for _ in range(10):
+                    await _measure_request(client, "/posts/1", metrics)
+            finally:
+                metrics.stop_monitoring()
 
             summary = metrics.get_summary()
             current_performance = summary["response_times"]["mean"]
