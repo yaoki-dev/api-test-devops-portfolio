@@ -1,6 +1,6 @@
 # マルチレベルセキュリティテスト実装ガイド
 
-*最終更新: 2026年03月23日*
+*最終更新: 2026年03月24日*
 
 ## 概要
 
@@ -17,7 +17,8 @@
 | **Secrets Scan** | gitleaks | コミット時（pre-commit） | 認証情報・APIキーの漏洩検出 |
 | **Dependency/Container Scan** | Trivy (fs) | 全PR（CI） | 依存パッケージの既知CVE検査 |
 | **Container Image Scan** | Trivy (image) | main PR・docker label PR（CI） | コンテナイメージの脆弱性検査 |
-| **SAST・Security Linting** | bandit / ruff(S) | ローカル手動実行 | Pythonコードの脆弱性・セキュリティパターン検出 |
+| **SAST** | bandit | ローカル手動実行 | Pythonコードの脆弱性検出（SAST） |
+| **Security Linting** | ruff(S) | コミット時（pre-commit） | セキュリティパターン検出（OWASPパターン・ハードコード値） |
 
 ### 1.2 セキュリティ検証アプローチ
 
@@ -27,7 +28,7 @@
 静的解析（SAST）・シークレットスキャン・コンテナスキャンの組み合わせにより、
 CI/CD パイプラインで効率的かつ継続的に実施できます。
 
-**実行環境の使い分け**: Trivy（依存パッケージ・コンテナ）は CI ゲートとして全 PR で自動実行。gitleaks はコミット時の pre-commit フックとして開発者ローカルで実行。bandit・ruff(S) はローカル手動実行を推奨。
+**実行環境の使い分け**: Trivy（依存パッケージ・コンテナ）は CI ゲートとして全 PR で自動実行。gitleaks はコミット時の pre-commit フックとして開発者ローカルで実行。bandit はローカル手動実行を推奨。ruff(S) はコミット時 pre-commit フックで自動実行。
 
 登録済み pytest マーカー（`pyproject.toml` の `[tool.pytest.ini_options]`）:
 
@@ -51,12 +52,13 @@ markers =
 # trivy fs: 依存パッケージ CVE スキャン（全 PR）
 # trivy image: コンテナイメージスキャン（main PR・docker label PR のみ）
 
-# ローカルチェックコマンド（手動実行）
-uv run bandit -r utils/ config/ models/          # SAST
-uv run ruff check --select S .                   # Security rules
+# ローカル手動チェックコマンド
+uv run bandit -r utils/ config/ models/          # SAST（手動実行）
+uv run ruff check --select S .                   # Security rules（S ルール単独確認用 — pre-commit では全ルールで自動実行済み）
 
-# コミット時（pre-commit フック）
-# gitleaks: secrets scan（自動実行）
+# コミット時（pre-commit フック — 自動実行）
+# gitleaks: secrets scan
+# ruff: 全ルール（S 含む）check + fix
 ```
 
 ---
@@ -77,7 +79,7 @@ uv run ruff check --select S .                   # Security rules
             │   Developer Local Layer                         │
             │   - gitleaks: secrets scan（pre-commit）        │
             │   - bandit: Python SAST（手動）                 │
-            │   - ruff(S): security linting（手動）           │
+            │   - ruff(S): security linting（pre-commit）       │
             └─────────────────────────────────────────────────┘
 ```
 
@@ -107,7 +109,7 @@ uv run ruff check --select S .                   # Security rules
 **回答例**:
 > 「Shift Left」と「Defense in Depth」の2つの原則に基づいています。
 >
-> **Shift Left**: gitleaks を pre-commit フックとして開発者ローカルで実行し、シークレット漏洩をコミット前に検出します。bandit・ruff(S) はローカル手動実行で SAST を補完します。
+> **Shift Left**: gitleaks を pre-commit フックとして開発者ローカルで実行し、シークレット漏洩をコミット前に検出します。ruff(S) は pre-commit フックでコミット時に自動実行。bandit はローカル手動実行で SAST を補完します。
 >
 > **Defense in Depth**: Trivy の依存パッケージスキャン（fs）を全 PR で CI 実行し、コンテナイメージスキャン（image）は main PR・docker ラベル付き PR のみに限定してコストを最適化します。
 >
@@ -122,7 +124,7 @@ uv run ruff check --select S .                   # Security rules
 >
 > **bandit**（ローカル手動実行）はPythonコードのSAST（静的アプリケーションセキュリティテスト）で、SQLインジェクション・eval使用・弱い暗号化アルゴリズムなどを検出します。
 >
-> **ruff(S rules)**（ローカル手動実行）はOWASP関連のコードパターンやハードコードされた値を Lint レベルで検出します。
+> **ruff(S rules)**（コミット時・pre-commit）はOWASP関連のコードパターンやハードコードされた値を Lint レベルで検出します。
 >
 > **Trivy fs**（全PR・CI）は依存パッケージの既知CVEをスキャンします。**Trivy image**（main PR・docker ラベル付き PR・CI）はコンテナイメージの脆弱性を検査します。image スキャンは実行時間が長いため対象 PR を限定してCIコストを最適化しています。
 
@@ -149,21 +151,22 @@ uv run ruff check --select S .                   # Security rules
 # ローカル（pre-commit / 手動）
 # - gitleaks: secrets scan（コミット時・pre-commit）
 # - bandit: Python SAST（手動）
-# - ruff --select S: security linting（手動）
+# - ruff --select S: security linting（コミット時・pre-commit）
 ```
 
 **設計根拠**:
 
 - Trivy による依存パッケージスキャンを CI ゲートとして全 PR に適用（Shift Left）
 - gitleaks はコミット前の開発者ローカル検出により漏洩リスクを最小化
-- bandit・ruff(S) はローカル手動実行で補完（CI 未定義）
+- ruff(S) は pre-commit フックでコミット時に自動実行（CI 未定義）
+- bandit はローカル手動実行で補完（CI 未定義）
 - pytest の security マーカーは未使用（未登録）
 
 ### 4.2 ツール実行基準
 
 | 基準 | gitleaks | bandit | ruff(S) | Trivy (fs) | Trivy (image) |
 |-----|---------|--------|---------|------------|---------------|
-| 実行タイミング | コミット時（pre-commit） | ローカル手動 | ローカル手動 | 全PR（CI） | main PR・docker label PR（CI） |
+| 実行タイミング | コミット時（pre-commit） | ローカル手動 | コミット時（pre-commit） | 全PR（CI） | main PR・docker label PR（CI） |
 | 実行時間 | < 10秒 | < 10秒 | < 5秒 | < 60秒 | < 60秒 |
 | 対象 | シークレット漏洩 | PythonSAST | OWASPパターン | 依存パッケージCVE | コンテナイメージCVE |
 
@@ -183,3 +186,4 @@ uv run ruff check --select S .                   # Security rules
 | 2025-11-29 | 初版作成。マルチレベルセキュリティテスト実装完了 |
 | 2026-03-23 | PR #278 レビュー対応。実在しないテストファイル参照・未登録 security マーカー記述を削除し、実際の CI 静的解析ツール（gitleaks/bandit/ruff(S)/Trivy）の説明に全面改訂 |
 | 2026-03-23 | CI 構成記述を正確化。gitleaks（pre-commit）、bandit/ruff(S)（ローカル手動）、Trivy fs（全PR CI）・Trivy image（main PR・docker label PR CI）に修正 |
+| 2026-03-24 | ruff(S)実行タイミングをpre-commit自動実行に修正（.pre-commit-config.yaml検証に基づく） |

@@ -61,18 +61,16 @@ class PerformanceMetrics:
             return {"error": "No response times recorded"}
 
         elapsed = self.end_time - self.start_time
-        sorted_times = sorted(self.response_times)
-        n = len(sorted_times)
         return {
             "total_duration": elapsed,
             "request_count": len(self.response_times),
             "response_times": {
-                "mean": sum(self.response_times) / n,
-                "median": sorted_times[n // 2]
-                if n % 2
-                else (sorted_times[n // 2 - 1] + sorted_times[n // 2]) / 2,
-                "min": sorted_times[0],
-                "max": sorted_times[-1],
+                "mean": statistics.mean(self.response_times),
+                "median": statistics.median(self.response_times),
+                "min": min(self.response_times),
+                "max": max(self.response_times),
+                # Note: quantiles()はlen>=2で動作するが、サンプル数が少ない場合は
+                # 線形補間による近似値。テスト目的（異常値検出）には十分。
                 "p95": statistics.quantiles(self.response_times, n=20)[18]
                 if len(self.response_times) >= 2
                 else self.response_times[0],
@@ -169,6 +167,10 @@ class TestAPIPerformance:
 
             # 並行実行
             results = await asyncio.gather(*tasks, return_exceptions=True)
+            # システム例外（CancelledError, KeyboardInterrupt等）は即再raise
+            for r in results:
+                if isinstance(r, BaseException) and not isinstance(r, Exception):
+                    raise r
             failures: list[BaseException] = [r for r in results if isinstance(r, BaseException)]
             if failures:
                 failure_summary = "\n".join(f"{type(e).__name__}: {e}" for e in failures)
@@ -225,6 +227,10 @@ class TestAPIPerformance:
                     batch_tasks.append(_measure_request(client, endpoint, metrics))
 
                 results = await asyncio.gather(*batch_tasks, return_exceptions=True)
+                # システム例外（CancelledError, KeyboardInterrupt等）は即再raise
+                for r in results:
+                    if isinstance(r, BaseException) and not isinstance(r, Exception):
+                        raise r
                 failures: list[BaseException] = [r for r in results if isinstance(r, BaseException)]
                 if failures:
                     failure_summary = "\n".join(f"{type(e).__name__}: {e}" for e in failures)
