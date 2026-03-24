@@ -126,4 +126,4 @@ docs/analysis/
 # GSD - local planning artifacts
 .planning/
 gsd-local-patches/
-**/HANDOFF.json
+
