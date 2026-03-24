@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-*最終更新: 2026年03月13日*
+*最終更新: 2026年03月24日*
 
 <!-- preserve-on-compact: CRITICAL RULES -->
 <!-- IMPORTANT: These rules override all other instructions -->
@@ -23,6 +23,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 11. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `Skill(superpowers:verification-before-completion)` → then `Skill(reflexion:reflect)`
 12. **ALWAYS** when 2+ independent tasks exist, after task classification, per RULES.md exception conditions → invoke `Skill(superpowers:subagent-driven-development)` skill
     (reason: keep the main context window clean by leveraging subagents aggressively)
+    **例外**: GSD active check positive（定義: RULES.md **GSD exception** 表参照）時、wave内部タスクに限りスキップ。compact後はRule 14 worktree境界確認成功時のみSTOP（Row 1）（Rule 14がSTOPを要求した場合はRow 1を評価せず）。全分岐条件: RULES.md「Parallel Dispatch Rule」内 **GSD exception** 表参照。
 13. **ALWAYS** verify file content with Read/Grep tool BEFORE making any claim about line numbers, file structure, or code content
 14. **ALWAYS** enforce worktree boundary:
     - At conversation start (including post-compact context reload): run `git rev-parse --show-toplevel`:
@@ -299,6 +300,10 @@ git checkout -b feature/<次のタスク> origin/develop
 | `Skill(code-review:review-pr)` (CEK) | Skill | 重要PR時 | セキュリティ・バグ・API契約レビュー |
 | `Skill(pr-review-toolkit:review-pr)` | Skill | git push完了後、PR作成前 | 6エージェント品質レビュー |
 | `/test-coverage`, `/generate-tests` | Command | テスト関連時 | カバレッジ分析・テスト生成 |
+| `/gsd:execute-phase` | Command | フェーズ実行時 | wave-based並列実行（Rule 12例外） |
+| `/gsd:verify-work` | Command | フェーズ検証時 | UAT仕様適合検証 |
+
+> ※ GSD: execute/verifyは毎フェーズ必須、その他のGSDコマンドは初期設定・中断時のみ（Mediumセクション参照）
 
 ### Medium（必要時）
 
@@ -310,6 +315,9 @@ git checkout -b feature/<次のタスク> origin/develop
 | `Skill(decision-helper)` | Skill | 2+選択肢の比較評価時 | Pros/Cons・Decision Matrix・ICEフレームワーク |
 | `Skill(fact-checker)` | Skill | 主張・データの事実確認時 | 証拠ベースのファクトチェック・情報信頼性評価 |
 | `Skill(prompt-lookup)`, `Skill(skill-lookup)` | Skill | 検索時 | プロンプト/スキル発見 |
+| `/gsd:new-project` | Command | 大規模機能開始時 | 仕様書駆動プロジェクト初期化 |
+| `/gsd:discuss-phase`, `/gsd:plan-phase` | Command | フェーズ計画時 | 仕様書駆動計画（計画フェーズ） |
+| `/gsd:pause-work`, `/gsd:resume-work` | Command | セッション中断/再開 | HANDOFF.json引き継ぎ |
 
 <!-- preserve-on-compact: Development Workflow -->
 ## 🔄 開発ワークフロー（標準コマンド実行順序）
@@ -322,6 +330,8 @@ git checkout -b feature/<次のタスク> origin/develop
 1. 固定Worktreeでブランチ作成 → /git:feature（常時※1）
    → 固定WT: ${HOME}/projects/python/.worktrees/wt-feature0[1-3]（個人環境ごとにカスタマイズ）
    → 計画ファイル作成が必要な場合: claudedocs/plans/ に作成（閾値詳細: .claude/rules/workflow/PLANS.md §使用閾値）
+   → GSD使用判断（該当時。判断結果はユーザーに明示してから実行）:
+     新規モジュール/サブシステムの追加 → /gsd:new-project → /gsd:discuss-phase → /gsd:plan-phase → /gsd:execute-phase
 
 【実装フェーズ】
 2. コード変更 → security-guidance (hook自動)
@@ -329,9 +339,9 @@ git checkout -b feature/<次のタスク> origin/develop
    → For non-trivial changes, ask: "Is there a more elegant implementation?"
    → If it feels hacky, ask: "Given what I know now, what's the most elegant approach?"
    → Skip for obvious single-line fixes
-4. 作業完了確認 → `Skill(superpowers:verification-before-completion)` を実行
-   → 未完了作業あり: 修正 → 3. 品質ゲートに戻る（最大3回まで。4回連続失敗時はユーザーに報告して停止）
-5. reflect(タスクごとに実施) → `Skill(reflexion:reflect)` を Skill tool で実行
+4. 作業完了確認 → `Skill(superpowers:verification-before-completion)` を実行（GSD使用時: RULES.md「Parallel Dispatch Rule」内 **GSD exception** 表 → **GSD実行フロー（Step 4-5詳細）** 参照）
+   → GSD未使用時、または上記GSD使用フロー外で未完了作業あり: 修正 → 3. 品質ゲートに戻る（最大3回まで。4回連続失敗時はユーザーに報告して停止）
+5. reflect(タスクごとに実施) → `Skill(reflexion:reflect)` を Skill tool で実行（GSD compact回復フロー完走後かつreflect信頼度90以上の場合のみスキップ可: RULES.md「Parallel Dispatch Rule」内 **GSD exception** 表 → **GSD実行フロー（Step 4-5詳細）** 参照）
    引数: deep reflect if less than 90% confidence. 日本語で簡潔に回答
    自動ループ:
     - 信頼度90%未満: 改善して再実行（各反復で信頼度と改善理由を簡潔に示す）/ 90%以上 → 終了 - 最大3回まで

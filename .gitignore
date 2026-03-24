@@ -122,3 +122,7 @@ claudedocs/
 docs/agent-teams/
 docs/ai_collaboration/
 docs/analysis/
+
+# GSD - local planning artifacts
+.planning/
+gsd-local-patches/
