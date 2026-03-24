@@ -80,7 +80,7 @@ markers = [
     "e2e: End-to-end tests (full user scenarios)",
     "performance: Performance tests (latency/throughput)",
     "slow: Slow tests (>3s, excluded from local dev)",
-    "external: External API tests (CI/CD only)",
+    "external: External API tests (weekly CI only)",
     "smoke: Smoke tests (basic functionality)",
 ]
 asyncio_mode = "auto"            # 非同期テスト自動検出

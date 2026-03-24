@@ -30,5 +30,5 @@ repos:
 
 # 重いチェックはCI/CDで実行 (コミット時は除外)
 # - mypy: 型チェック → GitHub Actions
-# - bandit: セキュリティ → GitHub Actions
+# - bandit: セキュリティ → ruff S-rulesで代替（直接実行なし）
 # - pytest: テスト → GitHub Actions

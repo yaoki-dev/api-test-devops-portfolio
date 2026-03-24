@@ -145,8 +145,8 @@ api-test-devops-portfolio/
 - **E2E Tests**: 0 files (tests/e2e/ - prepared but empty)
 
 ### Coverage Metrics
-- **Current Coverage**: 92.73%（unit+integration条件）
-- **Target Coverage**: 85% (Week 7-10 goal) ✅ 達成済み
+- **Current Coverage**: 93.43%（unit+integration条件）
+- **Target Coverage**: 85% (Week 5-6 goal) ✅ 達成済み
 - **Coverage Reports**: `reports/coverage.json`, `reports/htmlcov/`
 
 ### Test Execution
@@ -287,7 +287,7 @@ uv run pytest && uv run ruff check . && uv run mypy utils/ config/ models/
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Test Coverage | 92.73% | 85% (Week 7-10) |
+| Test Coverage | 93.43% | 85% (Week 5-6) |
 | Test Files | 19 | - |
 | Python Version | 3.14 | - |
 | Code Quality | ruff + mypy | 0 errors |

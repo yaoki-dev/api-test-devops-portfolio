@@ -1,12 +1,12 @@
 # テスト戦略・設計ドキュメント
 
-*最終更新: 2026年03月06日*
+*最終更新: 2026年03月23日*
 
 ## エグゼクティブサマリー
 
-**現在のカバレッジ**: 92.73%（CI条件: unit+integration, not external） | **目標達成**: ✅
-**テスト資産**: 483件（CI条件）/ 全551件
-**最優先改善領域**: utils/github_client.py (86.67%)
+**現在のカバレッジ**: 93.43%（CI条件: unit+integration, not external） | **目標達成**: ✅
+**テスト資産**: 575件（CI条件）/ 全588件
+**最優先改善領域**: utils/github_client.py (91.11%)
 
 ---
 
@@ -30,7 +30,7 @@ uv run pytest -n auto -m "(unit or integration) and not external" \
 |---------|------|---------|
 | `unit` | 単体テスト（モック中心） | `pytest -m unit` |
 | `integration` | 統合テスト（実API） | `pytest -m integration` |
-| `external` | 外部API依存（CI/CDのみ） | `pytest -m "not external"` |
+| `external` | 外部API依存（週次のみ） | `pytest -m "not external"` |
 | `smoke` | スモークテスト（基本動作） | `pytest -m smoke` |
 | `slow` | 低速テスト（>3秒） | `pytest -m "not slow"` |
 
@@ -58,9 +58,9 @@ uv run pytest -n auto -m "(unit or integration) and not external" \
 |------|------|------|---------|
 | 1-2 | 60-65% | — | 単体テスト基盤 |
 | 3-4 | 65-70% | — | Docker/CI-CD |
-| 5-6 | 80-85% | 92.73% ✅ | 非同期/e2e |
+| 5-6 | 80-85% | 93.43% ✅ | 非同期/e2e |
 
-**優先モジュール**: utils/github_client.py (86.67%) → 最優先
+**優先モジュール**: utils/github_client.py (91.11%) → 最優先
 
 ---
 
@@ -70,7 +70,7 @@ uv run pytest -n auto -m "(unit or integration) and not external" \
 |---------|---------|--------|
 | PR | pull_request | unit + integration |
 | Merge | push main | + smoke |
-| Weekly | schedule | + security + performance |
+| Weekly | schedule | + external + performance |
 
 **品質ゲート**: `uv run pytest --cov-fail-under=${TARGET} && uv run ruff check . && uv run mypy utils/ config/ models/`
 
