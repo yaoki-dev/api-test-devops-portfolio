@@ -146,6 +146,7 @@ class TestAPIPerformance:
                 "single_request_performance",
                 response_time=round(response_time, 3),
                 memory_mb=round(summary["memory_usage"]["start_mb"], 1),
+                cpu_start_percent=round(summary["cpu_usage"]["start_percent"], 1),
             )
 
     @pytest.mark.asyncio
@@ -198,6 +199,8 @@ class TestAPIPerformance:
                 p95=round(summary["response_times"]["p95"], 3),
                 throughput=round(summary["throughput"], 1),
                 memory_increase_mb=round(summary["memory_usage"]["increase_mb"], 1),
+                cpu_start_percent=round(summary["cpu_usage"]["start_percent"], 1),
+                cpu_end_percent=round(summary["cpu_usage"]["end_percent"], 1),
             )
 
     @pytest.mark.asyncio
@@ -250,6 +253,8 @@ class TestAPIPerformance:
                 p95=round(summary["response_times"]["p95"], 3),
                 throughput=round(summary["throughput"], 1),
                 memory_increase_mb=round(summary["memory_usage"]["increase_mb"], 1),
+                cpu_start_percent=round(summary["cpu_usage"]["start_percent"], 1),
+                cpu_end_percent=round(summary["cpu_usage"]["end_percent"], 1),
             )
 
     @pytest.mark.asyncio
@@ -319,6 +324,7 @@ class TestPerformanceRegression:
                 baseline=round(self.BASELINE_RESPONSE_TIME, 3),
                 current=round(current_performance, 3),
                 ratio=round(performance_ratio, 2),
+                cpu_start_percent=round(summary["cpu_usage"]["start_percent"], 1),
             )
 
             assert performance_ratio <= self.REGRESSION_THRESHOLD, (
