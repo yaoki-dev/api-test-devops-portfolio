@@ -20,7 +20,7 @@ argument-hint: "[owner/repo] [pr-number]"
 if ! ISSUE_COMMENTS=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --paginate \
   --jq '[.[] |
     select(.user.type != "Bot") |
-    select(.body | test("スキップ|対応不要|skip|wontfix|no need|not needed|対応しない"; "i")) |
+    select(.body | test("スキップ|対応不要|skip|SKIP|対応しない"; "i")) |
     {user: .user.login, body: (.body[:150])}]'); then
   echo "エラー: issues コメント取得失敗" >&2
   exit 1
@@ -67,6 +67,11 @@ Launch these 7 agents in a single message, with the following **additional instr
 各指摘に以下のラベルを付けること:
 - 🔴 マージブロッカー: セキュリティ脆弱性 / API契約違反 / データ損失 / 正確性バグ / サイレント障害
 - 🟡 品質改善推奨: 可読性 / 命名 / テストカバレッジ向上 / 軽微なリファクタリング / パフォーマンス示唆
+
+**⚠️ DRY改善** は以下の条件をすべて満たす場合にのみ指摘する：
+  1. 同一ロジックの重複が4箇所以上存在する
+  2. 共通化しても可読性が低下しない
+  3. テストや仕様理解が難しくならない
 
 【対応不要リスト - 再フラグ禁止】
 以下の指摘は作者が「対応不要」と判断済みです。
