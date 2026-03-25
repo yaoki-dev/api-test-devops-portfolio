@@ -407,18 +407,36 @@ class TestPostModel:
         assert "<script>" not in post.title
         assert "<img" not in post.body
 
-    def test_post_invalid_id_zero_raises_validation_error(self) -> None:
-        """id=0でValidationErrorが発生する（境界値テスト: ge=1）"""
+    @pytest.mark.parametrize(
+        "invalid_id",
+        [
+            pytest.param(0, id="zero"),
+            pytest.param(-1, id="negative"),
+        ],
+    )
+    def test_post_invalid_id_raises_validation_error(self, invalid_id: int) -> None:
+        """id が ge=1 制約（id は1以上）に違反した場合 ValidationError が発生する"""
         with pytest.raises(ValidationError) as exc_info:
-            Post(id=0, userId=1, title="Test", body="Body")
+            Post(id=invalid_id, userId=1, title="Test", body="Body")
         assert "id" in str(exc_info.value)
 
-    def test_post_title_exceeds_max_length_raises_validation_error(self) -> None:
-        """title>200文字でValidationErrorが発生する（境界値テスト: max_length=200）"""
-        long_title = "a" * 201
-        with pytest.raises(ValidationError) as exc_info:
-            Post(id=1, userId=1, title=long_title, body="Body")
-        assert "title" in str(exc_info.value)
+    @pytest.mark.parametrize(
+        "length,should_raise",
+        [
+            pytest.param(200, False, id="boundary-valid"),
+            pytest.param(201, True, id="boundary-invalid"),
+        ],
+    )
+    def test_post_title_length_boundary(self, length: int, should_raise: bool) -> None:
+        """title max_length=200 の境界値テスト（200文字: 合格、201文字: 拒否）"""
+        title = "a" * length
+        if should_raise:
+            with pytest.raises(ValidationError) as exc_info:
+                Post(id=1, userId=1, title=title, body="Body")
+            assert "title" in str(exc_info.value)
+        else:
+            post = Post(id=1, userId=1, title=title, body="Body")
+            assert len(post.title) == 200
 
 
 class TestCommentModel:
