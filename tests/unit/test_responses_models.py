@@ -119,6 +119,30 @@ XSS_TEST_VECTORS: Final[list[XSSVector]] = [
     ("Test 'quoted'", "Test &#x27;quoted&#x27;"),  # Single quote
 ]
 
+# モデルテスト専用 XSS ベクター（OWASP 5カテゴリ）
+# XSS-01〜03 の parametrize で共有参照
+_XSS_MODEL_VECTORS: Final[list[XSSVector]] = [
+    ("<script>alert('XSS')</script>", "&lt;script&gt;alert(&#x27;XSS&#x27;)&lt;/script&gt;"),
+    ("<img src=x onerror=alert(1)>", "&lt;img src=x onerror=alert(1)&gt;"),
+    ('<a href="javascript:alert(1)">', "&lt;a href=&quot;javascript:alert(1)&quot;&gt;"),
+    ('" onclick="alert(1)"', "&quot; onclick=&quot;alert(1)&quot;"),
+    ("Test & Test", "Test &amp; Test"),
+]
+_XSS_MODEL_IDS: Final[list[str]] = [
+    "script-basic",
+    "event-img-onerror",
+    "uri-javascript-anchor",
+    "attr-double-quote",
+    "char-ampersand",
+]
+_COMMENT_BASE: Final[dict[str, int | str]] = {
+    "postId": 1,
+    "id": 1,
+    "name": "safe_name",
+    "email": "safe@example.com",
+    "body": "safe_body",
+}
+
 
 class TestSanitizeUserContent:
     """sanitize_user_content() 関数の網羅テスト"""
@@ -176,7 +200,12 @@ class TestSanitizeUserContent:
 
 
 class TestGeoModel:
-    """Geo モデルのテスト"""
+    """Geo モデルのテスト
+
+    XSS サニタイゼーション: Geo.lat フィールドが html.escape() でサニタイズされることを確認。
+    OWASP カバレッジ: Cat.1 Script Tags / Cat.2 Event Handlers / Cat.3 URI Schemes /
+                    Cat.4 Attribute Injection / Cat.6 Special Characters
+    """
 
     def test_geo_basic_creation(self) -> None:
         """基本的な Geo モデル作成"""
@@ -185,12 +214,15 @@ class TestGeoModel:
         assert geo.lat == "-37.3159"
         assert geo.lng == "81.1496"
 
-    def test_geo_sanitizes_xss(self) -> None:
-        """Geo モデルが XSS をサニタイズすることを確認"""
-        geo = Geo(lat="<script>alert(1)</script>", lng="normal")
-
-        assert "<script>" not in geo.lat
-        assert "&lt;script&gt;" in geo.lat
+    @pytest.mark.parametrize(
+        ("dirty", "expected"),
+        _XSS_MODEL_VECTORS,
+        ids=_XSS_MODEL_IDS,
+    )
+    def test_geo_sanitizes_xss(self, dirty: str, expected: str) -> None:
+        """Geo.lat フィールドの XSS サニタイゼーション（OWASP 5カテゴリ）"""
+        geo = Geo(lat=dirty, lng="normal")
+        assert geo.lat == expected
 
     def test_geo_extra_fields_forbidden(self) -> None:
         """Geo モデルが extra フィールドを拒否することを確認"""
@@ -201,7 +233,17 @@ class TestGeoModel:
 
 
 class TestAddressModel:
-    """Address モデルのテスト"""
+    """Address モデルのテスト
+
+    XSS サニタイゼーション: Address.street フィールドが html.escape() でサニタイズされることを確認。
+    OWASP カバレッジ: Cat.1 Script Tags / Cat.2 Event Handlers / Cat.3 URI Schemes /
+                    Cat.4 Attribute Injection / Cat.6 Special Characters
+    """
+
+    @pytest.fixture
+    def valid_geo(self) -> Geo:
+        """Address テスト用の基本 Geo インスタンス"""
+        return Geo(lat="0", lng="0")
 
     def test_address_basic_creation(self) -> None:
         """基本的な Address モデル作成"""
@@ -218,23 +260,24 @@ class TestAddressModel:
         assert address.city == "Gwenborough"
         assert address.geo.lat == "-37.3159"
 
-    def test_address_sanitizes_xss(self) -> None:
-        """Address モデルが XSS をサニタイズすることを確認"""
-        geo = Geo(lat="0", lng="0")
-        address = Address(
-            street="<script>alert('xss')</script>",
-            suite="Test",
-            city="City",
-            zipcode="12345",
-            geo=geo,
-        )
-
-        assert "<script>" not in address.street
-        assert "&#x27;" in address.street  # Single quote escaped
+    @pytest.mark.parametrize(
+        ("dirty", "expected"),
+        _XSS_MODEL_VECTORS,
+        ids=_XSS_MODEL_IDS,
+    )
+    def test_address_sanitizes_xss(self, valid_geo: Geo, dirty: str, expected: str) -> None:
+        """Address.street フィールドの XSS サニタイゼーション（OWASP 5カテゴリ）"""
+        address = Address(street=dirty, suite="Test", city="City", zipcode="12345", geo=valid_geo)
+        assert address.street == expected
 
 
 class TestCompanyModel:
-    """Company モデルのテスト"""
+    """Company モデルのテスト
+
+    XSS サニタイゼーション: Company.name フィールドが html.escape() でサニタイズされることを確認。
+    OWASP カバレッジ: Cat.1 Script Tags / Cat.2 Event Handlers / Cat.3 URI Schemes /
+                    Cat.4 Attribute Injection / Cat.6 Special Characters
+    """
 
     def test_company_basic_creation(self) -> None:
         """基本的な Company モデル作成"""
@@ -257,16 +300,15 @@ class TestCompanyModel:
 
         assert company.catch_phrase == "Test Phrase"
 
-    def test_company_sanitizes_xss(self) -> None:
-        """Company モデルが XSS をサニタイズすることを確認"""
-        company = Company(
-            name="<img src=x onerror=alert(1)>",
-            catchPhrase="Normal",
-            bs="Normal",
-        )
-
-        assert "<img" not in company.name
-        assert "&lt;img" in company.name
+    @pytest.mark.parametrize(
+        ("dirty", "expected"),
+        _XSS_MODEL_VECTORS,
+        ids=_XSS_MODEL_IDS,
+    )
+    def test_company_sanitizes_xss(self, dirty: str, expected: str) -> None:
+        """Company.name フィールドの XSS サニタイゼーション（OWASP 5カテゴリ）"""
+        company = Company(name=dirty, catchPhrase="Normal", bs="Normal")
+        assert company.name == expected
 
 
 class TestUserModel:
@@ -380,7 +422,13 @@ class TestPostModel:
 
 
 class TestCommentModel:
-    """Comment モデルのテスト"""
+    """Comment モデルのテスト
+
+    XSS サニタイゼーション: Comment の name/email/body 3フィールドが
+                    html.escape() でサニタイズされることを確認。
+    OWASP カバレッジ: Cat.1 Script Tags / Cat.2 Event Handlers / Cat.3 URI Schemes /
+                    Cat.4 Attribute Injection / Cat.6 Special Characters
+    """
 
     def test_comment_basic_creation(self) -> None:
         """基本的な Comment モデル作成"""
@@ -395,19 +443,20 @@ class TestCommentModel:
         assert comment.post_id == 1
         assert comment.email == "test@example.com"
 
-    def test_comment_sanitizes_xss(self) -> None:
-        """Comment モデルが全フィールドの XSS をサニタイズすることを確認"""
-        comment = Comment(
-            postId=1,
-            id=1,
-            name="<script>xss</script>",
-            email="<img onerror=alert(1)>",
-            body="<svg onload=alert(1)>",
-        )
-
-        assert "<script>" not in comment.name
-        assert "<img" not in comment.email
-        assert "<svg" not in comment.body
+    @pytest.mark.parametrize(
+        ("field", "dirty", "expected"),
+        [
+            (field, dirty, expected)
+            for field in ("name", "email", "body")
+            for dirty, expected in _XSS_MODEL_VECTORS
+        ],
+        ids=[f"{field}-{vid}" for field in ("name", "email", "body") for vid in _XSS_MODEL_IDS],
+    )
+    def test_comment_sanitizes_xss(self, field: str, dirty: str, expected: str) -> None:
+        """Comment モデル全フィールドの XSS サニタイゼーション（3フィールド x OWASP 5カテゴリ）"""
+        data = {**_COMMENT_BASE, field: dirty}
+        comment = Comment(**data)
+        assert getattr(comment, field) == expected
 
 
 class TestTodoModel:
