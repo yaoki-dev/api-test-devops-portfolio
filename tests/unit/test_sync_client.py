@@ -19,7 +19,7 @@ import httpx
 import pytest
 import respx
 
-from tests.constants import BASE_URL
+from tests.constants import BASE_URL, INVALID_BASE_URLS
 from tests.unit.helpers import mock_get_route
 from utils.api_client import SyncAPIClient, SyncJSONPlaceholderClient
 
@@ -815,27 +815,21 @@ def test_sync_get_photos_invalid_album_id(album_id: int) -> None:
 # =============================================================================
 
 
-def test_sync_client_empty_base_url_raises_value_error() -> None:
-    """base_url に空文字列を渡すと初期化時に ValueError が発生する
+@pytest.mark.parametrize("base_url", INVALID_BASE_URLS)
+def test_sync_client_base_url_validation_raises_value_error(base_url: str) -> None:
+    """base_url が空・空白・タブ・改行の場合、初期化時に ValueError が発生する
 
     Security Rationale:
-        空文字列がhttpx.Clientに渡ると、リクエスト実行時に初めて InvalidURL が
-        発生し、原因特定が困難になる。初期化時に早期検証することで、
-        設定ミスを即座に検出する。
+        空文字列: httpx.Client に渡ると実行時に InvalidURL が発生し原因特定が困難。
+        初期化時の早期検証で設定ミスを即座に検出する。
+
+        空白バイパス: bool("   ") == True のため `if not self.base_url` を通過する。
+        str.strip() による追加検証が必要。
+
+        タブ・改行: URL設定時の見えない制御文字バイパスを防ぐ。
     """
     with pytest.raises(ValueError, match="base_url が空です"):
-        SyncAPIClient(base_url="")
-
-
-def test_sync_client_whitespace_base_url_raises_value_error() -> None:
-    """空白文字のみの base_url を渡すと初期化時に ValueError が発生する
-
-    Security Rationale:
-        bool("   ") == True のため、空白文字列は `if not self.base_url` を通過する。
-        `str.strip()` による追加検証で空白のみの文字列も早期拒否する。
-    """
-    with pytest.raises(ValueError, match="base_url が空です"):
-        SyncAPIClient(base_url="   ")
+        SyncAPIClient(base_url=base_url)
 
 
 def test_sync_client_falsy_values_not_overridden() -> None:
