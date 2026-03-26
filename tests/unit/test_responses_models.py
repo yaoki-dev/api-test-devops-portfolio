@@ -388,6 +388,12 @@ class TestUserModel:
 
         assert "extra" in str(exc_info.value).lower()
 
+    def test_user_email_must_be_valid_format(self, valid_user_data: dict) -> None:
+        """User.email が EmailStr 型により無効なメールアドレスを拒否すること"""
+        valid_user_data["email"] = "not-an-email"
+        with pytest.raises(ValidationError):
+            User(**valid_user_data)
+
 
 class TestPostModel:
     """Post モデルのテスト"""
@@ -453,7 +459,7 @@ class TestPostModel:
 class TestCommentModel:
     """Comment モデルのテスト
 
-    XSS サニタイゼーション: Comment の name/email/body 3フィールドが
+    XSS サニタイゼーション: Comment の name/body 2フィールドが
                     html.escape() でサニタイズされることを確認。
     OWASP カバレッジ: Cat.1 Script Tags / Cat.2 Event Handlers / Cat.3 URI Schemes /
                     Cat.4 Attribute Injection / Cat.6 Special Characters
@@ -476,16 +482,21 @@ class TestCommentModel:
         ("field", "dirty", "expected"),
         [
             (field, dirty, expected)
-            for field in ("name", "email", "body")
+            for field in ("name", "body")
             for dirty, expected in _XSS_MODEL_VECTORS
         ],
-        ids=[f"{field}-{vid}" for field in ("name", "email", "body") for vid in _XSS_MODEL_IDS],
+        ids=[f"{field}-{vid}" for field in ("name", "body") for vid in _XSS_MODEL_IDS],
     )
     def test_comment_sanitizes_xss(self, field: str, dirty: str, expected: str) -> None:
-        """Comment モデル全フィールドの XSS サニタイゼーション（3フィールド x OWASP 5カテゴリ）"""
+        """Comment モデル全フィールドの XSS サニタイゼーション（2フィールド x OWASP 5カテゴリ）"""
         data = {**_COMMENT_BASE, field: dirty}
         comment = Comment(**data)
         assert getattr(comment, field) == expected
+
+    def test_comment_email_must_be_valid_format(self) -> None:
+        """Comment.email が EmailStr 型により無効なメールアドレスを拒否すること"""
+        with pytest.raises(ValidationError):
+            Comment(postId=1, id=1, name="Name", email="not-an-email", body="Body")
 
 
 class TestTodoModel:

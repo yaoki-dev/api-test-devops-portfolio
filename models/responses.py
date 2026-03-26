@@ -16,7 +16,7 @@ html.escape()サニタイゼーションを適用したPydanticモデル。
 
 import html
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 # =============================================================================
 # ユーティリティ関数
@@ -108,12 +108,12 @@ class Comment(BaseModel):
     id: int = Field(..., ge=1, description="コメントID")
     post_id: int = Field(..., ge=1, alias="postId", description="親投稿ID")
     name: str = Field(..., max_length=100, description="コメント投稿者名")
-    email: str = Field(..., max_length=100, description="コメント投稿者メールアドレス")
+    email: EmailStr = Field(..., max_length=100, description="コメント投稿者メールアドレス")
     body: str = Field(..., max_length=2000, description="コメント本文")
 
     model_config = {"populate_by_name": True, "extra": "forbid"}
 
-    @field_validator("name", "email", "body")
+    @field_validator("name", "body")
     @classmethod
     def sanitize_comment_content(cls, v: str) -> str:
         """コメントの名前、メール、本文をサニタイズ
@@ -275,7 +275,7 @@ class User(BaseModel):
     id: int = Field(..., ge=1, description="ユーザーID")
     name: str = Field(..., max_length=100, description="ユーザー名")
     username: str = Field(..., max_length=50, description="ユーザー名（英数字）")
-    email: str = Field(..., max_length=100, description="メールアドレス")
+    email: EmailStr = Field(..., max_length=100, description="メールアドレス")
     address: Address = Field(..., description="住所情報")
     phone: str = Field(..., max_length=50, description="電話番号")
     website: str = Field(..., max_length=200, description="ウェブサイトURL")
@@ -283,7 +283,7 @@ class User(BaseModel):
 
     model_config = {"populate_by_name": True, "extra": "forbid"}
 
-    @field_validator("name", "username", "email", "phone", "website")
+    @field_validator("name", "username", "phone", "website")
     @classmethod
     def sanitize_user_fields(cls, v: str) -> str:
         """ユーザー情報フィールドをサニタイズ
