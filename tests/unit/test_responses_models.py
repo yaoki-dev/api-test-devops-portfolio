@@ -244,6 +244,16 @@ class TestGeoModel:
         geo = Geo(lat=dirty, lng="normal")
         assert geo.lat == expected
 
+    @pytest.mark.parametrize(
+        ("dirty", "expected"),
+        _XSS_MODEL_VECTORS,
+        ids=_XSS_MODEL_IDS,
+    )
+    def test_geo_lng_sanitizes_xss(self, dirty: str, expected: str) -> None:
+        """Geo.lng フィールドの XSS サニタイゼーション（OWASP 5カテゴリ）"""
+        geo = Geo(lat="0", lng=dirty)
+        assert geo.lng == expected
+
     def test_geo_extra_fields_forbidden(self) -> None:
         """Geo モデルが extra フィールドを拒否することを確認"""
         with pytest.raises(ValidationError) as exc_info:
@@ -409,6 +419,32 @@ class TestUserModel:
         with pytest.raises(ValidationError):
             User(**valid_user_data)
 
+    def test_user_email_max_length_valid(self, valid_user_data: dict) -> None:
+        """User.email=100文字（max_length 上限）で正常作成できること"""
+        valid_user_data["email"] = "a" * 88 + "@example.com"  # 100文字
+        user = User(**valid_user_data)
+        assert len(user.email) == 100
+
+    def test_user_email_max_length_invalid(self, valid_user_data: dict) -> None:
+        """User.email=101文字（max_length 超過）で ValidationError が発生すること"""
+        valid_user_data["email"] = "a" * 89 + "@example.com"  # 101文字
+        with pytest.raises(ValidationError):
+            User(**valid_user_data)
+
+    def test_user_website_is_not_html_escaped(self, valid_user_data: dict) -> None:
+        """websiteはhtml.escape対象外（URL内の&がエスケープされない）"""
+        value = "example.com/page?a=1&b=2"
+        valid_user_data["website"] = value
+        user = User(**valid_user_data)
+        assert user.website == value  # &amp; にならないことを確認
+
+    def test_user_website_is_not_modified(self, valid_user_data: dict) -> None:
+        """websiteはサニタイズ対象外（そのまま保持される）"""
+        value = "example.com/page?a=1&b=2"
+        valid_user_data["website"] = value
+        user = User(**valid_user_data)
+        assert user.website == value
+
 
 class TestPostModel:
     """Post モデルのテスト"""
@@ -504,14 +540,26 @@ class TestCommentModel:
     )
     def test_comment_sanitizes_xss(self, field: str, dirty: str, expected: str) -> None:
         """Comment モデル全フィールドの XSS サニタイゼーション（2フィールド x OWASP 5カテゴリ）"""
-        data = {**_COMMENT_BASE, field: dirty}
-        comment = Comment(**data)  # type: ignore[arg-type]  # parametrize の動的キー上書きで mypy が dict[str, object] に推論するため
+        data: dict[str, str | int] = {**_COMMENT_BASE, field: dirty}
+        comment = Comment.model_validate(data)
         assert getattr(comment, field) == expected
 
     def test_comment_email_must_be_valid_format(self) -> None:
         """Comment.email が EmailStr 型により無効なメールアドレスを拒否すること"""
         with pytest.raises(ValidationError):
             Comment(postId=1, id=1, name="Name", email="not-an-email", body="Body")
+
+    def test_comment_email_max_length_valid(self) -> None:
+        """Comment.email=100文字（max_length 上限）で正常作成できること"""
+        long_email = "a" * 88 + "@example.com"  # 100文字
+        comment = Comment(postId=1, id=1, name="Name", email=long_email, body="Body")
+        assert len(comment.email) == 100
+
+    def test_comment_email_max_length_invalid(self) -> None:
+        """Comment.email=101文字（max_length 超過）で ValidationError が発生すること"""
+        long_email = "a" * 89 + "@example.com"  # 101文字
+        with pytest.raises(ValidationError):
+            Comment(postId=1, id=1, name="Name", email=long_email, body="Body")
 
 
 class TestTodoModel:
