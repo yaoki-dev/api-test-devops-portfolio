@@ -119,6 +119,11 @@ XSS_TEST_VECTORS: Final[list[XSSVector]] = [
     ("Test 'quoted'", "Test &#x27;quoted&#x27;"),  # Single quote
 ]
 
+# 共有定数パターン: pytest.param ではなく tuple リストで定義し ids=[] で ID を管理する。
+# 理由: pytest.param オブジェクトは tuple unpack（for a, b in list）が不可
+#      （ParameterSet.values が3フィールド — ValueError: too many values to unpack）。
+# TestCommentModel の内包表記展開で for dirty, expected in _XSS_MODEL_VECTORS を使用するため。
+
 # モデルテスト専用 XSS ベクター（OWASP 5カテゴリ）
 # XSS-01〜03 の parametrize で共有参照
 _XSS_MODEL_VECTORS: Final[list[XSSVector]] = [
@@ -355,13 +360,18 @@ class TestUserModel:
         assert isinstance(user.address.geo, Geo)
         assert isinstance(user.company, Company)
 
-    def test_user_sanitizes_xss(self, valid_user_data: dict) -> None:
-        """User モデルが XSS をサニタイズすることを確認"""
-        valid_user_data["name"] = "<script>alert('xss')</script>"
+    @pytest.mark.parametrize(
+        ("dirty", "expected"),
+        _XSS_MODEL_VECTORS,
+        ids=_XSS_MODEL_IDS,
+    )
+    def test_user_name_sanitizes_xss(
+        self, valid_user_data: dict, dirty: str, expected: str
+    ) -> None:
+        """User.name フィールドの XSS サニタイゼーション（OWASP 5カテゴリ）"""
+        valid_user_data["name"] = dirty
         user = User(**valid_user_data)
-
-        assert "<script>" not in user.name
-        assert "&lt;script&gt;" in user.name
+        assert user.name == expected
 
     def test_user_populate_by_name(self, valid_user_data: dict) -> None:
         """User モデルの populate_by_name が有効であることを確認"""
@@ -395,17 +405,25 @@ class TestPostModel:
 
         assert post.user_id == 5
 
-    def test_post_sanitizes_xss(self) -> None:
-        """Post モデルが title/body の XSS をサニタイズすることを確認"""
-        post = Post(
-            userId=1,
-            id=1,
-            title="<script>alert(1)</script>",
-            body="<img src=x onerror=alert(1)>",
-        )
+    @pytest.mark.parametrize(
+        ("dirty", "expected"),
+        _XSS_MODEL_VECTORS,
+        ids=_XSS_MODEL_IDS,
+    )
+    def test_post_title_sanitizes_xss(self, dirty: str, expected: str) -> None:
+        """Post.title フィールドの XSS サニタイゼーション（OWASP 5カテゴリ）"""
+        post = Post(userId=1, id=1, title=dirty, body="Normal body")
+        assert post.title == expected
 
-        assert "<script>" not in post.title
-        assert "<img" not in post.body
+    @pytest.mark.parametrize(
+        ("dirty", "expected"),
+        _XSS_MODEL_VECTORS,
+        ids=_XSS_MODEL_IDS,
+    )
+    def test_post_body_sanitizes_xss(self, dirty: str, expected: str) -> None:
+        """Post.body フィールドの XSS サニタイゼーション（OWASP 5カテゴリ）"""
+        post = Post(userId=1, id=1, title="Normal title", body=dirty)
+        assert post.body == expected
 
     @pytest.mark.parametrize(
         "invalid_id",
@@ -420,23 +438,16 @@ class TestPostModel:
             Post(id=invalid_id, userId=1, title="Test", body="Body")
         assert "id" in str(exc_info.value)
 
-    @pytest.mark.parametrize(
-        "length,should_raise",
-        [
-            pytest.param(200, False, id="boundary-valid"),
-            pytest.param(201, True, id="boundary-invalid"),
-        ],
-    )
-    def test_post_title_length_boundary(self, length: int, should_raise: bool) -> None:
-        """title max_length=200 の境界値テスト（200文字: 合格、201文字: 拒否）"""
-        title = "a" * length
-        if should_raise:
-            with pytest.raises(ValidationError) as exc_info:
-                Post(id=1, userId=1, title=title, body="Body")
-            assert "title" in str(exc_info.value)
-        else:
-            post = Post(id=1, userId=1, title=title, body="Body")
-            assert len(post.title) == 200
+    def test_post_title_max_length_valid(self) -> None:
+        """title=200文字（max_length 上限）で正常作成できること"""
+        post = Post(id=1, userId=1, title="a" * 200, body="Body")
+        assert len(post.title) == 200
+
+    def test_post_title_max_length_invalid(self) -> None:
+        """title=201文字（max_length 超過）で ValidationError が発生すること"""
+        with pytest.raises(ValidationError) as exc_info:
+            Post(id=1, userId=1, title="a" * 201, body="Body")
+        assert "title" in str(exc_info.value)
 
 
 class TestCommentModel:
@@ -488,16 +499,15 @@ class TestTodoModel:
         assert todo.title == "Test TODO"
         assert todo.completed is False
 
-    def test_todo_sanitizes_xss(self) -> None:
-        """Todo モデルが title の XSS をサニタイズすることを確認"""
-        todo = Todo(
-            userId=1,
-            id=1,
-            title="<script>alert('xss')</script>",
-            completed=True,
-        )
-
-        assert "<script>" not in todo.title
+    @pytest.mark.parametrize(
+        ("dirty", "expected"),
+        _XSS_MODEL_VECTORS,
+        ids=_XSS_MODEL_IDS,
+    )
+    def test_todo_title_sanitizes_xss(self, dirty: str, expected: str) -> None:
+        """Todo.title フィールドの XSS サニタイゼーション（OWASP 5カテゴリ）"""
+        todo = Todo(userId=1, id=1, title=dirty, completed=False)
+        assert todo.title == expected
 
 
 class TestAlbumModel:
@@ -510,11 +520,15 @@ class TestAlbumModel:
         assert album.user_id == 1
         assert album.title == "Test Album"
 
-    def test_album_sanitizes_xss(self) -> None:
-        """Album モデルが title の XSS をサニタイズすることを確認"""
-        album = Album(userId=1, id=1, title="<script>alert(1)</script>")
-
-        assert "<script>" not in album.title
+    @pytest.mark.parametrize(
+        ("dirty", "expected"),
+        _XSS_MODEL_VECTORS,
+        ids=_XSS_MODEL_IDS,
+    )
+    def test_album_title_sanitizes_xss(self, dirty: str, expected: str) -> None:
+        """Album.title フィールドの XSS サニタイゼーション（OWASP 5カテゴリ）"""
+        album = Album(userId=1, id=1, title=dirty)
+        assert album.title == expected
 
 
 class TestPhotoModel:
@@ -534,17 +548,21 @@ class TestPhotoModel:
         assert photo.title == "Test Photo"
         assert photo.thumbnail_url == "https://via.placeholder.com/150/92c952"
 
-    def test_photo_sanitizes_xss(self) -> None:
-        """Photo モデルが title の XSS をサニタイズすることを確認"""
+    @pytest.mark.parametrize(
+        ("dirty", "expected"),
+        _XSS_MODEL_VECTORS,
+        ids=_XSS_MODEL_IDS,
+    )
+    def test_photo_title_sanitizes_xss(self, dirty: str, expected: str) -> None:
+        """Photo.title フィールドの XSS サニタイゼーション（OWASP 5カテゴリ）"""
         photo = Photo(
             albumId=1,
             id=1,
-            title="<script>alert(1)</script>",
+            title=dirty,
             url="https://example.com/photo.jpg",
             thumbnailUrl="https://example.com/thumb.jpg",
         )
-
-        assert "<script>" not in photo.title
+        assert photo.title == expected
 
     def test_photo_rejects_javascript_url(self) -> None:
         """Photo モデルが javascript: スキームを拒否することを確認"""
