@@ -119,27 +119,30 @@ XSS_TEST_VECTORS: Final[list[XSSVector]] = [
     ("Test 'quoted'", "Test &#x27;quoted&#x27;"),  # Single quote
 ]
 
-# 共有定数パターン: pytest.param ではなく tuple リストで定義し ids=[] で ID を管理する。
-# 理由: pytest.param オブジェクトは tuple unpack（for a, b in list）が不可
+# 共有定数パターン: (vector_tuple, id) のペアで定義して後から分解する。
+# pytest.param ではなく tuple リストで定義し ids=[] で ID を管理する理由:
+# pytest.param オブジェクトは tuple unpack（for a, b in list）が不可
 #      （ParameterSet.values が3フィールド — ValueError: too many values to unpack）。
 # TestCommentModel の内包表記展開で for dirty, expected in _XSS_MODEL_VECTORS を使用するため。
+# (vector_tuple, id) ペア定義により同期ズレを構造的に防止。
 
 # モデルテスト専用 XSS ベクター（OWASP 5カテゴリ）
 # XSS-01〜03 の parametrize で共有参照
-_XSS_MODEL_VECTORS: Final[list[XSSVector]] = [
-    ("<script>alert('XSS')</script>", "&lt;script&gt;alert(&#x27;XSS&#x27;)&lt;/script&gt;"),
-    ("<img src=x onerror=alert(1)>", "&lt;img src=x onerror=alert(1)&gt;"),
-    ('<a href="javascript:alert(1)">', "&lt;a href=&quot;javascript:alert(1)&quot;&gt;"),
-    ('" onclick="alert(1)"', "&quot; onclick=&quot;alert(1)&quot;"),
-    ("Test & Test", "Test &amp; Test"),
+_XSS_MODEL_ENTRIES: Final[list[tuple[XSSVector, str]]] = [
+    (
+        ("<script>alert('XSS')</script>", "&lt;script&gt;alert(&#x27;XSS&#x27;)&lt;/script&gt;"),
+        "script-basic",
+    ),
+    (("<img src=x onerror=alert(1)>", "&lt;img src=x onerror=alert(1)&gt;"), "event-img-onerror"),
+    (
+        ('<a href="javascript:alert(1)">', "&lt;a href=&quot;javascript:alert(1)&quot;&gt;"),
+        "uri-javascript-anchor",
+    ),
+    (('" onclick="alert(1)"', "&quot; onclick=&quot;alert(1)&quot;"), "attr-double-quote"),
+    (("Test & Test", "Test &amp; Test"), "char-ampersand"),
 ]
-_XSS_MODEL_IDS: Final[list[str]] = [
-    "script-basic",
-    "event-img-onerror",
-    "uri-javascript-anchor",
-    "attr-double-quote",
-    "char-ampersand",
-]
+_XSS_MODEL_VECTORS: Final[list[XSSVector]] = [v for v, _ in _XSS_MODEL_ENTRIES]
+_XSS_MODEL_IDS: Final[list[str]] = [i for _, i in _XSS_MODEL_ENTRIES]
 _COMMENT_BASE: Final[dict[str, int | str]] = {
     "postId": 1,
     "id": 1,
@@ -247,7 +250,7 @@ class TestAddressModel:
 
     @pytest.fixture
     def valid_geo(self) -> Geo:
-        """Address テスト用の基本 Geo インスタンス"""
+        """XSS サニタイゼーションテスト専用の Address.geo ダミーインスタンス"""
         return Geo(lat="0", lng="0")
 
     def test_address_basic_creation(self) -> None:

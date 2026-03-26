@@ -2,6 +2,7 @@
 
 XSS攻撃防止のため、全てのユーザー生成コンテンツフィールドに
 html.escape()サニタイゼーションを適用したPydanticモデル。
+（emailフィールドはEmailStr RFC準拠バリデーションを使用）
 
 実務推奨パターン:
 1. Defense in Depth: 型検証 + サニタイゼーション + 長さ制限
@@ -94,13 +95,13 @@ class Comment(BaseModel):
     """コメントモデル
 
     JSONPlaceholder /comments エンドポイントのレスポンス。
-    name, email, bodyフィールドにXSS保護を適用。
+    name, bodyフィールドにXSS保護（html.escape）を適用。emailはEmailStr型でRFC準拠バリデーション。
 
     Attributes:
         id: コメントID（1以上）
         post_id: 親投稿ID（1以上）
         name: コメント投稿者名（サニタイズ済み、最大100文字）
-        email: コメント投稿者メールアドレス（サニタイズ済み、最大100文字）
+        email: コメント投稿者メールアドレス（EmailStr RFC準拠バリデーション済み、最大100文字）
         body: コメント本文（サニタイズ済み、最大2000文字）
 
     """
@@ -116,7 +117,7 @@ class Comment(BaseModel):
     @field_validator("name", "body")
     @classmethod
     def sanitize_comment_content(cls, v: str) -> str:
-        """コメントの名前、メール、本文をサニタイズ
+        """コメントの名前、本文をサニタイズ
 
         XSS攻撃を防ぐため、ユーザー生成コンテンツから
         危険なHTML特殊文字をエスケープ。
@@ -258,13 +259,14 @@ class User(BaseModel):
     """ユーザーモデル
 
     JSONPlaceholder /users エンドポイントのレスポンス。
-    name, username, email, phone, websiteフィールドにXSS保護を適用。
+    name, username, phone, websiteフィールドにXSS保護（html.escape）を適用。
+    emailはEmailStr型でRFC準拠バリデーション。
 
     Attributes:
         id: ユーザーID（1以上）
         name: ユーザー名（サニタイズ済み、最大100文字）
         username: ユーザー名（英数字、サニタイズ済み、最大50文字）
-        email: メールアドレス（サニタイズ済み、最大100文字）
+        email: メールアドレス（EmailStr RFC準拠バリデーション済み、最大100文字）
         address: 住所情報（ネストされたAddressモデル）
         phone: 電話番号（サニタイズ済み、最大50文字）
         website: ウェブサイトURL（サニタイズ済み、最大200文字）
