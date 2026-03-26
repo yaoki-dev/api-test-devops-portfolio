@@ -1,8 +1,8 @@
 """JSONPlaceholder APIレスポンスモデル
 
-XSS攻撃防止のため、全てのユーザー生成コンテンツフィールドに
+XSS攻撃防止のため、ユーザー生成コンテンツフィールドに
 html.escape()サニタイゼーションを適用したPydanticモデル。
-（emailフィールドはEmailStr RFC準拠バリデーションを使用）
+（emailはEmailStr RFC準拠バリデーション、websiteはURL形式のためhtml.escape対象外）
 
 実務推奨パターン:
 1. Defense in Depth: 型検証 + サニタイゼーション + 長さ制限
@@ -259,7 +259,8 @@ class User(BaseModel):
     """ユーザーモデル
 
     JSONPlaceholder /users エンドポイントのレスポンス。
-    name, username, phone, websiteフィールドにXSS保護（html.escape）を適用。
+    name, username, phoneフィールドにXSS保護（html.escape）を適用。
+    websiteフィールドはURL形式のため対象外。
     emailはEmailStr型でRFC準拠バリデーション。
 
     Attributes:
@@ -269,7 +270,7 @@ class User(BaseModel):
         email: メールアドレス（EmailStr RFC準拠バリデーション済み、最大100文字）
         address: 住所情報（ネストされたAddressモデル）
         phone: 電話番号（サニタイズ済み、最大50文字）
-        website: ウェブサイトURL（サニタイズ済み、最大200文字）
+        website: ウェブサイトURL（最大200文字）
         company: 企業情報（ネストされたCompanyモデル）
 
     """
@@ -285,7 +286,7 @@ class User(BaseModel):
 
     model_config = {"populate_by_name": True, "extra": "forbid"}
 
-    @field_validator("name", "username", "phone", "website")
+    @field_validator("name", "username", "phone")
     @classmethod
     def sanitize_user_fields(cls, v: str) -> str:
         """ユーザー情報フィールドをサニタイズ

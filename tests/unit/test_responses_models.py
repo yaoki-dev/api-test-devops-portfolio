@@ -9,7 +9,7 @@ Pydantic レスポンスモデル テスト
 """
 
 import html
-from typing import Final
+from typing import Final, TypedDict
 
 import pytest
 from pydantic import ValidationError
@@ -34,8 +34,8 @@ pytestmark = pytest.mark.unit
 # Reference: https://cheatsheetseries.owasp.org/cheatsheets/XSS_Filter_Evasion_Cheat_Sheet.html
 # =============================================================================
 
-# 型エイリアス（Python 3.10+）
-XSSVector = tuple[str | None, str]
+type XSSVector = tuple[str | None, str]  # XSS_TEST_VECTORS 用（None エントリあり）
+type XSSModelVector = tuple[str, str]  # _XSS_MODEL_ENTRIES 用（None なし、str のみ）
 
 # XSSテストベクター定数
 XSS_TEST_VECTORS: Final[list[XSSVector]] = [
@@ -128,7 +128,7 @@ XSS_TEST_VECTORS: Final[list[XSSVector]] = [
 
 # モデルテスト専用 XSS ベクター（OWASP 5カテゴリ）
 # XSS-01〜03 の parametrize で共有参照
-_XSS_MODEL_ENTRIES: Final[list[tuple[XSSVector, str]]] = [
+_XSS_MODEL_ENTRIES: Final[list[tuple[XSSModelVector, str]]] = [
     (
         ("<script>alert('XSS')</script>", "&lt;script&gt;alert(&#x27;XSS&#x27;)&lt;/script&gt;"),
         "script-basic",
@@ -141,9 +141,21 @@ _XSS_MODEL_ENTRIES: Final[list[tuple[XSSVector, str]]] = [
     (('" onclick="alert(1)"', "&quot; onclick=&quot;alert(1)&quot;"), "attr-double-quote"),
     (("Test & Test", "Test &amp; Test"), "char-ampersand"),
 ]
-_XSS_MODEL_VECTORS: Final[list[XSSVector]] = [v for v, _ in _XSS_MODEL_ENTRIES]
+_XSS_MODEL_VECTORS: Final[list[XSSModelVector]] = [v for v, _ in _XSS_MODEL_ENTRIES]
 _XSS_MODEL_IDS: Final[list[str]] = [i for _, i in _XSS_MODEL_ENTRIES]
-_COMMENT_BASE: Final[dict[str, int | str]] = {
+
+
+class _CommentBaseData(TypedDict):
+    """TestCommentModel XSS テスト用 Comment 基底データ型."""
+
+    postId: int
+    id: int
+    name: str
+    email: str
+    body: str
+
+
+_COMMENT_BASE: Final[_CommentBaseData] = {
     "postId": 1,
     "id": 1,
     "name": "safe_name",
@@ -493,7 +505,7 @@ class TestCommentModel:
     def test_comment_sanitizes_xss(self, field: str, dirty: str, expected: str) -> None:
         """Comment モデル全フィールドの XSS サニタイゼーション（2フィールド x OWASP 5カテゴリ）"""
         data = {**_COMMENT_BASE, field: dirty}
-        comment = Comment(**data)
+        comment = Comment(**data)  # type: ignore[arg-type]  # parametrize の動的キー上書きで mypy が dict[str, object] に推論するため
         assert getattr(comment, field) == expected
 
     def test_comment_email_must_be_valid_format(self) -> None:
