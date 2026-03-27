@@ -438,13 +438,6 @@ class TestUserModel:
         user = User(**valid_user_data)
         assert user.website == value  # &amp; にならないことを確認
 
-    def test_user_website_is_not_modified(self, valid_user_data: dict) -> None:
-        """websiteはサニタイズ対象外（そのまま保持される）"""
-        value = "example.com/page?a=1&b=2"
-        valid_user_data["website"] = value
-        user = User(**valid_user_data)
-        assert user.website == value
-
 
 class TestPostModel:
     """Post モデルのテスト"""
