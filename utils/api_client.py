@@ -155,6 +155,101 @@ def _map_request_error(e: httpx.RequestError | httpx.InvalidURL) -> APIClientErr
     return APIConnectionError(f"Network error: {e}")
 
 
+def _resolve_client_config(
+    base_url: str | None,
+    timeout: float | None,
+    retry_count: int | None,
+    retry_delay: float | None,
+    headers: dict[str, str] | None,
+) -> tuple[str, float, int, float, dict[str, str]]:
+    """Sync/Async共通の設定解決ロジック。
+
+    引数またはsettingsから設定値を解決し、バリデーションを実行する。
+    HTTPクライアント初期化・ロガー初期化は呼び出し元の責務。
+
+    Args:
+        base_url: APIのベースURL（Noneの場合settings.api.base_urlを使用）
+        timeout: タイムアウト秒数（Noneの場合settings.api.timeoutを使用）
+        retry_count: リトライ回数（Noneの場合settings.api.retry_countを使用）
+        retry_delay: リトライ間隔秒数（Noneの場合settings.api.retry_delayを使用）
+        headers: 追加ヘッダー（デフォルトヘッダーにマージ）
+
+    Returns:
+        (base_url, timeout, retry_count, retry_delay, default_headers) のタプル
+
+    Raises:
+        ValueError: base_urlが空文字列の場合
+
+    """
+    resolved_base_url = base_url if base_url is not None else settings.api.base_url
+    if not resolved_base_url.strip():
+        raise ValueError("base_url が空です。引数または API__BASE_URL 環境変数を確認してください。")
+    resolved_timeout = timeout if timeout is not None else settings.api.timeout
+    resolved_retry_count = retry_count if retry_count is not None else settings.api.retry_count
+    resolved_retry_delay = retry_delay if retry_delay is not None else settings.api.retry_delay
+
+    default_headers = {
+        "User-Agent": settings.api.user_agent,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    if headers:
+        default_headers.update(headers)
+
+    return (
+        resolved_base_url,
+        resolved_timeout,
+        resolved_retry_count,
+        resolved_retry_delay,
+        default_headers,
+    )
+
+
+def _classify_error(
+    e: httpx.RequestError | httpx.InvalidURL,
+    logger: Any,
+    log_prefix: str,
+    method: str,
+    endpoint: str,
+) -> APIClientError:
+    """Sync/Async共通のネットワークエラー分類・ログ出力。
+
+    非リトライエラー(TooManyRedirects/InvalidURL)はERRORログ出力後、
+    _map_request_error()経由で即座にraiseされる。
+    リトライ可能エラーはWARNINGログ出力後、例外オブジェクトを返す。
+
+    Args:
+        e: httpxのリクエストエラーまたはInvalidURL
+        logger: structlogロガーインスタンス
+        log_prefix: ログイベント名のプレフィックス（Sync: "", Async: "async_"）
+        method: HTTPメソッド名
+        endpoint: APIエンドポイント
+
+    Returns:
+        _map_request_error()の戻り値（リトライ可能エラーの場合）
+
+    Raises:
+        APIClientError: 非リトライエラーの場合（_map_request_error経由）
+
+    """
+    if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
+        logger.error(
+            f"{log_prefix}request_error_non_retryable",
+            method=method,
+            endpoint=endpoint,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+    else:
+        logger.warning(
+            f"{log_prefix}request_error",
+            method=method,
+            endpoint=endpoint,
+            error=str(e),
+        )
+    return _map_request_error(e)
+
+
 # =============================================================================
 # 基本HTTPクライアント
 # =============================================================================
@@ -188,26 +283,16 @@ class SyncAPIClient:
             ValueError: base_urlが空文字列の場合
 
         """
-        # 設定から値を取得（引数で上書き可能）
+        # 設定解決・バリデーション（Sync/Async共通ロジック）
         # NOTE: retry_count=0, retry_delay=0.0, timeout=0.0 は有効な設定値のため is not None で判定
         # timeout=0.0: 即座にタイムアウト（無効化は timeout=None）
-        self.base_url = base_url if base_url is not None else settings.api.base_url
-        if not self.base_url.strip():
-            raise ValueError(
-                "base_url が空です。引数または API__BASE_URL 環境変数を確認してください。"
-            )
-        self.timeout = timeout if timeout is not None else settings.api.timeout
-        self.retry_count = retry_count if retry_count is not None else settings.api.retry_count
-        self.retry_delay = retry_delay if retry_delay is not None else settings.api.retry_delay
-
-        # デフォルトヘッダーの設定
-        self.default_headers = {
-            "User-Agent": settings.api.user_agent,
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        }
-        if headers:
-            self.default_headers.update(headers)
+        (
+            self.base_url,
+            self.timeout,
+            self.retry_count,
+            self.retry_delay,
+            self.default_headers,
+        ) = _resolve_client_config(base_url, timeout, retry_count, retry_delay, headers)
 
         # ロガーの初期化（structlog統合）
         self.logger = get_logger(__name__)
@@ -286,21 +371,8 @@ class SyncAPIClient:
                 response = self._client.request(method, endpoint, **kwargs)
             except (httpx.RequestError, httpx.InvalidURL) as e:
                 # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
-                if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
-                    # 非リトライエラー: 即 raise される致命的エラーのため ERROR レベルで記録
-                    self.logger.error(
-                        "request_error_non_retryable",
-                        method=method,
-                        endpoint=endpoint,
-                        error=str(e),
-                        error_type=type(e).__name__,
-                    )
-                else:
-                    self.logger.warning(
-                        "request_error", method=method, endpoint=endpoint, error=str(e)
-                    )
-                # TooManyRedirects/InvalidURL の場合は内部で即 raise するため代入されない
-                last_exception = _map_request_error(e)
+                # TooManyRedirects/InvalidURL は _classify_error → _map_request_error 内で即 raise
+                last_exception = _classify_error(e, self.logger, "", method, endpoint)
             else:
                 # ネットワーク成功時のみHTTPステータス処理
                 try:
@@ -648,26 +720,16 @@ class AsyncAPIClient:
             ValueError: base_urlが空文字列の場合
 
         """
-        # 設定から値を取得（引数で上書き可能）
+        # 設定解決・バリデーション（Sync/Async共通ロジック）
         # NOTE: retry_count=0, retry_delay=0.0, timeout=0.0 は有効な設定値のため is not None で判定
         # timeout=0.0: 即座にタイムアウト（無効化は timeout=None）
-        self.base_url = base_url if base_url is not None else settings.api.base_url
-        if not self.base_url.strip():
-            raise ValueError(
-                "base_url が空です。引数または API__BASE_URL 環境変数を確認してください。"
-            )
-        self.timeout = timeout if timeout is not None else settings.api.timeout
-        self.retry_count = retry_count if retry_count is not None else settings.api.retry_count
-        self.retry_delay = retry_delay if retry_delay is not None else settings.api.retry_delay
-
-        # デフォルトヘッダーの設定
-        self.default_headers = {
-            "User-Agent": settings.api.user_agent,
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        }
-        if headers:
-            self.default_headers.update(headers)
+        (
+            self.base_url,
+            self.timeout,
+            self.retry_count,
+            self.retry_delay,
+            self.default_headers,
+        ) = _resolve_client_config(base_url, timeout, retry_count, retry_delay, headers)
 
         # ロガーの初期化（structlog統合）
         self.logger = get_logger(__name__)
@@ -751,24 +813,8 @@ class AsyncAPIClient:
                 response = await self._client.request(method, endpoint, **kwargs)
             except (httpx.RequestError, httpx.InvalidURL) as e:
                 # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
-                if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
-                    # 非リトライエラー: 即 raise される致命的エラーのため ERROR レベルで記録
-                    self.logger.error(
-                        "async_request_error_non_retryable",
-                        method=method,
-                        endpoint=endpoint,
-                        error=str(e),
-                        error_type=type(e).__name__,
-                    )
-                else:
-                    self.logger.warning(
-                        "async_request_error",
-                        method=method,
-                        endpoint=endpoint,
-                        error=str(e),
-                    )
-                # TooManyRedirects/InvalidURL の場合は内部で即 raise するため代入されない
-                last_exception = _map_request_error(e)
+                # TooManyRedirects/InvalidURL は _classify_error → _map_request_error 内で即 raise
+                last_exception = _classify_error(e, self.logger, "async_", method, endpoint)
             else:
                 # ネットワーク成功時のみHTTPステータス処理
                 try:
