@@ -2,7 +2,7 @@
 Pydantic レスポンスモデル テスト
 
 学習目標:
-- XSS サニタイゼーションの網羅テスト（OWASP準拠）
+- XSS サニタイゼーションの網羅テスト（XSSカバレッジ: OWASP Cheat Sheetベース・プロジェクト独自分類）
 - Pydantic モデルのバリデーション動作確認
 - alias / extra forbid / ネストモデルの検証
 - html.escape() の動作理解
@@ -30,12 +30,12 @@ from models.responses import (
 pytestmark = pytest.mark.unit
 
 # =============================================================================
-# XSS テストベクター（OWASP XSS Prevention Cheat Sheet 準拠）
+# XSS テストベクター（OWASP Cheat Sheetベース・プロジェクト独自分類）
 # Reference: https://cheatsheetseries.owasp.org/cheatsheets/XSS_Filter_Evasion_Cheat_Sheet.html
 # =============================================================================
 
 type XSSVector = tuple[str | None, str]  # XSS_TEST_VECTORS 用（None エントリあり）
-type XSSModelVector = tuple[str, str]  # _XSS_MODEL_ENTRIES 用（None なし、str のみ）
+type XSSModelVector = tuple[str, str]  # _XSS_MODEL_VECTORS 用（None なし、str のみ）
 
 # XSSテストベクター定数
 XSS_TEST_VECTORS: Final[list[XSSVector]] = [
@@ -119,30 +119,60 @@ XSS_TEST_VECTORS: Final[list[XSSVector]] = [
     ("Test 'quoted'", "Test &#x27;quoted&#x27;"),  # Single quote
 ]
 
-# 共有定数パターン: (vector_tuple, id) のペアで定義して後から分解する。
-# pytest.param ではなく tuple リストで定義し ids=[] で ID を管理する理由:
-# pytest.param オブジェクトは tuple unpack（for a, b in list）が不可
-#      （ParameterSet.values が3フィールド — ValueError: too many values to unpack）。
-# TestCommentModel の内包表記展開で for dirty, expected in _XSS_MODEL_VECTORS を使用するため。
-# (vector_tuple, id) ペア定義により同期ズレを構造的に防止。
-
-# モデルテスト専用 XSS ベクター（OWASP 5カテゴリ）
-# XSS-01〜03 の parametrize で共有参照
-_XSS_MODEL_ENTRIES: Final[list[tuple[XSSModelVector, str]]] = [
-    (
-        ("<script>alert('XSS')</script>", "&lt;script&gt;alert(&#x27;XSS&#x27;)&lt;/script&gt;"),
-        "script-basic",
-    ),
-    (("<img src=x onerror=alert(1)>", "&lt;img src=x onerror=alert(1)&gt;"), "event-img-onerror"),
-    (
-        ('<a href="javascript:alert(1)">', "&lt;a href=&quot;javascript:alert(1)&quot;&gt;"),
-        "uri-javascript-anchor",
-    ),
-    (('" onclick="alert(1)"', "&quot; onclick=&quot;alert(1)&quot;"), "attr-double-quote"),
-    (("Test & Test", "Test &amp; Test"), "char-ampersand"),
+# モデルテスト専用 XSS ベクター（OWASP Cheat Sheetベース・独自5分類）
+_XSS_MODEL_VECTORS: Final[list[XSSModelVector]] = [
+    ("<script>alert('XSS')</script>", "&lt;script&gt;alert(&#x27;XSS&#x27;)&lt;/script&gt;"),
+    ("<img src=x onerror=alert(1)>", "&lt;img src=x onerror=alert(1)&gt;"),
+    ('<a href="javascript:alert(1)">', "&lt;a href=&quot;javascript:alert(1)&quot;&gt;"),
+    ('" onclick="alert(1)"', "&quot; onclick=&quot;alert(1)&quot;"),
+    ("Test & Test", "Test &amp; Test"),
 ]
-_XSS_MODEL_VECTORS: Final[list[XSSModelVector]] = [v for v, _ in _XSS_MODEL_ENTRIES]
-_XSS_MODEL_IDS: Final[list[str]] = [i for _, i in _XSS_MODEL_ENTRIES]
+
+_XSS_MODEL_IDS: Final[list[str]] = [
+    "script-basic",
+    "event-img-onerror",
+    "uri-javascript-anchor",
+    "attr-double-quote",
+    "char-ampersand",
+]
+
+
+class _GeoData(TypedDict):
+    """Geo モデル入力データ型."""
+
+    lat: str
+    lng: str
+
+
+class _AddressData(TypedDict):
+    """Address モデル入力データ型."""
+
+    street: str
+    suite: str
+    city: str
+    zipcode: str
+    geo: _GeoData
+
+
+class _CompanyData(TypedDict):
+    """Company モデル入力データ型."""
+
+    name: str
+    catchPhrase: str
+    bs: str
+
+
+class _UserData(TypedDict):
+    """User モデル入力データ型."""
+
+    id: int
+    name: str
+    username: str
+    email: str
+    address: _AddressData
+    phone: str
+    website: str
+    company: _CompanyData
 
 
 class _CommentBaseData(TypedDict):
@@ -205,7 +235,7 @@ class TestSanitizeUserContent:
         input_value: str | None,
         expected_output: str,
     ) -> None:
-        """XSSサニタイゼーションの網羅テスト（OWASP準拠）"""
+        """XSSサニタイゼーションの網羅テスト（OWASP Cheat Sheetベース・プロジェクト独自分類）"""
         result = sanitize_user_content(input_value)
         assert result == expected_output
 
@@ -223,8 +253,9 @@ class TestGeoModel:
     """Geo モデルのテスト
 
     XSS サニタイゼーション: Geo.lat フィールドが html.escape() でサニタイズされることを確認。
-    OWASP カバレッジ: Cat.1 Script Tags / Cat.2 Event Handlers / Cat.3 URI Schemes /
-                    Cat.4 Attribute Injection / Cat.6 Special Characters
+    XSS カバレッジ（OWASP Cheat Sheetベース・プロジェクト独自分類）:
+        Cat.1 Script Tags / Cat.2 Event Handlers / Cat.3 URI Schemes /
+        Cat.4 Attribute Injection / Cat.6 Special Characters
     """
 
     def test_geo_basic_creation(self) -> None:
@@ -240,7 +271,7 @@ class TestGeoModel:
         ids=_XSS_MODEL_IDS,
     )
     def test_geo_sanitizes_xss(self, dirty: str, expected: str) -> None:
-        """Geo.lat フィールドの XSS サニタイゼーション（OWASP 5カテゴリ）"""
+        """Geo.lat フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
         geo = Geo(lat=dirty, lng="normal")
         assert geo.lat == expected
 
@@ -250,7 +281,7 @@ class TestGeoModel:
         ids=_XSS_MODEL_IDS,
     )
     def test_geo_lng_sanitizes_xss(self, dirty: str, expected: str) -> None:
-        """Geo.lng フィールドの XSS サニタイゼーション（OWASP 5カテゴリ）"""
+        """Geo.lng フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
         geo = Geo(lat="0", lng=dirty)
         assert geo.lng == expected
 
@@ -266,8 +297,9 @@ class TestAddressModel:
     """Address モデルのテスト
 
     XSS サニタイゼーション: Address.street フィールドが html.escape() でサニタイズされることを確認。
-    OWASP カバレッジ: Cat.1 Script Tags / Cat.2 Event Handlers / Cat.3 URI Schemes /
-                    Cat.4 Attribute Injection / Cat.6 Special Characters
+    XSS カバレッジ（OWASP Cheat Sheetベース・プロジェクト独自分類）:
+        Cat.1 Script Tags / Cat.2 Event Handlers / Cat.3 URI Schemes /
+        Cat.4 Attribute Injection / Cat.6 Special Characters
     """
 
     @pytest.fixture
@@ -296,7 +328,7 @@ class TestAddressModel:
         ids=_XSS_MODEL_IDS,
     )
     def test_address_sanitizes_xss(self, valid_geo: Geo, dirty: str, expected: str) -> None:
-        """Address.street フィールドの XSS サニタイゼーション（OWASP 5カテゴリ）"""
+        """Address.street の XSS サニタイゼーション（OWASP CS・独自5分類）"""
         address = Address(street=dirty, suite="Test", city="City", zipcode="12345", geo=valid_geo)
         assert address.street == expected
 
@@ -305,8 +337,9 @@ class TestCompanyModel:
     """Company モデルのテスト
 
     XSS サニタイゼーション: Company.name フィールドが html.escape() でサニタイズされることを確認。
-    OWASP カバレッジ: Cat.1 Script Tags / Cat.2 Event Handlers / Cat.3 URI Schemes /
-                    Cat.4 Attribute Injection / Cat.6 Special Characters
+    XSS カバレッジ（OWASP Cheat Sheetベース・プロジェクト独自分類）:
+        Cat.1 Script Tags / Cat.2 Event Handlers / Cat.3 URI Schemes /
+        Cat.4 Attribute Injection / Cat.6 Special Characters
     """
 
     def test_company_basic_creation(self) -> None:
@@ -336,7 +369,7 @@ class TestCompanyModel:
         ids=_XSS_MODEL_IDS,
     )
     def test_company_sanitizes_xss(self, dirty: str, expected: str) -> None:
-        """Company.name フィールドの XSS サニタイゼーション（OWASP 5カテゴリ）"""
+        """Company.name フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
         company = Company(name=dirty, catchPhrase="Normal", bs="Normal")
         assert company.name == expected
 
@@ -345,7 +378,7 @@ class TestUserModel:
     """User モデルのテスト"""
 
     @pytest.fixture
-    def valid_user_data(self) -> dict:
+    def valid_user_data(self) -> _UserData:
         """有効な User データを提供するフィクスチャ"""
         return {
             "id": 1,
@@ -368,7 +401,7 @@ class TestUserModel:
             },
         }
 
-    def test_user_basic_creation(self, valid_user_data: dict) -> None:
+    def test_user_basic_creation(self, valid_user_data: _UserData) -> None:
         """基本的な User モデル作成"""
         user = User(**valid_user_data)
 
@@ -377,7 +410,7 @@ class TestUserModel:
         assert user.address.city == "Gwenborough"
         assert user.company.name == "Romaguera-Crona"
 
-    def test_user_nested_models(self, valid_user_data: dict) -> None:
+    def test_user_nested_models(self, valid_user_data: _UserData) -> None:
         """User モデルのネストされたモデル (Address, Company) が正しく解析されることを確認"""
         user = User(**valid_user_data)
 
@@ -391,20 +424,20 @@ class TestUserModel:
         ids=_XSS_MODEL_IDS,
     )
     def test_user_name_sanitizes_xss(
-        self, valid_user_data: dict, dirty: str, expected: str
+        self, valid_user_data: _UserData, dirty: str, expected: str
     ) -> None:
-        """User.name フィールドの XSS サニタイゼーション（OWASP 5カテゴリ）"""
+        """User.name フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
         valid_user_data["name"] = dirty
         user = User(**valid_user_data)
         assert user.name == expected
 
-    def test_user_populate_by_name(self, valid_user_data: dict) -> None:
+    def test_user_populate_by_name(self, valid_user_data: _UserData) -> None:
         """User モデルの populate_by_name が有効であることを確認"""
         # User モデルは populate_by_name=True なので、alias で値を設定可能
         user = User(**valid_user_data)
         assert user.company.catch_phrase == "Multi-layered client-server neural-net"
 
-    def test_user_extra_fields_forbidden(self, valid_user_data: dict) -> None:
+    def test_user_extra_fields_forbidden(self, valid_user_data: _UserData) -> None:
         """User モデルが extra フィールドを拒否することを確認"""
         valid_user_data["extra_field"] = "not allowed"
 
@@ -413,25 +446,27 @@ class TestUserModel:
 
         assert "extra" in str(exc_info.value).lower()
 
-    def test_user_email_must_be_valid_format(self, valid_user_data: dict) -> None:
+    def test_user_email_must_be_valid_format(self, valid_user_data: _UserData) -> None:
         """User.email が EmailStr 型により無効なメールアドレスを拒否すること"""
         valid_user_data["email"] = "not-an-email"
         with pytest.raises(ValidationError):
             User(**valid_user_data)
 
-    def test_user_email_max_length_valid(self, valid_user_data: dict) -> None:
+    def test_user_email_max_length_valid(self, valid_user_data: _UserData) -> None:
         """User.email=100文字（max_length 上限）で正常作成できること"""
-        valid_user_data["email"] = "a" * 88 + "@example.com"  # 100文字
+        # 52 + "@"(1) + 35 + ".example.com"(12) = 100文字（local≤64: RFC5321準拠）
+        valid_user_data["email"] = "a" * 52 + "@" + "b" * 35 + ".example.com"
         user = User(**valid_user_data)
         assert len(user.email) == 100
 
-    def test_user_email_max_length_invalid(self, valid_user_data: dict) -> None:
+    def test_user_email_max_length_invalid(self, valid_user_data: _UserData) -> None:
         """User.email=101文字（max_length 超過）で ValidationError が発生すること"""
-        valid_user_data["email"] = "a" * 89 + "@example.com"  # 101文字
+        # 52 + "@"(1) + 36 + ".example.com"(12) = 101文字（local≤64: RFC5321準拠）
+        valid_user_data["email"] = "a" * 52 + "@" + "b" * 36 + ".example.com"
         with pytest.raises(ValidationError):
             User(**valid_user_data)
 
-    def test_user_website_is_not_html_escaped(self, valid_user_data: dict) -> None:
+    def test_user_website_is_not_html_escaped(self, valid_user_data: _UserData) -> None:
         """websiteはhtml.escape対象外（URL内の&がエスケープされない）"""
         value = "example.com/page?a=1&b=2"
         valid_user_data["website"] = value
@@ -462,7 +497,7 @@ class TestUserModel:
         ],
     )
     def test_user_website_rejects_dangerous_scheme(
-        self, valid_user_data: dict, dangerous_url: str
+        self, valid_user_data: _UserData, dangerous_url: str
     ) -> None:
         """User.website が危険なURLスキームを拒否すること"""
         valid_user_data["website"] = dangerous_url
@@ -486,7 +521,7 @@ class TestUserModel:
             "protocol_relative",
         ],
     )
-    def test_user_website_allows_safe_url(self, valid_user_data: dict, safe_url: str) -> None:
+    def test_user_website_allows_safe_url(self, valid_user_data: _UserData, safe_url: str) -> None:
         """User.website が安全なURL形式を受け入れること"""
         valid_user_data["website"] = safe_url
         user = User(**valid_user_data)
@@ -515,7 +550,7 @@ class TestPostModel:
         ids=_XSS_MODEL_IDS,
     )
     def test_post_title_sanitizes_xss(self, dirty: str, expected: str) -> None:
-        """Post.title フィールドの XSS サニタイゼーション（OWASP 5カテゴリ）"""
+        """Post.title フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
         post = Post(userId=1, id=1, title=dirty, body="Normal body")
         assert post.title == expected
 
@@ -525,7 +560,7 @@ class TestPostModel:
         ids=_XSS_MODEL_IDS,
     )
     def test_post_body_sanitizes_xss(self, dirty: str, expected: str) -> None:
-        """Post.body フィールドの XSS サニタイゼーション（OWASP 5カテゴリ）"""
+        """Post.body フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
         post = Post(userId=1, id=1, title="Normal title", body=dirty)
         assert post.body == expected
 
@@ -559,8 +594,9 @@ class TestCommentModel:
 
     XSS サニタイゼーション: Comment の name/body 2フィールドが
                     html.escape() でサニタイズされることを確認。
-    OWASP カバレッジ: Cat.1 Script Tags / Cat.2 Event Handlers / Cat.3 URI Schemes /
-                    Cat.4 Attribute Injection / Cat.6 Special Characters
+    XSS カバレッジ（OWASP Cheat Sheetベース・プロジェクト独自分類）:
+        Cat.1 Script Tags / Cat.2 Event Handlers / Cat.3 URI Schemes /
+        Cat.4 Attribute Injection / Cat.6 Special Characters
     """
 
     def test_comment_basic_creation(self) -> None:
@@ -586,7 +622,7 @@ class TestCommentModel:
         ids=[f"{field}-{vid}" for field in ("name", "body") for vid in _XSS_MODEL_IDS],
     )
     def test_comment_sanitizes_xss(self, field: str, dirty: str, expected: str) -> None:
-        """Comment モデル XSS サニタイゼーション（name/body 2フィールド x OWASP 5カテゴリ）"""
+        """Comment XSS サニタイゼーション（name/body x OWASP CS・独自5分類）"""
         data: dict[str, str | int] = {**_COMMENT_BASE, field: dirty}
         comment = Comment.model_validate(data)
         assert getattr(comment, field) == expected
@@ -598,13 +634,15 @@ class TestCommentModel:
 
     def test_comment_email_max_length_valid(self) -> None:
         """Comment.email=100文字（max_length 上限）で正常作成できること"""
-        long_email = "a" * 88 + "@example.com"  # 100文字
+        # 52 + "@"(1) + 35 + ".example.com"(12) = 100文字（local≤64: RFC5321準拠）
+        long_email = "a" * 52 + "@" + "b" * 35 + ".example.com"
         comment = Comment(postId=1, id=1, name="Name", email=long_email, body="Body")
         assert len(comment.email) == 100
 
     def test_comment_email_max_length_invalid(self) -> None:
         """Comment.email=101文字（max_length 超過）で ValidationError が発生すること"""
-        long_email = "a" * 89 + "@example.com"  # 101文字
+        # 52 + "@"(1) + 36 + ".example.com"(12) = 101文字（local≤64: RFC5321準拠）
+        long_email = "a" * 52 + "@" + "b" * 36 + ".example.com"
         with pytest.raises(ValidationError):
             Comment(postId=1, id=1, name="Name", email=long_email, body="Body")
 
@@ -626,7 +664,7 @@ class TestTodoModel:
         ids=_XSS_MODEL_IDS,
     )
     def test_todo_title_sanitizes_xss(self, dirty: str, expected: str) -> None:
-        """Todo.title フィールドの XSS サニタイゼーション（OWASP 5カテゴリ）"""
+        """Todo.title フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
         todo = Todo(userId=1, id=1, title=dirty, completed=False)
         assert todo.title == expected
 
@@ -647,7 +685,7 @@ class TestAlbumModel:
         ids=_XSS_MODEL_IDS,
     )
     def test_album_title_sanitizes_xss(self, dirty: str, expected: str) -> None:
-        """Album.title フィールドの XSS サニタイゼーション（OWASP 5カテゴリ）"""
+        """Album.title フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
         album = Album(userId=1, id=1, title=dirty)
         assert album.title == expected
 
@@ -675,7 +713,7 @@ class TestPhotoModel:
         ids=_XSS_MODEL_IDS,
     )
     def test_photo_title_sanitizes_xss(self, dirty: str, expected: str) -> None:
-        """Photo.title フィールドの XSS サニタイゼーション（OWASP 5カテゴリ）"""
+        """Photo.title フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
         photo = Photo(
             albumId=1,
             id=1,
@@ -794,7 +832,7 @@ class TestExtraFieldsForbidden:
 #
 # 1. XSS サニタイゼーション:
 #    - html.escape(quote=True) で <, >, &, ", ' をエスケープ
-#    - OWASP Cheat Sheet 準拠のテストベクター
+#    - OWASP Cheat Sheet ベースのテストベクター（プロジェクト独自分類）
 #    - 入力バリデーション + 出力エスケープの Defense in Depth
 #
 # 2. Pydantic モデル設計:

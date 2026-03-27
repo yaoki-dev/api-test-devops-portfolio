@@ -16,8 +16,13 @@ html.escape()サニタイゼーションを適用したPydanticモデル。
 """
 
 import html
+import re
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
+
+# 制御文字・ゼロ幅文字パターン（URLスキームバイパス防止用）
+# C0制御文字 / DEL+C1制御文字 / ゼロ幅文字 / 行・段落分離+Bidi制御 / BOM / ソフトハイフン
+_CONTROL_CHAR_PATTERN = re.compile(r"[\x00-\x1f\x7f-\x9f\u200b-\u200f\u2028-\u202e\ufeff\u00ad]")
 
 # =============================================================================
 # ユーティリティ関数
@@ -95,13 +100,15 @@ class Comment(BaseModel):
     """コメントモデル
 
     JSONPlaceholder /comments エンドポイントのレスポンス。
-    name, bodyフィールドにXSS保護（html.escape）を適用。emailはEmailStr型でRFC準拠バリデーション。
+    name, bodyフィールドにXSS保護（html.escape）を適用。
+    emailはEmailStr型でRFC構文チェック（DNS検証なし）。
 
     Attributes:
         id: コメントID（1以上）
         post_id: 親投稿ID（1以上）
         name: コメント投稿者名（サニタイズ済み、最大100文字）
-        email: コメント投稿者メールアドレス（EmailStr RFC準拠バリデーション済み、最大100文字）
+        email: コメント投稿者メールアドレス
+            （EmailStr RFC構文チェック済み・DNS検証なし、最大100文字）
         body: コメント本文（サニタイズ済み、最大2000文字）
 
     """
@@ -109,7 +116,11 @@ class Comment(BaseModel):
     id: int = Field(..., ge=1, description="コメントID")
     post_id: int = Field(..., ge=1, alias="postId", description="親投稿ID")
     name: str = Field(..., max_length=100, description="コメント投稿者名")
-    email: EmailStr = Field(..., max_length=100, description="コメント投稿者メールアドレス")
+    email: EmailStr = Field(
+        ...,
+        max_length=100,
+        description="コメント投稿者メールアドレス（RFC構文チェック済み、DNS検証なし）",
+    )
     body: str = Field(..., max_length=2000, description="コメント本文")
 
     model_config = {"populate_by_name": True, "extra": "forbid"}
@@ -261,13 +272,13 @@ class User(BaseModel):
     JSONPlaceholder /users エンドポイントのレスポンス。
     name, username, phoneフィールドにXSS保護（html.escape）を適用。
     websiteフィールドはhtml.escape対象外。危険スキームのみバリデーション。
-    emailはEmailStr型でRFC準拠バリデーション。
+    emailはEmailStr型でRFC構文チェック（DNS検証なし）。
 
     Attributes:
         id: ユーザーID（1以上）
         name: ユーザー名（サニタイズ済み、最大100文字）
         username: ユーザー名（英数字、サニタイズ済み、最大50文字）
-        email: メールアドレス（EmailStr RFC準拠バリデーション済み、最大100文字）
+        email: メールアドレス（EmailStr RFC構文チェック済み・DNS検証なし、最大100文字）
         address: 住所情報（ネストされたAddressモデル）
         phone: 電話番号（サニタイズ済み、最大50文字）
         website: ウェブサイトURL（最大200文字）
@@ -278,7 +289,11 @@ class User(BaseModel):
     id: int = Field(..., ge=1, description="ユーザーID")
     name: str = Field(..., max_length=100, description="ユーザー名")
     username: str = Field(..., max_length=50, description="ユーザー名（英数字）")
-    email: EmailStr = Field(..., max_length=100, description="メールアドレス")
+    email: EmailStr = Field(
+        ...,
+        max_length=100,
+        description="メールアドレス（RFC構文チェック済み、DNS検証なし）",
+    )
     address: Address = Field(..., description="住所情報")
     phone: str = Field(..., max_length=50, description="電話番号")
     website: str = Field(..., max_length=200, description="ウェブサイトURL")
@@ -321,8 +336,8 @@ class User(BaseModel):
             ValueError: 危険なURLスキームが検出された場合
 
         """
-        lower_v = v.strip().lower()
-        if lower_v.startswith(("javascript:", "data:", "vbscript:")):
+        normalized = _CONTROL_CHAR_PATTERN.sub("", v).strip().lower()
+        if normalized.startswith(("javascript:", "data:", "vbscript:")):
             raise ValueError(f"危険なURLスキームです: {v[:50]}")
         return v
 
