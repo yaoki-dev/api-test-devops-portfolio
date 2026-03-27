@@ -260,7 +260,7 @@ class User(BaseModel):
 
     JSONPlaceholder /users エンドポイントのレスポンス。
     name, username, phoneフィールドにXSS保護（html.escape）を適用。
-    websiteフィールドはURL形式のため対象外。
+    websiteフィールドはhtml.escape対象外。危険スキームのみバリデーション。
     emailはEmailStr型でRFC準拠バリデーション。
 
     Attributes:
@@ -302,6 +302,29 @@ class User(BaseModel):
 
         """
         return sanitize_user_content(v)
+
+    @field_validator("website")
+    @classmethod
+    def validate_website_scheme(cls, v: str) -> str:
+        """websiteフィールドの危険スキーム検証
+
+        javascript:, data:, vbscript: スキームを拒否する。
+        スキームなしドメイン（例: hildegard.org）やhttp/httpsは許可。
+
+        Args:
+            v: バリデーション対象のURL文字列
+
+        Returns:
+            検証済みURL文字列
+
+        Raises:
+            ValueError: 危険なURLスキームが検出された場合
+
+        """
+        lower_v = v.strip().lower()
+        if lower_v.startswith(("javascript:", "data:", "vbscript:")):
+            raise ValueError(f"危険なURLスキームです: {v[:50]}")
+        return v
 
 
 # =============================================================================

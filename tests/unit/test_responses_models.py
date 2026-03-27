@@ -438,6 +438,60 @@ class TestUserModel:
         user = User(**valid_user_data)
         assert user.website == value  # &amp; にならないことを確認
 
+    @pytest.mark.parametrize(
+        "dangerous_url",
+        [
+            "javascript:alert(1)",
+            "JAVASCRIPT:alert(1)",
+            "javascript:void(0)",
+            "data:text/html,<script>alert(1)</script>",
+            "Data:image/png;base64,abc",
+            "vbscript:msgbox(1)",
+            " javascript:alert(1)",
+            "\tjavascript:void(0)",
+        ],
+        ids=[
+            "js_basic",
+            "js_uppercase",
+            "js_void",
+            "data_html",
+            "data_image",
+            "vbscript",
+            "js_leading_space",
+            "js_leading_tab",
+        ],
+    )
+    def test_user_website_rejects_dangerous_scheme(
+        self, valid_user_data: dict, dangerous_url: str
+    ) -> None:
+        """User.website が危険なURLスキームを拒否すること"""
+        valid_user_data["website"] = dangerous_url
+        with pytest.raises(ValidationError):
+            User(**valid_user_data)
+
+    @pytest.mark.parametrize(
+        "safe_url",
+        [
+            "hildegard.org",
+            "example.com/page?a=1&b=2",
+            "https://valid.com",
+            "http://valid.com",
+            "//cdn.example.com/image.jpg",
+        ],
+        ids=[
+            "no_scheme_domain",
+            "no_scheme_with_query",
+            "https",
+            "http",
+            "protocol_relative",
+        ],
+    )
+    def test_user_website_allows_safe_url(self, valid_user_data: dict, safe_url: str) -> None:
+        """User.website が安全なURL形式を受け入れること"""
+        valid_user_data["website"] = safe_url
+        user = User(**valid_user_data)
+        assert user.website == safe_url
+
 
 class TestPostModel:
     """Post モデルのテスト"""
@@ -532,7 +586,7 @@ class TestCommentModel:
         ids=[f"{field}-{vid}" for field in ("name", "body") for vid in _XSS_MODEL_IDS],
     )
     def test_comment_sanitizes_xss(self, field: str, dirty: str, expected: str) -> None:
-        """Comment モデル全フィールドの XSS サニタイゼーション（2フィールド x OWASP 5カテゴリ）"""
+        """Comment モデル XSS サニタイゼーション（name/body 2フィールド x OWASP 5カテゴリ）"""
         data: dict[str, str | int] = {**_COMMENT_BASE, field: dirty}
         comment = Comment.model_validate(data)
         assert getattr(comment, field) == expected
