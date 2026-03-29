@@ -298,13 +298,13 @@ class AsyncGitHubClient:
 
         Note:
             X-RateLimit-Remaining ヘッダーが不正値の場合:
-            - 監視パス: フォールバック999（残量十分と見なし、rate_limit_low警告なし）
-            - 403判定パス: フォールバック-1（Rate Limit超過と判定せず、GitHubAPIError発生）
+            - 監視パス: _RATE_LIMIT_FALLBACK_REMAINING（残量十分と見なし、rate_limit_low警告なし）
+            - 403判定パス: _RATE_LIMIT_FORBIDDEN_FALLBACK（Rate Limit超過と判定せず、GitHubAPIError発生）
             いずれのパスでも不正値（ValueError）検出時は
             invalid_rate_limit_header warningを出力する。
             なお、ヘッダー自体が未設定（None）の場合は
             warningを出力せずフォールバック値を返す。
-        """
+        """  # noqa: E501
         if not self._client:
             raise RuntimeError("Client not initialized. Use 'async with' context.")
 
@@ -325,11 +325,11 @@ class AsyncGitHubClient:
                 # Rate Limit監視: 残量少でwarning出力
                 remaining = self._parse_rate_limit_header(
                     response.headers, "X-RateLimit-Remaining", _RATE_LIMIT_FALLBACK_REMAINING
-                )  # フォールバック: 残量十分と見なす
+                )
                 if remaining < _RATE_LIMIT_WARNING_THRESHOLD:
                     reset_time = self._parse_rate_limit_header(
                         response.headers, "X-RateLimit-Reset", _RATE_LIMIT_RESET_FALLBACK
-                    )  # フォールバック: リセット時刻不明
+                    )
                     reset_dt = datetime.fromtimestamp(reset_time, tz=UTC)
                     self.logger.warning(
                         "rate_limit_low",
@@ -367,7 +367,7 @@ class AsyncGitHubClient:
                         # Rate Limit超過確定
                         reset_time = self._parse_rate_limit_header(
                             response.headers, "X-RateLimit-Reset", _RATE_LIMIT_RESET_FALLBACK
-                        )  # フォールバック: リセット時刻不明
+                        )
                         raise RateLimitError(reset_time)
                     # その他の403エラー（IPブロック、アクセス権限不足等）
                     error_message = "Access forbidden"
@@ -485,6 +485,6 @@ class AsyncGitHubClient:
 #
 # 4. ロギング・監視:
 #    - structlog構造化ロギング（JSON形式、フィールド検索可能）
-#    - Rate Limit警告（残10リクエスト時点で通知）
+#    - Rate Limit警告（残リクエスト数が _RATE_LIMIT_WARNING_THRESHOLD 未満で通知）
 #    - リトライログ（試行回数、遅延時間、ステータスコード記録）
 # =============================================================================
