@@ -62,6 +62,15 @@ def validate_github_repo(repo: str) -> None:
 
 
 # =============================================================================
+# Rate Limit定数（フォールバック値・閾値）
+# =============================================================================
+_RATE_LIMIT_FALLBACK_REMAINING = 999  # 監視パス: ヘッダー不正値時、残量十分とみなす
+_RATE_LIMIT_WARNING_THRESHOLD = 10  # 残量10未満で警告ログ出力
+_RATE_LIMIT_FORBIDDEN_FALLBACK = -1  # 403判定パス: 不正値時はRate Limit超過と判定しない
+_RATE_LIMIT_RESET_FALLBACK = 0  # リセット時刻不明時のフォールバック
+
+
+# =============================================================================
 # 例外クラス
 # =============================================================================
 
@@ -267,7 +276,7 @@ class AsyncGitHubClient:
         """内部リクエストメソッド
 
         機能:
-        - Rate Limit監視（X-RateLimit-Remaining < 10で警告ログ）
+        - Rate Limit監視（X-RateLimit-Remaining < _RATE_LIMIT_WARNING_THRESHOLD で警告ログ）
         - Conditional Requests（ETag活用、304 Not Modified対応）
         - 5xxエラーリトライ（指数バックオフ+ジッター）
         - 4xxエラー即失敗（NotFoundError, RateLimitError例外）
@@ -289,13 +298,13 @@ class AsyncGitHubClient:
 
         Note:
             X-RateLimit-Remaining ヘッダーが不正値の場合:
-            - 監視パス: フォールバック999（残量十分と見なし、rate_limit_low警告なし）
-            - 403判定パス: フォールバック-1（Rate Limit超過と判定せず、GitHubAPIError発生）
+            - 監視パス: _RATE_LIMIT_FALLBACK_REMAINING（残量十分と見なし、rate_limit_low警告なし）
+            - 403判定パス: _RATE_LIMIT_FORBIDDEN_FALLBACK（Rate Limit超過と判定せず、GitHubAPIError発生）
             いずれのパスでも不正値（ValueError）検出時は
             invalid_rate_limit_header warningを出力する。
             なお、ヘッダー自体が未設定（None）の場合は
             warningを出力せずフォールバック値を返す。
-        """
+        """  # noqa: E501
         if not self._client:
             raise RuntimeError("Client not initialized. Use 'async with' context.")
 
@@ -314,14 +323,13 @@ class AsyncGitHubClient:
                 )
 
                 # Rate Limit監視: 残量少でwarning出力
-                # フォールバック999 = 残量十分と見なす
                 remaining = self._parse_rate_limit_header(
-                    response.headers, "X-RateLimit-Remaining", 999
-                )  # フォールバック: 残量十分と見なす
-                if remaining < 10:
+                    response.headers, "X-RateLimit-Remaining", _RATE_LIMIT_FALLBACK_REMAINING
+                )
+                if remaining < _RATE_LIMIT_WARNING_THRESHOLD:
                     reset_time = self._parse_rate_limit_header(
-                        response.headers, "X-RateLimit-Reset", 0
-                    )  # フォールバック: リセット時刻不明
+                        response.headers, "X-RateLimit-Reset", _RATE_LIMIT_RESET_FALLBACK
+                    )
                     reset_dt = datetime.fromtimestamp(reset_time, tz=UTC)
                     self.logger.warning(
                         "rate_limit_low",
@@ -353,13 +361,13 @@ class AsyncGitHubClient:
                     # 403分類: Rate Limit超過 vs その他の403を判別
                     # フォールバック -1 = 不正値時はRate Limit超過と判定せずGitHubAPIErrorへ
                     rate_remaining = self._parse_rate_limit_header(
-                        response.headers, "X-RateLimit-Remaining", -1
+                        response.headers, "X-RateLimit-Remaining", _RATE_LIMIT_FORBIDDEN_FALLBACK
                     )
                     if rate_remaining == 0:
                         # Rate Limit超過確定
                         reset_time = self._parse_rate_limit_header(
-                            response.headers, "X-RateLimit-Reset", 0
-                        )  # フォールバック: リセット時刻不明
+                            response.headers, "X-RateLimit-Reset", _RATE_LIMIT_RESET_FALLBACK
+                        )
                         raise RateLimitError(reset_time)
                     # その他の403エラー（IPブロック、アクセス権限不足等）
                     error_message = "Access forbidden"
@@ -477,6 +485,6 @@ class AsyncGitHubClient:
 #
 # 4. ロギング・監視:
 #    - structlog構造化ロギング（JSON形式、フィールド検索可能）
-#    - Rate Limit警告（残10リクエスト時点で通知）
+#    - Rate Limit警告（残リクエスト数が _RATE_LIMIT_WARNING_THRESHOLD 未満で通知）
 #    - リトライログ（試行回数、遅延時間、ステータスコード記録）
 # =============================================================================
