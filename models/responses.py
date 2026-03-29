@@ -21,8 +21,12 @@ import re
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 # 制御文字・ゼロ幅文字パターン（URLスキームバイパス防止用）
-# C0制御文字 / DEL+C1制御文字 / ゼロ幅文字 / 行・段落分離+Bidi制御 / BOM / ソフトハイフン
-_CONTROL_CHAR_PATTERN = re.compile(r"[\x00-\x1f\x7f-\x9f\u200b-\u200f\u2028-\u202e\ufeff\u00ad]")
+# C0制御文字 / DEL+C1制御文字 / Ogham Space / NBSP / ゼロ幅文字+Bidiマーク /
+# Unicode空白(U+2000-200A) / 行・段落分離+Bidi制御+NNBSP /
+# 中数学空白+全角空白 / BOM / ソフトハイフン
+_CONTROL_CHAR_PATTERN = re.compile(
+    r"[\x00-\x1f\x7f-\x9f\u1680\u00a0\u200b-\u200f\u2000-\u200a\u2028-\u202f\u205f\u3000\ufeff\u00ad]"
+)
 
 # =============================================================================
 # ユーティリティ関数
@@ -304,7 +308,7 @@ class User(BaseModel):
     @field_validator("name", "username", "phone")
     @classmethod
     def sanitize_user_fields(cls, v: str) -> str:
-        """ユーザー情報フィールドをサニタイズ
+        """ユーザー情報フィールド（name, username, phone）をサニタイズ
 
         XSS攻撃を防ぐため、ユーザー生成コンテンツから
         危険なHTML特殊文字をエスケープ。
@@ -330,16 +334,16 @@ class User(BaseModel):
             v: バリデーション対象のURL文字列
 
         Returns:
-            検証済みURL文字列
+            サニタイズ済みURL文字列（制御文字除去・前後空白除去済み）
 
         Raises:
             ValueError: 危険なURLスキームが検出された場合
 
         """
-        normalized = _CONTROL_CHAR_PATTERN.sub("", v).strip().lower()
-        if normalized.startswith(("javascript:", "data:", "vbscript:")):
-            raise ValueError(f"危険なURLスキームです: {v[:50]}")
-        return v
+        sanitized = _CONTROL_CHAR_PATTERN.sub("", v).strip()
+        if sanitized.lower().startswith(("javascript:", "data:", "vbscript:")):
+            raise ValueError(f"危険なURLスキームです: {repr(v[:50])}")
+        return sanitized
 
 
 # =============================================================================

@@ -35,7 +35,6 @@ pytestmark = pytest.mark.unit
 # =============================================================================
 
 type XSSVector = tuple[str | None, str]  # XSS_TEST_VECTORS 用（None エントリあり）
-type XSSModelVector = tuple[str, str]  # _XSS_MODEL_VECTORS 用（None なし、str のみ）
 
 # XSSテストベクター定数
 XSS_TEST_VECTORS: Final[list[XSSVector]] = [
@@ -120,20 +119,32 @@ XSS_TEST_VECTORS: Final[list[XSSVector]] = [
 ]
 
 # モデルテスト専用 XSS ベクター（OWASP Cheat Sheetベース・独自5分類）
-_XSS_MODEL_VECTORS: Final[list[XSSModelVector]] = [
-    ("<script>alert('XSS')</script>", "&lt;script&gt;alert(&#x27;XSS&#x27;)&lt;/script&gt;"),
-    ("<img src=x onerror=alert(1)>", "&lt;img src=x onerror=alert(1)&gt;"),
-    ('<a href="javascript:alert(1)">', "&lt;a href=&quot;javascript:alert(1)&quot;&gt;"),
-    ('" onclick="alert(1)"', "&quot; onclick=&quot;alert(1)&quot;"),
-    ("Test & Test", "Test &amp; Test"),
-]
-
-_XSS_MODEL_IDS: Final[list[str]] = [
-    "script-basic",
-    "event-img-onerror",
-    "uri-javascript-anchor",
-    "attr-double-quote",
-    "char-ampersand",
+_XSS_MODEL_PARAMS: Final = [
+    pytest.param(
+        "<script>alert('XSS')</script>",
+        "&lt;script&gt;alert(&#x27;XSS&#x27;)&lt;/script&gt;",
+        id="script-basic",
+    ),
+    pytest.param(
+        "<img src=x onerror=alert(1)>",
+        "&lt;img src=x onerror=alert(1)&gt;",
+        id="event-img-onerror",
+    ),
+    pytest.param(
+        '<a href="javascript:alert(1)">',
+        "&lt;a href=&quot;javascript:alert(1)&quot;&gt;",
+        id="uri-javascript-anchor",
+    ),
+    pytest.param(
+        '" onclick="alert(1)"',
+        "&quot; onclick=&quot;alert(1)&quot;",
+        id="attr-double-quote",
+    ),
+    pytest.param(
+        "Test & Test",
+        "Test &amp; Test",
+        id="char-ampersand",
+    ),
 ]
 
 
@@ -267,8 +278,7 @@ class TestGeoModel:
 
     @pytest.mark.parametrize(
         ("dirty", "expected"),
-        _XSS_MODEL_VECTORS,
-        ids=_XSS_MODEL_IDS,
+        _XSS_MODEL_PARAMS,
     )
     def test_geo_sanitizes_xss(self, dirty: str, expected: str) -> None:
         """Geo.lat フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
@@ -277,8 +287,7 @@ class TestGeoModel:
 
     @pytest.mark.parametrize(
         ("dirty", "expected"),
-        _XSS_MODEL_VECTORS,
-        ids=_XSS_MODEL_IDS,
+        _XSS_MODEL_PARAMS,
     )
     def test_geo_lng_sanitizes_xss(self, dirty: str, expected: str) -> None:
         """Geo.lng フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
@@ -324,8 +333,7 @@ class TestAddressModel:
 
     @pytest.mark.parametrize(
         ("dirty", "expected"),
-        _XSS_MODEL_VECTORS,
-        ids=_XSS_MODEL_IDS,
+        _XSS_MODEL_PARAMS,
     )
     def test_address_sanitizes_xss(self, valid_geo: Geo, dirty: str, expected: str) -> None:
         """Address.street の XSS サニタイゼーション（OWASP CS・独自5分類）"""
@@ -365,8 +373,7 @@ class TestCompanyModel:
 
     @pytest.mark.parametrize(
         ("dirty", "expected"),
-        _XSS_MODEL_VECTORS,
-        ids=_XSS_MODEL_IDS,
+        _XSS_MODEL_PARAMS,
     )
     def test_company_sanitizes_xss(self, dirty: str, expected: str) -> None:
         """Company.name フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
@@ -375,7 +382,14 @@ class TestCompanyModel:
 
 
 class TestUserModel:
-    """User モデルのテスト"""
+    """User モデルのテスト
+
+    XSS サニタイゼーション: User.name フィールドが html.escape() でサニタイズされることを確認。
+    websiteフィールドは危険スキーム（javascript:, data:, vbscript:）バリデーション。
+    XSS カバレッジ（OWASP Cheat Sheetベース・プロジェクト独自分類）:
+        Cat.1 Script Tags / Cat.2 Event Handlers / Cat.3 URI Schemes /
+        Cat.4 Attribute Injection / Cat.6 Special Characters
+    """
 
     @pytest.fixture
     def valid_user_data(self) -> _UserData:
@@ -420,8 +434,7 @@ class TestUserModel:
 
     @pytest.mark.parametrize(
         ("dirty", "expected"),
-        _XSS_MODEL_VECTORS,
-        ids=_XSS_MODEL_IDS,
+        _XSS_MODEL_PARAMS,
     )
     def test_user_name_sanitizes_xss(
         self, valid_user_data: _UserData, dirty: str, expected: str
@@ -439,7 +452,7 @@ class TestUserModel:
 
     def test_user_extra_fields_forbidden(self, valid_user_data: _UserData) -> None:
         """User モデルが extra フィールドを拒否することを確認"""
-        valid_user_data["extra_field"] = "not allowed"
+        valid_user_data["extra_field"] = "not allowed"  # type: ignore[typeddict-unknown-key]
 
         with pytest.raises(ValidationError) as exc_info:
             User(**valid_user_data)
@@ -484,6 +497,10 @@ class TestUserModel:
             "vbscript:msgbox(1)",
             " javascript:alert(1)",
             "\tjavascript:void(0)",
+            "\u200bjavascript:alert(1)",
+            "java\u200bscript:alert(1)",
+            "\u202ejavascript:alert(1)",
+            "j\u00a0avascript:alert(1)",
         ],
         ids=[
             "js_basic",
@@ -494,6 +511,10 @@ class TestUserModel:
             "vbscript",
             "js_leading_space",
             "js_leading_tab",
+            "js_zwsp_prefix",
+            "js_zwsp_mid_scheme",
+            "js_bidi_override",
+            "js_nbsp_mid_scheme",
         ],
     )
     def test_user_website_rejects_dangerous_scheme(
@@ -546,8 +567,7 @@ class TestPostModel:
 
     @pytest.mark.parametrize(
         ("dirty", "expected"),
-        _XSS_MODEL_VECTORS,
-        ids=_XSS_MODEL_IDS,
+        _XSS_MODEL_PARAMS,
     )
     def test_post_title_sanitizes_xss(self, dirty: str, expected: str) -> None:
         """Post.title フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
@@ -556,8 +576,7 @@ class TestPostModel:
 
     @pytest.mark.parametrize(
         ("dirty", "expected"),
-        _XSS_MODEL_VECTORS,
-        ids=_XSS_MODEL_IDS,
+        _XSS_MODEL_PARAMS,
     )
     def test_post_body_sanitizes_xss(self, dirty: str, expected: str) -> None:
         """Post.body フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
@@ -615,11 +634,10 @@ class TestCommentModel:
     @pytest.mark.parametrize(
         ("field", "dirty", "expected"),
         [
-            (field, dirty, expected)
+            pytest.param(field, p.values[0], p.values[1], id=f"{field}-{p.id}")
             for field in ("name", "body")
-            for dirty, expected in _XSS_MODEL_VECTORS
+            for p in _XSS_MODEL_PARAMS
         ],
-        ids=[f"{field}-{vid}" for field in ("name", "body") for vid in _XSS_MODEL_IDS],
     )
     def test_comment_sanitizes_xss(self, field: str, dirty: str, expected: str) -> None:
         """Comment XSS サニタイゼーション（name/body x OWASP CS・独自5分類）"""
@@ -660,8 +678,7 @@ class TestTodoModel:
 
     @pytest.mark.parametrize(
         ("dirty", "expected"),
-        _XSS_MODEL_VECTORS,
-        ids=_XSS_MODEL_IDS,
+        _XSS_MODEL_PARAMS,
     )
     def test_todo_title_sanitizes_xss(self, dirty: str, expected: str) -> None:
         """Todo.title フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
@@ -681,8 +698,7 @@ class TestAlbumModel:
 
     @pytest.mark.parametrize(
         ("dirty", "expected"),
-        _XSS_MODEL_VECTORS,
-        ids=_XSS_MODEL_IDS,
+        _XSS_MODEL_PARAMS,
     )
     def test_album_title_sanitizes_xss(self, dirty: str, expected: str) -> None:
         """Album.title フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
@@ -709,8 +725,7 @@ class TestPhotoModel:
 
     @pytest.mark.parametrize(
         ("dirty", "expected"),
-        _XSS_MODEL_VECTORS,
-        ids=_XSS_MODEL_IDS,
+        _XSS_MODEL_PARAMS,
     )
     def test_photo_title_sanitizes_xss(self, dirty: str, expected: str) -> None:
         """Photo.title フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
