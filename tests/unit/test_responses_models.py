@@ -501,6 +501,9 @@ class TestUserModel:
             "java\u200bscript:alert(1)",
             "\u202ejavascript:alert(1)",
             "j\u00a0avascript:alert(1)",
+            "\u2060javascript:alert(1)",
+            "\u2066javascript:alert(1)",
+            "\u2069javascript:alert(1)",
         ],
         ids=[
             "js_basic",
@@ -515,6 +518,9 @@ class TestUserModel:
             "js_zwsp_mid_scheme",
             "js_bidi_override",
             "js_nbsp_mid_scheme",
+            "js_word_joiner_prefix",
+            "js_lri_prefix",
+            "js_pdi_prefix",
         ],
     )
     def test_user_website_rejects_dangerous_scheme(
@@ -547,6 +553,44 @@ class TestUserModel:
         valid_user_data["website"] = safe_url
         user = User(**valid_user_data)
         assert user.website == safe_url
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        ("dirty_safe_url", "expected"),
+        [
+            pytest.param(
+                "\u200bhttps://example.com", "https://example.com", id="zwsp_prefix_stripped"
+            ),
+            pytest.param(
+                "https://example.com\u00a0", "https://example.com", id="nbsp_suffix_stripped"
+            ),
+            pytest.param("\u2060https://valid.com", "https://valid.com", id="word_joiner_stripped"),
+        ],
+    )
+    def test_user_website_sanitizes_control_chars_in_safe_url(
+        self, valid_user_data: _UserData, dirty_safe_url: str, expected: str
+    ) -> None:
+        """User.website が安全なURLに含まれる制御文字を除去して返却すること"""
+        valid_user_data["website"] = dirty_safe_url
+        user = User(**valid_user_data)
+        assert user.website == expected
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "control_only",
+        [
+            pytest.param("\u2060", id="word_joiner_only"),
+            pytest.param("\u200b", id="zwsp_only"),
+            pytest.param("  \u2060  ", id="spaces_and_word_joiner_only"),
+        ],
+    )
+    def test_user_website_control_char_only_raises(
+        self, valid_user_data: _UserData, control_only: str
+    ) -> None:
+        """制御文字のみのwebsiteはサニタイズ後に空文字列となりValidationErrorになること"""
+        valid_user_data["website"] = control_only
+        with pytest.raises(ValidationError):
+            User(**valid_user_data)
 
 
 class TestPostModel:

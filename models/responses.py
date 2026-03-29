@@ -23,9 +23,10 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 # 制御文字・ゼロ幅文字パターン（URLスキームバイパス防止用）
 # C0制御文字 / DEL+C1制御文字 / Ogham Space / NBSP / ゼロ幅文字+Bidiマーク /
 # Unicode空白(U+2000-200A) / 行・段落分離+Bidi制御+NNBSP /
-# 中数学空白+全角空白 / BOM / ソフトハイフン
+# 中数学空白+全角空白 / Bidi制御+不可視演算子(U+2060-206F) / BOM / ソフトハイフン
 _CONTROL_CHAR_PATTERN = re.compile(
-    r"[\x00-\x1f\x7f-\x9f\u1680\u00a0\u200b-\u200f\u2000-\u200a\u2028-\u202f\u205f\u3000\ufeff\u00ad]"
+    r"[\x00-\x1f\x7f-\x9f\u1680\u00a0\u200b-\u200f\u2000-\u200a\u2028-\u202f"
+    r"\u205f\u2060-\u206f\u3000\ufeff\u00ad]"
 )
 
 # =============================================================================
@@ -275,7 +276,7 @@ class User(BaseModel):
 
     JSONPlaceholder /users エンドポイントのレスポンス。
     name, username, phoneフィールドにXSS保護（html.escape）を適用。
-    websiteフィールドはhtml.escape対象外。危険スキームのみバリデーション。
+    websiteフィールドはhtml.escape対象外。制御文字除去・危険スキームバリデーション適用。
     emailはEmailStr型でRFC構文チェック（DNS検証なし）。
 
     Attributes:
@@ -285,7 +286,7 @@ class User(BaseModel):
         email: メールアドレス（EmailStr RFC構文チェック済み・DNS検証なし、最大100文字）
         address: 住所情報（ネストされたAddressモデル）
         phone: 電話番号（サニタイズ済み、最大50文字）
-        website: ウェブサイトURL（最大200文字）
+        website: ウェブサイトURL（制御文字除去・前後空白除去済み、最大200文字）
         company: 企業情報（ネストされたCompanyモデル）
 
     """
@@ -300,7 +301,12 @@ class User(BaseModel):
     )
     address: Address = Field(..., description="住所情報")
     phone: str = Field(..., max_length=50, description="電話番号")
-    website: str = Field(..., max_length=200, description="ウェブサイトURL")
+    website: str = Field(
+        ...,
+        min_length=1,
+        max_length=200,
+        description="ウェブサイトURL（制御文字除去・前後空白除去済み）",
+    )
     company: Company = Field(..., description="企業情報")
 
     model_config = {"populate_by_name": True, "extra": "forbid"}
@@ -337,10 +343,12 @@ class User(BaseModel):
             サニタイズ済みURL文字列（制御文字除去・前後空白除去済み）
 
         Raises:
-            ValueError: 危険なURLスキームが検出された場合
+            ValueError: 危険なURLスキームが検出された場合、またはサニタイズ後にURLが空になった場合
 
         """
         sanitized = _CONTROL_CHAR_PATTERN.sub("", v).strip()
+        if not sanitized:
+            raise ValueError("websiteが空になりました（制御文字除去後）")
         if sanitized.lower().startswith(("javascript:", "data:", "vbscript:")):
             raise ValueError(f"危険なURLスキームです: {repr(v[:50])}")
         return sanitized
