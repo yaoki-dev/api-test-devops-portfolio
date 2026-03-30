@@ -607,6 +607,11 @@ class TestUserModel:
                 "http://example.com:8080",
                 id="uppercase_scheme_and_host_with_port",
             ),
+            pytest.param(
+                "HTTP://Example.COM/Path?q=Value",
+                "http://example.com/Path?q=Value",
+                id="path_and_query_preserved",
+            ),
         ],
     )
     def test_user_website_normalizes_scheme_and_host(
