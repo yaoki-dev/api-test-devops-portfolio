@@ -513,6 +513,10 @@ class TestUserModel:
             "ftp://evil.com",
             "file:///etc/passwd",
             "blob:https://evil.com/uuid",
+            "javascript:0",
+            "javascript:1+1",
+            "malicious.js:xyz",
+            "a.b:evil",
         ],
         ids=[
             "js_basic",
@@ -539,6 +543,10 @@ class TestUserModel:
             "ftp_scheme",
             "file_scheme",
             "blob_scheme",
+            "js_digit_after_colon",
+            "js_expression_after_colon",
+            "dotted_scheme_non_port",
+            "dotted_scheme_alpha_after_colon",
         ],
     )
     def test_user_website_rejects_dangerous_scheme(
@@ -621,7 +629,7 @@ class TestUserModel:
     ) -> None:
         """制御文字のみのwebsiteはサニタイズ後に空文字列となりValidationErrorになること"""
         valid_user_data["website"] = control_only
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValidationError, match="websiteが空になりました"):
             User(**valid_user_data)
 
 
@@ -902,6 +910,37 @@ class TestPhotoModel:
                 id=1,
                 title="Test",
                 url="\u200b\u200c\u200d",
+                thumbnailUrl="https://example.com/thumb.jpg",
+            )
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "dangerous_url",
+        [
+            "\u200bjavascript:alert(1)",
+            "java\u200bscript:alert(1)",
+            "\u202ejavascript:alert(1)",
+            "java\u2028script:alert(1)",
+            "java\u2029script:alert(1)",
+        ],
+        ids=[
+            "zwsp_prefix",
+            "zwsp_mid_scheme",
+            "bidi_override",
+            "line_separator_mid",
+            "paragraph_separator_mid",
+        ],
+    )
+    def test_photo_rejects_bidi_control_char_url(self, dangerous_url: str) -> None:
+        """Photo.url がBidi/制御文字を含む危険なURLスキームを拒否すること"""
+        with pytest.raises(
+            ValidationError, match="URLはhttp://またはhttps://で始まる必要があります"
+        ):
+            Photo(
+                albumId=1,
+                id=1,
+                title="Test",
+                url=dangerous_url,
                 thumbnailUrl="https://example.com/thumb.jpg",
             )
 

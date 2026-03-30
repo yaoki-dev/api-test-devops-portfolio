@@ -23,6 +23,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 
 # RFC 3986 準拠のスキーム検出パターン（scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) ":"）
 _SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
+_INVISIBLE_CATEGORIES = frozenset({"Cf", "Cs", "Cc", "Zs", "Zl", "Zp"})
 
 
 def _strip_invisible_chars(v: str) -> str:
@@ -43,9 +44,7 @@ def _strip_invisible_chars(v: str) -> str:
     自動的に新しい文字に対応する。
     """
     normalized = unicodedata.normalize("NFC", v)
-    return "".join(
-        c for c in normalized if unicodedata.category(c) not in ("Cf", "Cs", "Cc", "Zs", "Zl", "Zp")
-    )
+    return "".join(c for c in normalized if unicodedata.category(c) not in _INVISIBLE_CATEGORIES)
 
 
 # =============================================================================
@@ -58,6 +57,10 @@ def sanitize_user_content(value: str) -> str:
 
     XSS攻撃を防ぐため、HTMLエスケープを適用。
     特殊文字（<, >, &, ", '）をHTMLエンティティに変換。
+
+    Note:
+        Pydantic field_validator経由での使用を前提としています。
+        strフィールドのバリデーション後に呼ばれるため、Noneは渡されません。
 
     Args:
         value: サニタイズ対象の文字列
@@ -351,8 +354,10 @@ class User(BaseModel):
         """websiteフィールドのURLスキーム検証（allowlist方式）
 
         RFC 3986準拠のスキーム検出で、http://とhttps://のみ許可する。
-        スキームなしドメイン（例: hildegard.org）は許可。
+        スキームなしドメイン（例: hildegard.org）およびdomain:portパターン
+        （例: example.com:8080 — ドット含み+コロン直後が数字の場合）は許可。
         javascript:, data:, ftp:, file: 等の危険スキームおよびプロトコル相対URL（//）は全て拒否。
+        http/httpsスキーム部はRFC 3986 Section 6.2.2.1に従い小文字に正規化。
 
         Args:
             v: バリデーション対象のURL文字列
@@ -372,14 +377,19 @@ class User(BaseModel):
         if sanitized.startswith("//"):
             raise ValueError("プロトコル相対URLは許可されていません")
         sanitized_lower = sanitized.lower()
-        # http/https スキーム付きURLは許可
+        # http/https スキーム付きURLは許可（RFC 3986 Section 6.2.2.1: スキーム部を小文字正規化）
         if sanitized_lower.startswith(("http://", "https://")):
-            return sanitized
+            scheme_end = sanitized.index("://") + 3
+            return sanitized[:scheme_end].lower() + sanitized[scheme_end:]
         # RFC 3986スキーム検出: 他のスキームが存在すれば拒否
-        # domain:port パターン（例: example.com:8080）はスキーム部に "." を含む点で区別
+        # domain:port パターン（例: example.com:8080）はドット含み + コロン直後が数字の両方で区別
         m = _SCHEME_RE.match(sanitized)
-        if m and "." not in sanitized[: m.end() - 1]:
-            raise ValueError("危険なURLスキームが検出されました")
+        if m:
+            scheme_part = sanitized[: m.end() - 1]
+            after_colon = sanitized[m.end() :]
+            is_domain_port = "." in scheme_part and bool(re.match(r"^\d", after_colon))
+            if not is_domain_port:
+                raise ValueError("危険なURLスキームが検出されました")
         return sanitized
 
 
