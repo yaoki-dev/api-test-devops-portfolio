@@ -148,11 +148,17 @@ def _map_request_error(e: httpx.RequestError | httpx.InvalidURL) -> APIClientErr
 
     # Retryable errors
     if isinstance(e, httpx.TimeoutException):
-        return APITimeoutError(f"Request timeout: {e}")
+        timeout_exc = APITimeoutError(f"Request timeout: {e}")
+        timeout_exc.__cause__ = e
+        return timeout_exc
     if isinstance(e, httpx.ConnectError):
-        return APIConnectionError(f"Connection failed: {e}")
+        connect_exc = APIConnectionError(f"Connection failed: {e}")
+        connect_exc.__cause__ = e
+        return connect_exc
     # NetworkError, etc. - retryable network issues
-    return APIConnectionError(f"Network error: {e}")
+    network_exc = APIConnectionError(f"Network error: {e}")
+    network_exc.__cause__ = e
+    return network_exc
 
 
 def _resolve_client_config(
@@ -178,7 +184,7 @@ def _resolve_client_config(
         (base_url, timeout, retry_count, retry_delay, default_headers) のタプル
 
     Raises:
-        ValueError: base_urlが空文字列の場合
+        ValueError: base_urlが空文字列またはスペースのみの文字列の場合
 
     """
     resolved_base_url = base_url if base_url is not None else settings.api.base_url
@@ -208,7 +214,8 @@ def _resolve_client_config(
 def _classify_error(
     e: httpx.RequestError | httpx.InvalidURL,
     logger: Any,
-    log_prefix: str,
+    *,
+    is_async: bool,
     method: str,
     endpoint: str,
 ) -> APIClientError:
@@ -220,17 +227,20 @@ def _classify_error(
     Args:
         e: httpxのリクエストエラーまたはInvalidURL
         logger: structlogロガーインスタンス
-        log_prefix: ログイベント名のプレフィックス（Sync: "", Async: "async_"）
+        is_async: 非同期クライアントからの呼び出しかどうか
         method: HTTPメソッド名
         endpoint: APIエンドポイント
 
     Returns:
-        _map_request_error()の戻り値（リトライ可能エラーの場合）
+        APIClientErrorサブクラス（リトライ可能エラーの場合のみ）。
+        TooManyRedirects / InvalidURL の場合はreturnに到達しない。
 
     Raises:
-        APIClientError: 非リトライエラーの場合（_map_request_error経由）
+        APIClientError: TooManyRedirects または InvalidURL の場合
+            （_map_request_error() 内で raise され、本関数の return には到達しない）
 
     """
+    log_prefix = "async_" if is_async else ""
     if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
         logger.error(
             f"{log_prefix}request_error_non_retryable",
@@ -245,6 +255,7 @@ def _classify_error(
             method=method,
             endpoint=endpoint,
             error=str(e),
+            error_type=type(e).__name__,
         )
     return _map_request_error(e)
 
@@ -371,7 +382,13 @@ class SyncAPIClient:
             except (httpx.RequestError, httpx.InvalidURL) as e:
                 # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
                 # TooManyRedirects/InvalidURL は _classify_error → _map_request_error 内で即 raise
-                last_exception = _classify_error(e, self.logger, "", method, endpoint)
+                last_exception = _classify_error(
+                    e,
+                    self.logger,
+                    is_async=False,
+                    method=method,
+                    endpoint=endpoint,
+                )
             else:
                 # ネットワーク成功時のみHTTPステータス処理
                 try:
@@ -813,7 +830,13 @@ class AsyncAPIClient:
             except (httpx.RequestError, httpx.InvalidURL) as e:
                 # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
                 # TooManyRedirects/InvalidURL は _classify_error → _map_request_error 内で即 raise
-                last_exception = _classify_error(e, self.logger, "async_", method, endpoint)
+                last_exception = _classify_error(
+                    e,
+                    self.logger,
+                    is_async=True,
+                    method=method,
+                    endpoint=endpoint,
+                )
             else:
                 # ネットワーク成功時のみHTTPステータス処理
                 try:

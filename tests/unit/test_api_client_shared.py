@@ -6,11 +6,13 @@ which are module-level utility functions independent of AsyncAPIClient/SyncAPICl
 Consolidated from test_async_client_error_handling.py and
 test_sync_client_error_handling.py to eliminate duplication.
 
-テストケース一覧（11件）:
+テストケース一覧（15件）:
     - Exception (3件): hierarchy, http_error_status_preservation, retry_error_message
     - JSON Parsing (3件): invalid_json, json_error_init, json_error_without_response
     - Request Error Mapping (5件): too_many_redirects, invalid_url, timeout,
       connect_error, network_error
+    - Classify Error (4件): non_retryable_logs_error, non_retryable_async_prefix,
+      retryable_logs_warning, retryable_timeout
 """
 
 import json
@@ -26,6 +28,7 @@ from utils.api_client import (
     APIJSONDecodeError,
     APIRetryError,
     APITimeoutError,
+    _classify_error,
     _map_request_error,
     _safe_parse_json,
 )
@@ -135,6 +138,7 @@ def test_map_request_error_timeout() -> None:
 
     assert isinstance(result, APITimeoutError)
     assert "timeout" in str(result).lower()
+    assert result.__cause__ is error
 
 
 def test_map_request_error_connect_error() -> None:
@@ -144,6 +148,7 @@ def test_map_request_error_connect_error() -> None:
 
     assert isinstance(result, APIConnectionError)
     assert "connection" in str(result).lower()
+    assert result.__cause__ is error
 
 
 def test_map_request_error_network_error() -> None:
@@ -153,3 +158,65 @@ def test_map_request_error_network_error() -> None:
 
     assert isinstance(result, APIConnectionError)
     assert "network" in str(result).lower()
+    assert result.__cause__ is error
+
+
+# =============================================================================
+# Classify Error Tests（_classify_error の検証）
+# =============================================================================
+
+
+def test_classify_error_non_retryable_logs_error() -> None:
+    """TooManyRedirects時にlogger.errorが呼ばれる"""
+    error = httpx.TooManyRedirects("Max redirects")
+    mock_logger = Mock()
+
+    with pytest.raises(APIClientError):
+        _classify_error(error, mock_logger, is_async=False, method="GET", endpoint="/test")
+
+    mock_logger.error.assert_called_once()
+    call_kwargs = mock_logger.error.call_args
+    assert call_kwargs[0][0] == "request_error_non_retryable"
+    assert call_kwargs[1]["error_type"] == "TooManyRedirects"
+
+
+def test_classify_error_non_retryable_async_prefix() -> None:
+    """async呼び出し時にログイベント名にasync_プレフィックスが付く"""
+    error = httpx.InvalidURL("Bad URL")
+    mock_logger = Mock()
+
+    with pytest.raises(APIClientError):
+        _classify_error(error, mock_logger, is_async=True, method="GET", endpoint="/test")
+
+    mock_logger.error.assert_called_once()
+    call_kwargs = mock_logger.error.call_args
+    assert call_kwargs[0][0] == "async_request_error_non_retryable"
+
+
+def test_classify_error_retryable_logs_warning() -> None:
+    """ConnectError時にlogger.warningが呼ばれる"""
+    error = httpx.ConnectError("Connection refused")
+    mock_logger = Mock()
+
+    result = _classify_error(error, mock_logger, is_async=False, method="POST", endpoint="/api")
+
+    assert isinstance(result, APIConnectionError)
+    assert result.__cause__ is error
+    mock_logger.warning.assert_called_once()
+    call_kwargs = mock_logger.warning.call_args
+    assert call_kwargs[0][0] == "request_error"
+    assert call_kwargs[1]["error_type"] == "ConnectError"
+
+
+def test_classify_error_retryable_timeout() -> None:
+    """TimeoutException時にAPITimeoutErrorが返される"""
+    error = httpx.TimeoutException("Timed out")
+    mock_logger = Mock()
+
+    result = _classify_error(error, mock_logger, is_async=True, method="GET", endpoint="/slow")
+
+    assert isinstance(result, APITimeoutError)
+    assert result.__cause__ is error
+    mock_logger.warning.assert_called_once()
+    call_kwargs = mock_logger.warning.call_args
+    assert call_kwargs[0][0] == "async_request_error"
