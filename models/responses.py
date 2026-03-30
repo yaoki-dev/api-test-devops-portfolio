@@ -34,7 +34,7 @@ def _strip_invisible_chars(v: str) -> str:
     - Cf: Format文字（Bidi制御, ゼロ幅文字, Word Joiner等）
     - Cs: Surrogate（不正なサロゲートペア）
     - Cc: 制御文字（C0/C1制御文字, DEL等）
-    - Zs: Unicode空白（NBSP, Ogham Space, 全角空白等）
+    - Zs: Unicode空白（NBSP, Ogham Space, 全角空白等。U+0020通常スペースは保持）
     - Zl: 行区切り（U+2028 Line Separator）
     - Zp: 段落区切り（U+2029 Paragraph Separator）
 
@@ -45,7 +45,9 @@ def _strip_invisible_chars(v: str) -> str:
     自動的に新しい文字に対応する。
     """
     normalized = unicodedata.normalize("NFC", v)
-    return "".join(c for c in normalized if unicodedata.category(c) not in _INVISIBLE_CATEGORIES)
+    return "".join(
+        c for c in normalized if unicodedata.category(c) not in _INVISIBLE_CATEGORIES or c == " "
+    )
 
 
 # =============================================================================
