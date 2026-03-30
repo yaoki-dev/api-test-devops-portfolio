@@ -378,6 +378,13 @@ class TestPostModel:
             Post(id=1, userId=1, title=long_title, body="Body")
         assert "title" in str(exc_info.value)
 
+    def test_post_body_exceeds_max_length_raises_validation_error(self) -> None:
+        """body>5000文字でValidationErrorが発生する（境界値テスト: max_length=5000）"""
+        long_body = "a" * 5001
+        with pytest.raises(ValidationError) as exc_info:
+            Post(id=1, userId=1, title="Test", body=long_body)
+        assert "body" in str(exc_info.value)
+
 
 class TestCommentModel:
     """Comment モデルのテスト"""
