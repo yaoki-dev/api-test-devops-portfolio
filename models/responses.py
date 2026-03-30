@@ -45,8 +45,13 @@ def _strip_invisible_chars(v: str) -> str:
     自動的に新しい文字に対応する。
     """
     normalized = unicodedata.normalize("NFC", v)
+    # U+0020 (ASCII SPACE) は Zs カテゴリだが保持する。
+    # Zs を frozenset から外す代替案は NBSP (U+00A0) や全角スペース (U+3000) 等の
+    # URL難読化に悪用される文字も通過させてしまうため採用しない。
     return "".join(
-        c for c in normalized if unicodedata.category(c) not in _INVISIBLE_CATEGORIES or c == " "
+        c
+        for c in normalized
+        if (unicodedata.category(c) not in _INVISIBLE_CATEGORIES) or (c == " ")
     )
 
 

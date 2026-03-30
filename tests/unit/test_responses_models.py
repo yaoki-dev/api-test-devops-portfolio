@@ -24,6 +24,7 @@ from models.responses import (
     Post,
     Todo,
     User,
+    _strip_invisible_chars,
     sanitize_user_content,
 )
 
@@ -258,6 +259,24 @@ class TestSanitizeUserContent:
         result = sanitize_user_content(test_input)
 
         assert result == expected
+
+
+@pytest.mark.unit
+def test_strip_invisible_chars_preserves_ascii_space() -> None:
+    """_strip_invisible_chars がASCIIスペース(U+0020)を保持することを検証。
+
+    U+0020はZsカテゴリだが、URLクエリパラメータ等に含まれる正常な文字として保持される。
+    NBSP (U+00A0) 等の他のZs文字は除去される。
+    """
+    # ASCII スペースは保持される
+    assert (
+        _strip_invisible_chars("https://example.com/path?a=1 b=2")
+        == "https://example.com/path?a=1 b=2"
+    )
+    # NBSP (U+00A0) は除去される
+    assert _strip_invisible_chars("https://\u00a0example.com") == "https://example.com"
+    # 全角スペース (U+3000) は除去される
+    assert _strip_invisible_chars("https://\u3000example.com") == "https://example.com"
 
 
 class TestGeoModel:
