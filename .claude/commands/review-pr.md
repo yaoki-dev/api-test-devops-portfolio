@@ -20,7 +20,7 @@ argument-hint: "[owner/repo] [pr-number]"
 if ! ISSUE_COMMENTS=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --paginate \
   --jq '[.[] |
     select(.user.type != "Bot") |
-    select(.body | test("スキップ|対応不要|skip|SKIP|対応しない"; "i")) |
+    select(.body | test("スキップ|対応不要|skip|wontfix|no need|not needed|対応しない"; "i")) |
     {user: .user.login, body: (.body[:150])}]'); then
   echo "エラー: issues コメント取得失敗" >&2
   exit 1
