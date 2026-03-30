@@ -362,8 +362,9 @@ class User(BaseModel):
         """websiteフィールドのURLスキーム検証（allowlist方式）
 
         RFC 3986準拠のスキーム検出で、http://とhttps://のみ許可する。
-        スキームなしドメイン（例: hildegard.org）およびdomain:portパターン
-        （例: example.com:8080 — ドット含み+コロン直後が数字の場合）は許可。
+        スキームなしドメイン（例: hildegard.org）はhttps://を自動補完する。
+        domain:portパターン（例: example.com:8080）はスキームが明示されていない
+        場合は拒否する（http://example.com:8080 は許可）。
         javascript:, data:, ftp:, file: 等の危険スキームおよびプロトコル相対URL（//）は全て拒否。
         http/httpsスキームおよびホスト部はRFC 3986 Section 6.2.2.1に従い小文字に正規化。
 
@@ -371,7 +372,8 @@ class User(BaseModel):
             v: バリデーション対象のURL文字列
 
         Returns:
-            バリデーション済みURL文字列（制御文字除去・前後空白除去済み）
+            バリデーション済みURL文字列（スキームなしの場合はhttps://を補完、
+            制御文字除去・前後空白除去済み）
 
         Raises:
             ValueError: 危険なURLスキームまたはプロトコル相対URLが検出された場合、
@@ -394,16 +396,20 @@ class User(BaseModel):
                     netloc=parsed.netloc.lower(),
                 )
             )
-        # RFC 3986スキーム検出: 他のスキームが存在すれば拒否
-        # domain:port パターン（例: example.com:8080）はドット含み + コロン直後が数字の両方で区別
+        # RFC 3986スキーム検出: http/https以外のスキームが存在すれば拒否
+        # is_domain_portロジックを削除: domain:portはスキームなし扱いのため
+        # http(s)://を明示しない限り拒否（例: example.com:8080 → ValueError）
         m = _SCHEME_RE.match(sanitized)
         if m:
-            scheme_part = sanitized[: m.end() - 1]
-            after_colon = sanitized[m.end() :]
-            is_domain_port = "." in scheme_part and bool(re.match(r"^\d", after_colon))
-            if not is_domain_port:
-                raise ValueError("危険なURLスキームが検出されました")
-        return sanitized
+            raise ValueError("危険なURLスキームが検出されました")
+        # スキームなし → https:// を補完（例: hildegard.org → https://hildegard.org）
+        parsed = urlparse("https://" + sanitized)
+        return urlunparse(
+            parsed._replace(
+                scheme="https",
+                netloc=parsed.netloc.lower(),
+            )
+        )
 
 
 # =============================================================================

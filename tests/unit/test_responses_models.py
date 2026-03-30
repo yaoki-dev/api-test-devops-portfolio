@@ -503,7 +503,8 @@ class TestUserModel:
         value = "example.com/page?a=1&b=2"
         valid_user_data["website"] = value
         user = User(**valid_user_data)
-        assert user.website == value  # &amp; にならないことを確認
+        # スキームなしURLはhttps://が補完される
+        assert user.website == "https://example.com/page?a=1&b=2"  # &amp; にならないことを確認
 
     @pytest.mark.parametrize(
         "dangerous_url",
@@ -536,6 +537,9 @@ class TestUserModel:
             "javascript:1+1",
             "malicious.js:xyz",
             "a.b:evil",
+            "example.com:8080",
+            "sub.domain.com:443/path",
+            "example.com:8080/path?query=1",
         ],
         ids=[
             "js_basic",
@@ -566,6 +570,9 @@ class TestUserModel:
             "js_expression_after_colon",
             "dotted_scheme_non_port",
             "dotted_scheme_alpha_after_colon",
+            "domain_port_no_scheme",
+            "subdomain_port_path_no_scheme",
+            "domain_port_path_query_no_scheme",
         ],
     )
     def test_user_website_rejects_dangerous_scheme(
@@ -585,23 +592,17 @@ class TestUserModel:
     @pytest.mark.parametrize(
         "safe_url",
         [
-            "hildegard.org",
-            "example.com/page?a=1&b=2",
+            "https://hildegard.org",
+            "https://example.com/page?a=1&b=2",
             "https://valid.com",
             "http://valid.com",
-            "example.com:8080",
-            "sub.domain.com:443/path",
-            "example.com:8080/path?query=1",
             "http://example.com:8080",
         ],
         ids=[
-            "no_scheme_domain",
-            "no_scheme_with_query",
+            "https_domain",
+            "https_with_query",
             "https",
             "http",
-            "domain_port",
-            "subdomain_port_path",
-            "domain_port_path_query",
             "http_with_port",
         ],
     )
