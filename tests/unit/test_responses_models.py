@@ -592,6 +592,26 @@ class TestUserModel:
         user = User(**valid_user_data)
         assert user.website == safe_url
 
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        ("input_url", "expected_url"),
+        [
+            pytest.param("HTTP://example.com", "http://example.com", id="uppercase_http_scheme"),
+            pytest.param("HTTPS://example.com", "https://example.com", id="uppercase_https_scheme"),
+            pytest.param(
+                "HTTP://Example.COM", "http://example.com", id="uppercase_scheme_and_host"
+            ),
+            pytest.param("HtTp://Test.Com", "http://test.com", id="mixed_case_scheme_and_host"),
+        ],
+    )
+    def test_user_website_normalizes_scheme_and_host(
+        self, valid_user_data: _UserData, input_url: str, expected_url: str
+    ) -> None:
+        """スキームとホストが小文字正規化されることを検証する（RFC 3986準拠）"""
+        valid_user_data["website"] = input_url
+        user = User(**valid_user_data)
+        assert user.website == expected_url
+
     @pytest.mark.parametrize(
         ("dirty_safe_url", "expected"),
         [
