@@ -17,17 +17,36 @@ html.escape()サニタイゼーションを適用したPydanticモデル。
 
 import html
 import re
+import unicodedata
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
-# 制御文字・ゼロ幅文字パターン（URLスキームバイパス防止用）
-# C0制御文字 / DEL+C1制御文字 / Ogham Space / NBSP / ゼロ幅文字+Bidiマーク /
-# Unicode空白(U+2000-200A) / 行・段落分離+Bidi制御+NNBSP /
-# 中数学空白+全角空白 / Bidi制御+不可視演算子(U+2060-206F) / BOM / ソフトハイフン
-_CONTROL_CHAR_PATTERN = re.compile(
-    r"[\x00-\x1f\x7f-\x9f\u1680\u00a0\u200b-\u200f\u2000-\u200a\u2028-\u202f"
-    r"\u205f\u2060-\u206f\u3000\ufeff\u00ad]"
-)
+# RFC 3986 準拠のスキーム検出パターン（scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) ":"）
+_SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
+
+
+def _strip_invisible_chars(v: str) -> str:
+    """不可視文字・制御文字・Unicode空白をURL文字列から除去
+
+    URLスキームバイパス防止のため、以下のUnicodeカテゴリを除去:
+    - Cf: Format文字（Bidi制御, ゼロ幅文字, Word Joiner等）
+    - Cs: Surrogate（不正なサロゲートペア）
+    - Cc: 制御文字（C0/C1制御文字, DEL等）
+    - Zs: Unicode空白（NBSP, Ogham Space, 全角空白等）
+    - Zl: 行区切り（U+2028 Line Separator）
+    - Zp: 段落区切り（U+2029 Paragraph Separator）
+
+    Note: Variation Selectors (U+FE00-FE0F) はMnカテゴリのため除去対象外。
+    allowlist方式の_SCHEME_REがスキーム検出を阻止するため安全。
+
+    正規表現の列挙方式と異なり、Unicodeバージョン更新時も
+    自動的に新しい文字に対応する。
+    """
+    normalized = unicodedata.normalize("NFC", v)
+    return "".join(
+        c for c in normalized if unicodedata.category(c) not in ("Cf", "Cs", "Cc", "Zs", "Zl", "Zp")
+    )
+
 
 # =============================================================================
 # ユーティリティ関数
@@ -276,7 +295,7 @@ class User(BaseModel):
 
     JSONPlaceholder /users エンドポイントのレスポンス。
     name, username, phoneフィールドにXSS保護（html.escape）を適用。
-    websiteフィールドはhtml.escape対象外。制御文字除去・危険スキームバリデーション適用。
+    websiteフィールドはhtml.escape対象外。不可視文字除去（_strip_invisible_chars）・allowlist方式スキームバリデーション適用。
     emailはEmailStr型でRFC構文チェック（DNS検証なし）。
 
     Attributes:
@@ -331,26 +350,34 @@ class User(BaseModel):
     @field_validator("website")
     @classmethod
     def validate_website_scheme(cls, v: str) -> str:
-        """websiteフィールドの危険スキーム検証
+        """websiteフィールドのURLスキーム検証（allowlist方式）
 
-        javascript:, data:, vbscript: スキームを拒否する。
-        スキームなしドメイン（例: hildegard.org）やhttp/httpsは許可。
+        RFC 3986準拠のスキーム検出で、http://とhttps://のみ許可する。
+        スキームなしドメイン（例: hildegard.org）やプロトコル相対URL（//cdn.example.com）は許可。
+        javascript:, data:, ftp:, file: 等の危険スキームは全て拒否。
 
         Args:
             v: バリデーション対象のURL文字列
 
         Returns:
-            サニタイズ済みURL文字列（制御文字除去・前後空白除去済み）
+            バリデーション済みURL文字列（制御文字除去・前後空白除去済み）
 
         Raises:
             ValueError: 危険なURLスキームが検出された場合、またはサニタイズ後にURLが空になった場合
 
         """
-        sanitized = _CONTROL_CHAR_PATTERN.sub("", v).strip()
+        sanitized = _strip_invisible_chars(v).strip()
         if not sanitized:
             raise ValueError("websiteが空になりました（制御文字除去後）")
-        if sanitized.lower().startswith(("javascript:", "data:", "vbscript:")):
-            raise ValueError(f"危険なURLスキームです: {repr(v[:50])}")
+        sanitized_lower = sanitized.lower()
+        # http/https と プロトコル相対URLは許可
+        if sanitized_lower.startswith(("http://", "https://")) or sanitized.startswith("//"):
+            return sanitized
+        # RFC 3986スキーム検出: 他のスキームが存在すれば拒否
+        # domain:port パターン（例: example.com:8080）はスキーム部に "." を含む点で区別
+        m = _SCHEME_RE.match(sanitized)
+        if m and "." not in sanitized[: m.end() - 1]:
+            raise ValueError("危険なURLスキームが検出されました")
         return sanitized
 
 
@@ -487,21 +514,24 @@ class Photo(BaseModel):
 
         セキュリティのため、javascript:やdata:などの
         潜在的に危険なスキームを拒否。
+        不可視文字（Cf/Cs/Cc/Zs/Zl/Zpカテゴリ）を除去してからスキーム検証を行う。
 
         Args:
             v: 検証対象のURL文字列
 
         Returns:
-            検証済みURL文字列
+            検証済みURL文字列（制御文字除去・前後空白除去済み）
 
         Raises:
             ValueError: URLがhttp/httpsで始まらない場合
 
         """
-        # case-insensitive check (JAVASCRIPT: などのバイパス防止)
-        if not v.lower().startswith(("http://", "https://")):
-            raise ValueError(f"URL must start with http:// or https://, got: {v[:50]}...")
-        return v
+        sanitized = _strip_invisible_chars(v).strip()
+        if not sanitized:
+            raise ValueError("URLが空になりました（制御文字除去後）")
+        if not sanitized.lower().startswith(("http://", "https://")):
+            raise ValueError("URLはhttp://またはhttps://で始まる必要があります")
+        return sanitized
 
 
 # =============================================================================

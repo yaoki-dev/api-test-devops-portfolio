@@ -119,32 +119,34 @@ XSS_TEST_VECTORS: Final[list[XSSVector]] = [
 ]
 
 # モデルテスト専用 XSS ベクター（OWASP Cheat Sheetベース・独自5分類）
-_XSS_MODEL_PARAMS: Final = [
-    pytest.param(
+# 生データ: (dirty, expected, id) タプル形式
+_XSS_RAW_VECTORS: Final[list[tuple[str, str, str]]] = [
+    (
         "<script>alert('XSS')</script>",
         "&lt;script&gt;alert(&#x27;XSS&#x27;)&lt;/script&gt;",
-        id="script-basic",
+        "script-basic",
     ),
-    pytest.param(
+    (
         "<img src=x onerror=alert(1)>",
         "&lt;img src=x onerror=alert(1)&gt;",
-        id="event-img-onerror",
+        "event-img-onerror",
     ),
-    pytest.param(
+    (
         '<a href="javascript:alert(1)">',
         "&lt;a href=&quot;javascript:alert(1)&quot;&gt;",
-        id="uri-javascript-anchor",
+        "uri-javascript-anchor",
     ),
-    pytest.param(
+    (
         '" onclick="alert(1)"',
         "&quot; onclick=&quot;alert(1)&quot;",
-        id="attr-double-quote",
+        "attr-double-quote",
     ),
-    pytest.param(
-        "Test & Test",
-        "Test &amp; Test",
-        id="char-ampersand",
-    ),
+    ("Test & Test", "Test &amp; Test", "char-ampersand"),
+]
+
+# 既存互換: pytest.param 形式（他テストクラスで直接使用）
+_XSS_MODEL_PARAMS: Final = [
+    pytest.param(dirty, expected, id=xss_id) for dirty, expected, xss_id in _XSS_RAW_VECTORS
 ]
 
 
@@ -504,6 +506,15 @@ class TestUserModel:
             "\u2060javascript:alert(1)",
             "\u2066javascript:alert(1)",
             "\u2069javascript:alert(1)",
+            "vbs\u200bcript:msgbox(1)",
+            "da\u200bta:text/html,x",
+            "vbscript\u202e:msgbox(1)",
+            "da\u200bta:image/png;base64,abc",
+            "java\u2028script:alert(1)",
+            "java\u2029script:alert(1)",
+            "ftp://evil.com",
+            "file:///etc/passwd",
+            "blob:https://evil.com/uuid",
         ],
         ids=[
             "js_basic",
@@ -521,6 +532,15 @@ class TestUserModel:
             "js_word_joiner_prefix",
             "js_lri_prefix",
             "js_pdi_prefix",
+            "vbscript_zwsp_mid",
+            "data_zwsp_mid",
+            "vbscript_bidi_override",
+            "data_zwsp_mid_image",
+            "js_line_separator_mid",
+            "js_paragraph_separator_mid",
+            "ftp_scheme",
+            "file_scheme",
+            "blob_scheme",
         ],
     )
     def test_user_website_rejects_dangerous_scheme(
@@ -539,6 +559,8 @@ class TestUserModel:
             "https://valid.com",
             "http://valid.com",
             "//cdn.example.com/image.jpg",
+            "example.com:8080",
+            "sub.domain.com:443/path",
         ],
         ids=[
             "no_scheme_domain",
@@ -546,6 +568,8 @@ class TestUserModel:
             "https",
             "http",
             "protocol_relative",
+            "domain_port",
+            "subdomain_port_path",
         ],
     )
     def test_user_website_allows_safe_url(self, valid_user_data: _UserData, safe_url: str) -> None:
@@ -582,6 +606,10 @@ class TestUserModel:
             pytest.param("\u2060", id="word_joiner_only"),
             pytest.param("\u200b", id="zwsp_only"),
             pytest.param("  \u2060  ", id="spaces_and_word_joiner_only"),
+            pytest.param("\u200b\u200c\u200d", id="zwsp_zwnj_zwj_only"),
+            pytest.param("\u2060\u2061", id="word_joiner_invisible_times_only"),
+            pytest.param("\ufeff", id="bom_only"),
+            pytest.param("\x00\x01\x02", id="c0_control_only"),
         ],
     )
     def test_user_website_control_char_only_raises(
@@ -678,9 +706,9 @@ class TestCommentModel:
     @pytest.mark.parametrize(
         ("field", "dirty", "expected"),
         [
-            pytest.param(field, p.values[0], p.values[1], id=f"{field}-{p.id}")
+            pytest.param(field, dirty, expected, id=f"{field}-{xss_id}")
             for field in ("name", "body")
-            for p in _XSS_MODEL_PARAMS
+            for dirty, expected, xss_id in _XSS_RAW_VECTORS
         ],
     )
     def test_comment_sanitizes_xss(self, field: str, dirty: str, expected: str) -> None:
@@ -793,7 +821,7 @@ class TestPhotoModel:
                 thumbnailUrl="https://example.com/thumb.jpg",
             )
 
-        assert "url must start with http://" in str(exc_info.value).lower()
+        assert "URLはhttp://またはhttps://で始まる必要があります" in str(exc_info.value)
 
     def test_photo_rejects_data_url(self) -> None:
         """Photo モデルが data: スキームを拒否することを確認"""
@@ -806,7 +834,40 @@ class TestPhotoModel:
                 thumbnailUrl="data:image/png;base64,iVBORw0KGgo=",
             )
 
-        assert "url must start with http://" in str(exc_info.value).lower()
+        assert "URLはhttp://またはhttps://で始まる必要があります" in str(exc_info.value)
+
+    def test_photo_rejects_schemeless_url(self) -> None:
+        """Photo.url がスキームなしURLを拒否すること"""
+        with pytest.raises(ValidationError):
+            Photo(
+                albumId=1,
+                id=1,
+                title="Test",
+                url="example.com/photo.jpg",
+                thumbnailUrl="https://example.com/thumb.jpg",
+            )
+
+    def test_photo_rejects_schemeless_thumbnail_url(self) -> None:
+        """Photo.thumbnail_url がスキームなしURLを拒否すること"""
+        with pytest.raises(ValidationError):
+            Photo(
+                albumId=1,
+                id=1,
+                title="Test",
+                url="https://example.com/photo.jpg",
+                thumbnailUrl="example.com/thumb.jpg",
+            )
+
+    def test_photo_rejects_control_char_only_url(self) -> None:
+        """制御文字のみのPhoto.urlが空文字エラーで拒否されること"""
+        with pytest.raises(ValidationError, match="URLが空になりました"):
+            Photo(
+                albumId=1,
+                id=1,
+                title="Test",
+                url="\u200b\u200c\u200d",
+                thumbnailUrl="https://example.com/thumb.jpg",
+            )
 
 
 class TestExtraFieldsForbidden:
