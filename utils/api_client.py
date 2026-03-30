@@ -146,7 +146,9 @@ def _map_request_error(e: httpx.RequestError | httpx.InvalidURL) -> APIClientErr
     if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
         raise APIClientError(f"Non-retryable request error: {e}") from e
 
-    # Retryable errors
+    # Retryable errors: returnするため `raise ... from e` は使えず __cause__ を手動設定する。
+    # `raise ... from e` と異なり __suppress_context__ は False のままだが、
+    # 呼び出し元リトライループで raise する時点では __context__ が None のため実害なし。
     if isinstance(e, httpx.TimeoutException):
         timeout_exc = APITimeoutError(f"Request timeout: {e}")
         timeout_exc.__cause__ = e
