@@ -237,7 +237,7 @@ def _classify_error(
 
     Raises:
         APIClientError: TooManyRedirects または InvalidURL の場合
-            （_map_request_error() 内で raise され、本関数の return には到達しない）
+            （ログ出力後 _map_request_error() を経由して raise される）
 
     """
     log_prefix = "async_" if is_async else ""
