@@ -1,22 +1,27 @@
 """Shared tests for module-level utility functions in api_client.py (non-async-specific).
 
-These tests verify exception hierarchy, _safe_parse_json(), and _map_request_error()
+These tests verify exception hierarchy, _safe_parse_json(), _map_request_error(),
+_resolve_client_config(), and _classify_error()
 which are module-level utility functions independent of AsyncAPIClient/SyncAPIClient.
 
 Consolidated from test_async_client_error_handling.py and
 test_sync_client_error_handling.py to eliminate duplication.
 
-テストケース一覧（15件）:
+テストケース一覧（22件）:
     - Exception (3件): hierarchy, http_error_status_preservation, retry_error_message
     - JSON Parsing (3件): invalid_json, json_error_init, json_error_without_response
     - Request Error Mapping (5件): too_many_redirects, invalid_url, timeout,
       connect_error, network_error
     - Classify Error (4件): non_retryable_logs_error, non_retryable_async_prefix,
       retryable_logs_warning, retryable_timeout
+    - Resolve Client Config (7件): base_url_none_uses_settings, empty_base_url_raises,
+      whitespace_base_url_raises, none_timeout_uses_settings,
+      headers_none_returns_defaults_only, headers_merged_with_defaults,
+      custom_headers_override_defaults
 """
 
 import json
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import httpx
 import pytest
@@ -30,6 +35,7 @@ from utils.api_client import (
     APITimeoutError,
     _classify_error,
     _map_request_error,
+    _resolve_client_config,
     _safe_parse_json,
 )
 
@@ -220,3 +226,88 @@ def test_classify_error_retryable_timeout() -> None:
     mock_logger.warning.assert_called_once()
     call_kwargs = mock_logger.warning.call_args
     assert call_kwargs[0][0] == "async_request_error"
+
+
+# =============================================================================
+# Resolve Client Config Tests（_resolve_client_config の検証）
+# =============================================================================
+
+
+class MockAPISettings:
+    def __init__(self) -> None:
+        self.base_url = "https://settings.example.com"
+        self.timeout = 30.0
+        self.retry_count = 3
+        self.retry_delay = 1.0
+        self.user_agent = "test-agent/1.0"
+
+
+class MockSettings:
+    def __init__(self) -> None:
+        self.api = MockAPISettings()
+
+
+@pytest.fixture()
+def mock_settings() -> MockSettings:
+    return MockSettings()
+
+
+def test_resolve_client_config_base_url_none_uses_settings(mock_settings: MockSettings) -> None:
+    """base_url=None の場合 settings.api.base_url が使われる"""
+    with patch("utils.api_client.settings", mock_settings):
+        base_url, _, _, _, _ = _resolve_client_config(None, None, None, None, None)
+    assert base_url == "https://settings.example.com"
+
+
+def test_resolve_client_config_empty_base_url_raises(mock_settings: MockSettings) -> None:
+    """空文字列の base_url で ValueError が発生"""
+    with patch("utils.api_client.settings", mock_settings):
+        with pytest.raises(ValueError, match="base_url が空です"):
+            _resolve_client_config("", None, None, None, None)
+
+
+def test_resolve_client_config_whitespace_base_url_raises(mock_settings: MockSettings) -> None:
+    """スペースのみの base_url で ValueError が発生"""
+    with patch("utils.api_client.settings", mock_settings):
+        with pytest.raises(ValueError, match="base_url が空です"):
+            _resolve_client_config("   ", None, None, None, None)
+
+
+def test_resolve_client_config_none_timeout_uses_settings(mock_settings: MockSettings) -> None:
+    """timeout=None の場合 settings.api.timeout が使われる"""
+    with patch("utils.api_client.settings", mock_settings):
+        _, timeout, _, _, _ = _resolve_client_config("https://example.com", None, None, None, None)
+    assert timeout == 30.0
+
+
+def test_resolve_client_config_headers_none_returns_defaults_only(
+    mock_settings: MockSettings,
+) -> None:
+    """headers=None の場合デフォルトヘッダーのみ返される"""
+    with patch("utils.api_client.settings", mock_settings):
+        _, _, _, _, headers = _resolve_client_config("https://example.com", None, None, None, None)
+    assert "User-Agent" in headers
+    assert "Accept" in headers
+    assert "Content-Type" in headers
+    assert len(headers) == 3
+
+
+def test_resolve_client_config_headers_merged_with_defaults(mock_settings: MockSettings) -> None:
+    """カスタムヘッダーがデフォルトヘッダーとマージされる"""
+    with patch("utils.api_client.settings", mock_settings):
+        _, _, _, _, headers = _resolve_client_config(
+            "https://example.com", None, None, None, {"X-Custom": "value"}
+        )
+    assert headers["X-Custom"] == "value"
+    assert "User-Agent" in headers
+
+
+def test_resolve_client_config_custom_headers_override_defaults(
+    mock_settings: MockSettings,
+) -> None:
+    """カスタムヘッダーがデフォルトヘッダーを上書きできる"""
+    with patch("utils.api_client.settings", mock_settings):
+        _, _, _, _, headers = _resolve_client_config(
+            "https://example.com", None, None, None, {"User-Agent": "custom-agent"}
+        )
+    assert headers["User-Agent"] == "custom-agent"

@@ -135,11 +135,13 @@ def _map_request_error(e: httpx.RequestError | httpx.InvalidURL) -> APIClientErr
         APIClientError: 非リトライ可能エラー（TooManyRedirects, InvalidURL）
 
     Note:
-        httpx.RequestError階層:
-        - TimeoutException (ConnectTimeout, ReadTimeout) → リトライ可能
-        - ConnectError → リトライ可能
-        - NetworkError → リトライ可能
-        - TooManyRedirects, InvalidURL → 非リトライ（即座にraise）
+        httpx例外の扱い:
+        - RequestError サブクラス（リトライ可能）:
+          TimeoutException (ConnectTimeout, ReadTimeout), ConnectError, NetworkError
+        - RequestError サブクラス（非リトライ）:
+          TooManyRedirects → 即座にraise
+        - 独立例外（RequestError のサブクラスではない、非リトライ）:
+          InvalidURL → 即座にraise
 
     """
     # Non-retryable errors - raise immediately (no point in retrying)
