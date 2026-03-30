@@ -602,6 +602,11 @@ class TestUserModel:
                 "HTTP://Example.COM", "http://example.com", id="uppercase_scheme_and_host"
             ),
             pytest.param("HtTp://Test.Com", "http://test.com", id="mixed_case_scheme_and_host"),
+            pytest.param(
+                "HTTP://Example.COM:8080",
+                "http://example.com:8080",
+                id="uppercase_scheme_and_host_with_port",
+            ),
         ],
     )
     def test_user_website_normalizes_scheme_and_host(
