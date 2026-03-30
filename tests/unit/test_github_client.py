@@ -637,8 +637,8 @@ async def test_invalid_rate_limit_header_403():
                 await client.get_user("octocat")
 
     warning_logs = [log for log in log_output if log.get("event") == "invalid_rate_limit_header"]
-    # 共通パス(default=999)と403固有パス(default=-1)の2箇所でwarning発生
-    # 999 >= 10 のため rate_limit_low は未発生、invalid_rate_limit_header のみ2件
+    # 共通パス(default=_RATE_LIMIT_FALLBACK_REMAINING)と403固有パス(default=_RATE_LIMIT_FORBIDDEN_FALLBACK)の2箇所でwarning発生  # noqa: E501
+    # _RATE_LIMIT_FALLBACK_REMAINING(999) >= _RATE_LIMIT_WARNING_THRESHOLD(10) のため rate_limit_low は未発生、invalid_rate_limit_header のみ2件  # noqa: E501
     assert len(warning_logs) == 2
     for log_entry in warning_logs:
         assert log_entry["log_level"] == "warning"
