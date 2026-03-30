@@ -214,9 +214,8 @@ def _classify_error(
 ) -> APIClientError:
     """Sync/Async共通のネットワークエラー分類・ログ出力。
 
-    非リトライエラー(TooManyRedirects/InvalidURL)はERRORログ出力後、
-    _map_request_error()経由で即座にraiseされる。
-    リトライ可能エラーはWARNINGログ出力後、例外オブジェクトを返す。
+    エラー種別に応じてERROR/WARNINGログを出力し、_map_request_error()を呼び出す。
+    非リトライエラー(TooManyRedirects/InvalidURL)は_map_request_error()内で即座にraiseされる。
 
     Args:
         e: httpxのリクエストエラーまたはInvalidURL
