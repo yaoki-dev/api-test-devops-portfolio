@@ -53,14 +53,14 @@ def _strip_invisible_chars(v: str) -> str:
 # =============================================================================
 
 
-def sanitize_user_content(value: str | None) -> str:
+def sanitize_user_content(value: str) -> str:
     """ユーザー生成コンテンツをサニタイズ
 
     XSS攻撃を防ぐため、HTMLエスケープを適用。
     特殊文字（<, >, &, ", '）をHTMLエンティティに変換。
 
     Args:
-        value: サニタイズ対象の文字列（Noneの場合は空文字列を返す）
+        value: サニタイズ対象の文字列
 
     Returns:
         サニタイズ済み文字列
@@ -70,8 +70,6 @@ def sanitize_user_content(value: str | None) -> str:
         '&lt;script&gt;alert(&#x27;XSS&#x27;)&lt;/script&gt;'
 
     """
-    if not value:
-        return ""
     # quote=True: シングルクォート、ダブルクォートもエスケープ
     return html.escape(value, quote=True)
 
@@ -353,8 +351,8 @@ class User(BaseModel):
         """websiteフィールドのURLスキーム検証（allowlist方式）
 
         RFC 3986準拠のスキーム検出で、http://とhttps://のみ許可する。
-        スキームなしドメイン（例: hildegard.org）やプロトコル相対URL（//cdn.example.com）は許可。
-        javascript:, data:, ftp:, file: 等の危険スキームは全て拒否。
+        スキームなしドメイン（例: hildegard.org）は許可。
+        javascript:, data:, ftp:, file: 等の危険スキームおよびプロトコル相対URL（//）は全て拒否。
 
         Args:
             v: バリデーション対象のURL文字列
@@ -363,15 +361,19 @@ class User(BaseModel):
             バリデーション済みURL文字列（制御文字除去・前後空白除去済み）
 
         Raises:
-            ValueError: 危険なURLスキームが検出された場合、またはサニタイズ後にURLが空になった場合
+            ValueError: 危険なURLスキームまたはプロトコル相対URLが検出された場合、
+                       またはサニタイズ後にURLが空になった場合
 
         """
         sanitized = _strip_invisible_chars(v).strip()
         if not sanitized:
             raise ValueError("websiteが空になりました（制御文字除去後）")
+        # プロトコル相対URLを明示的に拒否（攻撃面削減）
+        if sanitized.startswith("//"):
+            raise ValueError("プロトコル相対URLは許可されていません")
         sanitized_lower = sanitized.lower()
-        # http/https と プロトコル相対URLは許可
-        if sanitized_lower.startswith(("http://", "https://")) or sanitized.startswith("//"):
+        # http/https スキーム付きURLは許可
+        if sanitized_lower.startswith(("http://", "https://")):
             return sanitized
         # RFC 3986スキーム検出: 他のスキームが存在すれば拒否
         # domain:port パターン（例: example.com:8080）はスキーム部に "." を含む点で区別

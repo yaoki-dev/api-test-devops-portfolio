@@ -34,7 +34,7 @@ pytestmark = pytest.mark.unit
 # Reference: https://cheatsheetseries.owasp.org/cheatsheets/XSS_Filter_Evasion_Cheat_Sheet.html
 # =============================================================================
 
-type XSSVector = tuple[str | None, str]  # XSS_TEST_VECTORS 用（None エントリあり）
+type XSSVector = tuple[str, str]  # XSS_TEST_VECTORS 用
 
 # XSSテストベクター定数
 XSS_TEST_VECTORS: Final[list[XSSVector]] = [
@@ -102,7 +102,6 @@ XSS_TEST_VECTORS: Final[list[XSSVector]] = [
     # Category 5: Edge Cases
     # ============================================
     ("", ""),  # Empty string
-    (None, ""),  # None handling → empty
     ("Normal text", "Normal text"),  # Passthrough (no XSS)
     (
         "Hello <b>World</b>",
@@ -232,7 +231,6 @@ class TestSanitizeUserContent:
             "attr-single-quote",
             # Category 5: Edge Cases
             "edge-empty",
-            "edge-none",
             "edge-passthrough",
             "edge-safe-html",
             # Category 6: Special Characters
@@ -245,7 +243,7 @@ class TestSanitizeUserContent:
     )
     def test_sanitize_user_content(
         self,
-        input_value: str | None,
+        input_value: str,
         expected_output: str,
     ) -> None:
         """XSSサニタイゼーションの網羅テスト（OWASP Cheat Sheetベース・プロジェクト独自分類）"""
@@ -551,6 +549,12 @@ class TestUserModel:
         with pytest.raises(ValidationError):
             User(**valid_user_data)
 
+    def test_user_website_rejects_protocol_relative_url(self, valid_user_data: _UserData) -> None:
+        """User.website がプロトコル相対URLを明示的なエラーで拒否すること"""
+        valid_user_data["website"] = "//cdn.example.com/image.jpg"
+        with pytest.raises(ValidationError, match="プロトコル相対URLは許可されていません"):
+            User(**valid_user_data)
+
     @pytest.mark.parametrize(
         "safe_url",
         [
@@ -558,18 +562,20 @@ class TestUserModel:
             "example.com/page?a=1&b=2",
             "https://valid.com",
             "http://valid.com",
-            "//cdn.example.com/image.jpg",
             "example.com:8080",
             "sub.domain.com:443/path",
+            "example.com:8080/path?query=1",
+            "http://example.com:8080",
         ],
         ids=[
             "no_scheme_domain",
             "no_scheme_with_query",
             "https",
             "http",
-            "protocol_relative",
             "domain_port",
             "subdomain_port_path",
+            "domain_port_path_query",
+            "http_with_port",
         ],
     )
     def test_user_website_allows_safe_url(self, valid_user_data: _UserData, safe_url: str) -> None:
@@ -578,7 +584,6 @@ class TestUserModel:
         user = User(**valid_user_data)
         assert user.website == safe_url
 
-    @pytest.mark.unit
     @pytest.mark.parametrize(
         ("dirty_safe_url", "expected"),
         [
@@ -599,7 +604,6 @@ class TestUserModel:
         user = User(**valid_user_data)
         assert user.website == expected
 
-    @pytest.mark.unit
     @pytest.mark.parametrize(
         "control_only",
         [
@@ -796,6 +800,38 @@ class TestPhotoModel:
         assert photo.thumbnail_url == "https://via.placeholder.com/150/92c952"
 
     @pytest.mark.parametrize(
+        ("url", "thumbnail_url"),
+        [
+            pytest.param(
+                "https://via.placeholder.com/600/92c952",
+                "https://via.placeholder.com/150/92c952",
+                id="both_https",
+            ),
+            pytest.param(
+                "http://via.placeholder.com/600/92c952",
+                "http://via.placeholder.com/150/92c952",
+                id="both_http",
+            ),
+            pytest.param(
+                "https://via.placeholder.com/600/92c952",
+                "http://via.placeholder.com/150/92c952",
+                id="mixed_https_http",
+            ),
+        ],
+    )
+    def test_photo_url_scheme_allows_http_https(self, url: str, thumbnail_url: str) -> None:
+        """Photo.validate_url_scheme が http/https URLを許可すること"""
+        photo = Photo(
+            albumId=1,
+            id=1,
+            title="Test",
+            url=url,
+            thumbnailUrl=thumbnail_url,
+        )
+        assert photo.url == url
+        assert photo.thumbnail_url == thumbnail_url
+
+    @pytest.mark.parametrize(
         ("dirty", "expected"),
         _XSS_MODEL_PARAMS,
     )
@@ -929,6 +965,43 @@ class TestExtraFieldsForbidden:
                 },
                 {"extra": "not_allowed"},
                 id="Photo",
+            ),
+            pytest.param(
+                Address,
+                {
+                    "street": "Test St",
+                    "suite": "Apt 1",
+                    "city": "TestCity",
+                    "zipcode": "12345",
+                    "geo": {"lat": "0", "lng": "0"},
+                },
+                {"extra": "not_allowed"},
+                id="Address",
+            ),
+            pytest.param(
+                User,
+                {
+                    "id": 1,
+                    "name": "Test User",
+                    "username": "testuser",
+                    "email": "test@example.com",
+                    "address": {
+                        "street": "123 Test St",
+                        "suite": "Apt 1",
+                        "city": "TestCity",
+                        "zipcode": "12345",
+                        "geo": {"lat": "0", "lng": "0"},
+                    },
+                    "phone": "555-1234",
+                    "website": "example.com",
+                    "company": {
+                        "name": "Test Co",
+                        "catchPhrase": "Testing",
+                        "bs": "tests",
+                    },
+                },
+                {"extra": "not_allowed"},
+                id="User",
             ),
         ],
     )
