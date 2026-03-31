@@ -206,6 +206,8 @@ def _resolve_client_config(
         "Accept": "application/json",
         "Content-Type": "application/json",
     }
+    # `if headers:` ではなく `is not None` を使用: 空辞書({})を渡した場合も
+    # update()を実行する（no-opだが、Noneと空辞書の意味論を明確に区別するため）
     if headers is not None:
         default_headers.update(headers)
 
