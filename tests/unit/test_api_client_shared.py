@@ -325,10 +325,20 @@ def test_resolve_client_config_headers_none_returns_defaults_only(
     """headers=None の場合デフォルトヘッダーのみ返される"""
     with patch("utils.api_client.settings", mock_settings):
         _, _, _, _, headers = _resolve_client_config("https://example.com", None, None, None, None)
-    assert "User-Agent" in headers
-    assert "Accept" in headers
-    assert "Content-Type" in headers
-    assert len(headers) == 3
+    assert set(headers.keys()) == {"User-Agent", "Accept", "Content-Type"}
+
+
+def test_resolve_client_config_headers_empty_dict_triggers_update(
+    mock_settings: MockSettings,
+) -> None:
+    """headers={} (空dict) の場合も update() が呼ばれデフォルトヘッダーが含まれる
+
+    `if headers is not None:` の明示的Noneチェックにより、
+    空dictはNoneと異なる扱いになることを検証する。
+    """
+    with patch("utils.api_client.settings", mock_settings):
+        _, _, _, _, headers = _resolve_client_config("https://example.com", None, None, None, {})
+    assert set(headers.keys()) == {"User-Agent", "Accept", "Content-Type"}
 
 
 def test_resolve_client_config_headers_merged_with_defaults(mock_settings: MockSettings) -> None:

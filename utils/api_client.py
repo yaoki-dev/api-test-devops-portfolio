@@ -246,7 +246,8 @@ def _classify_error(
 
     Raises:
         APIClientError: TooManyRedirects または InvalidURL の場合
-            （ログ出力後 _map_request_error() を経由して raise される）
+            （logger.error でログ出力後、_map_request_error() を経由して raise される）。
+            リトライ可能エラーは logger.warning でログ出力し、raise されない。
 
     """
     if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
