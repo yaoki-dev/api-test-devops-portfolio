@@ -778,13 +778,6 @@ class TestPostModel:
             Post(id=1, userId=1, title="a" * 201, body="Body")
         assert "title" in str(exc_info.value)
 
-    def test_post_title_exceeds_max_length_raises_validation_error(self) -> None:
-        """title>200文字でValidationErrorが発生する（境界値テスト: max_length=200）"""
-        long_title = "a" * 201
-        with pytest.raises(ValidationError) as exc_info:
-            Post(id=1, userId=1, title=long_title, body="Body")
-        assert "title" in str(exc_info.value)
-
     def test_post_body_exceeds_max_length_raises_validation_error(self) -> None:
         """body>5000文字でValidationErrorが発生する（境界値テスト: max_length=5000）"""
         long_body = "a" * 5001
@@ -1144,6 +1137,22 @@ class TestPhotoModel:
                 title="Test",
                 url=dangerous_url,
                 thumbnailUrl="https://example.com/thumb.jpg",
+            )
+
+    def test_photo_url_rejects_surrogate_codepoint(self) -> None:
+        """孤立サロゲートを含むURLはPydanticのUnicodeバリデーションで拒否されること（E2E）
+
+        Note:
+            Pydanticはfield_validator呼び出し前にstring_unicodeエラーで拒否する。
+            _strip_invisible_charsのサロゲート除去は直接文字列呼び出し時に機能する。
+        """
+        with pytest.raises(ValidationError, match="string_unicode"):
+            Photo(
+                albumId=1,
+                id=1,
+                title="Test",
+                url="https://\ud800example.com/photo.jpg",
+                thumbnailUrl="https://via.placeholder.com/150",
             )
 
 

@@ -69,7 +69,7 @@ def sanitize_user_content(value: str) -> str:
 
     Note:
         主にPydantic field_validator経由で使用されます。
-        str型シグネチャのため、Noneを渡すとAttributeErrorが発生します。
+        str型シグネチャのため、Noneを渡すとTypeErrorが発生します。
 
     Args:
         value: サニタイズ対象の文字列
