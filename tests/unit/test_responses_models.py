@@ -1030,6 +1030,17 @@ class TestPhotoModel:
                 thumbnailUrl="https://example.com/thumb.jpg",
             )
 
+    def test_photo_rejects_control_char_only_thumbnail_url(self) -> None:
+        """制御文字のみのPhoto.thumbnail_urlが空文字エラーで拒否されること"""
+        with pytest.raises(ValidationError, match="URLが空になりました"):
+            Photo(
+                albumId=1,
+                id=1,
+                title="Test",
+                url="https://via.placeholder.com/600/92c952",
+                thumbnailUrl="\u200b\u200c\u200d",
+            )
+
     @pytest.mark.parametrize(
         "url",
         [
