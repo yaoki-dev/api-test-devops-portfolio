@@ -24,7 +24,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 
 # RFC 3986 準拠のスキーム検出パターン（scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) ":"）
 _SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
-_INVISIBLE_CATEGORIES = frozenset({"Cf", "Cs", "Cc", "Mn", "Zs", "Zl", "Zp"})
+_INVISIBLE_CATEGORIES = frozenset({"Cf", "Cc", "Mn", "Zs", "Zl", "Zp"})
 
 
 def _strip_invisible_chars(v: str) -> str:
@@ -32,7 +32,7 @@ def _strip_invisible_chars(v: str) -> str:
 
     URLスキームバイパス防止のため、以下のUnicodeカテゴリを除去:
     - Cf: Format文字（Bidi制御, ゼロ幅文字, Word Joiner等）
-    - Cs: Surrogate（不正なサロゲートペア）
+    - Cs: Surrogate（孤立サロゲート U+D800-U+DFFF）— normalize()前にpre-filterで除去済み
     - Cc: 制御文字（C0/C1制御文字, DEL等）
     - Mn: 非スペーシングマーク（Mark, Nonspacing）（Variation Selectors U+FE00-U+FE0F、
           アクセント記号U+0300等）— スキームバイパス防止
