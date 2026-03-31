@@ -569,7 +569,9 @@ class Photo(BaseModel):
             検証済みURL文字列（制御文字除去・前後空白除去済み）
 
         Raises:
-            ValueError: URLがhttp/httpsで始まらない場合
+            ValueError: URLが空になった場合、
+                       またはURLがhttp/httpsで始まらない場合、
+                       または有効なホスト名が含まれていない場合
 
         """
         sanitized = _strip_invisible_chars(v).strip()
