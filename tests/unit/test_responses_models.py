@@ -957,6 +957,43 @@ class TestPhotoModel:
         assert photo.thumbnail_url == expected_thumbnail
 
     @pytest.mark.parametrize(
+        ("url", "thumbnail_url", "expected_url", "expected_thumbnail"),
+        [
+            pytest.param(
+                "HTTPS://Example.COM/photo.jpg",
+                "HTTP://Via.Placeholder.COM/150/92c952",
+                "https://example.com/photo.jpg",
+                "http://via.placeholder.com/150/92c952",
+                id="uppercase_host_normalized",
+            ),
+            pytest.param(
+                "https://EXAMPLE.COM/PHOTO.jpg",
+                "https://VIA.PLACEHOLDER.COM/thumb.jpg",
+                "https://example.com/PHOTO.jpg",
+                "https://via.placeholder.com/thumb.jpg",
+                id="uppercase_host_only_path_preserved",
+            ),
+        ],
+    )
+    def test_photo_validates_host_normalization(
+        self,
+        url: str,
+        thumbnail_url: str,
+        expected_url: str,
+        expected_thumbnail: str,
+    ) -> None:
+        """Photo.validate_url_schemeがホスト部を小文字正規化すること（RFC 3986）"""
+        photo = Photo(
+            albumId=1,
+            id=1,
+            title="Test",
+            url=url,
+            thumbnailUrl=thumbnail_url,
+        )
+        assert photo.url == expected_url
+        assert photo.thumbnail_url == expected_thumbnail
+
+    @pytest.mark.parametrize(
         ("dirty", "expected"),
         _XSS_MODEL_PARAMS,
     )
