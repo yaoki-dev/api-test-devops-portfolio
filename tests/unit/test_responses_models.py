@@ -119,34 +119,29 @@ XSS_TEST_VECTORS: Final[list[XSSVector]] = [
 ]
 
 # モデルテスト専用 XSS ベクター（OWASP Cheat Sheetベース・独自5分類）
-# 生データ: (dirty, expected, id) タプル形式
-_XSS_RAW_VECTORS: Final[list[tuple[str, str, str]]] = [
-    (
+# pytest.param 形式（テストクラスで直接使用）
+_XSS_MODEL_PARAMS: Final = [
+    pytest.param(
         "<script>alert('XSS')</script>",
         "&lt;script&gt;alert(&#x27;XSS&#x27;)&lt;/script&gt;",
-        "script-basic",
+        id="script-basic",
     ),
-    (
+    pytest.param(
         "<img src=x onerror=alert(1)>",
         "&lt;img src=x onerror=alert(1)&gt;",
-        "event-img-onerror",
+        id="event-img-onerror",
     ),
-    (
+    pytest.param(
         '<a href="javascript:alert(1)">',
         "&lt;a href=&quot;javascript:alert(1)&quot;&gt;",
-        "uri-javascript-anchor",
+        id="uri-javascript-anchor",
     ),
-    (
+    pytest.param(
         '" onclick="alert(1)"',
         "&quot; onclick=&quot;alert(1)&quot;",
-        "attr-double-quote",
+        id="attr-double-quote",
     ),
-    ("Test & Test", "Test &amp; Test", "char-ampersand"),
-]
-
-# 既存互換: pytest.param 形式（他テストクラスで直接使用）
-_XSS_MODEL_PARAMS: Final = [
-    pytest.param(dirty, expected, id=xss_id) for dirty, expected, xss_id in _XSS_RAW_VECTORS
+    pytest.param("Test & Test", "Test &amp; Test", id="char-ampersand"),
 ]
 
 
@@ -259,6 +254,16 @@ class TestSanitizeUserContent:
         result = sanitize_user_content(test_input)
 
         assert result == expected
+
+    def test_sanitize_user_content_rejects_none(self) -> None:
+        """sanitize_user_content に None を直接渡すと例外が発生すること（str型シグネチャの契約確認）
+
+        Note:
+            html.escape() は None に対して AttributeError を発生させる。
+            TypeError ではなく AttributeError であることに注意。
+        """
+        with pytest.raises((TypeError, AttributeError)):
+            sanitize_user_content(None)  # type: ignore[arg-type]
 
 
 @pytest.mark.unit
@@ -403,7 +408,8 @@ class TestCompanyModel:
 class TestUserModel:
     """User モデルのテスト
 
-    XSS サニタイゼーション: User.name フィールドが html.escape() でサニタイズされることを確認。
+    XSS サニタイゼーション: User.name, username, phone フィールドが
+    html.escape() でサニタイズされることを確認。
     websiteフィールドは危険スキーム（javascript:, data:, vbscript:）バリデーション。
     XSS カバレッジ（OWASP Cheat Sheetベース・プロジェクト独自分類）:
         Cat.1 Script Tags / Cat.2 Event Handlers / Cat.3 URI Schemes /
@@ -805,9 +811,9 @@ class TestCommentModel:
     @pytest.mark.parametrize(
         ("field", "dirty", "expected"),
         [
-            pytest.param(field, dirty, expected, id=f"{field}-{xss_id}")
+            pytest.param(field, param.values[0], param.values[1], id=f"{field}-{param.id}")
             for field in ("name", "body")
-            for dirty, expected, xss_id in _XSS_RAW_VECTORS
+            for param in _XSS_MODEL_PARAMS
         ],
     )
     def test_comment_sanitizes_xss(self, field: str, dirty: str, expected: str) -> None:
@@ -1013,6 +1019,43 @@ class TestPhotoModel:
                 title="Test",
                 url="\u200b\u200c\u200d",
                 thumbnailUrl="https://example.com/thumb.jpg",
+            )
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            pytest.param("https:///path", id="empty-netloc-https"),
+            pytest.param("http:///path", id="empty-netloc-http"),
+            pytest.param("https:///", id="empty-netloc-root"),
+        ],
+    )
+    def test_photo_url_rejects_empty_netloc(self, url: str) -> None:
+        """Photo.url に netloc 空の URL が渡されたとき ValidationError を発生させること"""
+        with pytest.raises(ValidationError, match="有効なホスト名が含まれていません"):
+            Photo(
+                albumId=1,
+                id=1,
+                title="Test",
+                url=url,
+                thumbnailUrl="https://example.com/thumb.jpg",
+            )
+
+    @pytest.mark.parametrize(
+        "thumbnail_url",
+        [
+            pytest.param("https:///thumb", id="empty-netloc-thumbnail-https"),
+            pytest.param("http:///thumb", id="empty-netloc-thumbnail-http"),
+        ],
+    )
+    def test_photo_thumbnail_url_rejects_empty_netloc(self, thumbnail_url: str) -> None:
+        """Photo.thumbnail_url に netloc 空の URL が渡されたとき ValidationError を発生させること"""
+        with pytest.raises(ValidationError, match="有効なホスト名が含まれていません"):
+            Photo(
+                albumId=1,
+                id=1,
+                title="Test",
+                url="https://example.com/photo.jpg",
+                thumbnailUrl=thumbnail_url,
             )
 
     @pytest.mark.unit
