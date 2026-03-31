@@ -75,7 +75,10 @@ def sanitize_user_content(value: str) -> str:
 
     Note:
         主にPydantic field_validator経由で使用されます。
-        str型シグネチャのため、Noneを渡すとTypeErrorが発生します。
+        非str型を渡すとValueErrorが発生します。
+
+    Raises:
+        ValueError: value が str 型でない場合
 
     Args:
         value: サニタイズ対象の文字列
@@ -88,6 +91,8 @@ def sanitize_user_content(value: str) -> str:
         '&lt;script&gt;alert(&#x27;XSS&#x27;)&lt;/script&gt;'
 
     """
+    if not isinstance(value, str):
+        raise ValueError(f"文字列が必要です（受け取った型: {type(value).__name__}）")
     # quote=True: シングルクォート、ダブルクォートもエスケープ
     return html.escape(value, quote=True)
 

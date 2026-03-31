@@ -256,13 +256,13 @@ class TestSanitizeUserContent:
         assert result == expected
 
     def test_sanitize_user_content_rejects_none(self) -> None:
-        """sanitize_user_content に None を直接渡すと例外が発生すること（str型シグネチャの契約確認）
+        """None を渡すと ValueError が発生すること（型チェックの契約確認）
 
         Note:
-            html.escape() は None に対して AttributeError を発生させる。
-            TypeError ではなく AttributeError であることに注意。
+            Pydantic field_validator は ValueError/AssertionError のみ
+            ValidationError に変換するため、明示的に ValueError を raise する。
         """
-        with pytest.raises(AttributeError):
+        with pytest.raises(ValueError, match="文字列が必要です"):
             sanitize_user_content(None)  # type: ignore[arg-type]
 
 
