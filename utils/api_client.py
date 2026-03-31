@@ -152,8 +152,8 @@ def _map_request_error(e: httpx.RequestError | httpx.InvalidURL) -> APIClientErr
         raise APIClientError(f"Non-retryable request error: {e}") from e
 
     # Retryable errors: returnするため `raise ... from e` は使えず __cause__ を手動設定する。
-    # CPython仕様(PEP 415): exc.__cause__ = e を設定すると __suppress_context__ も
-    # 自動でTrueになるため、`raise exc from e` と実質同じ例外チェーンになる。
+    # PEP 3134: exc.__cause__ = e を設定すると __suppress_context__ が自動で True になり、
+    # 呼び出し元が raise した際に `raise exc from e` と同じ例外チェーン表示になる。
     if isinstance(e, httpx.TimeoutException):
         timeout_exc = APITimeoutError(f"Request timeout: {e}")
         timeout_exc.__cause__ = e
@@ -247,6 +247,7 @@ def _classify_error(
     Raises:
         APIClientError: TooManyRedirects または InvalidURL の場合
             （logger.error でログ出力後、_map_request_error() を経由して raise される）。
+            注: サブクラスではなく APIClientError 基底クラスが raise される。
             リトライ可能エラーは logger.warning でログ出力し、raise されない。
 
     """

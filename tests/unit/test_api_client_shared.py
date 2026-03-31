@@ -180,7 +180,7 @@ def test_classify_error_non_retryable_logs_error() -> None:
     error = httpx.TooManyRedirects("Max redirects")
     mock_logger = Mock()
 
-    with pytest.raises(APIClientError):
+    with pytest.raises(APIClientError) as exc_info:
         _classify_error(error, mock_logger, is_async=False, method="GET", endpoint="/test")
 
     mock_logger.error.assert_called_once()
@@ -190,6 +190,7 @@ def test_classify_error_non_retryable_logs_error() -> None:
     assert call_kwargs[1]["error_type"] == "TooManyRedirects"
     assert call_kwargs[1]["method"] == "GET"
     assert call_kwargs[1]["endpoint"] == "/test"
+    assert isinstance(exc_info.value.__cause__, httpx.TooManyRedirects)
 
 
 def test_classify_error_non_retryable_async_field() -> None:
@@ -197,13 +198,14 @@ def test_classify_error_non_retryable_async_field() -> None:
     error = httpx.InvalidURL("Bad URL")
     mock_logger = Mock()
 
-    with pytest.raises(APIClientError):
+    with pytest.raises(APIClientError) as exc_info:
         _classify_error(error, mock_logger, is_async=True, method="GET", endpoint="/test")
 
     mock_logger.error.assert_called_once()
     call_kwargs = mock_logger.error.call_args
     assert call_kwargs[0][0] == "request_error_non_retryable"
     assert call_kwargs[1]["is_async"] is True
+    assert isinstance(exc_info.value.__cause__, httpx.InvalidURL)
 
 
 def test_classify_error_retryable_logs_warning() -> None:
