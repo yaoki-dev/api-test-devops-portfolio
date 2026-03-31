@@ -719,6 +719,29 @@ class TestUserModel:
         with pytest.raises(ValidationError, match="websiteが空になりました"):
             User(**valid_user_data)
 
+    @pytest.mark.parametrize(
+        "userinfo_url",
+        [
+            "https://legit.com@evil.com",
+            "http://legit.com@evil.com",
+            "https://attacker@legit.com",
+            "legit.com@evil.com",
+        ],
+        ids=[
+            "https_username_bypass",
+            "http_username_bypass",
+            "https_attacker_username",
+            "schemeless_username_bypass",
+        ],
+    )
+    def test_user_website_rejects_userinfo(
+        self, valid_user_data: _UserData, userinfo_url: str
+    ) -> None:
+        """User.website がuserinfo付きURLを拒否すること（RFC 3986 userinfoバイパス防止）"""
+        valid_user_data["website"] = userinfo_url
+        with pytest.raises(ValidationError, match="URLにuserinfo"):
+            User(**valid_user_data)
+
 
 class TestPostModel:
     """Post モデルのテスト"""

@@ -386,7 +386,9 @@ class User(BaseModel):
             ValueError: 危険なURLスキームまたはプロトコル相対URLが検出された場合、
                        またはサニタイズ後にURLが空になった場合、
                        または有効なホスト名が含まれていない場合、
-                       またはスキームなしURLにポートが指定された場合（例: example.com:8080）
+                       またはスキームなしURLにポートが指定された場合（例: example.com:8080）、
+                       またはURLにuserinfo（ユーザー名/パスワード）が含まれている場合
+                       （例: https://legit.com@evil.com — RFC 3986 userinfoバイパス防止）
 
         Note:
             websiteフィールドの値をHTMLコンテキストへ出力する際は、
@@ -407,6 +409,8 @@ class User(BaseModel):
             parsed = urlparse(sanitized)
             if not parsed.netloc:
                 raise ValueError("有効なホスト名が含まれていません")
+            if parsed.username is not None or parsed.password is not None:
+                raise ValueError("URLにuserinfo（ユーザー名/パスワード）は指定できません")
             return urlunparse(
                 parsed._replace(
                     scheme=parsed.scheme.lower(),
@@ -423,6 +427,8 @@ class User(BaseModel):
         parsed = urlparse("https://" + sanitized)
         if not parsed.netloc:
             raise ValueError("有効なホスト名が含まれていません")
+        if parsed.username is not None or parsed.password is not None:
+            raise ValueError("URLにuserinfo（ユーザー名/パスワード）は指定できません")
         if parsed.port is not None:
             raise ValueError(
                 "スキームなしURLにポートは指定できません（http(s)://を明示してください）"
