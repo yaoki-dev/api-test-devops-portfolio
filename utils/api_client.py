@@ -138,7 +138,9 @@ def _map_request_error(e: httpx.RequestError | httpx.InvalidURL) -> APIClientErr
     Note:
         httpx例外の扱い:
         - RequestError サブクラス（リトライ可能）:
-          TimeoutException (ConnectTimeout, ReadTimeout), ConnectError, NetworkError
+          TimeoutException (ConnectTimeout, ReadTimeout),
+          NetworkError (ConnectError, ReadError, WriteError 等のサブクラスを含む)
+          ※ ConnectError は NetworkError のサブクラスだが個別分岐で処理
         - RequestError サブクラス（非リトライ）:
           TooManyRedirects → 即座にraise
         - 独立例外（RequestError のサブクラスではない、非リトライ）:
