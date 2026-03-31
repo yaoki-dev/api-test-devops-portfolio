@@ -152,8 +152,8 @@ def _map_request_error(e: httpx.RequestError | httpx.InvalidURL) -> APIClientErr
         raise APIClientError(f"Non-retryable request error: {e}") from e
 
     # Retryable errors: returnするため `raise ... from e` は使えず __cause__ を手動設定する。
-    # `raise ... from e` と異なり __suppress_context__ は False のままだが、
-    # 呼び出し元リトライループで raise する時点では __context__ が None のため実害なし。
+    # CPython仕様(PEP 3134): exc.__cause__ = e を設定すると __suppress_context__ も
+    # 自動でTrueになるため、`raise exc from e` と実質同じ例外チェーンになる。
     if isinstance(e, httpx.TimeoutException):
         timeout_exc = APITimeoutError(f"Request timeout: {e}")
         timeout_exc.__cause__ = e

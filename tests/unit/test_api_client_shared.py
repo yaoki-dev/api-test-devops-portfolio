@@ -185,6 +185,8 @@ def test_classify_error_non_retryable_logs_error() -> None:
     call_kwargs = mock_logger.error.call_args
     assert call_kwargs[0][0] == "request_error_non_retryable"
     assert call_kwargs[1]["error_type"] == "TooManyRedirects"
+    assert call_kwargs[1]["method"] == "GET"
+    assert call_kwargs[1]["endpoint"] == "/test"
 
 
 def test_classify_error_non_retryable_async_prefix() -> None:
@@ -213,6 +215,8 @@ def test_classify_error_retryable_logs_warning() -> None:
     call_kwargs = mock_logger.warning.call_args
     assert call_kwargs[0][0] == "request_error"
     assert call_kwargs[1]["error_type"] == "ConnectError"
+    assert call_kwargs[1]["method"] == "POST"
+    assert call_kwargs[1]["endpoint"] == "/api"
 
 
 def test_classify_error_retryable_timeout() -> None:
@@ -300,7 +304,7 @@ def test_resolve_client_config_none_retry_count_uses_settings(mock_settings: Moc
     """retry_count=None の場合 settings.api.retry_count が使われる"""
     with patch("utils.api_client.settings", mock_settings):
         _, _, retry_count, _, _ = _resolve_client_config(
-            "https://example.com", 10.0, None, None, None
+            "https://example.com", 10.0, None, 2.0, None
         )
     assert retry_count == 3
 
@@ -308,9 +312,7 @@ def test_resolve_client_config_none_retry_count_uses_settings(mock_settings: Moc
 def test_resolve_client_config_none_retry_delay_uses_settings(mock_settings: MockSettings) -> None:
     """retry_delay=None の場合 settings.api.retry_delay が使われる"""
     with patch("utils.api_client.settings", mock_settings):
-        _, _, _, retry_delay, _ = _resolve_client_config(
-            "https://example.com", 10.0, None, None, None
-        )
+        _, _, _, retry_delay, _ = _resolve_client_config("https://example.com", 10.0, 5, None, None)
     assert retry_delay == 1.0
 
 
