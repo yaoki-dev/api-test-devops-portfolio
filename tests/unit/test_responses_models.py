@@ -262,7 +262,7 @@ class TestSanitizeUserContent:
             html.escape() は None に対して AttributeError を発生させる。
             TypeError ではなく AttributeError であることに注意。
         """
-        with pytest.raises((TypeError, AttributeError)):
+        with pytest.raises(AttributeError):
             sanitize_user_content(None)  # type: ignore[arg-type]
 
 
@@ -811,7 +811,8 @@ class TestCommentModel:
     @pytest.mark.parametrize(
         ("field", "dirty", "expected"),
         [
-            pytest.param(field, param.values[0], param.values[1], id=f"{field}-{param.id}")
+            # param.values = (dirty, expected) の2要素タプル
+            pytest.param(field, *param.values, id=f"{field}-{param.id}")
             for field in ("name", "body")
             for param in _XSS_MODEL_PARAMS
         ],
