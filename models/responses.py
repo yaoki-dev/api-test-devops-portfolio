@@ -66,8 +66,8 @@ def sanitize_user_content(value: str) -> str:
     特殊文字（<, >, &, ", '）をHTMLエンティティに変換。
 
     Note:
-        Pydantic field_validator経由での使用を前提としています。
-        strフィールドのバリデーション後に呼ばれるため、Noneは渡されません。
+        主にPydantic field_validator経由で使用されます。
+        str型シグネチャのため、Noneを渡すとAttributeErrorが発生します。
 
     Args:
         value: サニタイズ対象の文字列
