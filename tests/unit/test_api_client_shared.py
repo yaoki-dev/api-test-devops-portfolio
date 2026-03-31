@@ -7,18 +7,20 @@ which are module-level utility functions independent of AsyncAPIClient/SyncAPICl
 Consolidated from test_async_client_error_handling.py and
 test_sync_client_error_handling.py to eliminate duplication.
 
-テストケース一覧（25件）:
+テストケース一覧（29件）:
     - Exception (3件): hierarchy, http_error_status_preservation, retry_error_message
     - JSON Parsing (3件): invalid_json, json_error_init, json_error_without_response
     - Request Error Mapping (5件): too_many_redirects, invalid_url, timeout,
       connect_error, network_error
-    - Classify Error (5件): non_retryable_logs_error, non_retryable_async_prefix,
+    - Classify Error (5件): non_retryable_logs_error, non_retryable_async_field,
       retryable_logs_warning, retryable_timeout, retryable_network_error
-    - Resolve Client Config (9件): base_url_none_uses_settings, empty_base_url_raises,
+    - Resolve Client Config (13件): base_url_none_uses_settings, empty_base_url_raises,
       whitespace_base_url_raises, none_timeout_uses_settings,
       none_retry_count_uses_settings, none_retry_delay_uses_settings,
-      headers_none_returns_defaults_only, headers_merged_with_defaults,
-      custom_headers_override_defaults
+      headers_none_returns_defaults_only, headers_empty_dict_triggers_update,
+      headers_merged_with_defaults,
+      custom_headers_override_defaults, zero_timeout_not_overridden,
+      zero_retry_count_not_overridden, zero_retry_delay_not_overridden
 """
 
 import json
@@ -217,6 +219,7 @@ def test_classify_error_retryable_logs_warning() -> None:
     call_kwargs = mock_logger.warning.call_args
     assert call_kwargs[0][0] == "request_error"
     assert call_kwargs[1]["error_type"] == "ConnectError"
+    assert call_kwargs[1]["error"] == "Connection refused"
     assert call_kwargs[1]["method"] == "POST"
     assert call_kwargs[1]["endpoint"] == "/api"
 
@@ -360,3 +363,38 @@ def test_resolve_client_config_custom_headers_override_defaults(
             "https://example.com", None, None, None, {"User-Agent": "custom-agent"}
         )
     assert headers["User-Agent"] == "custom-agent"
+
+
+def test_resolve_client_config_zero_timeout_not_overridden(mock_settings: MockSettings) -> None:
+    """timeout=0.0 は settings へフォールバックしない（is not None チェックの検証）
+
+    `if timeout:` に誤変更された場合、0.0 が falsy のため settings.api.timeout(30.0)
+    で上書きされてしまうバグを検出する。
+    """
+    with patch("utils.api_client.settings", mock_settings):
+        _, timeout, _, _, _ = _resolve_client_config("https://example.com", 0.0, None, None, None)
+    assert timeout == 0.0
+
+
+def test_resolve_client_config_zero_retry_count_not_overridden(mock_settings: MockSettings) -> None:
+    """retry_count=0 は settings へフォールバックしない（is not None チェックの検証）
+
+    `if retry_count:` に誤変更された場合、0 が falsy のため settings.api.retry_count(3)
+    で上書きされてしまうバグを検出する。
+    """
+    with patch("utils.api_client.settings", mock_settings):
+        _, _, retry_count, _, _ = _resolve_client_config("https://example.com", None, 0, None, None)
+    assert retry_count == 0
+
+
+def test_resolve_client_config_zero_retry_delay_not_overridden(mock_settings: MockSettings) -> None:
+    """retry_delay=0.0 は settings へフォールバックしない（is not None チェックの検証）
+
+    `if retry_delay:` に誤変更された場合、0.0 が falsy のため settings.api.retry_delay(1.0)
+    で上書きされてしまうバグを検出する。
+    """
+    with patch("utils.api_client.settings", mock_settings):
+        _, _, _, retry_delay, _ = _resolve_client_config(
+            "https://example.com", None, None, 0.0, None
+        )
+    assert retry_delay == 0.0
