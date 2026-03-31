@@ -545,6 +545,7 @@ class TestUserModel:
             "/path/only",
             "http://",
             "https:///path",
+            "java\ufe00script:alert(1)",
         ],
         ids=[
             "js_basic",
@@ -583,6 +584,7 @@ class TestUserModel:
             "path_only_no_host",
             "http_empty_netloc",
             "https_triple_slash",
+            "js_variation_selector_mn_bypass",
         ],
     )
     def test_user_website_rejects_dangerous_scheme(
@@ -893,9 +895,11 @@ class TestPhotoModel:
         assert photo.thumbnail_url == "https://via.placeholder.com/150/92c952"
 
     @pytest.mark.parametrize(
-        ("url", "thumbnail_url"),
+        ("url", "thumbnail_url", "expected_url", "expected_thumbnail"),
         [
             pytest.param(
+                "https://via.placeholder.com/600/92c952",
+                "https://via.placeholder.com/150/92c952",
                 "https://via.placeholder.com/600/92c952",
                 "https://via.placeholder.com/150/92c952",
                 id="both_https",
@@ -903,17 +907,30 @@ class TestPhotoModel:
             pytest.param(
                 "http://via.placeholder.com/600/92c952",
                 "http://via.placeholder.com/150/92c952",
+                "http://via.placeholder.com/600/92c952",
+                "http://via.placeholder.com/150/92c952",
                 id="both_http",
             ),
             pytest.param(
                 "https://via.placeholder.com/600/92c952",
                 "http://via.placeholder.com/150/92c952",
+                "https://via.placeholder.com/600/92c952",
+                "http://via.placeholder.com/150/92c952",
                 id="mixed_https_http",
+            ),
+            pytest.param(
+                "HTTPS://via.placeholder.com/600/92c952",
+                "HTTP://via.placeholder.com/150/92c952",
+                "https://via.placeholder.com/600/92c952",
+                "http://via.placeholder.com/150/92c952",
+                id="uppercase_scheme_normalized",
             ),
         ],
     )
-    def test_photo_url_scheme_allows_http_https(self, url: str, thumbnail_url: str) -> None:
-        """Photo.validate_url_scheme が http/https URLを許可すること"""
+    def test_photo_url_scheme_allows_http_https(
+        self, url: str, thumbnail_url: str, expected_url: str, expected_thumbnail: str
+    ) -> None:
+        """Photo.validate_url_scheme が http/https URLを許可・スキームを小文字正規化すること"""
         photo = Photo(
             albumId=1,
             id=1,
@@ -921,8 +938,8 @@ class TestPhotoModel:
             url=url,
             thumbnailUrl=thumbnail_url,
         )
-        assert photo.url == url
-        assert photo.thumbnail_url == thumbnail_url
+        assert photo.url == expected_url
+        assert photo.thumbnail_url == expected_thumbnail
 
     @pytest.mark.parametrize(
         ("dirty", "expected"),

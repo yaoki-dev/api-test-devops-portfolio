@@ -24,7 +24,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 
 # RFC 3986 準拠のスキーム検出パターン（scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) ":"）
 _SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
-_INVISIBLE_CATEGORIES = frozenset({"Cf", "Cs", "Cc", "Zs", "Zl", "Zp"})
+_INVISIBLE_CATEGORIES = frozenset({"Cf", "Cs", "Cc", "Mn", "Zs", "Zl", "Zp"})
 
 
 def _strip_invisible_chars(v: str) -> str:
@@ -34,12 +34,10 @@ def _strip_invisible_chars(v: str) -> str:
     - Cf: Format文字（Bidi制御, ゼロ幅文字, Word Joiner等）
     - Cs: Surrogate（不正なサロゲートペア）
     - Cc: 制御文字（C0/C1制御文字, DEL等）
+    - Mn: 結合文字（Variation Selectors U+FE00-U+FE0F等）— スキームバイパス防止
     - Zs: Unicode空白（NBSP, Ogham Space, 全角空白等。U+0020通常スペースは保持）
     - Zl: 行区切り（U+2028 Line Separator）
     - Zp: 段落区切り（U+2029 Paragraph Separator）
-
-    Note: Variation Selectors (U+FE00-FE0F) はMnカテゴリのため除去対象外。
-    allowlist方式の_SCHEME_REがスキーム検出を阻止するため安全。
 
     正規表現の列挙方式と異なり、Unicodeバージョン更新時も
     自動的に新しい文字に対応する。
@@ -571,7 +569,12 @@ class Photo(BaseModel):
             raise ValueError("URLが空になりました（制御文字除去後）")
         if not sanitized.lower().startswith(("http://", "https://")):
             raise ValueError("URLはhttp://またはhttps://で始まる必要があります")
-        return sanitized
+        parsed = urlparse(sanitized)
+        return urlunparse(
+            parsed._replace(
+                scheme=parsed.scheme.lower(),
+            )
+        )
 
 
 # =============================================================================
