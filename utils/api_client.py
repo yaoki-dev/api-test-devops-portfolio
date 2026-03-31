@@ -247,10 +247,10 @@ def _classify_error(
             （ログ出力後 _map_request_error() を経由して raise される）
 
     """
-    log_prefix = "async_" if is_async else ""
     if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
         logger.error(
-            f"{log_prefix}request_error_non_retryable",
+            "request_error_non_retryable",
+            is_async=is_async,
             method=method,
             endpoint=endpoint,
             error=str(e),
@@ -258,7 +258,8 @@ def _classify_error(
         )
     else:
         logger.warning(
-            f"{log_prefix}request_error",
+            "request_error",
+            is_async=is_async,
             method=method,
             endpoint=endpoint,
             error=str(e),

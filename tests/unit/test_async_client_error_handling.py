@@ -344,8 +344,7 @@ async def test_async_non_retryable_error_logs_before_raise(
     error_logs = [
         log
         for log in log_output
-        if log.get("log_level") == "error"
-        and log.get("event") == "async_request_error_non_retryable"  # noqa: E501
+        if log.get("log_level") == "error" and log.get("event") == "request_error_non_retryable"  # noqa: E501
     ]
     assert len(error_logs) == 1, f"Expected 1 error log, got: {log_output}"
     assert error_logs[0]["method"] == "GET"

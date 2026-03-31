@@ -184,13 +184,14 @@ def test_classify_error_non_retryable_logs_error() -> None:
     mock_logger.error.assert_called_once()
     call_kwargs = mock_logger.error.call_args
     assert call_kwargs[0][0] == "request_error_non_retryable"
+    assert call_kwargs[1]["is_async"] is False
     assert call_kwargs[1]["error_type"] == "TooManyRedirects"
     assert call_kwargs[1]["method"] == "GET"
     assert call_kwargs[1]["endpoint"] == "/test"
 
 
-def test_classify_error_non_retryable_async_prefix() -> None:
-    """async呼び出し時にログイベント名にasync_プレフィックスが付く"""
+def test_classify_error_non_retryable_async_field() -> None:
+    """async呼び出し時にis_asyncフィールドがTrueになる（静的イベント名 + 構造化フィールド）"""
     error = httpx.InvalidURL("Bad URL")
     mock_logger = Mock()
 
@@ -199,7 +200,8 @@ def test_classify_error_non_retryable_async_prefix() -> None:
 
     mock_logger.error.assert_called_once()
     call_kwargs = mock_logger.error.call_args
-    assert call_kwargs[0][0] == "async_request_error_non_retryable"
+    assert call_kwargs[0][0] == "request_error_non_retryable"
+    assert call_kwargs[1]["is_async"] is True
 
 
 def test_classify_error_retryable_logs_warning() -> None:
@@ -230,7 +232,8 @@ def test_classify_error_retryable_timeout() -> None:
     assert result.__cause__ is error
     mock_logger.warning.assert_called_once()
     call_kwargs = mock_logger.warning.call_args
-    assert call_kwargs[0][0] == "async_request_error"
+    assert call_kwargs[0][0] == "request_error"
+    assert call_kwargs[1]["is_async"] is True
 
 
 def test_classify_error_retryable_network_error() -> None:
