@@ -15,6 +15,7 @@ from types import TracebackType
 from typing import Any, Self
 
 import httpx
+from structlog.typing import FilteringBoundLogger
 
 from config.settings import settings
 from utils.logger import get_logger
@@ -203,7 +204,7 @@ def _resolve_client_config(
         "Accept": "application/json",
         "Content-Type": "application/json",
     }
-    if headers:
+    if headers is not None:
         default_headers.update(headers)
 
     return (
@@ -217,7 +218,7 @@ def _resolve_client_config(
 
 def _classify_error(
     e: httpx.RequestError | httpx.InvalidURL,
-    logger: Any,
+    logger: FilteringBoundLogger,
     *,
     is_async: bool,
     method: str,
