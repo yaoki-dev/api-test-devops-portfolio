@@ -594,27 +594,29 @@ class TestUserModel:
             User(**valid_user_data)
 
     @pytest.mark.parametrize(
-        "safe_url",
+        ("input_url", "expected_url"),
         [
-            "https://hildegard.org",
-            "https://example.com/page?a=1&b=2",
-            "https://valid.com",
-            "http://valid.com",
-            "http://example.com:8080",
-        ],
-        ids=[
-            "https_domain",
-            "https_with_query",
-            "https",
-            "http",
-            "http_with_port",
+            pytest.param("https://hildegard.org", "https://hildegard.org", id="https_domain"),
+            pytest.param(
+                "https://example.com/page?a=1&b=2",
+                "https://example.com/page?a=1&b=2",
+                id="https_with_query",
+            ),
+            pytest.param("https://valid.com", "https://valid.com", id="https"),
+            pytest.param("http://valid.com", "http://valid.com", id="http"),
+            pytest.param("http://example.com:8080", "http://example.com:8080", id="http_with_port"),
+            # スキームなし → https:// 補完（N2設計変更）
+            pytest.param("hildegard.org", "https://hildegard.org", id="schemeless_domain"),
+            pytest.param("example.com/path", "https://example.com/path", id="schemeless_with_path"),
         ],
     )
-    def test_user_website_allows_safe_url(self, valid_user_data: _UserData, safe_url: str) -> None:
-        """User.website が安全なURL形式を受け入れること"""
-        valid_user_data["website"] = safe_url
+    def test_user_website_allows_safe_url(
+        self, valid_user_data: _UserData, input_url: str, expected_url: str
+    ) -> None:
+        """User.website が安全なURL形式を受け入れること（スキームなしはhttps://に補完）"""
+        valid_user_data["website"] = input_url
         user = User(**valid_user_data)
-        assert user.website == safe_url
+        assert user.website == expected_url
 
     @pytest.mark.unit
     @pytest.mark.parametrize(
