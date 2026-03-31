@@ -43,7 +43,9 @@ def _strip_invisible_chars(v: str) -> str:
     正規表現の列挙方式と異なり、Unicodeバージョン更新時も
     自動的に新しい文字に対応する。
     """
-    normalized = unicodedata.normalize("NFC", v)
+    # Cs（孤立サロゲート U+D800-U+DFFF）は normalize() が ValueError を送出するため先に除去する。
+    without_surrogates = "".join(c for c in v if unicodedata.category(c) != "Cs")
+    normalized = unicodedata.normalize("NFC", without_surrogates)
     # U+0020 (ASCII SPACE) は Zs カテゴリだが保持する。
     # Zs を frozenset から外す代替案は NBSP (U+00A0) や全角スペース (U+3000) 等の
     # URL難読化に悪用される文字も通過させてしまうため採用しない。
