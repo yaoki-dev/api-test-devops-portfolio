@@ -608,6 +608,9 @@ class TestUserModel:
             # スキームなし → https:// 補完（N2設計変更）
             pytest.param("hildegard.org", "https://hildegard.org", id="schemeless_domain"),
             pytest.param("example.com/path", "https://example.com/path", id="schemeless_with_path"),
+            pytest.param(
+                "Example.COM/path", "https://example.com/path", id="schemeless_uppercase_host"
+            ),
         ],
     )
     def test_user_website_allows_safe_url(
