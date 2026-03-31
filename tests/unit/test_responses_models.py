@@ -119,29 +119,25 @@ XSS_TEST_VECTORS: Final[list[XSSVector]] = [
 ]
 
 # モデルテスト専用 XSS ベクター（OWASP Cheat Sheetベース・独自5分類）
-# pytest.param 形式（テストクラスで直接使用）
-_XSS_MODEL_PARAMS: Final = [
-    pytest.param(
+# プレーン tuple 形式（テストクラスで直接使用）
+_XSS_MODEL_PARAMS: Final[list[tuple[str, str]]] = [
+    (
         "<script>alert('XSS')</script>",
         "&lt;script&gt;alert(&#x27;XSS&#x27;)&lt;/script&gt;",
-        id="script-basic",
     ),
-    pytest.param(
+    (
         "<img src=x onerror=alert(1)>",
         "&lt;img src=x onerror=alert(1)&gt;",
-        id="event-img-onerror",
     ),
-    pytest.param(
+    (
         '<a href="javascript:alert(1)">',
         "&lt;a href=&quot;javascript:alert(1)&quot;&gt;",
-        id="uri-javascript-anchor",
     ),
-    pytest.param(
+    (
         '" onclick="alert(1)"',
         "&quot; onclick=&quot;alert(1)&quot;",
-        id="attr-double-quote",
     ),
-    pytest.param("Test & Test", "Test &amp; Test", id="char-ampersand"),
+    ("Test & Test", "Test &amp; Test"),
 ]
 
 
@@ -835,10 +831,9 @@ class TestCommentModel:
     @pytest.mark.parametrize(
         ("field", "dirty", "expected"),
         [
-            # param.values = (dirty, expected) の2要素タプル
-            pytest.param(field, *param.values, id=f"{field}-{param.id}")
+            (field, dirty, expected)
             for field in ("name", "body")
-            for param in _XSS_MODEL_PARAMS
+            for dirty, expected in _XSS_MODEL_PARAMS
         ],
     )
     def test_comment_sanitizes_xss(self, field: str, dirty: str, expected: str) -> None:
