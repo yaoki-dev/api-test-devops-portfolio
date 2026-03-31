@@ -31,8 +31,13 @@ def _strip_invisible_chars(v: str) -> str:
     """不可視文字・制御文字・Unicode空白をURL文字列から除去
 
     URLスキームバイパス防止のため、以下のUnicodeカテゴリを除去:
+
+    前処理（_INVISIBLE_CATEGORIESとは別ロジックで先行除去）:
+    - Cs: Surrogate（孤立サロゲート U+D800-U+DFFF）— 有効なUnicode文字列に
+          含まれるべきでないためnormalize()前に除去（データ整合性）
+
+    _INVISIBLE_CATEGORIESによる除去:
     - Cf: Format文字（Bidi制御, ゼロ幅文字, Word Joiner等）
-    - Cs: Surrogate（孤立サロゲート U+D800-U+DFFF）— normalize()前にpre-filterで除去済み
     - Cc: 制御文字（C0/C1制御文字, DEL等）
     - Mn: 非スペーシングマーク（Mark, Nonspacing）（Variation Selectors U+FE00-U+FE0F、
           アクセント記号U+0300等）— スキームバイパス防止
@@ -43,7 +48,8 @@ def _strip_invisible_chars(v: str) -> str:
     正規表現の列挙方式と異なり、Unicodeバージョン更新時も
     自動的に新しい文字に対応する。
     """
-    # Cs（孤立サロゲート U+D800-U+DFFF）は normalize() が ValueError を送出するため先に除去する。
+    # Cs（孤立サロゲート U+D800-U+DFFF）はデータ整合性のため先に除去する
+    # （有効なUnicode文字列に孤立サロゲートを含めるべきでない）。
     without_surrogates = "".join(c for c in v if unicodedata.category(c) != "Cs")
     normalized = unicodedata.normalize("NFC", without_surrogates)
     # U+0020 (ASCII SPACE) は Zs カテゴリだが保持する。
