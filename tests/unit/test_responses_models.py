@@ -284,6 +284,20 @@ def test_strip_invisible_chars_preserves_ascii_space() -> None:
     assert _strip_invisible_chars("https://\u3000example.com") == "https://example.com"
 
 
+def test_strip_invisible_chars_removes_surrogate_codepoint() -> None:
+    """_strip_invisible_chars が孤立サロゲート(Cs)をnormalize前に除去することを検証。
+
+    孤立サロゲート(U+D800-U+DFFF)は unicodedata.normalize() で ValueError を
+    送出するため、事前除去が必要。
+    """
+    # 孤立サロゲートが除去され、残りの文字列が返される
+    assert _strip_invisible_chars("https://\ud800example.com") == "https://example.com"
+    # サロゲートのみの入力は空文字列になる
+    assert _strip_invisible_chars("\ud800\udbff\udfff") == ""
+    # サロゲートが混在しても正常な文字は保持される
+    assert _strip_invisible_chars("abc\ud800def") == "abcdef"
+
+
 class TestGeoModel:
     """Geo モデルのテスト
 
