@@ -34,7 +34,8 @@ def _strip_invisible_chars(v: str) -> str:
     - Cf: Format文字（Bidi制御, ゼロ幅文字, Word Joiner等）
     - Cs: Surrogate（不正なサロゲートペア）
     - Cc: 制御文字（C0/C1制御文字, DEL等）
-    - Mn: 結合文字（Variation Selectors U+FE00-U+FE0F等）— スキームバイパス防止
+    - Mn: 非スペーシングマーク（Mark, Nonspacing）（Variation Selectors U+FE00-U+FE0F、
+          アクセント記号U+0300等）— スキームバイパス防止
     - Zs: Unicode空白（NBSP, Ogham Space, 全角空白等。U+0020通常スペースは保持）
     - Zl: 行区切り（U+2028 Line Separator）
     - Zp: 段落区切り（U+2029 Paragraph Separator）
@@ -376,7 +377,12 @@ class User(BaseModel):
         Raises:
             ValueError: 危険なURLスキームまたはプロトコル相対URLが検出された場合、
                        またはサニタイズ後にURLが空になった場合、
-                       または有効なホスト名が含まれていない場合
+                       または有効なホスト名が含まれていない場合、
+                       またはスキームなしURLにポートが指定された場合（例: example.com:8080）
+
+        Note:
+            websiteフィールドの値をHTMLコンテキストへ出力する際は、
+            呼び出し元で html.escape() を適用すること（URLはhtml.escape対象外のため）。
 
         """
         sanitized = _strip_invisible_chars(v).strip()
@@ -386,6 +392,8 @@ class User(BaseModel):
         if sanitized.startswith("//"):
             raise ValueError("プロトコル相対URLは許可されていません")
         sanitized_lower = sanitized.lower()
+        # urlparseは各分岐で1回のみ呼び出す
+        # （http/httpsブランチと補完ブランチで入力が異なるため共通化不可）
         # http/https スキーム付きURLは許可（RFC 3986 Section 6.2.2.1: スキーム部を小文字正規化）
         if sanitized_lower.startswith(("http://", "https://")):
             parsed = urlparse(sanitized)
@@ -552,7 +560,7 @@ class Photo(BaseModel):
 
         セキュリティのため、javascript:やdata:などの
         潜在的に危険なスキームを拒否。
-        不可視文字（Cf/Cs/Cc/Zs/Zl/Zpカテゴリ）を除去してからスキーム検証を行う。
+        不可視文字（Cf/Cs/Cc/Mn/Zs/Zl/Zpカテゴリ）を除去してからスキーム検証を行う。
 
         Args:
             v: 検証対象のURL文字列
@@ -570,9 +578,12 @@ class Photo(BaseModel):
         if not sanitized.lower().startswith(("http://", "https://")):
             raise ValueError("URLはhttp://またはhttps://で始まる必要があります")
         parsed = urlparse(sanitized)
+        if not parsed.netloc:
+            raise ValueError("有効なホスト名が含まれていません")
         return urlunparse(
             parsed._replace(
                 scheme=parsed.scheme.lower(),
+                netloc=parsed.netloc.lower(),
             )
         )
 
