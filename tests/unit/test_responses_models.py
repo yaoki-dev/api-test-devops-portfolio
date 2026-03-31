@@ -542,6 +542,9 @@ class TestUserModel:
             "example.com:8080/path?query=1",
             "192.168.1.1:8080",
             "10.0.0.1:3000/api",
+            "/path/only",
+            "http://",
+            "https:///path",
         ],
         ids=[
             "js_basic",
@@ -577,6 +580,9 @@ class TestUserModel:
             "domain_port_path_query_no_scheme",
             "ip_port_no_scheme",
             "ip_port_path_no_scheme",
+            "path_only_no_host",
+            "http_empty_netloc",
+            "https_triple_slash",
         ],
     )
     def test_user_website_rejects_dangerous_scheme(
