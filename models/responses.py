@@ -590,7 +590,8 @@ class Photo(BaseModel):
         Raises:
             ValueError: URLが空になった場合、
                        またはURLがhttp/httpsで始まらない場合、
-                       または有効なホスト名が含まれていない場合
+                       または有効なホスト名が含まれていない場合、
+                       またはURLにuserinfo（ユーザー名/パスワード）が含まれている場合
 
         """
         sanitized = _strip_invisible_chars(v).strip()
