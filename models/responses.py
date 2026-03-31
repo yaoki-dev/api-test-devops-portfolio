@@ -377,7 +377,8 @@ class User(BaseModel):
 
         Raises:
             ValueError: 危険なURLスキームまたはプロトコル相対URLが検出された場合、
-                       またはサニタイズ後にURLが空になった場合
+                       またはサニタイズ後にURLが空になった場合、
+                       または有効なホスト名が含まれていない場合
 
         """
         sanitized = _strip_invisible_chars(v).strip()
@@ -390,6 +391,8 @@ class User(BaseModel):
         # http/https スキーム付きURLは許可（RFC 3986 Section 6.2.2.1: スキーム部を小文字正規化）
         if sanitized_lower.startswith(("http://", "https://")):
             parsed = urlparse(sanitized)
+            if not parsed.netloc:
+                raise ValueError("有効なホスト名が含まれていません")
             return urlunparse(
                 parsed._replace(
                     scheme=parsed.scheme.lower(),
@@ -399,11 +402,13 @@ class User(BaseModel):
         # RFC 3986スキーム検出: http/https以外のスキームが存在すれば拒否
         # is_domain_portロジックを削除: domain:portはスキームなし扱いのため
         # http(s)://を明示しない限り拒否（例: example.com:8080 → ValueError）
-        m = _SCHEME_RE.match(sanitized)
-        if m:
+        scheme_match = _SCHEME_RE.match(sanitized)
+        if scheme_match:
             raise ValueError("危険なURLスキームが検出されました")
         # スキームなし → https:// を補完して検証
         parsed = urlparse("https://" + sanitized)
+        if not parsed.netloc:
+            raise ValueError("有効なホスト名が含まれていません")
         if parsed.port is not None:
             raise ValueError(
                 "スキームなしURLにポートは指定できません（http(s)://を明示してください）"
