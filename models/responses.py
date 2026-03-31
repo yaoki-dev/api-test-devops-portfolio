@@ -402,11 +402,15 @@ class User(BaseModel):
         m = _SCHEME_RE.match(sanitized)
         if m:
             raise ValueError("危険なURLスキームが検出されました")
-        # スキームなし → https:// を補完（例: hildegard.org → https://hildegard.org）
+        # スキームなし → https:// を補完して検証
         parsed = urlparse("https://" + sanitized)
+        if parsed.port is not None:
+            raise ValueError(
+                "スキームなしURLにポートは指定できません（http(s)://を明示してください）"
+            )
         return urlunparse(
             parsed._replace(
-                scheme="https",
+                scheme=parsed.scheme.lower(),
                 netloc=parsed.netloc.lower(),
             )
         )
