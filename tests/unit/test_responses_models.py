@@ -1128,6 +1128,29 @@ class TestPhotoModel:
 
     @pytest.mark.unit
     @pytest.mark.parametrize(
+        "url",
+        [
+            pytest.param("https://attacker@legit.com/photo.jpg", id="https_username_bypass"),
+            pytest.param("http://attacker@legit.com/photo.jpg", id="http_username_bypass"),
+            pytest.param("https://legit.com@evil.com/photo.jpg", id="https_host_spoof"),
+            pytest.param(
+                "https://:secretpassword@example.com/photo.jpg", id="password_only_bypass"
+            ),
+        ],
+    )
+    def test_photo_url_rejects_userinfo(self, url: str) -> None:
+        """Photo.url にuserinfo付きURLが渡されたとき ValidationError を発生させること"""
+        with pytest.raises(ValidationError, match="URLにuserinfo"):
+            Photo(
+                albumId=1,
+                id=1,
+                title="Test",
+                url=url,
+                thumbnailUrl="https://example.com/thumb.jpg",
+            )
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
         "dangerous_url",
         [
             "\u200bjavascript:alert(1)",

@@ -601,6 +601,8 @@ class Photo(BaseModel):
         parsed = urlparse(sanitized)
         if not parsed.netloc:
             raise ValueError("有効なホスト名が含まれていません")
+        if parsed.username is not None or parsed.password is not None:
+            raise ValueError("URLにuserinfo（ユーザー名/パスワード）は指定できません")
         return urlunparse(
             parsed._replace(
                 scheme=parsed.scheme.lower(),
