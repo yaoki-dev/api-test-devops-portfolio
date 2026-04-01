@@ -18,7 +18,7 @@ html.escape()サニタイゼーションを適用したPydanticモデル。
 import html
 import re
 import unicodedata
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import ParseResult, urlparse, urlunparse
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -48,6 +48,8 @@ def _strip_invisible_chars(v: str) -> str:
     Python に同梱の Unicode バージョン内の新規文字に自動対応する。
     （Unicode バージョン自体の更新には Python バージョンアップが必要）
     """
+    if not isinstance(v, str):
+        raise ValueError(f"文字列が必要です。受け取った型: {type(v).__name__}")
     # Cs（孤立サロゲート U+D800-U+DFFF）はデータ整合性のため先に除去する
     # （有効なUnicode文字列に孤立サロゲートを含めるべきでない）。
     without_surrogates = "".join(c for c in v if unicodedata.category(c) != "Cs")
@@ -95,6 +97,11 @@ def sanitize_user_content(value: str) -> str:
         raise ValueError(f"文字列が必要です（受け取った型: {type(value).__name__}）")
     # quote=True: シングルクォート、ダブルクォートもエスケープ
     return html.escape(value, quote=True)
+
+
+def _normalize_url(parsed: ParseResult) -> str:
+    """RFC 3986 Section 6.2.2.1: スキームとホスト部を小文字正規化する."""
+    return urlunparse(parsed._replace(scheme=parsed.scheme.lower(), netloc=parsed.netloc.lower()))
 
 
 # =============================================================================
@@ -401,27 +408,24 @@ class User(BaseModel):
 
         """
         sanitized = _strip_invisible_chars(v).strip()
+        # min_length=1 は真の空文字列を、ここでは制御文字のみの文字列を捕捉（2段階チェック）
         if not sanitized:
             raise ValueError("websiteが空になりました（制御文字除去後）")
         # プロトコル相対URLを明示的に拒否（攻撃面削減）
         if sanitized.startswith("//"):
             raise ValueError("プロトコル相対URLは許可されていません")
+        # RFC 3986 §6.2.2.1: スキーム・ホストのみ小文字正規化対象。パス部は大文字小文字を保持する
+        # ため、スキームチェックには lower() 済みの文字列を使いつつ、urlparse にはオリジナルを渡す
         sanitized_lower = sanitized.lower()
         # urlparseは各分岐で1回のみ呼び出す
         # （http/httpsブランチと補完ブランチで入力が異なるため共通化不可）
-        # http/https スキーム付きURLは許可（RFC 3986 Section 6.2.2.1: スキーム部を小文字正規化）
         if sanitized_lower.startswith(("http://", "https://")):
             parsed = urlparse(sanitized)
             if not parsed.netloc:
                 raise ValueError("有効なホスト名が含まれていません")
             if parsed.username is not None or parsed.password is not None:
                 raise ValueError("URLにuserinfo（ユーザー名/パスワード）は指定できません")
-            return urlunparse(
-                parsed._replace(
-                    scheme=parsed.scheme.lower(),
-                    netloc=parsed.netloc.lower(),
-                )
-            )
+            return _normalize_url(parsed)
         # RFC 3986スキーム検出: http/https以外のスキームが存在すれば拒否
         # is_domain_portロジックを削除: domain:portはスキームなし扱いのため
         # http(s)://を明示しない限り拒否（例: example.com:8080 → ValueError）
@@ -438,12 +442,7 @@ class User(BaseModel):
             raise ValueError(
                 "スキームなしURLにポートは指定できません（http(s)://を明示してください）"
             )
-        return urlunparse(
-            parsed._replace(
-                scheme=parsed.scheme.lower(),
-                netloc=parsed.netloc.lower(),
-            )
-        )
+        return _normalize_url(parsed)
 
 
 # =============================================================================
@@ -588,28 +587,26 @@ class Photo(BaseModel):
             検証済みURL文字列（制御文字除去・前後空白除去済み）
 
         Raises:
-            ValueError: URLが空になった場合、
-                       またはURLがhttp/httpsで始まらない場合、
-                       または有効なホスト名が含まれていない場合、
-                       またはURLにuserinfo（ユーザー名/パスワード）が含まれている場合
+            ValueError: 以下のいずれかの場合:
+                - 制御文字除去後にURLが空
+                - http/https以外のスキーム（またはスキームなし）
+                - 有効なホスト名なし
+                - userinfoを含む（例: https://user@host — RFC 3986 バイパス防止）
 
         """
         sanitized = _strip_invisible_chars(v).strip()
         if not sanitized:
             raise ValueError("URLが空になりました（制御文字除去後）")
-        if not sanitized.lower().startswith(("http://", "https://")):
+        # RFC 3986 §6.2.2.1: パス部の大文字小文字保持のため urlparse にはオリジナルを渡す
+        sanitized_lower = sanitized.lower()
+        if not sanitized_lower.startswith(("http://", "https://")):
             raise ValueError("URLはhttp://またはhttps://で始まる必要があります")
         parsed = urlparse(sanitized)
         if not parsed.netloc:
             raise ValueError("有効なホスト名が含まれていません")
         if parsed.username is not None or parsed.password is not None:
             raise ValueError("URLにuserinfo（ユーザー名/パスワード）は指定できません")
-        return urlunparse(
-            parsed._replace(
-                scheme=parsed.scheme.lower(),
-                netloc=parsed.netloc.lower(),
-            )
-        )
+        return _normalize_url(parsed)
 
 
 # =============================================================================

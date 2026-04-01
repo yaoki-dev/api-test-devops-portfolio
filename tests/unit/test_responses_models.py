@@ -120,7 +120,7 @@ XSS_TEST_VECTORS: Final[list[XSSVector]] = [
 
 # モデルテスト専用 XSS ベクター（OWASP Cheat Sheetベース・独自5分類）
 # プレーン tuple 形式（テストクラスで直接使用）
-_XSS_MODEL_PARAMS: Final[list[tuple[str, str]]] = [
+_XSS_MODEL_PARAMS: Final[list[XSSVector]] = [
     (
         "<script>alert('XSS')</script>",
         "&lt;script&gt;alert(&#x27;XSS&#x27;)&lt;/script&gt;",
@@ -297,6 +297,11 @@ def test_strip_invisible_chars_removes_surrogate_codepoint() -> None:
     assert _strip_invisible_chars("\ud800\udbff\udfff") == ""
     # サロゲートが混在しても正常な文字は保持される
     assert _strip_invisible_chars("abc\ud800def") == "abcdef"
+
+
+def test_strip_invisible_chars_returns_empty_for_empty_input() -> None:
+    """_strip_invisible_chars に空文字列を渡すと空文字列が返ること。"""
+    assert _strip_invisible_chars("") == ""
 
 
 class TestGeoModel:
@@ -841,6 +846,17 @@ class TestCommentModel:
             for field in ("name", "body")
             for dirty, expected in _XSS_MODEL_PARAMS
         ],
+        ids=[
+            f"{field}-{name}"
+            for field in ("name", "body")
+            for name in (
+                "script_basic",
+                "event_img_onerror",
+                "uri_scheme_js",
+                "attr_injection",
+                "special_chars_amp",
+            )
+        ],
     )
     def test_comment_sanitizes_xss(self, field: str, dirty: str, expected: str) -> None:
         """Comment XSS サニタイゼーション（name/body x OWASP CS・独自5分類）"""
@@ -866,6 +882,19 @@ class TestCommentModel:
         long_email = "a" * 52 + "@" + "b" * 36 + ".example.com"
         with pytest.raises(ValidationError):
             Comment(postId=1, id=1, name="Name", email=long_email, body="Body")
+
+    def test_comment_email_is_not_html_escaped(self) -> None:
+        """Comment.email が EmailStr 型のため html.escape が非適用であること（設計意図確認）。
+
+        User.website と対称的に、email フィールドは sanitize_user_content 非適用。
+        EmailStr 型による RFC 準拠バリデーションのみ実施される。
+        """
+        email = "user+filter@example.com"
+        comment = Comment(postId=1, id=1, name="Name", email=email, body="Body")
+        # EmailStr は html.escape を適用しないため入力値がそのまま格納される
+        assert comment.email == email
+        # html.escape が適用された場合と同じ結果であることを確認（emailに変換対象文字なし）
+        assert comment.email == html.escape(email, quote=True)
 
 
 class TestTodoModel:
@@ -1173,7 +1202,7 @@ class TestPhotoModel:
     )
     def test_photo_thumbnail_url_rejects_userinfo(self, thumbnail_url: str) -> None:
         """Photo.thumbnail_urlがuserinfo付きURLを拒否すること（RFC 3986バイパス防止）"""
-        with pytest.raises(ValidationError, match="userinfo"):
+        with pytest.raises(ValidationError, match="URLにuserinfo"):
             Photo(
                 albumId=1,
                 id=1,
@@ -1226,6 +1255,32 @@ class TestPhotoModel:
                 title="Test",
                 url="https://\ud800example.com/photo.jpg",
                 thumbnailUrl="https://via.placeholder.com/150",
+            )
+
+    def test_photo_url_rejects_empty_string(self) -> None:
+        """Photo.url に空文字列を渡すと ValidationError が発生すること。
+
+        min_length 制約がないため、空文字列は _strip_invisible_chars → .strip() を通過後
+        validate_url_scheme のガード節（if not sanitized）に到達する。
+        """
+        with pytest.raises(ValidationError, match="URLが空になりました"):
+            Photo(
+                albumId=1,
+                id=1,
+                title="Test",
+                url="",
+                thumbnailUrl="https://example.com/thumb.jpg",
+            )
+
+    def test_photo_thumbnail_url_rejects_empty_string(self) -> None:
+        """Photo.thumbnail_url に空文字列を渡すと ValidationError が発生すること。"""
+        with pytest.raises(ValidationError, match="URLが空になりました"):
+            Photo(
+                albumId=1,
+                id=1,
+                title="Test",
+                url="https://example.com/photo.jpg",
+                thumbnailUrl="",
             )
 
 
