@@ -45,8 +45,8 @@ def _strip_invisible_chars(v: str) -> str:
     - Zl: 行区切り（U+2028 Line Separator）
     - Zp: 段落区切り（U+2029 Paragraph Separator）
 
-    正規表現の列挙方式と異なり、Unicodeバージョン更新時も
-    自動的に新しい文字に対応する。
+    Python に同梱の Unicode バージョン内の新規文字に自動対応する。
+    （Unicode バージョン自体の更新には Python バージョンアップが必要）
     """
     # Cs（孤立サロゲート U+D800-U+DFFF）はデータ整合性のため先に除去する
     # （有効なUnicode文字列に孤立サロゲートを含めるべきでない）。
@@ -388,12 +388,12 @@ class User(BaseModel):
             制御文字除去・前後空白除去済み）
 
         Raises:
-            ValueError: 危険なURLスキームまたはプロトコル相対URLが検出された場合、
-                       またはサニタイズ後にURLが空になった場合、
-                       または有効なホスト名が含まれていない場合、
-                       またはスキームなしURLにポートが指定された場合（例: example.com:8080）、
-                       またはURLにuserinfo（ユーザー名/パスワード）が含まれている場合
-                       （例: https://legit.com@evil.com — RFC 3986 userinfoバイパス防止）
+            ValueError: 以下のいずれかの場合:
+                - 制御文字除去後にURLが空
+                - プロトコル相対URL（//始まり）
+                - http/https以外の危険スキーム
+                - 有効なホスト名なし
+                - userinfoを含む（例: https://user@host — RFC 3986 バイパス防止）
 
         Note:
             websiteフィールドの値をHTMLコンテキストへ出力する際は、

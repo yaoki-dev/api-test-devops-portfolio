@@ -262,7 +262,6 @@ class TestSanitizeUserContent:
             sanitize_user_content(None)  # type: ignore[arg-type]
 
 
-@pytest.mark.unit
 def test_strip_invisible_chars_preserves_ascii_space() -> None:
     """_strip_invisible_chars がASCIIスペース(U+0020)を保持することを検証。
 
@@ -274,10 +273,16 @@ def test_strip_invisible_chars_preserves_ascii_space() -> None:
         _strip_invisible_chars("https://example.com/path?a=1 b=2")
         == "https://example.com/path?a=1 b=2"
     )
-    # NBSP (U+00A0) は除去される
+    # NBSP (U+00A0: Zs) は除去される
     assert _strip_invisible_chars("https://\u00a0example.com") == "https://example.com"
-    # 全角スペース (U+3000) は除去される
+    # 全角スペース (U+3000: Zs) は除去される
     assert _strip_invisible_chars("https://\u3000example.com") == "https://example.com"
+    # Variation Selector-1 (U+FE00: Mn) は除去される
+    assert _strip_invisible_chars("java\ufe00script:alert(1)") == "javascript:alert(1)"
+    # Line Separator (U+2028: Zl) は除去される
+    assert _strip_invisible_chars("java\u2028script:alert(1)") == "javascript:alert(1)"
+    # Paragraph Separator (U+2029: Zp) は除去される
+    assert _strip_invisible_chars("java\u2029script:alert(1)") == "javascript:alert(1)"
 
 
 def test_strip_invisible_chars_removes_surrogate_codepoint() -> None:
@@ -645,7 +650,6 @@ class TestUserModel:
         user = User(**valid_user_data)
         assert user.website == expected_url
 
-    @pytest.mark.unit
     @pytest.mark.parametrize(
         ("input_url", "expected_url"),
         [
@@ -722,12 +726,14 @@ class TestUserModel:
             "http://legit.com@evil.com",
             "https://attacker@legit.com",
             "legit.com@evil.com",
+            "https://:secretpassword@example.com",
         ],
         ids=[
             "https_username_bypass",
             "http_username_bypass",
             "https_attacker_username",
             "schemeless_username_bypass",
+            "password_only_bypass",
         ],
     )
     def test_user_website_rejects_userinfo(
@@ -1126,7 +1132,6 @@ class TestPhotoModel:
                 thumbnailUrl=thumbnail_url,
             )
 
-    @pytest.mark.unit
     @pytest.mark.parametrize(
         "url",
         [
@@ -1149,7 +1154,34 @@ class TestPhotoModel:
                 thumbnailUrl="https://example.com/thumb.jpg",
             )
 
-    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "thumbnail_url",
+        [
+            pytest.param(
+                "https://attacker@example.com/photo.jpg",
+                id="username_bypass",
+            ),
+            pytest.param(
+                "https://user:pass@example.com/photo.jpg",
+                id="full_credentials",
+            ),
+            pytest.param(
+                "https://:secretpassword@example.com/photo.jpg",
+                id="password_only_bypass",
+            ),
+        ],
+    )
+    def test_photo_thumbnail_url_rejects_userinfo(self, thumbnail_url: str) -> None:
+        """Photo.thumbnail_urlがuserinfo付きURLを拒否すること（RFC 3986バイパス防止）"""
+        with pytest.raises(ValidationError, match="userinfo"):
+            Photo(
+                albumId=1,
+                id=1,
+                title="Test",
+                url="https://example.com/photo.jpg",
+                thumbnailUrl=thumbnail_url,
+            )
+
     @pytest.mark.parametrize(
         "dangerous_url",
         [
