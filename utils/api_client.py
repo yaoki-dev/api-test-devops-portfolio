@@ -243,8 +243,9 @@ def _classify_error(
         endpoint: APIエンドポイント
 
     Returns:
-        APIClientErrorサブクラス（リトライ可能エラーの場合のみ）。
-        TooManyRedirects / InvalidURL の場合はreturnに到達しない。
+        APIClientErrorサブクラス（リトライ可能エラーの場合）。
+        TooManyRedirects / InvalidURL の場合は _map_request_error() 内で
+        raise されるため、呼び出し元には値が返らない。
 
     Raises:
         APIClientError: TooManyRedirects または InvalidURL の場合

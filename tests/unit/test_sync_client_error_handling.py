@@ -349,6 +349,8 @@ def test_sync_non_retryable_error_logs_before_raise(
     assert error_logs[0]["method"] == "GET"
     assert error_logs[0]["endpoint"] == "/posts/1"
     assert "error" not in error_logs[0]  # security: 認証情報漏洩防止
+    assert "error_type" in error_logs[0]  # error_type フィールドの存在確認
+    assert error_logs[0]["is_async"] is False  # SyncAPIClient 呼び出しの確認
 
 
 @respx.mock
