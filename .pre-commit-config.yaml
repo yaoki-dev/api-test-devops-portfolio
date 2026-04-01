@@ -1,7 +1,7 @@
 # 軽量版: コミット時の最小限チェック (実行時間 < 3秒)
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.5              # pyproject.toml[dev]と整合（uv.lock同期）
+    rev: v0.15.8              # pyproject.toml[dev]と整合（uv.lock同期）
     hooks:
       - id: ruff
         args: [--fix]         # 自動修正で即座に問題解決
@@ -23,7 +23,7 @@ repos:
 
   # Markdown品質チェック: markdownlint (Issue #98)
   - repo: https://github.com/igorshubovych/markdownlint-cli
-    rev: v0.47.0
+    rev: v0.48.0
     hooks:
       - id: markdownlint
         args: ['--ignore', 'node_modules']
