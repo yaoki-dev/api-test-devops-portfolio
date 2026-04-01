@@ -130,7 +130,9 @@ def _map_request_error(e: httpx.RequestError | httpx.InvalidURL) -> APIClientErr
         e: httpx.RequestError または httpx.InvalidURL（またはそのサブクラス）
 
     Returns:
-        適切なAPIClientErrorサブクラス
+        APIClientErrorサブクラス（リトライ可能エラーの場合のみ。
+        非リトライ時（TooManyRedirects / InvalidURL）は
+        APIClientError 基底クラスを raise するため返らない）。
 
     Raises:
         APIClientError: 非リトライ可能エラー（TooManyRedirects, InvalidURL）
@@ -194,12 +196,12 @@ def _resolve_client_config(
         ValueError: base_urlが空文字列またはスペースのみの文字列の場合
 
     """
-    resolved_base_url = base_url if base_url is not None else settings.api.base_url
-    if not resolved_base_url.strip():
+    base_url = base_url if base_url is not None else settings.api.base_url
+    if not base_url.strip():
         raise ValueError("base_url が空です。引数または API__BASE_URL 環境変数を確認してください。")
-    resolved_timeout = timeout if timeout is not None else settings.api.timeout
-    resolved_retry_count = retry_count if retry_count is not None else settings.api.retry_count
-    resolved_retry_delay = retry_delay if retry_delay is not None else settings.api.retry_delay
+    timeout = timeout if timeout is not None else settings.api.timeout
+    retry_count = retry_count if retry_count is not None else settings.api.retry_count
+    retry_delay = retry_delay if retry_delay is not None else settings.api.retry_delay
 
     default_headers = {
         "User-Agent": settings.api.user_agent,
@@ -212,10 +214,10 @@ def _resolve_client_config(
         default_headers.update(headers)
 
     return (
-        resolved_base_url,
-        resolved_timeout,
-        resolved_retry_count,
-        resolved_retry_delay,
+        base_url,
+        timeout,
+        retry_count,
+        retry_delay,
         default_headers,
     )
 
@@ -257,7 +259,6 @@ def _classify_error(
             is_async=is_async,
             method=method,
             endpoint=endpoint,
-            error=str(e),
             error_type=type(e).__name__,
         )
     else:
@@ -266,7 +267,6 @@ def _classify_error(
             is_async=is_async,
             method=method,
             endpoint=endpoint,
-            error=str(e),
             error_type=type(e).__name__,
         )
     return _map_request_error(e)

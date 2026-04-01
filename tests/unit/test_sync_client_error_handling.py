@@ -315,15 +315,15 @@ def test_sync_post_with_retry(mock_backoff: Mock) -> None:
 
 
 @pytest.mark.parametrize(
-    "exc,expected_error",
+    "exc",
     [
-        (httpx.TooManyRedirects("Max redirects exceeded"), "Max redirects exceeded"),
-        (httpx.InvalidURL("Invalid URL format"), "Invalid URL format"),
+        httpx.TooManyRedirects("Max redirects exceeded"),
+        httpx.InvalidURL("Invalid URL format"),
     ],
 )
 @respx.mock
 def test_sync_non_retryable_error_logs_before_raise(
-    exc: httpx.TooManyRedirects | httpx.InvalidURL, expected_error: str
+    exc: httpx.TooManyRedirects | httpx.InvalidURL,
 ) -> None:
     """非リトライエラー時にlogger.errorが_map_request_error前に実行される
 
@@ -348,7 +348,7 @@ def test_sync_non_retryable_error_logs_before_raise(
     assert len(error_logs) == 1, f"Expected 1 error log, got: {log_output}"
     assert error_logs[0]["method"] == "GET"
     assert error_logs[0]["endpoint"] == "/posts/1"
-    assert expected_error in error_logs[0]["error"]  # error フィールド検証
+    assert "error" not in error_logs[0]  # security: 認証情報漏洩防止
 
 
 @respx.mock

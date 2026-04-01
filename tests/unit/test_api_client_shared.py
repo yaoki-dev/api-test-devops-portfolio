@@ -191,6 +191,7 @@ def test_classify_error_non_retryable_logs_error() -> None:
     assert call_kwargs[1]["method"] == "GET"
     assert call_kwargs[1]["endpoint"] == "/test"
     assert isinstance(exc_info.value.__cause__, httpx.TooManyRedirects)
+    mock_logger.warning.assert_not_called()
 
 
 def test_classify_error_non_retryable_async_field() -> None:
@@ -206,6 +207,7 @@ def test_classify_error_non_retryable_async_field() -> None:
     assert call_kwargs[0][0] == "request_error_non_retryable"
     assert call_kwargs[1]["is_async"] is True
     assert isinstance(exc_info.value.__cause__, httpx.InvalidURL)
+    mock_logger.warning.assert_not_called()
 
 
 def test_classify_error_retryable_logs_warning() -> None:
@@ -221,7 +223,6 @@ def test_classify_error_retryable_logs_warning() -> None:
     call_kwargs = mock_logger.warning.call_args
     assert call_kwargs[0][0] == "request_error"
     assert call_kwargs[1]["error_type"] == "ConnectError"
-    assert call_kwargs[1]["error"] == "Connection refused"
     assert call_kwargs[1]["method"] == "POST"
     assert call_kwargs[1]["endpoint"] == "/api"
 
