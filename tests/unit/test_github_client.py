@@ -1033,3 +1033,39 @@ def test_update_etag_cache_no_etag_header() -> None:
     client._update_etag_cache("/test", response, {"data": 1})
     assert "/test" not in client._etag_cache
     assert "/test" not in client._data_cache
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_handle_http_status_error_truncates_long_body() -> None:
+    """201文字以上のレスポンスボディは200文字に截断され"..."が付加される"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    long_body = "x" * 201
+    request = httpx.Request("GET", "https://api.github.com/test")
+    response = httpx.Response(422, request=request, content=long_body.encode())
+    error = httpx.HTTPStatusError("422", request=request, response=response)
+
+    with pytest.raises(GitHubAPIError) as exc_info:
+        await client._handle_http_status_error(error, attempt=0)
+
+    # 截断確認: "x" * 200 + "..." が含まれる
+    assert "x" * 200 + "..." in str(exc_info.value)
+    assert "x" * 201 not in str(exc_info.value)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_handle_http_status_error_no_truncation_at_boundary() -> None:
+    """200文字以下のレスポンスボディは截断されず"..."なしで使用される（境界値）"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    exact_body = "y" * 200  # ちょうど200文字（len > 200 が偽になる境界値）
+    request = httpx.Request("GET", "https://api.github.com/test")
+    response = httpx.Response(422, request=request, content=exact_body.encode())
+    error = httpx.HTTPStatusError("422", request=request, response=response)
+
+    with pytest.raises(GitHubAPIError) as exc_info:
+        await client._handle_http_status_error(error, attempt=0)
+
+    message = str(exc_info.value)
+    assert exact_body in message
+    assert not message.endswith("...")
