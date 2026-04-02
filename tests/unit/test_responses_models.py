@@ -911,8 +911,8 @@ class TestCommentModel:
             comment = Comment(
                 postId=1, id=1, name="Name", email="user&tag@example.com", body="Body"
             )
-            # EmailStr が受理した場合: html.escape により & → &amp;
-            assert "&amp;" in comment.email
+            # EmailStr が受理した場合: html.escape により & → &amp;（完全一致で変換結果を検証）
+            assert comment.email == "user&amp;tag@example.com"
         except ValidationError:
             pytest.skip("EmailStr rejects '&' in local part — sanitize_email unreachable")
 
