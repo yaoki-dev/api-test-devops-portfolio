@@ -1069,3 +1069,4 @@ async def test_handle_http_status_error_no_truncation_at_boundary() -> None:
     message = str(exc_info.value)
     assert exact_body in message
     assert not message.endswith("...")
+    assert message.endswith("y" * 200)  # 截断なし: 本文末尾がそのまま使用される
