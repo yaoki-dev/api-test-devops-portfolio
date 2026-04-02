@@ -971,3 +971,63 @@ async def test_handle_5xx_response(
         else:
             result = await client._handle_5xx_response(mock_response, attempt)
             assert result is None
+
+
+# ── D-07 追加: _prepare_headers / _handle_304 / _handle_403 / _update_etag_cache ──
+
+
+@pytest.mark.unit
+def test_prepare_headers_with_etag() -> None:
+    """ETagキャッシュ存在時にIf-None-Matchヘッダーが設定される"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    client._etag_cache["/repos/test"] = "etag-abc"
+    headers = client._prepare_headers("/repos/test")
+    assert headers == {"If-None-Match": "etag-abc"}
+
+
+@pytest.mark.unit
+def test_prepare_headers_without_etag() -> None:
+    """ETagキャッシュ不在時に空dictを返す"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    assert client._prepare_headers("/repos/test") == {}
+
+
+@pytest.mark.unit
+def test_handle_304_response_cache_hit() -> None:
+    """_data_cacheヒット時にキャッシュデータを返す（D-07正常系）"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    cached = {"id": 1, "login": "user"}
+    client._data_cache["/user"] = cached
+    result = client._handle_304_response("/user")
+    assert result == cached
+
+
+@pytest.mark.unit
+def test_handle_403_response_no_json_log() -> None:
+    """非JSONボディ時にfailed_to_parse_403_messageログ（warning）が出力される"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    response = httpx.Response(
+        403,
+        headers={
+            "X-RateLimit-Remaining": "50",
+            "X-RateLimit-Reset": "0",
+            "Content-Type": "text/plain",
+        },
+        content=b"not json",
+    )
+    with capture_logs() as logs:
+        with pytest.raises(GitHubAPIError, match="Access forbidden"):
+            client._handle_403_response(response)
+        warning_logs = [log for log in logs if log.get("event") == "failed_to_parse_403_message"]
+        assert len(warning_logs) == 1
+        assert warning_logs[0]["log_level"] == "warning"
+
+
+@pytest.mark.unit
+def test_update_etag_cache_no_etag_header() -> None:
+    """ETagヘッダー不在時にキャッシュを更新しない"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    response = httpx.Response(200, content=b"{}")
+    client._update_etag_cache("/test", response, {"data": 1})
+    assert "/test" not in client._etag_cache
+    assert "/test" not in client._data_cache
