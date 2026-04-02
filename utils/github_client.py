@@ -267,7 +267,151 @@ class AsyncGitHubClient:
             )
             return default
 
-    async def _request(  # noqa: C901 - 統合HTTPリクエスト処理（Rate Limit/ETag/リトライ統合）のため許容
+    def _prepare_headers(self, endpoint: str) -> dict[str, str]:
+        """ETagヘッダーを設定する（Conditional Requests対応）。"""
+        headers: dict[str, str] = {}
+        if endpoint in self._etag_cache:
+            headers["If-None-Match"] = self._etag_cache[endpoint]
+        return headers
+
+    def _check_rate_limit_warning(
+        self,
+        response_headers: httpx.Headers,
+        remaining: int,
+    ) -> None:
+        """RateLimit残量が閾値未満の場合に警告ログを出力する。"""
+        if remaining < _RATE_LIMIT_WARNING_THRESHOLD:
+            reset_time = self._parse_rate_limit_header(
+                response_headers, "X-RateLimit-Reset", _RATE_LIMIT_RESET_FALLBACK
+            )
+            reset_dt = datetime.fromtimestamp(reset_time, tz=UTC)
+            self.logger.warning(
+                "rate_limit_low",
+                remaining=remaining,
+                reset_time=reset_dt.isoformat(),
+            )
+
+    def _handle_304_response(self, endpoint: str) -> Any:
+        """304 Not Modified: キャッシュデータを返却する。キャッシュミス時はエラー。"""
+        if endpoint in self._data_cache:
+            return self._data_cache[endpoint]
+        # キャッシュミス時（理論上発生しない: ETagあり=キャッシュあり）
+        # Fail-fast: キャッシュ不整合は実装バグの証拠
+        self.logger.error(
+            "cache_miss_on_304",
+            endpoint=endpoint,
+            hint="ETag存在時のキャッシュミスは実装バグ",
+            etag=self._etag_cache.get(endpoint),
+        )
+        raise GitHubAPIError(
+            f"Cache inconsistency: 304 response without cached data for {endpoint}"
+        )
+
+    def _handle_403_response(self, response: httpx.Response) -> None:
+        """403エラー処理: Rate Limit超過 vs その他の403を判別して raise する。"""
+        # フォールバック -1 = 不正値時はRate Limit超過と判定せずGitHubAPIErrorへ
+        rate_remaining = self._parse_rate_limit_header(
+            response.headers, "X-RateLimit-Remaining", _RATE_LIMIT_FORBIDDEN_FALLBACK
+        )
+        if rate_remaining == 0:
+            # Rate Limit超過確定
+            reset_time = self._parse_rate_limit_header(
+                response.headers, "X-RateLimit-Reset", _RATE_LIMIT_RESET_FALLBACK
+            )
+            raise RateLimitError(reset_time)
+        # その他の403エラー（IPブロック、アクセス権限不足等）
+        error_message = "Access forbidden"
+        try:
+            error_message = response.json().get("message", error_message)
+        except json.JSONDecodeError as parse_err:
+            # JSONパース失敗は想定内（非JSON応答の可能性）— 削除禁止 (CONTEXT.md specifics)
+            self.logger.warning("failed_to_parse_403_message", error=str(parse_err))
+        raise GitHubAPIError(f"Access forbidden: {error_message}")
+
+    async def _handle_5xx_response(
+        self,
+        response: httpx.Response,
+        attempt: int,
+    ) -> None:
+        """5xxエラーのリトライ制御。最終試行なら raise、継続なら return None。
+
+        raise-or-return パターン (D-10):
+        - return None → 呼び出し元で continue
+        - raise GitHubServerError → リトライ上限到達
+        """
+        if attempt < self.max_retries - 1:
+            delay = exponential_backoff_with_jitter(attempt, base_delay=2.0)
+            self.logger.warning(
+                "retrying_server_error",
+                attempt=attempt + 1,
+                max_retries=self.max_retries,
+                delay=delay,
+                status_code=response.status_code,
+            )
+            await asyncio.sleep(delay)
+            return None  # 呼び出し元で continue
+        raise GitHubServerError(
+            f"Server error: {response.status_code} after {self.max_retries} attempts",
+        )
+
+    def _parse_json_response(
+        self,
+        response: httpx.Response,
+        endpoint: str,
+    ) -> dict[str, Any] | list[dict[str, Any]]:
+        """JSONレスポンスをパースする。破損JSON時はGitHubAPIErrorを発生。"""
+        try:
+            return cast(
+                "dict[str, Any] | list[dict[str, Any]]",
+                response.json(),
+            )
+        except json.JSONDecodeError as e:
+            self.logger.error("json_decode_error", endpoint=endpoint, error=str(e))
+            raise GitHubAPIError(f"Invalid JSON response: {e}") from e
+
+    async def _handle_http_status_error(
+        self,
+        e: httpx.HTTPStatusError,
+        attempt: int,
+    ) -> None:
+        """HTTPStatusError処理。raise-or-return パターン (D-10)。
+
+        - 4xx: GitHubAPIError を raise（リトライしない）
+        - 5xx最終試行: GitHubServerError を raise
+        - 5xx非最終試行: return None（continue用）
+        """
+        if e.response.status_code < 500:
+            # 4xxエラー: リトライしない（GitHubAPIErrorに変換）
+            raise GitHubAPIError(f"HTTP {e.response.status_code} error: {e.response.text}") from e
+        if attempt == self.max_retries - 1:
+            raise GitHubServerError(f"Failed after {self.max_retries} attempts") from e
+        # 5xxエラーかつ最終試行でない場合のリトライ（防御的コードパス）
+        # Note: 5xxは通常L328-343で先に処理されるため、このパスは理論上到達しない
+        delay = exponential_backoff_with_jitter(attempt, base_delay=2.0)
+        self.logger.warning(
+            "retrying_http_status_error",
+            status_code=e.response.status_code,
+            attempt=attempt + 1,
+            max_retries=self.max_retries,
+            endpoint=str(e.request.url),
+            method=e.request.method,
+            delay=delay,
+        )
+        await asyncio.sleep(delay)
+        return None  # 呼び出し元で continue
+
+    def _update_etag_cache(
+        self,
+        endpoint: str,
+        response: httpx.Response,
+        result_json: dict[str, Any] | list[dict[str, Any]],
+    ) -> None:
+        """ETagとデータキャッシュを同時更新する（アトミック性維持）。"""
+        if "ETag" in response.headers:
+            self._etag_cache[endpoint] = response.headers["ETag"]
+            self._data_cache[endpoint] = result_json
+
+    async def _request(  # noqa: C901 - HTTPプロトコル処理の最小必要分岐（4xxステータス, 5xxリトライ, タイムアウト, キャンセル等）のため許容 CC≈12
         self,
         method: str,
         endpoint: str,
@@ -308,10 +452,7 @@ class AsyncGitHubClient:
         if not self._client:
             raise RuntimeError("Client not initialized. Use 'async with' context.")
 
-        # Conditional Requests: ETagヘッダー追加
-        headers = {}
-        if endpoint in self._etag_cache:
-            headers["If-None-Match"] = self._etag_cache[endpoint]
+        headers = self._prepare_headers(endpoint)
 
         for attempt in range(self.max_retries):
             try:
@@ -322,124 +463,39 @@ class AsyncGitHubClient:
                     headers=headers,
                 )
 
-                # Rate Limit監視: 残量少でwarning出力
+                # Rate Limit監視
                 remaining = self._parse_rate_limit_header(
                     response.headers, "X-RateLimit-Remaining", _RATE_LIMIT_FALLBACK_REMAINING
                 )
-                if remaining < _RATE_LIMIT_WARNING_THRESHOLD:
-                    reset_time = self._parse_rate_limit_header(
-                        response.headers, "X-RateLimit-Reset", _RATE_LIMIT_RESET_FALLBACK
-                    )
-                    reset_dt = datetime.fromtimestamp(reset_time, tz=UTC)
-                    self.logger.warning(
-                        "rate_limit_low",
-                        remaining=remaining,
-                        reset_time=reset_dt.isoformat(),
-                    )
+                self._check_rate_limit_warning(response.headers, remaining)
 
                 # ステータスコード処理
                 if response.status_code == 304:
-                    # 304 Not Modified: キャッシュデータを返却
-                    if endpoint in self._data_cache:
-                        return self._data_cache[endpoint]
-                    # キャッシュミス時（理論上発生しない: ETagあり=キャッシュあり）
-                    # Fail-fast: キャッシュ不整合は実装バグの証拠
-                    self.logger.error(
-                        "cache_miss_on_304",
-                        endpoint=endpoint,
-                        hint="ETag存在時のキャッシュミスは実装バグ",
-                        etag=self._etag_cache.get(endpoint),
-                    )
-                    raise GitHubAPIError(
-                        f"Cache inconsistency: 304 response without cached data for {endpoint}"
-                    )
+                    return self._handle_304_response(endpoint)
 
                 if response.status_code == 404:
                     raise NotFoundError(f"Resource not found: {endpoint}")
 
                 if response.status_code == 403:
-                    # 403分類: Rate Limit超過 vs その他の403を判別
-                    # フォールバック -1 = 不正値時はRate Limit超過と判定せずGitHubAPIErrorへ
-                    rate_remaining = self._parse_rate_limit_header(
-                        response.headers, "X-RateLimit-Remaining", _RATE_LIMIT_FORBIDDEN_FALLBACK
-                    )
-                    if rate_remaining == 0:
-                        # Rate Limit超過確定
-                        reset_time = self._parse_rate_limit_header(
-                            response.headers, "X-RateLimit-Reset", _RATE_LIMIT_RESET_FALLBACK
-                        )
-                        raise RateLimitError(reset_time)
-                    # その他の403エラー（IPブロック、アクセス権限不足等）
-                    error_message = "Access forbidden"
-                    try:
-                        error_message = response.json().get("message", error_message)
-                    except json.JSONDecodeError as parse_err:
-                        # JSONパース失敗は想定内（非JSON応答の可能性）
-                        self.logger.warning("failed_to_parse_403_message", error=str(parse_err))
-                    raise GitHubAPIError(f"Access forbidden: {error_message}")
+                    self._handle_403_response(response)
 
                 if response.status_code >= 500:
-                    # 5xxエラー: リトライ
-                    if attempt < self.max_retries - 1:
-                        delay = exponential_backoff_with_jitter(attempt, base_delay=2.0)
-                        self.logger.warning(
-                            "retrying_server_error",
-                            attempt=attempt + 1,
-                            max_retries=self.max_retries,
-                            delay=delay,
-                            status_code=response.status_code,
-                        )
-                        await asyncio.sleep(delay)
+                    if await self._handle_5xx_response(response, attempt) is None:
                         continue
-                    raise GitHubServerError(
-                        f"Server error: {response.status_code} after {self.max_retries} attempts",
-                    )
 
                 response.raise_for_status()
 
-                # JSONパース（破損JSON対応）
-                try:
-                    result_json: dict[str, Any] | list[dict[str, Any]] = cast(
-                        "dict[str, Any] | list[dict[str, Any]]",
-                        response.json(),
-                    )
-                except json.JSONDecodeError as e:
-                    self.logger.error("json_decode_error", endpoint=endpoint, error=str(e))
-                    raise GitHubAPIError(f"Invalid JSON response: {e}") from e
-
-                # ETag/データキャッシュ同時更新（304レスポンス対応）
-                if "ETag" in response.headers:
-                    self._etag_cache[endpoint] = response.headers["ETag"]
-                    self._data_cache[endpoint] = result_json
+                result_json = self._parse_json_response(response, endpoint)
+                self._update_etag_cache(endpoint, response, result_json)
 
                 return result_json
 
             except GitHubAPIError:
-                # GitHubAPIError系の例外は再発生（上位レイヤーで処理）
                 raise
 
             except httpx.HTTPStatusError as e:
-                if e.response.status_code < 500:
-                    # 4xxエラー: リトライしない（GitHubAPIErrorに変換）
-                    raise GitHubAPIError(
-                        f"HTTP {e.response.status_code} error: {e.response.text}"
-                    ) from e
-                if attempt == self.max_retries - 1:
-                    raise GitHubServerError(f"Failed after {self.max_retries} attempts") from e
-                # 5xxエラーかつ最終試行でない場合のリトライ（防御的コードパス）
-                # Note: 5xxは通常L328-343で先に処理されるため、このパスは理論上到達しない
-                delay = exponential_backoff_with_jitter(attempt, base_delay=2.0)
-                self.logger.warning(
-                    "retrying_http_status_error",
-                    status_code=e.response.status_code,
-                    attempt=attempt + 1,
-                    max_retries=self.max_retries,
-                    endpoint=endpoint,
-                    method=method,
-                    delay=delay,
-                )
-                await asyncio.sleep(delay)
-                continue
+                if await self._handle_http_status_error(e, attempt) is None:
+                    continue
 
             except httpx.TimeoutException as e:
                 self.logger.warning("request_timeout", endpoint=endpoint, method=method)
