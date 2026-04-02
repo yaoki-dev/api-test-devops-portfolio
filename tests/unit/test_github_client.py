@@ -8,6 +8,7 @@ GitHub API非同期クライアントのUnit Tests
 """
 
 import asyncio
+import json
 from datetime import UTC, datetime
 from unittest.mock import ANY, Mock, patch
 
@@ -774,3 +775,134 @@ def test_repo_validation_invalid(repo: str) -> None:
     """無効なリポジトリ名でValueError発生（セキュリティ境界テスト）"""
     with pytest.raises(ValueError, match="Invalid GitHub repository name"):
         validate_github_repo(repo)
+
+
+# =============================================================================
+# ハンドラメソッド直接テスト（D-07: 複雑ハンドラ unit test）
+# =============================================================================
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("remaining_header", "reset_header", "json_body", "expected_exc", "match"),
+    [
+        pytest.param(
+            "0",
+            "1700000000",
+            None,
+            RateLimitError,
+            None,
+            id="rate_limit_exceeded",
+        ),
+        pytest.param(
+            "50",
+            "0",
+            {"message": "Blocked"},
+            GitHubAPIError,
+            "Blocked",
+            id="non_rate_limit_with_message",
+        ),
+        pytest.param(
+            "50",
+            "0",
+            None,
+            GitHubAPIError,
+            "Access forbidden",
+            id="non_rate_limit_no_json",
+        ),
+    ],
+)
+async def test_handle_403_response(
+    remaining_header: str,
+    reset_header: str,
+    json_body: dict | None,
+    expected_exc: type[Exception],
+    match: str | None,
+) -> None:
+    """_handle_403_response の3パステスト（D-07）
+
+    - rate_limit_exceeded: remaining=0 → RateLimitError
+    - non_rate_limit_with_message: remaining=50 + JSON message → GitHubAPIError(message)
+    - non_rate_limit_no_json: remaining=50 + 非JSON → GitHubAPIError("Access forbidden")
+    """
+    async with AsyncGitHubClient(max_retries=MAX_RETRIES) as client:
+        # 403レスポンスを構築
+        headers = {
+            "X-RateLimit-Remaining": remaining_header,
+            "X-RateLimit-Reset": reset_header,
+        }
+        if json_body is not None:
+            content = json.dumps(json_body).encode()
+            content_type = "application/json"
+        else:
+            content = b"not json"
+            content_type = "text/plain"
+
+        response = httpx.Response(
+            403,
+            headers={**headers, "Content-Type": content_type},
+            content=content,
+        )
+
+        with pytest.raises(expected_exc, match=match):
+            client._handle_403_response(response)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status_code", "attempt", "max_retries_val", "expected_exc"),
+    [
+        pytest.param(
+            404,
+            0,
+            MAX_RETRIES,
+            GitHubAPIError,
+            id="4xx_error",
+        ),
+        pytest.param(
+            502,
+            2,
+            MAX_RETRIES,
+            GitHubServerError,
+            id="5xx_final_attempt",
+        ),
+        pytest.param(
+            502,
+            0,
+            MAX_RETRIES,
+            None,
+            id="5xx_non_final_attempt",
+        ),
+    ],
+)
+@patch("utils.github_client.exponential_backoff_with_jitter", return_value=0.0)
+async def test_handle_http_status_error(
+    mock_backoff: Mock,
+    status_code: int,
+    attempt: int,
+    max_retries_val: int,
+    expected_exc: type[Exception] | None,
+) -> None:
+    """_handle_http_status_error の3パステスト（D-07）
+
+    - 4xx_error: 4xxステータス → GitHubAPIError を raise
+    - 5xx_final_attempt: 5xx + 最終試行 → GitHubServerError を raise
+    - 5xx_non_final_attempt: 5xx + 非最終試行 → return None（continue用）
+    """
+    async with AsyncGitHubClient(max_retries=max_retries_val) as client:
+        mock_request = httpx.Request("GET", "https://api.github.com/test")
+        mock_response = httpx.Response(status_code, request=mock_request)
+        error = httpx.HTTPStatusError(
+            f"HTTP {status_code}",
+            request=mock_request,
+            response=mock_response,
+        )
+
+        if expected_exc is not None:
+            with pytest.raises(expected_exc):
+                await client._handle_http_status_error(error, attempt)
+        else:
+            result = await client._handle_http_status_error(error, attempt)
+            assert result is None
