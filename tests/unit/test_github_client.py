@@ -783,7 +783,6 @@ def test_repo_validation_invalid(repo: str) -> None:
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("remaining_header", "reset_header", "json_body", "expected_exc", "match"),
     [
@@ -811,42 +810,51 @@ def test_repo_validation_invalid(repo: str) -> None:
             "Access forbidden",
             id="non_rate_limit_no_json",
         ),
+        pytest.param(
+            "invalid",
+            "0",
+            None,
+            GitHubAPIError,
+            "Access forbidden",
+            id="invalid_header_fallback",
+        ),
     ],
 )
-async def test_handle_403_response(
+def test_handle_403_response(
     remaining_header: str,
     reset_header: str,
     json_body: dict | None,
     expected_exc: type[Exception],
     match: str | None,
 ) -> None:
-    """_handle_403_response の3パステスト（D-07）
+    """_handle_403_response の4パステスト（D-07）
 
     - rate_limit_exceeded: remaining=0 → RateLimitError
     - non_rate_limit_with_message: remaining=50 + JSON message → GitHubAPIError(message)
     - non_rate_limit_no_json: remaining=50 + 非JSON → GitHubAPIError("Access forbidden")
+    - invalid_header_fallback: remaining=invalid → フォールバック(-1) → GitHubAPIError
     """
-    async with AsyncGitHubClient(max_retries=MAX_RETRIES) as client:
-        # 403レスポンスを構築
-        headers = {
-            "X-RateLimit-Remaining": remaining_header,
-            "X-RateLimit-Reset": reset_header,
-        }
-        if json_body is not None:
-            content = json.dumps(json_body).encode()
-            content_type = "application/json"
-        else:
-            content = b"not json"
-            content_type = "text/plain"
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    # 403レスポンスを構築
+    headers = {
+        "X-RateLimit-Remaining": remaining_header,
+        "X-RateLimit-Reset": reset_header,
+    }
+    if json_body is not None:
+        content = json.dumps(json_body).encode()
+        content_type = "application/json"
+    else:
+        content = b"not json"
+        content_type = "text/plain"
 
-        response = httpx.Response(
-            403,
-            headers={**headers, "Content-Type": content_type},
-            content=content,
-        )
+    response = httpx.Response(
+        403,
+        headers={**headers, "Content-Type": content_type},
+        content=content,
+    )
 
-        with pytest.raises(expected_exc, match=match):
-            client._handle_403_response(response)
+    with pytest.raises(expected_exc, match=match):
+        client._handle_403_response(response)
 
 
 @pytest.mark.unit
@@ -905,4 +913,61 @@ async def test_handle_http_status_error(
                 await client._handle_http_status_error(error, attempt)
         else:
             result = await client._handle_http_status_error(error, attempt)
+            assert result is None
+
+
+@pytest.mark.unit
+def test_handle_304_response_cache_miss() -> None:
+    """キャッシュミス時にGitHubAPIErrorを発生させる（防御的コードパス D-07）"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    # _etag_cacheにエントリを設定するが_data_cacheには設定しない（不整合状態）
+    client._etag_cache["/test"] = "etag-value"
+    # _data_cacheは空のまま
+
+    with pytest.raises(GitHubAPIError, match="Cache inconsistency"):
+        client._handle_304_response("/test")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status_code", "attempt", "max_retries_val", "expected_exc"),
+    [
+        pytest.param(
+            503,
+            0,
+            MAX_RETRIES,
+            None,
+            id="5xx_non_final_attempt",
+        ),
+        pytest.param(
+            503,
+            MAX_RETRIES - 1,
+            MAX_RETRIES,
+            GitHubServerError,
+            id="5xx_final_attempt",
+        ),
+    ],
+)
+@patch("utils.github_client.exponential_backoff_with_jitter", return_value=0.0)
+async def test_handle_5xx_response(
+    mock_backoff: Mock,
+    status_code: int,
+    attempt: int,
+    max_retries_val: int,
+    expected_exc: type[Exception] | None,
+) -> None:
+    """_handle_5xx_response の2パステスト（D-07）
+
+    - 5xx_non_final_attempt: 5xx + 非最終試行 → return None（continue用）
+    - 5xx_final_attempt: 5xx + 最終試行 → GitHubServerError を raise
+    """
+    async with AsyncGitHubClient(max_retries=max_retries_val) as client:
+        mock_response = httpx.Response(status_code)
+
+        if expected_exc is not None:
+            with pytest.raises(expected_exc):
+                await client._handle_5xx_response(mock_response, attempt)
+        else:
+            result = await client._handle_5xx_response(mock_response, attempt)
             assert result is None
