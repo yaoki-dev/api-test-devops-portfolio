@@ -42,6 +42,7 @@ def _strip_invisible_chars(v: str) -> str:
     - Mn: 非スペーシングマーク（Mark, Nonspacing）（Variation Selectors U+FE00-U+FE0F、
           アクセント記号U+0300等）— スキームバイパス防止
     - Zs: Unicode空白（NBSP, Ogham Space, 全角空白等。U+0020通常スペースは保持）
+          ※ NFKC正規化前にも除去（NFKC後にU+0020へ変換される副作用を防止）
     - Zl: 行区切り（U+2028 Line Separator）
     - Zp: 段落区切り（U+2029 Paragraph Separator）
 
@@ -53,10 +54,15 @@ def _strip_invisible_chars(v: str) -> str:
     # Cs（孤立サロゲート U+D800-U+DFFF）はデータ整合性のため先に除去する
     # （有効なUnicode文字列に孤立サロゲートを含めるべきでない）。
     without_surrogates = "".join(c for c in v if unicodedata.category(c) != "Cs")
-    normalized = unicodedata.normalize("NFKC", without_surrogates)
-    # U+0020 (ASCII SPACE) は Zs カテゴリだが保持する。
-    # Zs を frozenset から外す代替案は NBSP (U+00A0) や全角スペース (U+3000) 等の
-    # URL難読化に悪用される文字も通過させてしまうため採用しない。
+    # NFKC前に不可視文字を除去（NBSP等のZs文字がNFKC後にU+0020へ変換される副作用防止）
+    # 全角英字（Ll/Lu等）はNFKC前に残し、NFKC正規化でASCIIに変換される
+    pre_filtered = "".join(
+        c
+        for c in without_surrogates
+        if (unicodedata.category(c) not in _INVISIBLE_CATEGORIES) or (c == " ")
+    )
+    normalized = unicodedata.normalize("NFKC", pre_filtered)
+    # NFKC後も二重チェック（NFKC変換が新たな不可視文字を生成するケースに備える）
     return "".join(
         c
         for c in normalized
@@ -101,10 +107,11 @@ def sanitize_user_content(value: str) -> str:
 
 def _normalize_url(parsed: ParseResult) -> str:
     """RFC 3986 Section 6.2.2.1: スキームとホスト部を小文字正規化し、パス・クエリをURLエンコードする."""  # noqa: E501
-    # _replace()はnamedtupleのプライベートAPI（PEP 343で安定保証なし）のため公開APIのtupleに移行
-    # パス・クエリのXSS文字（< > " ' 等）をURLエンコード（%を安全文字に含め二重エンコード防止）
+    # ParseResultはnamedtupleだが、tuple直接指定でコードの意図を明示する
+    # パス・クエリ・フラグメントのXSS文字をURLエンコード（%を安全文字に含め二重エンコード防止）
     safe_path = quote(parsed.path, safe="/:@!$&'()*+,;=%")
     safe_query = quote(parsed.query, safe="=&+:@!$'()*,;/%")
+    safe_fragment = quote(parsed.fragment, safe=":@!$&'()*+,;=/?%-._~")
     return urlunparse(
         (
             parsed.scheme.lower(),
@@ -112,7 +119,7 @@ def _normalize_url(parsed: ParseResult) -> str:
             safe_path,
             parsed.params,
             safe_query,
-            parsed.fragment,
+            safe_fragment,
         )
     )
 
