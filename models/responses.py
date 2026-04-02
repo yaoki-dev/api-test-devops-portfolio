@@ -49,6 +49,8 @@ def _strip_invisible_chars(v: str) -> str:
     Python に同梱の Unicode バージョン内の新規文字に自動対応する。
     （Unicode バージョン自体の更新には Python バージョンアップが必要）
     """
+    if not isinstance(v, str):
+        raise ValueError(f"文字列が必要です。受け取った型: {type(v).__name__}")
     # Cs（孤立サロゲート U+D800-U+DFFF）はデータ整合性のため先に除去する
     # （有効なUnicode文字列に孤立サロゲートを含めるべきでない）。
     without_surrogates = "".join(c for c in v if unicodedata.category(c) != "Cs")
