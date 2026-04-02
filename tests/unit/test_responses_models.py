@@ -266,17 +266,21 @@ def test_strip_invisible_chars_preserves_ascii_space() -> None:
     """_strip_invisible_chars がASCIIスペース(U+0020)を保持することを検証。
 
     U+0020はZsカテゴリだが、URLクエリパラメータ等に含まれる正常な文字として保持される。
-    NBSP (U+00A0) 等の他のZs文字は除去される。
+
+    Note:
+        NFKC正規化により NBSP(U+00A0) や全角スペース(U+3000) はASCIIスペース(U+0020)に
+        変換されてから _INVISIBLE_CATEGORIES フィルタが適用されるため、
+        これらの文字はASCIIスペースとして残る（後続URLバリデーターで不正URLとして弾かれる）。
     """
     # ASCII スペースは保持される
     assert (
         _strip_invisible_chars("https://example.com/path?a=1 b=2")
         == "https://example.com/path?a=1 b=2"
     )
-    # NBSP (U+00A0: Zs) は除去される
-    assert _strip_invisible_chars("https://\u00a0example.com") == "https://example.com"
-    # 全角スペース (U+3000: Zs) は除去される
-    assert _strip_invisible_chars("https://\u3000example.com") == "https://example.com"
+    # NBSP (U+00A0: Zs) はNFKCでASCIIスペースに変換され、そのまま保持される
+    assert _strip_invisible_chars("https://\u00a0example.com") == "https:// example.com"
+    # 全角スペース (U+3000: Zs) はNFKCでASCIIスペースに変換され、そのまま保持される
+    assert _strip_invisible_chars("https://\u3000example.com") == "https:// example.com"
     # Variation Selector-1 (U+FE00: Mn) は除去される
     assert _strip_invisible_chars("java\ufe00script:alert(1)") == "javascript:alert(1)"
     # Line Separator (U+2028: Zl) は除去される

@@ -18,7 +18,7 @@ html.escape()サニタイゼーションを適用したPydanticモデル。
 import html
 import re
 import unicodedata
-from urllib.parse import ParseResult, urlparse, urlunparse
+from urllib.parse import ParseResult, quote, urlparse, urlunparse
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -53,7 +53,7 @@ def _strip_invisible_chars(v: str) -> str:
     # Cs（孤立サロゲート U+D800-U+DFFF）はデータ整合性のため先に除去する
     # （有効なUnicode文字列に孤立サロゲートを含めるべきでない）。
     without_surrogates = "".join(c for c in v if unicodedata.category(c) != "Cs")
-    normalized = unicodedata.normalize("NFC", without_surrogates)
+    normalized = unicodedata.normalize("NFKC", without_surrogates)
     # U+0020 (ASCII SPACE) は Zs カテゴリだが保持する。
     # Zs を frozenset から外す代替案は NBSP (U+00A0) や全角スペース (U+3000) 等の
     # URL難読化に悪用される文字も通過させてしまうため採用しない。
@@ -88,7 +88,7 @@ def sanitize_user_content(value: str) -> str:
     Returns:
         サニタイズ済み文字列
 
-    Example:
+    Examples:
         >>> sanitize_user_content("<script>alert('XSS')</script>")
         '&lt;script&gt;alert(&#x27;XSS&#x27;)&lt;/script&gt;'
 
@@ -100,8 +100,21 @@ def sanitize_user_content(value: str) -> str:
 
 
 def _normalize_url(parsed: ParseResult) -> str:
-    """RFC 3986 Section 6.2.2.1: スキームとホスト部を小文字正規化する."""
-    return urlunparse(parsed._replace(scheme=parsed.scheme.lower(), netloc=parsed.netloc.lower()))
+    """RFC 3986 Section 6.2.2.1: スキームとホスト部を小文字正規化し、パス・クエリをURLエンコードする."""  # noqa: E501
+    # _replace()はnamedtupleのプライベートAPI（PEP 343で安定保証なし）のため公開APIのtupleに移行
+    # パス・クエリのXSS文字（< > " ' 等）をURLエンコード（%を安全文字に含め二重エンコード防止）
+    safe_path = quote(parsed.path, safe="/:@!$&'()*+,;=%")
+    safe_query = quote(parsed.query, safe="=&+:@!$'()*,;/%")
+    return urlunparse(
+        (
+            parsed.scheme.lower(),
+            parsed.netloc.lower(),
+            safe_path,
+            parsed.params,
+            safe_query,
+            parsed.fragment,
+        )
+    )
 
 
 # =============================================================================
@@ -152,8 +165,8 @@ class Comment(BaseModel):
     """コメントモデル
 
     JSONPlaceholder /comments エンドポイントのレスポンス。
-    name, bodyフィールドにXSS保護（html.escape）を適用。
-    emailはEmailStr型でRFC構文チェック（DNS検証なし）。
+    name, body, emailフィールドにXSS保護（html.escape）を適用。
+    emailはEmailStr型でRFC構文チェック後にhtml.escapeを適用（Defense in Depth）。
 
     Attributes:
         id: コメントID（1以上）
@@ -194,6 +207,29 @@ class Comment(BaseModel):
         """
         return sanitize_user_content(v)
 
+    @field_validator("email", mode="after")
+    @classmethod
+    def sanitize_email(cls, v: str) -> str:
+        """コメント投稿者メールアドレスをサニタイズ（Defense in Depth）
+
+        EmailStrによるRFC構文検証後にhtml.escapeを適用。
+        正常なメールアドレスはエスケープ対象文字を含まないため実質的に変換なし。
+        HTMLコンテキスト出力時の安全性を多層的に確保する。
+
+        Note:
+            EmailStrが拒否する特殊文字（< > & "）は実際には到達しない。
+            ただし & を含むローカルパート（例: user&tag@example.com）は
+            EmailStrが受理した場合に html.escape で変換される可能性あり。
+            RFC 5321上 & は有効なアドレス文字だが実運用上は稀。
+
+        Args:
+            v: EmailStr検証済みメールアドレス文字列
+
+        Returns:
+            html.escape適用済みメールアドレス文字列
+        """
+        return sanitize_user_content(v)
+
 
 # =============================================================================
 # ユーザー関連モデル
@@ -209,6 +245,11 @@ class Geo(BaseModel):
     Attributes:
         lat: 緯度（文字列形式、サニタイズ済み）
         lng: 経度（文字列形式、サニタイズ済み）
+
+    Note:
+        lat/lngは数値座標文字列（例: "-40.7128"）のため、
+        URLスキームバイパス防止を目的とする _strip_invisible_chars は非適用。
+        XSSはhtml.escape（sanitize_user_content経由）で対処。
 
     """
 
@@ -333,7 +374,8 @@ class User(BaseModel):
         email: メールアドレス（EmailStr RFC構文チェック済み・DNS検証なし、最大100文字）
         address: 住所情報（ネストされたAddressモデル）
         phone: 電話番号（サニタイズ済み、最大50文字）
-        website: ウェブサイトURL（制御文字除去・前後空白除去済み、最大200文字）
+        website: ウェブサイトURL（制御文字除去・前後空白除去・http/httpsスキーム検証済み、
+            最大200文字）
         company: 企業情報（ネストされたCompanyモデル）
 
     """
@@ -375,7 +417,7 @@ class User(BaseModel):
         """
         return sanitize_user_content(v)
 
-    @field_validator("website")
+    @field_validator("website", mode="before")
     @classmethod
     def validate_website_scheme(cls, v: str) -> str:
         """websiteフィールドのURLスキーム検証（allowlist方式）
@@ -401,6 +443,7 @@ class User(BaseModel):
                 - http/https以外の危険スキーム
                 - 有効なホスト名なし
                 - userinfoを含む（例: https://user@host — RFC 3986 バイパス防止）
+                - スキームなしURLにポートが含まれる（例: example.com:8080）
 
         Note:
             websiteフィールドの値をHTMLコンテキストへ出力する際は、
