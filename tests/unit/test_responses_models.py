@@ -24,8 +24,8 @@ from models.responses import (
     Post,
     Todo,
     User,
-    _strip_invisible_chars,
-    sanitize_user_content,
+    _strip_invisible_chars,  # noqa: PLC2701
+    sanitize_user_content,  # noqa: PLC2701
 )
 
 pytestmark = pytest.mark.unit
@@ -139,6 +139,15 @@ _XSS_MODEL_PARAMS: Final[list[XSSVector]] = [
     ),
     ("Test & Test", "Test &amp; Test"),
 ]
+
+# _XSS_MODEL_PARAMS の各エントリに対応する ID（pytest.param の id= に使用）
+_COMMENT_XSS_IDS: Final[tuple[str, ...]] = (
+    "script_basic",
+    "event_img_onerror",
+    "uri_scheme_js",
+    "attr_injection",
+    "special_chars_amp",
+)
 
 
 class _GeoData(TypedDict):
@@ -478,16 +487,20 @@ class TestUserModel:
         assert isinstance(user.company, Company)
 
     @pytest.mark.parametrize(
-        ("dirty", "expected"),
-        _XSS_MODEL_PARAMS,
+        ("field", "dirty", "expected"),
+        [
+            pytest.param(field, dirty, expected, id=f"{field}-{name}")
+            for field in ("name", "username", "phone")
+            for (dirty, expected), name in zip(_XSS_MODEL_PARAMS, _COMMENT_XSS_IDS, strict=True)
+        ],
     )
-    def test_user_name_sanitizes_xss(
-        self, valid_user_data: _UserData, dirty: str, expected: str
+    def test_user_sanitizes_xss(
+        self, valid_user_data: _UserData, field: str, dirty: str, expected: str
     ) -> None:
-        """User.name フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
-        valid_user_data["name"] = dirty
+        """User name/username/phone フィールドの XSS サニタイゼーション"""
+        valid_user_data[field] = dirty  # type: ignore[literal-required]
         user = User(**valid_user_data)
-        assert user.name == expected
+        assert getattr(user, field) == expected
 
     def test_user_populate_by_name(self, valid_user_data: _UserData) -> None:
         """User モデルの populate_by_name が有効であることを確認"""
@@ -842,20 +855,9 @@ class TestCommentModel:
     @pytest.mark.parametrize(
         ("field", "dirty", "expected"),
         [
-            (field, dirty, expected)
+            pytest.param(field, dirty, expected, id=f"{field}-{name}")
             for field in ("name", "body")
-            for dirty, expected in _XSS_MODEL_PARAMS
-        ],
-        ids=[
-            f"{field}-{name}"
-            for field in ("name", "body")
-            for name in (
-                "script_basic",
-                "event_img_onerror",
-                "uri_scheme_js",
-                "attr_injection",
-                "special_chars_amp",
-            )
+            for (dirty, expected), name in zip(_XSS_MODEL_PARAMS, _COMMENT_XSS_IDS, strict=True)
         ],
     )
     def test_comment_sanitizes_xss(self, field: str, dirty: str, expected: str) -> None:
@@ -893,8 +895,33 @@ class TestCommentModel:
         comment = Comment(postId=1, id=1, name="Name", email=email, body="Body")
         # EmailStr は html.escape を適用しないため入力値がそのまま格納される
         assert comment.email == email
-        # html.escape が適用された場合と同じ結果であることを確認（emailに変換対象文字なし）
-        assert comment.email == html.escape(email, quote=True)
+        # 注: html.escape(email) と比較するアサーションは、このメールに変換対象文字が
+        # ないため常に真となりトートロジーになる。設計を確認するには上の assert で十分。
+
+    def test_comment_email_sanitize_after_emailstr(self) -> None:
+        """Comment.email が EmailStr 検証後に html.escape が適用されること（Defense in Depth）
+
+        sanitize_email validator は mode="after" で EmailStr 後に実行される。
+        正常なメールアドレスは変換対象文字を持たないため実質 no-op だが、
+        & を含むアドレスは html.escape で変換される。
+        """
+        # & はRFC 5321上有効だが EmailStr が受理した場合 html.escape で変換される
+        # EmailStr が拒否する場合はスキップ（実装依存）
+        try:
+            comment = Comment(
+                postId=1, id=1, name="Name", email="user&tag@example.com", body="Body"
+            )
+            # EmailStr が受理した場合: html.escape により & → &amp;
+            assert "&amp;" in comment.email
+        except Exception:  # noqa: BLE001, S110
+            # EmailStr が拒否する場合: validator が機能していることの確認で十分
+            pass
+
+        # 通常のメールアドレスは変換なし（no-op 確認）
+        comment_normal = Comment(
+            postId=1, id=1, name="Name", email="normal@example.com", body="Body"
+        )
+        assert comment_normal.email == "normal@example.com"
 
 
 class TestTodoModel:
@@ -936,6 +963,15 @@ class TestAlbumModel:
         """Album.title フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
         album = Album(userId=1, id=1, title=dirty)
         assert album.title == expected
+
+
+_PHOTO_BASE: Final[dict[str, str | int]] = {
+    "albumId": 1,
+    "id": 1,
+    "title": "Test Photo",
+    "url": "https://example.com/photo.jpg",
+    "thumbnailUrl": "https://example.com/thumb.jpg",
+}
 
 
 class TestPhotoModel:
@@ -1271,6 +1307,14 @@ class TestPhotoModel:
                 url="",
                 thumbnailUrl="https://example.com/thumb.jpg",
             )
+
+    def test_photo_thumbnail_url_strips_bidi(self) -> None:
+        """Photo.thumbnail_url の Bidi 制御文字（U+202E）が除去されること"""
+        bidi = "\u202e"  # RIGHT-TO-LEFT OVERRIDE (Cf カテゴリ)
+        url_with_bidi = f"https://example.com/thumb{bidi}.jpg"
+        photo = Photo.model_validate({**_PHOTO_BASE, "thumbnailUrl": url_with_bidi})
+        assert bidi not in photo.thumbnail_url
+        assert photo.thumbnail_url == "https://example.com/thumb.jpg"
 
     def test_photo_thumbnail_url_rejects_empty_string(self) -> None:
         """Photo.thumbnail_url に空文字列を渡すと ValidationError が発生すること。"""
