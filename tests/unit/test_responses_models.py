@@ -913,9 +913,8 @@ class TestCommentModel:
             )
             # EmailStr が受理した場合: html.escape により & → &amp;
             assert "&amp;" in comment.email
-        except Exception:  # noqa: BLE001, S110
-            # EmailStr が拒否する場合: validator が機能していることの確認で十分
-            pass
+        except ValidationError:
+            pytest.skip("EmailStr rejects '&' in local part — sanitize_email unreachable")
 
         # 通常のメールアドレスは変換なし（no-op 確認）
         comment_normal = Comment(
