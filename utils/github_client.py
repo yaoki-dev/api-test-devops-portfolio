@@ -291,7 +291,7 @@ class AsyncGitHubClient:
                 reset_time=reset_dt.isoformat(),
             )
 
-    def _handle_304_response(self, endpoint: str) -> Any:
+    def _handle_304_response(self, endpoint: str) -> dict[str, Any] | list[dict[str, Any]]:
         """304 Not Modified: キャッシュデータを返却する。キャッシュミス時はエラー。"""
         if endpoint in self._data_cache:
             return self._data_cache[endpoint]
@@ -480,8 +480,8 @@ class AsyncGitHubClient:
                     self._handle_403_response(response)
 
                 if response.status_code >= 500:
-                    if await self._handle_5xx_response(response, attempt) is None:
-                        continue
+                    await self._handle_5xx_response(response, attempt)
+                    continue
 
                 response.raise_for_status()
 
@@ -494,8 +494,8 @@ class AsyncGitHubClient:
                 raise
 
             except httpx.HTTPStatusError as e:
-                if await self._handle_http_status_error(e, attempt) is None:
-                    continue
+                await self._handle_http_status_error(e, attempt)
+                continue
 
             except httpx.TimeoutException as e:
                 self.logger.warning("request_timeout", endpoint=endpoint, method=method)
