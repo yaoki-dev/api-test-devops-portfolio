@@ -457,7 +457,7 @@ async def test_httpx_status_error_5xx_defensive_path(mock_backoff: Mock) -> None
     for log_entry in retry_logs:
         assert log_entry["status_code"] == 503
         assert log_entry["max_retries"] == MAX_RETRIES
-        assert log_entry["endpoint"] == f"{GITHUB_API_BASE_URL}/users/octocat"
+        assert log_entry["endpoint"] == "/users/octocat"
         assert log_entry["method"] == "GET"
         # delay は @patch(return_value=0.0) のモック値に対応
         assert log_entry["delay"] == 0.0

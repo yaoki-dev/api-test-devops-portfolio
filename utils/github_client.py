@@ -10,7 +10,7 @@ import asyncio
 import json
 import re
 from datetime import UTC, datetime
-from typing import Any, Self, cast
+from typing import Any, NoReturn, Self, cast
 
 import httpx
 
@@ -307,7 +307,7 @@ class AsyncGitHubClient:
             f"Cache inconsistency: 304 response without cached data for {endpoint}"
         )
 
-    def _handle_403_response(self, response: httpx.Response) -> None:
+    def _handle_403_response(self, response: httpx.Response) -> NoReturn:
         """403エラー処理: Rate Limit超過 vs その他の403を判別して raise する。"""
         # フォールバック -1 = 不正値時はRate Limit超過と判定せずGitHubAPIErrorへ
         rate_remaining = self._parse_rate_limit_header(
@@ -393,7 +393,7 @@ class AsyncGitHubClient:
             status_code=e.response.status_code,
             attempt=attempt + 1,
             max_retries=self.max_retries,
-            endpoint=str(e.request.url),
+            endpoint=e.request.url.path,
             method=e.request.method,
             delay=delay,
         )
