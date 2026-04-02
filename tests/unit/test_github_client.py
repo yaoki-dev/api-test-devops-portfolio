@@ -831,7 +831,7 @@ def test_handle_403_response(
 
     - rate_limit_exceeded: remaining=0 → RateLimitError
     - non_rate_limit_with_message: remaining=50 + JSON message → GitHubAPIError(message)
-    - non_rate_limit_no_json: remaining=50 + 非JSON → GitHubAPIError("Access forbidden")
+    - non_rate_limit_no_json: remaining=50 + 非JSON → GitHubAPIError
     - invalid_header_fallback: remaining=invalid → フォールバック(-1) → GitHubAPIError
     """
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
@@ -1016,6 +1016,7 @@ def test_handle_403_response_no_json_log() -> None:
         content=b"not json",
     )
     with capture_logs() as logs:
+        # _handle_403_response は NoReturn のため pytest.raises は必須（ログ検証が目的）
         with pytest.raises(GitHubAPIError, match="Access forbidden"):
             client._handle_403_response(response)
         warning_logs = [log for log in logs if log.get("event") == "failed_to_parse_403_message"]
@@ -1027,6 +1028,7 @@ def test_handle_403_response_no_json_log() -> None:
 def test_update_etag_cache_no_etag_header() -> None:
     """ETagヘッダー不在時にキャッシュを更新しない"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    # ETagヘッダーを含まない200レスポンス（if "ETag" in headers 条件が偽になる）
     response = httpx.Response(200, content=b"{}")
     client._update_etag_cache("/test", response, {"data": 1})
     assert "/test" not in client._etag_cache
