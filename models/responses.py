@@ -2,7 +2,8 @@
 
 XSS攻撃防止のため、ユーザー生成コンテンツフィールドに
 html.escape()サニタイゼーションを適用したPydanticモデル。
-（emailはEmailStr RFC準拠バリデーション、websiteはURL形式のためhtml.escape対象外）
+（email・websiteはhtml.escape対象外: emailはEmailStr RFC準拠バリデーション、
+websiteはURL形式のためhtmlコンテキスト出力時は呼び出し元でエスケープ）
 
 実務推奨パターン:
 1. Defense in Depth: 型検証 + サニタイゼーション + 長さ制限
@@ -105,11 +106,20 @@ def sanitize_user_content(value: str) -> str:
     return html.escape(value, quote=True)
 
 
+def _validate_netloc(parsed: ParseResult) -> None:
+    """netloc の存在確認と userinfo 禁止チェックを共通化する."""
+    if not parsed.netloc:
+        raise ValueError("有効なホスト名が含まれていません")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("URLにuserinfo（ユーザー名/パスワード）は指定できません")
+
+
 def _normalize_url(parsed: ParseResult) -> str:
     """RFC 3986 Section 6.2.2.1: スキームとホスト部を小文字正規化し、パス・クエリをURLエンコードする."""  # noqa: E501
     # ParseResultはnamedtupleだが、tuple直接指定でコードの意図を明示する
     # パス・クエリ・フラグメントのXSS文字をURLエンコード（%を安全文字に含め二重エンコード防止）
     safe_path = quote(parsed.path, safe="/:@!$&'()*+,;=%")
+    safe_params = quote(parsed.params, safe=";=@:!$&'()*+,/%")
     safe_query = quote(parsed.query, safe="=&+:@!$'()*,;/%")
     safe_fragment = quote(parsed.fragment, safe=":@!$&'()*+,;=/?%-._~")
     return urlunparse(
@@ -117,7 +127,7 @@ def _normalize_url(parsed: ParseResult) -> str:
             parsed.scheme.lower(),
             parsed.netloc.lower(),
             safe_path,
-            parsed.params,
+            safe_params,
             safe_query,
             safe_fragment,
         )
@@ -172,15 +182,16 @@ class Comment(BaseModel):
     """コメントモデル
 
     JSONPlaceholder /comments エンドポイントのレスポンス。
-    name, body, emailフィールドにXSS保護（html.escape）を適用。
-    emailはEmailStr型でRFC構文チェック後にhtml.escapeを適用（Defense in Depth）。
+    name, bodyフィールドにXSS保護（html.escape）を適用。
+    emailはEmailStr型でRFC構文チェックのみ（html.escape非適用）。
 
     Attributes:
         id: コメントID（1以上）
         post_id: 親投稿ID（1以上）
         name: コメント投稿者名（サニタイズ済み、最大100文字）
         email: コメント投稿者メールアドレス
-            （EmailStr RFC構文チェック済み・DNS検証なし、最大100文字）
+            （EmailStr RFC構文チェック済み・DNS検証なし、最大100文字。
+            html.escape 非適用 — HTML出力時は呼び出し元で html.escape(email) 必須）
         body: コメント本文（サニタイズ済み、最大2000文字）
 
     """
@@ -211,29 +222,6 @@ class Comment(BaseModel):
         Returns:
             サニタイズ済み文字列
 
-        """
-        return sanitize_user_content(v)
-
-    @field_validator("email", mode="after")
-    @classmethod
-    def sanitize_email(cls, v: str) -> str:
-        """コメント投稿者メールアドレスをサニタイズ（Defense in Depth）
-
-        EmailStrによるRFC構文検証後にhtml.escapeを適用。
-        正常なメールアドレスはエスケープ対象文字を含まないため実質的に変換なし。
-        HTMLコンテキスト出力時の安全性を多層的に確保する。
-
-        Note:
-            EmailStrが拒否する特殊文字（< > & "）は実際には到達しない。
-            ただし & を含むローカルパート（例: user&tag@example.com）は
-            EmailStrが受理した場合に html.escape で変換される可能性あり。
-            RFC 5321上 & は有効なアドレス文字だが実運用上は稀。
-
-        Args:
-            v: EmailStr検証済みメールアドレス文字列
-
-        Returns:
-            html.escape適用済みメールアドレス文字列
         """
         return sanitize_user_content(v)
 
@@ -470,11 +458,11 @@ class User(BaseModel):
         # urlparseは各分岐で1回のみ呼び出す
         # （http/httpsブランチと補完ブランチで入力が異なるため共通化不可）
         if sanitized_lower.startswith(("http://", "https://")):
-            parsed = urlparse(sanitized)
-            if not parsed.netloc:
-                raise ValueError("有効なホスト名が含まれていません")
-            if parsed.username is not None or parsed.password is not None:
-                raise ValueError("URLにuserinfo（ユーザー名/パスワード）は指定できません")
+            try:
+                parsed = urlparse(sanitized)
+            except ValueError as e:
+                raise ValueError(f"URLの解析に失敗しました: {e}") from e
+            _validate_netloc(parsed)
             return _normalize_url(parsed)
         # RFC 3986スキーム検出: http/https以外のスキームが存在すれば拒否
         # is_domain_portロジックを削除: domain:portはスキームなし扱いのため
@@ -483,11 +471,11 @@ class User(BaseModel):
         if scheme_match:
             raise ValueError("危険なURLスキームが検出されました")
         # スキームなし → https:// を補完して検証
-        parsed = urlparse("https://" + sanitized)
-        if not parsed.netloc:
-            raise ValueError("有効なホスト名が含まれていません")
-        if parsed.username is not None or parsed.password is not None:
-            raise ValueError("URLにuserinfo（ユーザー名/パスワード）は指定できません")
+        try:
+            parsed = urlparse("https://" + sanitized)
+        except ValueError as e:
+            raise ValueError(f"URLの解析に失敗しました: {e}") from e
+        _validate_netloc(parsed)
         if parsed.port is not None:
             raise ValueError(
                 "スキームなしURLにポートは指定できません（http(s)://を明示してください）"
@@ -651,11 +639,11 @@ class Photo(BaseModel):
         sanitized_lower = sanitized.lower()
         if not sanitized_lower.startswith(("http://", "https://")):
             raise ValueError("URLはhttp://またはhttps://で始まる必要があります")
-        parsed = urlparse(sanitized)
-        if not parsed.netloc:
-            raise ValueError("有効なホスト名が含まれていません")
-        if parsed.username is not None or parsed.password is not None:
-            raise ValueError("URLにuserinfo（ユーザー名/パスワード）は指定できません")
+        try:
+            parsed = urlparse(sanitized)
+        except ValueError as e:
+            raise ValueError(f"URLの解析に失敗しました: {e}") from e
+        _validate_netloc(parsed)
         return _normalize_url(parsed)
 
 

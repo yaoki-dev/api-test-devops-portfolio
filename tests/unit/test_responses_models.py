@@ -886,10 +886,10 @@ class TestCommentModel:
             Comment(postId=1, id=1, name="Name", email=long_email, body="Body")
 
     def test_comment_email_is_not_html_escaped(self) -> None:
-        """Comment.email が EmailStr 型のため html.escape が非適用であること（設計意図確認）。
+        """Comment.email に html.escape が適用されないことを確認（emailはEmailStr検証のみ）。
 
-        User.website と対称的に、email フィールドは sanitize_user_content 非適用。
-        EmailStr 型による RFC 準拠バリデーションのみ実施される。
+        emailフィールドは sanitize_user_content 非適用。EmailStr 型による RFC 準拠
+        バリデーションのみ実施される（User.website と同様にhtml.escape対象外）。
         """
         email = "user+filter@example.com"
         comment = Comment(postId=1, id=1, name="Name", email=email, body="Body")
@@ -898,29 +898,27 @@ class TestCommentModel:
         # 注: html.escape(email) と比較するアサーションは、このメールに変換対象文字が
         # ないため常に真となりトートロジーになる。設計を確認するには上の assert で十分。
 
-    def test_comment_email_sanitize_after_emailstr(self) -> None:
-        """Comment.email が EmailStr 検証後に html.escape が適用されること（Defense in Depth）
+    def test_comment_email_with_ampersand_not_html_escaped(self) -> None:
+        """Comment.email に & が含まれる場合も html.escape が適用されないことを確認。
 
-        sanitize_email validator は mode="after" で EmailStr 後に実行される。
-        正常なメールアドレスは変換対象文字を持たないため実質 no-op だが、
-        & を含むアドレスは html.escape で変換される。
+        sanitize_email validator は削除済み。EmailStr 検証のみ実施されるため、
+        & を含むアドレスが受理されても html.escape による変換は行われない。
         """
-        # & はRFC 5321上有効だが EmailStr が受理した場合 html.escape で変換される
-        # EmailStr が拒否する場合はスキップ（実装依存）
+        # & を含むアドレスが EmailStr に受理された場合、html.escape は適用されない
         try:
             comment = Comment(
                 postId=1, id=1, name="Name", email="user&tag@example.com", body="Body"
             )
-            # EmailStr が受理した場合: html.escape により & → &amp;（完全一致で変換結果を検証）
-            assert comment.email == "user&amp;tag@example.com"
         except ValidationError:
-            pytest.skip("EmailStr rejects '&' in local part — sanitize_email unreachable")
-
-        # 通常のメールアドレスは変換なし（no-op 確認）
-        comment_normal = Comment(
-            postId=1, id=1, name="Name", email="normal@example.com", body="Body"
-        )
-        assert comment_normal.email == "normal@example.com"
+            pytest.skip("EmailStr rejects '&' in local part — unreachable without html.escape")
+        else:
+            # html.escape は適用されないため & は変換されない
+            assert comment.email == "user&tag@example.com"
+            # 通常のメールアドレスも変換なし（EmailStr検証のみ）
+            comment_normal = Comment(
+                postId=1, id=1, name="Name", email="normal@example.com", body="Body"
+            )
+            assert comment_normal.email == "normal@example.com"
 
 
 class TestTodoModel:
