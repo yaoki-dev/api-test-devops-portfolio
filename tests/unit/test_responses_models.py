@@ -646,6 +646,45 @@ class TestUserModel:
             User(**valid_user_data)
 
     @pytest.mark.parametrize(
+        ("dangerous_url", "expected_match"),
+        [
+            pytest.param(
+                "https://user%40trusted.com/",
+                "URLにuserinfo",
+                id="percent_encoded_at_userinfo_bypass",
+            ),
+            pytest.param(
+                "https://example.com:abc/",
+                "ポートが無効",
+                id="invalid_port_string",
+            ),
+        ],
+    )
+    def test_user_website_rejects_security_bypass_patterns(
+        self, valid_user_data: _UserData, dangerous_url: str, expected_match: str
+    ) -> None:
+        """User.website がセキュリティバイパスパターンを拒否すること（Parser Differential Attack対策）"""  # noqa: E501
+        valid_user_data["website"] = dangerous_url
+        with pytest.raises(ValidationError, match=expected_match):
+            User(**valid_user_data)
+
+    @pytest.mark.parametrize(
+        "non_str_input",
+        [
+            pytest.param(123, id="int_input"),
+            pytest.param(None, id="none_input"),
+            pytest.param(["https://example.com"], id="list_input"),
+        ],
+    )
+    def test_user_website_rejects_non_str_input(
+        self, valid_user_data: _UserData, non_str_input: object
+    ) -> None:
+        """User.website が非文字列入力を拒否すること"""
+        valid_user_data["website"] = non_str_input
+        with pytest.raises(ValidationError):
+            User(**valid_user_data)
+
+    @pytest.mark.parametrize(
         ("input_url", "expected_url"),
         [
             pytest.param("https://hildegard.org", "https://hildegard.org", id="https_domain"),
