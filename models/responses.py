@@ -19,7 +19,7 @@ websiteはURL形式のためhtmlコンテキスト出力時は呼び出し元で
 import html
 import re
 import unicodedata
-from urllib.parse import ParseResult, quote, urlparse, urlunparse
+from urllib.parse import ParseResult, quote, unquote, urlparse, urlunparse
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -114,24 +114,36 @@ def _validate_netloc(parsed: ParseResult) -> None:
     """netloc の存在確認と userinfo 禁止チェックを共通化する."""
     if not parsed.netloc:
         raise ValueError("有効なホスト名が含まれていません")
+    # 不正ポート文字列バイパス対策: parsed.port は整数でない場合 ValueError を送出する
+    # （例: https://example.com:abc/path は netloc チェックをパスするが port アクセスで検出）
+    try:
+        _ = parsed.port
+    except ValueError as e:
+        raise ValueError("ポートが無効です（整数値でなければなりません）") from e
     # 多層防御: parsed.username/password に加え netloc の "@" リテラルも検査
     # （urlparse が特定のエンコード済み入力で username=None を返すエッジケース対策）
-    if "@" in parsed.netloc or parsed.username is not None or parsed.password is not None:
+    # さらに %40 エンコード済み "@" のデコード後も検査（Parser Differential Attack 対策）
+    netloc_decoded = unquote(parsed.netloc)
+    has_at = "@" in parsed.netloc or "@" in netloc_decoded
+    has_userinfo = parsed.username is not None or parsed.password is not None
+    if has_at or has_userinfo:
         raise ValueError("URLにuserinfo（ユーザー名/パスワード）は指定できません")
 
 
 def _normalize_url(parsed: ParseResult) -> str:
-    """RFC 3986 §6.2.2.1/6.2.2.2: スキームとホスト部を小文字正規化し、パス・クエリをURLエンコードする."""  # noqa: E501
+    """RFC 3986 §6.2.2.1: スキームとホスト部を小文字正規化し、パス・クエリ・フラグメントをURLエンコードする（§6.2.2.2の既存エンコード大文字化は新規エンコード分のみ適用）."""  # noqa: E501
     # ParseResultはnamedtupleだが、tuple直接指定でコードの意図を明示する
     # パス・クエリ・フラグメントのXSS文字をURLエンコード（%を安全文字に含め二重エンコード防止）
     # RFC 3986 §3.3 pchar = unreserved / pct-encoded / sub-delims / ":" / "@"
-    safe_path = quote(parsed.path, safe="/:@!$&()*+,;=%")
+    safe_path = quote(parsed.path, safe="/:@!$&'()*+,;=%")
     # RFC 3986 §3.3 (params は path の一部として扱う)
-    safe_params = quote(parsed.params, safe=";=@:!$&()*+,/%")
+    safe_params = quote(parsed.params, safe=";=@:!$&'()*+,/%")
     # RFC 3986 §3.4 query = *( pchar / "/" / "?" )
-    safe_query = quote(parsed.query, safe="=&+:@!$()*,;/%")
+    safe_query = quote(parsed.query, safe="=&+:@!$'()*,;/%")
     # RFC 3986 §3.5 fragment = *( pchar / "/" / "?" )
-    safe_fragment = quote(parsed.fragment, safe=":@!$&()*+,;=/?%-._~")
+    # ._~（RFC 3986 unreserved）をフラグメントに追加: フラグメントはエンドユーザー向けのため
+    # 通常の unreserved 文字を過剰エンコードしない（path/query との意図的な非対称）
+    safe_fragment = quote(parsed.fragment, safe=":@!$&'()*+,;=/?%-._~")
     return urlunparse(
         (
             parsed.scheme.lower(),
@@ -402,7 +414,7 @@ class User(BaseModel):
         ...,
         min_length=1,
         max_length=200,
-        description="ウェブサイトURL（制御文字除去・前後空白除去済み）",
+        description="ウェブサイトURL（制御文字除去・前後空白除去・http/httpsスキーム検証済み）",
     )
     company: Company = Field(..., description="企業情報")
 
@@ -482,7 +494,7 @@ class User(BaseModel):
         # RFC 3986スキーム検出: http/https以外のスキームが存在すれば拒否
         # is_domain_portロジックを削除: domain:portはスキームなし扱いのため
         # http(s)://を明示しない限り拒否（例: example.com:8080 → ValueError）
-        scheme_match = _SCHEME_RE.match(sanitized)
+        scheme_match = _SCHEME_RE.match(sanitized_lower)
         if scheme_match:
             raise ValueError("危険なURLスキームが検出されました")
         # スキームなし → https:// を補完して検証
