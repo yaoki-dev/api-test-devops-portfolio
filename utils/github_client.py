@@ -483,6 +483,7 @@ class AsyncGitHubClient:
 
                 if response.status_code == 403:
                     self._handle_403_response(response)
+                    # unreachable: _handle_403_response は NoReturn
 
                 if response.status_code >= 500:
                     await self._handle_5xx_response(response, attempt)
@@ -500,6 +501,7 @@ class AsyncGitHubClient:
 
             except httpx.HTTPStatusError as e:
                 self._handle_http_status_error(e)
+                # unreachable: _handle_http_status_error は NoReturn
 
             except httpx.TimeoutException as e:
                 self.logger.warning("request_timeout", endpoint=endpoint, method=method)
