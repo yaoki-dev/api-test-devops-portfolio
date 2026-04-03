@@ -412,55 +412,31 @@ async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
 
 
 @respx.mock
-@patch("utils.github_client.exponential_backoff_with_jitter", return_value=0.0)
-async def test_httpx_status_error_5xx_defensive_path(mock_backoff: Mock) -> None:
+async def test_httpx_status_error_5xx_defensive_path() -> None:
     """httpx.HTTPStatusError（5xx）防御的コードパスの検証
 
     except httpx.HTTPStatusError パスを直接テストする。
     通常は response.status_code >= 500 の分岐で処理され、
     raise_for_status() に到達しないため理論上到達しないが、
-    HTTPStatusErrorが直接発生した場合のバックオフ・ログ・リトライ動作を検証する。
+    HTTPStatusErrorが直接発生した場合は _handle_http_status_error(e) を経由して
+    GitHubAPIError として即時 raise される（リトライなし）。
 
-    検証項目:
-    - retrying_http_status_error ログイベント出力
-    - delay を含むログフィールド（サイレント障害検知）
-    - バックオフ後リトライ（sleep + continue）
-    - 最終試行後に GitHubServerError 発生
+    Task A の変更により _handle_http_status_error は 4xx のみを対象とし NoReturn。
+    5xx が HTTPStatusError として直接到達した場合も GitHubAPIError を発生させる。
     """
     request = httpx.Request("GET", f"{GITHUB_API_BASE_URL}/users/octocat")
     response_503 = httpx.Response(503, request=request)
     error_503 = httpx.HTTPStatusError("503 Server Error", request=request, response=response_503)
 
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
-    route.side_effect = [error_503, error_503, error_503]
+    route.side_effect = [error_503]
 
-    with capture_logs() as log_output:
-        async with AsyncGitHubClient(max_retries=MAX_RETRIES) as client:
-            with pytest.raises(GitHubServerError) as exc_info:
-                await client.get_user("octocat")
+    async with AsyncGitHubClient(max_retries=MAX_RETRIES) as client:
+        with pytest.raises(GitHubAPIError):
+            await client.get_user("octocat")
 
-    assert f"Failed after {MAX_RETRIES} attempts" in str(exc_info.value)
-    assert route.call_count == MAX_RETRIES
-    assert mock_backoff.call_count == MAX_RETRIES - 1  # MAX_RETRIES試行 → 最終試行以外でバックオフ
-
-    # リトライ中間試行のログ出力検証（Issue #229 — 防御的パス）
-    retry_logs = [log for log in log_output if log.get("event") == "retrying_http_status_error"]
-    assert len(retry_logs) == MAX_RETRIES - 1, (
-        f"retrying_http_status_error ログが{MAX_RETRIES - 1}件を期待 (実際: {len(retry_logs)}件)"
-    )
-    bad_level = [log for log in retry_logs if log.get("log_level") != "warning"]
-    assert not bad_level, f"log_level が warning でないエントリ: {bad_level}"
-    # 順序・値・件数の統合検証: リトライがattempt 1〜MAX_RETRIES-1の昇順で実行されること
-    actual_attempts = [log_entry.get("attempt") for log_entry in retry_logs]
-    assert actual_attempts == list(range(1, MAX_RETRIES)), f"attempt 値不一致: {actual_attempts}"
-    # フィールド検証（順序非依存）
-    for log_entry in retry_logs:
-        assert log_entry["status_code"] == 503
-        assert log_entry["max_retries"] == MAX_RETRIES
-        assert log_entry["endpoint"] == "/users/octocat"
-        assert log_entry["method"] == "GET"
-        # delay は @patch(return_value=0.0) のモック値に対応
-        assert log_entry["delay"] == 0.0
+    # リトライせず1回で GitHubAPIError が発生する
+    assert route.call_count == 1
 
 
 @respx.mock
@@ -853,67 +829,26 @@ def test_handle_403_response(
         content=content,
     )
 
-    with pytest.raises(expected_exc, match=match):
+    with pytest.raises(expected_exc, match=match) as exc_info:
         client._handle_403_response(response)
+    if expected_exc is RateLimitError:
+        assert exc_info.value.reset_time == int(reset_header)
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("status_code", "attempt", "max_retries_val", "expected_exc"),
-    [
-        pytest.param(
-            404,
-            0,
-            MAX_RETRIES,
-            GitHubAPIError,
-            id="4xx_error",
-        ),
-        pytest.param(
-            502,
-            2,
-            MAX_RETRIES,
-            GitHubServerError,
-            id="5xx_final_attempt",
-        ),
-        pytest.param(
-            502,
-            0,
-            MAX_RETRIES,
-            None,
-            id="5xx_non_final_attempt",
-        ),
-    ],
-)
-@patch("utils.github_client.exponential_backoff_with_jitter", return_value=0.0)
-async def test_handle_http_status_error(
-    mock_backoff: Mock,
-    status_code: int,
-    attempt: int,
-    max_retries_val: int,
-    expected_exc: type[Exception] | None,
-) -> None:
-    """_handle_http_status_error の3パステスト（D-07）
-
-    - 4xx_error: 4xxステータス → GitHubAPIError を raise
-    - 5xx_final_attempt: 5xx + 最終試行 → GitHubServerError を raise
-    - 5xx_non_final_attempt: 5xx + 非最終試行 → return None（continue用）
-    """
-    async with AsyncGitHubClient(max_retries=max_retries_val) as client:
+async def test_handle_http_status_error_raises_on_4xx() -> None:
+    """_handle_http_status_error: 4xxステータスで GitHubAPIError を raise する（D-07）"""
+    async with AsyncGitHubClient(max_retries=MAX_RETRIES) as client:
         mock_request = httpx.Request("GET", "https://api.github.com/test")
-        mock_response = httpx.Response(status_code, request=mock_request)
+        mock_response = httpx.Response(404, request=mock_request)
         error = httpx.HTTPStatusError(
-            f"HTTP {status_code}",
+            "HTTP 404",
             request=mock_request,
             response=mock_response,
         )
-
-        if expected_exc is not None:
-            with pytest.raises(expected_exc):
-                await client._handle_http_status_error(error, attempt)
-        else:
-            result = await client._handle_http_status_error(error, attempt)
-            assert result is None
+        with pytest.raises(GitHubAPIError):
+            await client._handle_http_status_error(error)
 
 
 @pytest.mark.unit
@@ -1036,6 +971,40 @@ def test_update_etag_cache_no_etag_header() -> None:
 
 
 @pytest.mark.unit
+def test_update_etag_cache_with_etag_header() -> None:
+    """ETagヘッダー存在時に _etag_cache と _data_cache を同時更新する"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    response = httpx.Response(200, headers={"ETag": '"abc123"'}, content=b'{"id": 1}')
+    result = {"id": 1}
+    client._update_etag_cache("/repos/test", response, result)
+    assert client._etag_cache["/repos/test"] == '"abc123"'
+    assert client._data_cache["/repos/test"] == result
+
+
+@pytest.mark.unit
+def test_check_rate_limit_warning_triggers_at_threshold() -> None:
+    """remaining=9 (< _RATE_LIMIT_WARNING_THRESHOLD=10) で警告ログを出力する"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    headers = httpx.Headers({"X-RateLimit-Reset": "1700000000"})
+    with capture_logs() as logs:
+        client._check_rate_limit_warning(headers, remaining=9)
+    warning_logs = [log for log in logs if log.get("log_level") == "warning"]
+    assert len(warning_logs) == 1
+    assert warning_logs[0]["remaining"] == 9
+
+
+@pytest.mark.unit
+def test_check_rate_limit_warning_no_warning_at_boundary() -> None:
+    """remaining=10 (== _RATE_LIMIT_WARNING_THRESHOLD) で警告ログを出力しない"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    headers = httpx.Headers({"X-RateLimit-Reset": "1700000000"})
+    with capture_logs() as logs:
+        client._check_rate_limit_warning(headers, remaining=10)
+    warning_logs = [log for log in logs if log.get("log_level") == "warning"]
+    assert len(warning_logs) == 0
+
+
+@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_handle_http_status_error_truncates_long_body() -> None:
     """201文字以上のレスポンスボディは200文字に截断され"..."が付加される"""
@@ -1046,7 +1015,7 @@ async def test_handle_http_status_error_truncates_long_body() -> None:
     error = httpx.HTTPStatusError("422", request=request, response=response)
 
     with pytest.raises(GitHubAPIError) as exc_info:
-        await client._handle_http_status_error(error, attempt=0)
+        await client._handle_http_status_error(error)
 
     # 截断確認: "x" * 200 + "..." が含まれる
     assert "x" * 200 + "..." in str(exc_info.value)
@@ -1064,7 +1033,7 @@ async def test_handle_http_status_error_no_truncation_at_boundary() -> None:
     error = httpx.HTTPStatusError("422", request=request, response=response)
 
     with pytest.raises(GitHubAPIError) as exc_info:
-        await client._handle_http_status_error(error, attempt=0)
+        await client._handle_http_status_error(error)
 
     message = str(exc_info.value)
     assert exact_body in message
