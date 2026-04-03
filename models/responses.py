@@ -40,8 +40,9 @@ def _strip_invisible_chars(v: str) -> str:
     _INVISIBLE_CATEGORIESによる除去:
     - Cf: Format文字（Bidi制御, ゼロ幅文字, Word Joiner等）
     - Cc: 制御文字（C0/C1制御文字, DEL等）
-    - Mn: 非スペーシングマーク（Mark, Nonspacing）（Variation Selectors U+FE00-U+FE0F、
-          アクセント記号U+0300等）— スキームバイパス防止
+    - Mn: 非スペーシングマーク（Mark, Nonspacing）
+          （主目的: Variation Selectors U+FE00-U+FE0F によるスキームバイパス防止、
+          副次的に結合文字 U+0300等もMnカテゴリへの帰属により除去）
     - Zs: Unicode空白（NBSP, Ogham Space, 全角空白等。U+0020通常スペースは
           Zsカテゴリに属するが、c == " " の特例条件で保持）
           ※ NFKC正規化前にも除去（NFKC後にU+0020へ変換される副作用を防止）
@@ -474,12 +475,10 @@ class User(BaseModel):
         # urlparseは各分岐で1回のみ呼び出す
         # （http/httpsブランチと補完ブランチで入力が異なるため共通化不可）
         if sanitized_lower.startswith(("http://", "https://")):
-            try:
-                parsed = urlparse(sanitized)
-                _validate_netloc(parsed)
-                return _normalize_url(parsed)
-            except ValueError:
-                raise  # _validate_netloc / _normalize_url の ValueError はそのまま伝播
+            # _validate_netloc / _normalize_url の ValueError はそのまま伝播
+            parsed = urlparse(sanitized)
+            _validate_netloc(parsed)
+            return _normalize_url(parsed)
         # RFC 3986スキーム検出: http/https以外のスキームが存在すれば拒否
         # is_domain_portロジックを削除: domain:portはスキームなし扱いのため
         # http(s)://を明示しない限り拒否（例: example.com:8080 → ValueError）
@@ -487,16 +486,14 @@ class User(BaseModel):
         if scheme_match:
             raise ValueError("危険なURLスキームが検出されました")
         # スキームなし → https:// を補完して検証
-        try:
-            parsed = urlparse("https://" + sanitized)
-            _validate_netloc(parsed)
-            if parsed.port is not None:
-                raise ValueError(
-                    "スキームなしURLにポートは指定できません（http(s)://を明示してください）"
-                )
-            return _normalize_url(parsed)
-        except ValueError:
-            raise  # _validate_netloc / _normalize_url の ValueError はそのまま伝播
+        # _validate_netloc / _normalize_url の ValueError はそのまま伝播
+        parsed = urlparse("https://" + sanitized)
+        _validate_netloc(parsed)
+        if parsed.port is not None:
+            raise ValueError(
+                "スキームなしURLにポートは指定できません（http(s)://を明示してください）"
+            )
+        return _normalize_url(parsed)
 
 
 # =============================================================================
@@ -658,12 +655,10 @@ class Photo(BaseModel):
         sanitized_lower = sanitized.lower()
         if not sanitized_lower.startswith(("http://", "https://")):
             raise ValueError("URLはhttp://またはhttps://で始まる必要があります")
-        try:
-            parsed = urlparse(sanitized)
-            _validate_netloc(parsed)
-            return _normalize_url(parsed)
-        except ValueError:
-            raise  # _validate_netloc / _normalize_url の ValueError はそのまま伝播
+        # _validate_netloc / _normalize_url の ValueError はそのまま伝播
+        parsed = urlparse(sanitized)
+        _validate_netloc(parsed)
+        return _normalize_url(parsed)
 
 
 # =============================================================================

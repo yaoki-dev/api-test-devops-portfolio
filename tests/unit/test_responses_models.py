@@ -576,8 +576,6 @@ class TestUserModel:
             "192.168.1.1:8080",
             "10.0.0.1:3000/api",
             "/path/only",
-            "http://",
-            "https:///path",
             "java\ufe00script:alert(1)",
         ],
         ids=[
@@ -615,8 +613,6 @@ class TestUserModel:
             "ip_port_no_scheme",
             "ip_port_path_no_scheme",
             "path_only_no_host",
-            "http_empty_netloc",
-            "https_triple_slash",
             "js_variation_selector_mn_bypass",
         ],
     )
@@ -632,6 +628,21 @@ class TestUserModel:
         """User.website がプロトコル相対URLを明示的なエラーで拒否すること"""
         valid_user_data["website"] = "//cdn.example.com/image.jpg"
         with pytest.raises(ValidationError, match="プロトコル相対URLは許可されていません"):
+            User(**valid_user_data)
+
+    @pytest.mark.parametrize(
+        "empty_netloc_url",
+        [
+            pytest.param("http://", id="http_empty_netloc"),
+            pytest.param("https:///path", id="https_triple_slash"),
+        ],
+    )
+    def test_user_website_rejects_empty_netloc(
+        self, valid_user_data: _UserData, empty_netloc_url: str
+    ) -> None:
+        """User.website が空のnetlocを拒否すること"""
+        valid_user_data["website"] = empty_netloc_url
+        with pytest.raises(ValidationError, match="有効なホスト名が含まれていません"):
             User(**valid_user_data)
 
     @pytest.mark.parametrize(
