@@ -9,9 +9,7 @@ import pytest
 
 BASE_URL: str = "https://jsonplaceholder.typicode.com"
 
-# pytest.ParameterSet は _pytest.mark.structures の内部 API のため
-# 公開型スタブに含まれず、Final[list[pytest.ParameterSet]] は mypy エラーになる。
-# Final のみとすることで mypy が list[ParameterSet] と正しく推論する。
+# Final のみで型推論可（pytest.ParameterSet は内部 API のため型パラメータ不要）
 INVALID_BASE_URLS: Final = [
     pytest.param("", id="empty"),
     pytest.param("   ", id="whitespace"),

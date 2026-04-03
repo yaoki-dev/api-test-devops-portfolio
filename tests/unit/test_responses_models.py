@@ -119,35 +119,30 @@ XSS_TEST_VECTORS: Final[list[XSSVector]] = [
 ]
 
 # モデルテスト専用 XSS ベクター（OWASP Cheat Sheetベース・独自5分類）
-# プレーン tuple 形式（テストクラスで直接使用）
-_XSS_MODEL_PARAMS: Final[list[XSSVector]] = [
-    (
+# pytest.param 形式（ID付き）
+_XSS_MODEL_PARAMS: Final = [
+    pytest.param(
         "<script>alert('XSS')</script>",
         "&lt;script&gt;alert(&#x27;XSS&#x27;)&lt;/script&gt;",
+        id="script_basic",
     ),
-    (
+    pytest.param(
         "<img src=x onerror=alert(1)>",
         "&lt;img src=x onerror=alert(1)&gt;",
+        id="event_img_onerror",
     ),
-    (
+    pytest.param(
         '<a href="javascript:alert(1)">',
         "&lt;a href=&quot;javascript:alert(1)&quot;&gt;",
+        id="uri_scheme_js",
     ),
-    (
+    pytest.param(
         '" onclick="alert(1)"',
         "&quot; onclick=&quot;alert(1)&quot;",
+        id="attr_injection",
     ),
-    ("Test & Test", "Test &amp; Test"),
+    pytest.param("Test & Test", "Test &amp; Test", id="special_chars_amp"),
 ]
-
-# _XSS_MODEL_PARAMS の各エントリに対応する ID（pytest.param の id= に使用）
-_COMMENT_XSS_IDS: Final[tuple[str, ...]] = (
-    "script_basic",
-    "event_img_onerror",
-    "uri_scheme_js",
-    "attr_injection",
-    "special_chars_amp",
-)
 
 
 class _GeoData(TypedDict):
@@ -489,17 +484,16 @@ class TestUserModel:
     @pytest.mark.parametrize(
         ("field", "dirty", "expected"),
         [
-            pytest.param(field, dirty, expected, id=f"{field}-{name}")
+            pytest.param(field, p.values[0], p.values[1], id=f"{field}-{p.id}")
             for field in ("name", "username", "phone")
-            for (dirty, expected), name in zip(_XSS_MODEL_PARAMS, _COMMENT_XSS_IDS, strict=True)
+            for p in _XSS_MODEL_PARAMS
         ],
     )
     def test_user_sanitizes_xss(
         self, valid_user_data: _UserData, field: str, dirty: str, expected: str
     ) -> None:
         """User name/username/phone フィールドの XSS サニタイゼーション"""
-        valid_user_data[field] = dirty  # type: ignore[literal-required]
-        user = User(**valid_user_data)
+        user = User(**{**valid_user_data, field: dirty})
         assert getattr(user, field) == expected
 
     def test_user_populate_by_name(self, valid_user_data: _UserData) -> None:
@@ -855,9 +849,9 @@ class TestCommentModel:
     @pytest.mark.parametrize(
         ("field", "dirty", "expected"),
         [
-            pytest.param(field, dirty, expected, id=f"{field}-{name}")
+            pytest.param(field, p.values[0], p.values[1], id=f"{field}-{p.id}")
             for field in ("name", "body")
-            for (dirty, expected), name in zip(_XSS_MODEL_PARAMS, _COMMENT_XSS_IDS, strict=True)
+            for p in _XSS_MODEL_PARAMS
         ],
     )
     def test_comment_sanitizes_xss(self, field: str, dirty: str, expected: str) -> None:
@@ -898,27 +892,15 @@ class TestCommentModel:
         # 注: html.escape(email) と比較するアサーションは、このメールに変換対象文字が
         # ないため常に真となりトートロジーになる。設計を確認するには上の assert で十分。
 
-    def test_comment_email_with_ampersand_not_html_escaped(self) -> None:
-        """Comment.email に & が含まれる場合も html.escape が適用されないことを確認。
+    def test_comment_email_with_ampersand_accepted_by_emailstr(self) -> None:
+        """EmailStr は & を含むローカルパートを受理し、html.escape を適用しないこと。
 
-        sanitize_email validator は削除済み。EmailStr 検証のみ実施されるため、
-        & を含むアドレスが受理されても html.escape による変換は行われない。
+        email-validator は RFC 5321 の dot-atom で & を許容する。
+        動作変更時はこのテストが失敗するため、設計の再評価が必要。
         """
-        # & を含むアドレスが EmailStr に受理された場合、html.escape は適用されない
-        try:
-            comment = Comment(
-                postId=1, id=1, name="Name", email="user&tag@example.com", body="Body"
-            )
-        except ValidationError:
-            pytest.skip("EmailStr rejects '&' in local part — unreachable without html.escape")
-        else:
-            # html.escape は適用されないため & は変換されない
-            assert comment.email == "user&tag@example.com"
-            # 通常のメールアドレスも変換なし（EmailStr検証のみ）
-            comment_normal = Comment(
-                postId=1, id=1, name="Name", email="normal@example.com", body="Body"
-            )
-            assert comment_normal.email == "normal@example.com"
+        comment = Comment(postId=1, id=1, name="Name", email="user&tag@example.com", body="Body")
+        # html.escape は適用されないため & は &amp; に変換されない
+        assert comment.email == "user&tag@example.com"
 
 
 class TestTodoModel:
@@ -962,7 +944,17 @@ class TestAlbumModel:
         assert album.title == expected
 
 
-_PHOTO_BASE: Final[dict[str, str | int]] = {
+class _PhotoBaseData(TypedDict):
+    """Photo モデル入力データ型."""
+
+    albumId: int
+    id: int
+    title: str
+    url: str
+    thumbnailUrl: str
+
+
+_PHOTO_BASE: Final[_PhotoBaseData] = {
     "albumId": 1,
     "id": 1,
     "title": "Test Photo",
@@ -1323,6 +1315,37 @@ class TestPhotoModel:
                 url="https://example.com/photo.jpg",
                 thumbnailUrl="",
             )
+
+    @pytest.mark.parametrize(
+        ("input_url", "expected_url"),
+        [
+            pytest.param(
+                "https://example.com/path with spaces/file.jpg",
+                "https://example.com/path%20with%20spaces/file.jpg",
+                id="path_space_encoding",
+            ),
+            pytest.param(
+                "https://example.com/photo.jpg?name=hello world",
+                "https://example.com/photo.jpg?name=hello%20world",
+                id="query_space_encoding",
+            ),
+        ],
+    )
+    def test_photo_url_encodes_special_chars(self, input_url: str, expected_url: str) -> None:
+        """_normalize_url の quote() によるパス・クエリのURLエンコード動作を検証する."""
+        photo = Photo(
+            albumId=1, id=1, title="Test", url=input_url, thumbnailUrl="https://example.com/t.jpg"
+        )
+        assert photo.url == expected_url
+
+    def test_strip_invisible_chars_rejects_non_str(self) -> None:
+        """_strip_invisible_chars は非str型で ValueError を発生させること."""
+        from models.responses import _strip_invisible_chars  # noqa: PLC2701
+
+        with pytest.raises(ValueError, match="文字列が必要です"):
+            _strip_invisible_chars(None)  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="文字列が必要です"):
+            _strip_invisible_chars(123)  # type: ignore[arg-type]
 
 
 class TestExtraFieldsForbidden:

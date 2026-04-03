@@ -42,7 +42,8 @@ def _strip_invisible_chars(v: str) -> str:
     - Cc: 制御文字（C0/C1制御文字, DEL等）
     - Mn: 非スペーシングマーク（Mark, Nonspacing）（Variation Selectors U+FE00-U+FE0F、
           アクセント記号U+0300等）— スキームバイパス防止
-    - Zs: Unicode空白（NBSP, Ogham Space, 全角空白等。U+0020通常スペースは保持）
+    - Zs: Unicode空白（NBSP, Ogham Space, 全角空白等。U+0020通常スペースは
+          Zsカテゴリに属するが、c == " " の特例条件で保持）
           ※ NFKC正規化前にも除去（NFKC後にU+0020へ変換される副作用を防止）
     - Zl: 行区切り（U+2028 Line Separator）
     - Zp: 段落区切り（U+2029 Paragraph Separator）
@@ -50,6 +51,7 @@ def _strip_invisible_chars(v: str) -> str:
     Python に同梱の Unicode バージョン内の新規文字に自動対応する。
     （Unicode バージョン自体の更新には Python バージョンアップが必要）
     """
+    # Pydantic バリデータ経由で呼ばれるため、フィールド名は Pydantic が付加する
     if not isinstance(v, str):
         raise ValueError(f"文字列が必要です。受け取った型: {type(v).__name__}")
     # Cs（孤立サロゲート U+D800-U+DFFF）はデータ整合性のため先に除去する
@@ -82,18 +84,19 @@ def sanitize_user_content(value: str) -> str:
     XSS攻撃を防ぐため、HTMLエスケープを適用。
     特殊文字（<, >, &, ", '）をHTMLエンティティに変換。
 
-    Note:
-        主にPydantic field_validator経由で使用されます。
-        非str型を渡すとValueErrorが発生します。
-
-    Raises:
-        ValueError: value が str 型でない場合
-
     Args:
         value: サニタイズ対象の文字列
 
     Returns:
         サニタイズ済み文字列
+
+    Raises:
+        ValueError: value が str 型でない場合
+
+    Note:
+        主にPydantic field_validator経由で使用されます。
+        v0.x では str | None を受理していたが、現在は str のみ受理する。
+        None を渡した場合は ValueError が発生する。
 
     Examples:
         >>> sanitize_user_content("<script>alert('XSS')</script>")
@@ -110,18 +113,24 @@ def _validate_netloc(parsed: ParseResult) -> None:
     """netloc の存在確認と userinfo 禁止チェックを共通化する."""
     if not parsed.netloc:
         raise ValueError("有効なホスト名が含まれていません")
-    if parsed.username is not None or parsed.password is not None:
+    # 多層防御: parsed.username/password に加え netloc の "@" リテラルも検査
+    # （urlparse が特定のエンコード済み入力で username=None を返すエッジケース対策）
+    if "@" in parsed.netloc or parsed.username is not None or parsed.password is not None:
         raise ValueError("URLにuserinfo（ユーザー名/パスワード）は指定できません")
 
 
 def _normalize_url(parsed: ParseResult) -> str:
-    """RFC 3986 Section 6.2.2.1: スキームとホスト部を小文字正規化し、パス・クエリをURLエンコードする."""  # noqa: E501
+    """RFC 3986 §6.2.2.1/6.2.2.2: スキームとホスト部を小文字正規化し、パス・クエリをURLエンコードする."""  # noqa: E501
     # ParseResultはnamedtupleだが、tuple直接指定でコードの意図を明示する
     # パス・クエリ・フラグメントのXSS文字をURLエンコード（%を安全文字に含め二重エンコード防止）
-    safe_path = quote(parsed.path, safe="/:@!$&'()*+,;=%")
-    safe_params = quote(parsed.params, safe=";=@:!$&'()*+,/%")
-    safe_query = quote(parsed.query, safe="=&+:@!$'()*,;/%")
-    safe_fragment = quote(parsed.fragment, safe=":@!$&'()*+,;=/?%-._~")
+    # RFC 3986 §3.3 pchar = unreserved / pct-encoded / sub-delims / ":" / "@"
+    safe_path = quote(parsed.path, safe="/:@!$&()*+,;=%")
+    # RFC 3986 §3.3 (params は path の一部として扱う)
+    safe_params = quote(parsed.params, safe=";=@:!$&()*+,/%")
+    # RFC 3986 §3.4 query = *( pchar / "/" / "?" )
+    safe_query = quote(parsed.query, safe="=&+:@!$()*,;/%")
+    # RFC 3986 §3.5 fragment = *( pchar / "/" / "?" )
+    safe_fragment = quote(parsed.fragment, safe=":@!$&()*+,;=/?%-._~")
     return urlunparse(
         (
             parsed.scheme.lower(),
@@ -190,7 +199,7 @@ class Comment(BaseModel):
         post_id: 親投稿ID（1以上）
         name: コメント投稿者名（サニタイズ済み、最大100文字）
         email: コメント投稿者メールアドレス
-            （EmailStr RFC構文チェック済み・DNS検証なし、最大100文字。
+            （RFC構文チェック済み・DNS検証なし、最大100文字。
             html.escape 非適用 — HTML出力時は呼び出し元で html.escape(email) 必須）
         body: コメント本文（サニタイズ済み、最大2000文字）
 
@@ -238,13 +247,16 @@ class Geo(BaseModel):
     JSONPlaceholderでは緯度経度が文字列で返される。
 
     Attributes:
-        lat: 緯度（文字列形式、サニタイズ済み）
-        lng: 経度（文字列形式、サニタイズ済み）
+        lat: 緯度（文字列形式、サニタイズ済み、最大50文字）
+        lng: 経度（文字列形式、サニタイズ済み、最大50文字）
 
     Note:
         lat/lngは数値座標文字列（例: "-40.7128"）のため、
         URLスキームバイパス防止を目的とする _strip_invisible_chars は非適用。
         XSSはhtml.escape（sanitize_user_content経由）で対処。
+
+    Raises:
+        ValueError: lat/lng が str 型でない場合
 
     """
 
@@ -433,6 +445,7 @@ class User(BaseModel):
 
         Raises:
             ValueError: 以下のいずれかの場合:
+                - 入力が文字列でない
                 - 制御文字除去後にURLが空
                 - プロトコル相対URL（//始まり）
                 - http/https以外の危険スキーム
@@ -445,6 +458,9 @@ class User(BaseModel):
             呼び出し元で html.escape() を適用すること（URLはhtml.escape対象外のため）。
 
         """
+        if not isinstance(v, str):
+            raise ValueError(f"文字列が必要です（受け取った型: {type(v).__name__}）")
+
         sanitized = _strip_invisible_chars(v).strip()
         # min_length=1 は真の空文字列を、ここでは制御文字のみの文字列を捕捉（2段階チェック）
         if not sanitized:
@@ -460,10 +476,10 @@ class User(BaseModel):
         if sanitized_lower.startswith(("http://", "https://")):
             try:
                 parsed = urlparse(sanitized)
-            except ValueError as e:
-                raise ValueError(f"URLの解析に失敗しました: {e}") from e
-            _validate_netloc(parsed)
-            return _normalize_url(parsed)
+                _validate_netloc(parsed)
+                return _normalize_url(parsed)
+            except ValueError:
+                raise  # _validate_netloc / _normalize_url の ValueError はそのまま伝播
         # RFC 3986スキーム検出: http/https以外のスキームが存在すれば拒否
         # is_domain_portロジックを削除: domain:portはスキームなし扱いのため
         # http(s)://を明示しない限り拒否（例: example.com:8080 → ValueError）
@@ -473,14 +489,14 @@ class User(BaseModel):
         # スキームなし → https:// を補完して検証
         try:
             parsed = urlparse("https://" + sanitized)
-        except ValueError as e:
-            raise ValueError(f"URLの解析に失敗しました: {e}") from e
-        _validate_netloc(parsed)
-        if parsed.port is not None:
-            raise ValueError(
-                "スキームなしURLにポートは指定できません（http(s)://を明示してください）"
-            )
-        return _normalize_url(parsed)
+            _validate_netloc(parsed)
+            if parsed.port is not None:
+                raise ValueError(
+                    "スキームなしURLにポートは指定できません（http(s)://を明示してください）"
+                )
+            return _normalize_url(parsed)
+        except ValueError:
+            raise  # _validate_netloc / _normalize_url の ValueError はそのまま伝播
 
 
 # =============================================================================
@@ -609,6 +625,9 @@ class Photo(BaseModel):
         """
         return sanitize_user_content(v)
 
+    # mode 未指定（デフォルト after）: Pydantic が str 型強制後にバリデーション実行
+    # validate_website_scheme は mode="before" だが、Photo URL は外部API由来のため
+    # str 型が保証されており mode="after" で十分
     @field_validator("url", "thumbnail_url")
     @classmethod
     def validate_url_scheme(cls, v: str) -> str:
@@ -641,10 +660,10 @@ class Photo(BaseModel):
             raise ValueError("URLはhttp://またはhttps://で始まる必要があります")
         try:
             parsed = urlparse(sanitized)
-        except ValueError as e:
-            raise ValueError(f"URLの解析に失敗しました: {e}") from e
-        _validate_netloc(parsed)
-        return _normalize_url(parsed)
+            _validate_netloc(parsed)
+            return _normalize_url(parsed)
+        except ValueError:
+            raise  # _validate_netloc / _normalize_url の ValueError はそのまま伝播
 
 
 # =============================================================================
