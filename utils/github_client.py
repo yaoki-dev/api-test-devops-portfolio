@@ -385,12 +385,21 @@ class AsyncGitHubClient:
 
         通常フローでは 5xx は _handle_5xx_response() で先に処理済みのため 4xx のみが渡る。
         ただし防御的コードパスでは 5xx が到達する場合もある（httpx.HTTPStatusError 直接送出時）。
+
+        設計上の制約: `_cause` は `from e`（元の httpx.HTTPStatusError）ではなく
+        新規生成した Exception を使用する。理由: `from e` にすると
+        httpx.HTTPStatusError インスタンス（response body を含む可能性）が
+        __cause__ に残り、Sentry 等の APM ツール経由でセンシティブデータが
+        漏洩するリスクがある。コーディング規約 Section 5
+        「from e でチェーン維持」の例外として意図的に採用。
         """
-        _body = e.response.text
-        _is_truncated = len(_body) > _MAX_ERROR_RESPONSE_TEXT
-        _preview = _body[:_MAX_ERROR_RESPONSE_TEXT] + ("..." if _is_truncated else "")
         _cause = Exception(f"httpx.HTTPStatusError: HTTP {e.response.status_code} {e.request.url}")
-        raise GitHubAPIError(f"HTTP {e.response.status_code} error: {_preview}") from _cause
+        self.logger.warning(
+            "http_status_error",
+            status_code=e.response.status_code,
+            body_preview=e.response.text[:_MAX_ERROR_RESPONSE_TEXT],
+        )
+        raise GitHubAPIError(f"HTTP {e.response.status_code} error") from _cause
 
     def _update_etag_cache(
         self,

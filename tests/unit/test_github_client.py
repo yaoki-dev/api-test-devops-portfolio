@@ -1019,42 +1019,51 @@ def test_check_rate_limit_warning_triggers_at_zero() -> None:
 
 @pytest.mark.unit
 def test_handle_http_status_error_truncates_long_body() -> None:
-    """201文字以上のレスポンスボディは200文字に截断され"..."が付加される"""
+    """レスポンスボディはエラーメッセージに含まれない（Sentryセキュリティ対応）"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
     long_body = "x" * 201
     request = httpx.Request("GET", "https://api.github.com/test")
     response = httpx.Response(422, request=request, content=long_body.encode())
     error = httpx.HTTPStatusError("422", request=request, response=response)
 
-    with pytest.raises(GitHubAPIError) as exc_info:
-        client._handle_http_status_error(error)
+    with capture_logs() as log_output:
+        with pytest.raises(GitHubAPIError) as exc_info:
+            client._handle_http_status_error(error)
 
-    # 截断確認: "x" * 200 + "..." が含まれる
-    assert "x" * 200 + "..." in str(exc_info.value)
-    assert "x" * 201 not in str(exc_info.value)
+    # エラーメッセージにボディが含まれないこと
+    assert "x" not in str(exc_info.value)
+    # logger.warningでbody_previewが記録されること
+    http_error_logs = [log for log in log_output if log.get("event") == "http_status_error"]
+    assert len(http_error_logs) == 1
+    assert http_error_logs[0]["log_level"] == "warning"
+    assert http_error_logs[0]["body_preview"] == "x" * 200
 
 
 @pytest.mark.unit
 def test_handle_http_status_error_no_truncation_at_boundary() -> None:
-    """200文字以下のレスポンスボディは截断されず"..."なしで使用される（境界値）"""
+    """境界値(200字)でもレスポンスボディはエラーメッセージに含まれない（Sentryセキュリティ対応）"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
     exact_body = "y" * 200  # ちょうど200文字（len > 200 が偽になる境界値）
     request = httpx.Request("GET", "https://api.github.com/test")
     response = httpx.Response(422, request=request, content=exact_body.encode())
     error = httpx.HTTPStatusError("422", request=request, response=response)
 
-    with pytest.raises(GitHubAPIError) as exc_info:
-        client._handle_http_status_error(error)
+    with capture_logs() as log_output:
+        with pytest.raises(GitHubAPIError) as exc_info:
+            client._handle_http_status_error(error)
 
-    message = str(exc_info.value)
-    assert exact_body in message
-    assert not message.endswith("...")
-    assert message.endswith("y" * 200)  # 截断なし: 本文末尾がそのまま使用される
+    # エラーメッセージにボディが含まれないこと
+    assert exact_body not in str(exc_info.value)
+    # logger.warningでbody_previewが記録されること
+    http_error_logs = [log for log in log_output if log.get("event") == "http_status_error"]
+    assert len(http_error_logs) == 1
+    assert http_error_logs[0]["log_level"] == "warning"
+    assert http_error_logs[0]["body_preview"] == exact_body
 
 
 @pytest.mark.unit
 def test_handle_http_status_error_cause_excludes_response_body() -> None:
-    """__cause__にresponse bodyが含まれないことを確認（セキュリティ回帰テスト）
+    """__cause__およびGitHubAPIError本体の両方にセンシティブデータが含まれないことを確認
 
     from e → from _cause 変更の核心プロパティ: センシティブなresponse bodyが
     Sentry等の例外チェーン解析ツールに露出しないことを保証する。
@@ -1065,13 +1074,18 @@ def test_handle_http_status_error_cause_excludes_response_body() -> None:
     response = httpx.Response(422, request=request, text=sensitive_body)
     error = httpx.HTTPStatusError("422", request=request, response=response)
 
-    with pytest.raises(GitHubAPIError) as exc_info:
-        client._handle_http_status_error(error)
+    with capture_logs() as log_output:
+        with pytest.raises(GitHubAPIError) as exc_info:
+            client._handle_http_status_error(error)
 
     cause_str = str(exc_info.value.__cause__)
     # __cause__はURL+ステータスのみ保持し、response bodyを含まない
     assert sensitive_body not in cause_str
     # __cause__がhttpx.HTTPStatusErrorそのものではないことを確認
     assert not isinstance(exc_info.value.__cause__, httpx.HTTPStatusError)
-    # GitHubAPIError本体にはデバッグ用途で截断済みbodyが含まれること
-    assert sensitive_body in str(exc_info.value)
+    # GitHubAPIError本体にもセンシティブデータが含まれないこと
+    assert sensitive_body not in str(exc_info.value)
+    # logger.warningでbody_previewにセンシティブデータが記録されること（デバッグ用途）
+    http_error_logs = [log for log in log_output if log.get("event") == "http_status_error"]
+    assert len(http_error_logs) == 1
+    assert sensitive_body in http_error_logs[0]["body_preview"]
