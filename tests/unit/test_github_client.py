@@ -352,8 +352,10 @@ async def test_httpx_status_error_4xx():
 
     # GitHubAPIError であり、httpx.HTTPStatusError ではないことを明示検証
     assert not isinstance(exc_info.value, httpx.HTTPStatusError)
-    # 例外チェーンが保持されていることを確認（from e でラップ）
-    assert isinstance(exc_info.value.__cause__, httpx.HTTPStatusError)
+    # 例外チェーンが保持されていることを確認（HTTPStatusError 情報を保持した cause に再ラップ）
+    assert exc_info.value.__cause__ is not None
+    assert "httpx.HTTPStatusError" in str(exc_info.value.__cause__)
+    assert "401" in str(exc_info.value.__cause__)
     assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
 
 
@@ -836,19 +838,18 @@ def test_handle_403_response(
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
-async def test_handle_http_status_error_raises_on_4xx() -> None:
+def test_handle_http_status_error_raises_on_4xx() -> None:
     """_handle_http_status_error: 4xxステータスで GitHubAPIError を raise する（D-07）"""
-    async with AsyncGitHubClient(max_retries=MAX_RETRIES) as client:
-        mock_request = httpx.Request("GET", "https://api.github.com/test")
-        mock_response = httpx.Response(404, request=mock_request)
-        error = httpx.HTTPStatusError(
-            "HTTP 404",
-            request=mock_request,
-            response=mock_response,
-        )
-        with pytest.raises(GitHubAPIError):
-            await client._handle_http_status_error(error)
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    mock_request = httpx.Request("GET", "https://api.github.com/test")
+    mock_response = httpx.Response(404, request=mock_request)
+    error = httpx.HTTPStatusError(
+        "HTTP 404",
+        request=mock_request,
+        response=mock_response,
+    )
+    with pytest.raises(GitHubAPIError):
+        client._handle_http_status_error(error)
 
 
 @pytest.mark.unit
@@ -1005,8 +1006,19 @@ def test_check_rate_limit_warning_no_warning_at_boundary() -> None:
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
-async def test_handle_http_status_error_truncates_long_body() -> None:
+def test_check_rate_limit_warning_triggers_at_zero() -> None:
+    """remaining=0 (< _RATE_LIMIT_WARNING_THRESHOLD=10) で警告ログを出力する"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    headers = httpx.Headers({"X-RateLimit-Reset": "1700000000"})
+    with capture_logs() as logs:
+        client._check_rate_limit_warning(headers, remaining=0)
+    warning_logs = [log for log in logs if log.get("log_level") == "warning"]
+    assert len(warning_logs) == 1
+    assert warning_logs[0]["remaining"] == 0
+
+
+@pytest.mark.unit
+def test_handle_http_status_error_truncates_long_body() -> None:
     """201文字以上のレスポンスボディは200文字に截断され"..."が付加される"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
     long_body = "x" * 201
@@ -1015,7 +1027,7 @@ async def test_handle_http_status_error_truncates_long_body() -> None:
     error = httpx.HTTPStatusError("422", request=request, response=response)
 
     with pytest.raises(GitHubAPIError) as exc_info:
-        await client._handle_http_status_error(error)
+        client._handle_http_status_error(error)
 
     # 截断確認: "x" * 200 + "..." が含まれる
     assert "x" * 200 + "..." in str(exc_info.value)
@@ -1023,8 +1035,7 @@ async def test_handle_http_status_error_truncates_long_body() -> None:
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
-async def test_handle_http_status_error_no_truncation_at_boundary() -> None:
+def test_handle_http_status_error_no_truncation_at_boundary() -> None:
     """200文字以下のレスポンスボディは截断されず"..."なしで使用される（境界値）"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
     exact_body = "y" * 200  # ちょうど200文字（len > 200 が偽になる境界値）
@@ -1033,9 +1044,34 @@ async def test_handle_http_status_error_no_truncation_at_boundary() -> None:
     error = httpx.HTTPStatusError("422", request=request, response=response)
 
     with pytest.raises(GitHubAPIError) as exc_info:
-        await client._handle_http_status_error(error)
+        client._handle_http_status_error(error)
 
     message = str(exc_info.value)
     assert exact_body in message
     assert not message.endswith("...")
     assert message.endswith("y" * 200)  # 截断なし: 本文末尾がそのまま使用される
+
+
+@pytest.mark.unit
+def test_handle_http_status_error_cause_excludes_response_body() -> None:
+    """__cause__にresponse bodyが含まれないことを確認（セキュリティ回帰テスト）
+
+    from e → from _cause 変更の核心プロパティ: センシティブなresponse bodyが
+    Sentry等の例外チェーン解析ツールに露出しないことを保証する。
+    """
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    sensitive_body = "token=SUPER_SECRET_API_KEY_12345"
+    request = httpx.Request("GET", "https://api.github.com/repos/test")
+    response = httpx.Response(422, request=request, text=sensitive_body)
+    error = httpx.HTTPStatusError("422", request=request, response=response)
+
+    with pytest.raises(GitHubAPIError) as exc_info:
+        client._handle_http_status_error(error)
+
+    cause_str = str(exc_info.value.__cause__)
+    # __cause__はURL+ステータスのみ保持し、response bodyを含まない
+    assert sensitive_body not in cause_str
+    # __cause__がhttpx.HTTPStatusErrorそのものではないことを確認
+    assert not isinstance(exc_info.value.__cause__, httpx.HTTPStatusError)
+    # GitHubAPIError本体にはデバッグ用途で截断済みbodyが含まれること
+    assert sensitive_body in str(exc_info.value)

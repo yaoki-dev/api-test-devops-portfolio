@@ -108,7 +108,7 @@ class AsyncGitHubClient:
     - Rate Limit自動対応（X-RateLimit-Remaining監視）
     - Conditional Requests対応（ETag活用）
     - リトライロジック（5xxエラーのみ、指数バックオフ+ジッター）
-    - 例外チェーン維持（from e）
+    - 例外チェーン（HTTPStatusError は URL+ステータスのみ保持した cause に再ラップ）
 
     使用例:
         >>> async with AsyncGitHubClient() as client:
@@ -377,19 +377,20 @@ class AsyncGitHubClient:
             self.logger.error("json_decode_error", endpoint=endpoint, error=str(e))
             raise GitHubAPIError(f"Invalid JSON response: {e}") from e
 
-    async def _handle_http_status_error(
+    def _handle_http_status_error(
         self,
         e: httpx.HTTPStatusError,
     ) -> NoReturn:
         """4xxエラーを GitHubAPIError に変換して raise する。
 
-        5xx は _handle_5xx_response() で先に処理済みのため、
-        このメソッドには常に4xxステータスが渡る。
+        通常フローでは 5xx は _handle_5xx_response() で先に処理済みのため 4xx のみが渡る。
+        ただし防御的コードパスでは 5xx が到達する場合もある（httpx.HTTPStatusError 直接送出時）。
         """
         _body = e.response.text
         _is_truncated = len(_body) > _MAX_ERROR_RESPONSE_TEXT
         _preview = _body[:_MAX_ERROR_RESPONSE_TEXT] + ("..." if _is_truncated else "")
-        raise GitHubAPIError(f"HTTP {e.response.status_code} error: {_preview}") from e
+        _cause = Exception(f"httpx.HTTPStatusError: HTTP {e.response.status_code} {e.request.url}")
+        raise GitHubAPIError(f"HTTP {e.response.status_code} error: {_preview}") from _cause
 
     def _update_etag_cache(
         self,
@@ -397,7 +398,11 @@ class AsyncGitHubClient:
         response: httpx.Response,
         result_json: dict[str, Any] | list[dict[str, Any]],
     ) -> None:
-        """ETagとデータキャッシュを同時更新する（アトミック性維持）。"""
+        """ETagとデータキャッシュを同時更新する。
+
+        asyncio シングルスレッド環境で競合なく両キャッシュを更新する。
+        （データベーストランザクション的なアトミック操作ではない）
+        """
         if "ETag" in response.headers:
             self._etag_cache[endpoint] = response.headers["ETag"]
             self._data_cache[endpoint] = result_json
@@ -415,7 +420,7 @@ class AsyncGitHubClient:
         - Conditional Requests（ETag活用、304 Not Modified対応）
         - 5xxエラーリトライ（指数バックオフ+ジッター）
         - 4xxエラー即失敗（NotFoundError, RateLimitError例外）
-        - 例外チェーン維持（from e）
+        - 例外情報の安全な保持（HTTPStatusError は URL+ステータスのみ保持した cause に再ラップ、response body 非露出）
 
         Args:
             method: HTTPメソッド（GET, POST等）
@@ -468,7 +473,7 @@ class AsyncGitHubClient:
                     raise NotFoundError(f"Resource not found: {endpoint}")
 
                 if response.status_code == 403:
-                    raise self._handle_403_response(response)
+                    self._handle_403_response(response)
 
                 if response.status_code >= 500:
                     await self._handle_5xx_response(response, attempt)
@@ -485,7 +490,7 @@ class AsyncGitHubClient:
                 raise
 
             except httpx.HTTPStatusError as e:
-                await self._handle_http_status_error(e)
+                self._handle_http_status_error(e)
 
             except httpx.TimeoutException as e:
                 self.logger.warning("request_timeout", endpoint=endpoint, method=method)
@@ -527,7 +532,7 @@ class AsyncGitHubClient:
 # 3. エラーハンドリング戦略:
 #    - 階層的な例外設計（GitHubAPIError基底 + 4派生例外）
 #    - HTTPステータスコード別処理（4xx即失敗、5xxリトライ）
-#    - 例外チェーン維持（from e）によるデバッグ容易性
+#    - 例外チェーン（HTTPStatusError は URL+ステータスのみ cause に再ラップ）
 #
 # 4. ロギング・監視:
 #    - structlog構造化ロギング（JSON形式、フィールド検索可能）
