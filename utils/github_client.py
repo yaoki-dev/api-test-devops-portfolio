@@ -269,7 +269,10 @@ class AsyncGitHubClient:
             return default
 
     def _prepare_headers(self, endpoint: str) -> dict[str, str]:
-        """ETagヘッダーを設定する（Conditional Requests対応）。"""
+        """ETagキャッシュが存在する場合に If-None-Match ヘッダーを含む dict を返す。
+
+        Conditional Requests対応。
+        """
         headers: dict[str, str] = {}
         if endpoint in self._etag_cache:
             headers["If-None-Match"] = self._etag_cache[endpoint]
@@ -323,7 +326,11 @@ class AsyncGitHubClient:
         # その他の403エラー（IPブロック、アクセス権限不足等）
         error_message = "Access forbidden"
         try:
-            error_message = response.json().get("message", error_message)
+            parsed = response.json()
+            if isinstance(parsed, dict):
+                raw_message = parsed.get("message", error_message)
+                if isinstance(raw_message, str):
+                    error_message = raw_message[:_MAX_ERROR_RESPONSE_TEXT]
         except json.JSONDecodeError as parse_err:
             # JSONパース失敗は想定内（非JSON応答の可能性）— 削除禁止 (CONTEXT.md specifics)
             self.logger.warning("failed_to_parse_403_message", error=str(parse_err))
@@ -373,40 +380,16 @@ class AsyncGitHubClient:
     async def _handle_http_status_error(
         self,
         e: httpx.HTTPStatusError,
-        attempt: int,
-    ) -> None:
-        """HTTPStatusError処理。raise-or-return パターン (D-10)。
+    ) -> NoReturn:
+        """4xxエラーを GitHubAPIError に変換して raise する。
 
-        - 4xx: GitHubAPIError を raise（リトライしない）
-        - 5xx最終試行: GitHubServerError を raise
-        - 5xx非最終試行: return None（continue用）
-
-        Note:
-            5xx は通常 _handle_5xx_response() で先に処理済みのため、
-            このメソッドの 5xx 分岐は防御的コードパスであり通常フローでは到達しない。
+        5xx は _handle_5xx_response() で先に処理済みのため、
+        このメソッドには常に4xxステータスが渡る。
         """
-        if e.response.status_code < 500:
-            # 4xxエラー: リトライしない（GitHubAPIErrorに変換）
-            _body = e.response.text
-            _is_truncated = len(_body) > _MAX_ERROR_RESPONSE_TEXT
-            _preview = _body[:_MAX_ERROR_RESPONSE_TEXT] + ("..." if _is_truncated else "")
-            raise GitHubAPIError(f"HTTP {e.response.status_code} error: {_preview}") from e
-        if attempt == self.max_retries - 1:
-            raise GitHubServerError(f"Failed after {self.max_retries} attempts") from e
-        # 5xxエラーかつ最終試行でない場合のリトライ（防御的コードパス）
-        # Note: 5xxは通常L328-343で先に処理されるため、このパスは理論上到達しない
-        delay = exponential_backoff_with_jitter(attempt, base_delay=2.0)
-        self.logger.warning(
-            "retrying_http_status_error",
-            status_code=e.response.status_code,
-            attempt=attempt + 1,
-            max_retries=self.max_retries,
-            endpoint=e.request.url.path,
-            method=e.request.method,
-            delay=delay,
-        )
-        await asyncio.sleep(delay)
-        return None  # 呼び出し元で continue
+        _body = e.response.text
+        _is_truncated = len(_body) > _MAX_ERROR_RESPONSE_TEXT
+        _preview = _body[:_MAX_ERROR_RESPONSE_TEXT] + ("..." if _is_truncated else "")
+        raise GitHubAPIError(f"HTTP {e.response.status_code} error: {_preview}") from e
 
     def _update_etag_cache(
         self,
@@ -485,7 +468,7 @@ class AsyncGitHubClient:
                     raise NotFoundError(f"Resource not found: {endpoint}")
 
                 if response.status_code == 403:
-                    self._handle_403_response(response)
+                    raise self._handle_403_response(response)
 
                 if response.status_code >= 500:
                     await self._handle_5xx_response(response, attempt)
@@ -502,8 +485,7 @@ class AsyncGitHubClient:
                 raise
 
             except httpx.HTTPStatusError as e:
-                await self._handle_http_status_error(e, attempt)
-                continue
+                await self._handle_http_status_error(e)
 
             except httpx.TimeoutException as e:
                 self.logger.warning("request_timeout", endpoint=endpoint, method=method)
