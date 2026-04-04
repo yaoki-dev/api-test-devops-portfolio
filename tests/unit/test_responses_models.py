@@ -929,19 +929,6 @@ class TestCommentModel:
         with pytest.raises(ValidationError):
             Comment(postId=1, id=1, name="Name", email=long_email, body="Body")
 
-    def test_comment_email_is_not_html_escaped(self) -> None:
-        """Comment.email に html.escape が適用されないことを確認（emailはEmailStr検証のみ）。
-
-        emailフィールドは sanitize_user_content 非適用。EmailStr 型による RFC 準拠
-        バリデーションのみ実施される（User.website と同様にhtml.escape対象外）。
-        """
-        email = "user+filter@example.com"
-        comment = Comment(postId=1, id=1, name="Name", email=email, body="Body")
-        # EmailStr は html.escape を適用しないため入力値がそのまま格納される
-        assert comment.email == email
-        # 注: html.escape(email) と比較するアサーションは、このメールに変換対象文字が
-        # ないため常に真となりトートロジーになる。設計を確認するには上の assert で十分。
-
     def test_comment_email_with_ampersand_accepted_by_emailstr(self) -> None:
         """EmailStr は & を含むローカルパートを受理し、html.escape を適用しないこと。
 
@@ -1094,6 +1081,13 @@ class TestPhotoModel:
                 "https://via.placeholder.com/thumb.jpg",
                 id="uppercase_host_only_path_preserved",
             ),
+            pytest.param(
+                "HTTPS://Example.COM:443/photo.jpg",
+                "HTTP://Via.Placeholder.COM:80/thumb.jpg",
+                "https://example.com:443/photo.jpg",
+                "http://via.placeholder.com:80/thumb.jpg",
+                id="uppercase_host_with_port_photo",
+            ),
         ],
     )
     def test_photo_validates_host_normalization(
@@ -1177,27 +1171,25 @@ class TestPhotoModel:
                 thumbnailUrl="example.com/thumb.jpg",
             )
 
-    def test_photo_rejects_control_char_only_url(self) -> None:
-        """制御文字のみのPhoto.urlが空文字エラーで拒否されること"""
+    @pytest.mark.parametrize(
+        ("url", "thumbnail_url"),
+        [
+            pytest.param(
+                "\u200b\u200c\u200d",
+                "https://example.com/thumb.jpg",
+                id="control_char_only_url",
+            ),
+            pytest.param(
+                "https://via.placeholder.com/600/92c952",
+                "\u200b\u200c\u200d",
+                id="control_char_only_thumbnail_url",
+            ),
+        ],
+    )
+    def test_photo_rejects_control_char_only_url_fields(self, url: str, thumbnail_url: str) -> None:
+        """制御文字のみのPhoto url/thumbnail_urlが空文字エラーで拒否されること"""
         with pytest.raises(ValidationError, match="URLが空になりました"):
-            Photo(
-                albumId=1,
-                id=1,
-                title="Test",
-                url="\u200b\u200c\u200d",
-                thumbnailUrl="https://example.com/thumb.jpg",
-            )
-
-    def test_photo_rejects_control_char_only_thumbnail_url(self) -> None:
-        """制御文字のみのPhoto.thumbnail_urlが空文字エラーで拒否されること"""
-        with pytest.raises(ValidationError, match="URLが空になりました"):
-            Photo(
-                albumId=1,
-                id=1,
-                title="Test",
-                url="https://via.placeholder.com/600/92c952",
-                thumbnailUrl="\u200b\u200c\u200d",
-            )
+            Photo(albumId=1, id=1, title="Test", url=url, thumbnailUrl=thumbnail_url)
 
     @pytest.mark.parametrize(
         "url",

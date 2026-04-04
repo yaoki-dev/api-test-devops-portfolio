@@ -31,7 +31,6 @@ from unittest.mock import Mock, patch
 import httpx
 import pytest
 
-from tests.constants import BASE_URL
 from utils.api_client import (
     APIClientError,
     APIConnectionError,
@@ -413,13 +412,13 @@ def test_resolve_client_config_zero_retry_delay_not_overridden(mock_settings: Mo
 # =============================================================================
 
 
-def test_sync_client_headers_empty_dict_preserves_defaults() -> None:
+def test_sync_client_headers_empty_dict_preserves_defaults(mock_base_url: str) -> None:
     """SyncAPIClient: headers={} でデフォルトヘッダーが保持される
 
     `if headers is not None:` の設計を保証するテスト。
     空辞書を渡しても update({}) は no-op なので、デフォルトヘッダーは変わらない。
     """
-    with SyncAPIClient(base_url=BASE_URL, headers={}) as client:
+    with SyncAPIClient(base_url=mock_base_url, headers={}) as client:
         # デフォルトヘッダーは3つ: User-Agent, Accept, Content-Type
         assert set(client.default_headers.keys()) == {
             "User-Agent",
@@ -433,13 +432,13 @@ def test_sync_client_headers_empty_dict_preserves_defaults() -> None:
 
 
 @pytest.mark.asyncio
-async def test_async_client_headers_empty_dict_preserves_defaults() -> None:
+async def test_async_client_headers_empty_dict_preserves_defaults(mock_base_url: str) -> None:
     """AsyncAPIClient: headers={} でデフォルトヘッダーが保持される
 
     `if headers is not None:` の設計を保証するテスト。
     空辞書を渡しても update({}) は no-op なので、デフォルトヘッダーは変わらない。
     """
-    async with AsyncAPIClient(base_url=BASE_URL, headers={}) as client:
+    async with AsyncAPIClient(base_url=mock_base_url, headers={}) as client:
         # デフォルトヘッダーは3つ: User-Agent, Accept, Content-Type
         assert set(client.default_headers.keys()) == {
             "User-Agent",
