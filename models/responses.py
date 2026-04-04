@@ -26,6 +26,8 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 # RFC 3986 準拠のスキーム検出パターン（scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) ":"）
 _SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 _INVISIBLE_CATEGORIES = frozenset({"Cf", "Cc", "Mn", "Zs", "Zl", "Zp"})
+# Cs（孤立サロゲート）を _INVISIBLE_CATEGORIES と合算した除去セット（1回目パスで使用）
+_STRIP_CATEGORIES = _INVISIBLE_CATEGORIES | frozenset({"Cs"})
 
 
 def _strip_invisible_chars(v: str) -> str:
@@ -54,19 +56,16 @@ def _strip_invisible_chars(v: str) -> str:
     """
     # Pydantic バリデータ経由で呼ばれるため、フィールド名は Pydantic が付加する
     if not isinstance(v, str):
-        raise ValueError(f"文字列が必要です。受け取った型: {type(v).__name__}")
-    # Cs（孤立サロゲート U+D800-U+DFFF）はデータ整合性のため先に除去する
-    # （有効なUnicode文字列に孤立サロゲートを含めるべきでない）。
-    without_surrogates = "".join(c for c in v if unicodedata.category(c) != "Cs")
-    # NFKC前に不可視文字を除去（NBSP等のZs文字がNFKC後にU+0020へ変換される副作用防止）
+        raise ValueError(f"文字列が必要です（受け取った型: {type(v).__name__}）")
+    # パス1: Cs（孤立サロゲート）と不可視文字を一括除去
+    # _STRIP_CATEGORIES = _INVISIBLE_CATEGORIES | {"Cs"} で Cs の個別除去を統合
+    # NFKC前にZs等を除去（NFKC後にU+0020へ変換される副作用防止）
     # 全角英字（Ll/Lu等）はNFKC前に残し、NFKC正規化でASCIIに変換される
     pre_filtered = "".join(
-        c
-        for c in without_surrogates
-        if (unicodedata.category(c) not in _INVISIBLE_CATEGORIES) or (c == " ")
+        c for c in v if (unicodedata.category(c) not in _STRIP_CATEGORIES) or (c == " ")
     )
     normalized = unicodedata.normalize("NFKC", pre_filtered)
-    # NFKC後も二重チェック（NFKC変換が新たな不可視文字を生成するケースに備える）
+    # パス2: NFKC後も二重チェック（NFKC変換が新たな不可視文字を生成するケースに備える）
     return "".join(
         c
         for c in normalized
@@ -123,7 +122,10 @@ def _validate_netloc(parsed: ParseResult) -> None:
     # 多層防御: parsed.username/password に加え netloc の "@" リテラルも検査
     # （urlparse が特定のエンコード済み入力で username=None を返すエッジケース対策）
     # さらに %40 エンコード済み "@" のデコード後も検査（Parser Differential Attack 対策）
-    netloc_decoded = unquote(parsed.netloc)
+    try:
+        netloc_decoded = unquote(parsed.netloc)
+    except Exception:
+        netloc_decoded = parsed.netloc
     has_at = "@" in parsed.netloc or "@" in netloc_decoded
     has_userinfo = parsed.username is not None or parsed.password is not None
     if has_at or has_userinfo:
@@ -147,7 +149,7 @@ def _normalize_url(parsed: ParseResult) -> str:
     return urlunparse(
         (
             parsed.scheme.lower(),
-            parsed.netloc.lower(),
+            parsed.netloc.lower(),  # ポート番号は数字のみのためlower()で変化しない
             safe_path,
             safe_params,
             safe_query,
@@ -501,6 +503,8 @@ class User(BaseModel):
         # _validate_netloc / _normalize_url の ValueError はそのまま伝播
         parsed = urlparse("https://" + sanitized)
         _validate_netloc(parsed)
+        # スキームなし補完後のポートチェック:
+        # example.com:8080 → https://example.com:8080 に補完されポートが検出される
         if parsed.port is not None:
             raise ValueError(
                 "スキームなしURLにポートは指定できません（http(s)://を明示してください）"
@@ -593,14 +597,15 @@ class Photo(BaseModel):
     """写真モデル
 
     JSONPlaceholder /photos エンドポイントのレスポンス。
-    titleフィールドにXSS保護を適用。
+    titleフィールドにXSS保護を適用。url・thumbnail_urlはhttp/httpsスキーム必須、
+    不可視文字除去・RFC 3986 §6.2.2.1正規化（スキーム・ホスト小文字化）を適用。
 
     Attributes:
         id: 写真ID（1以上）
         album_id: 親アルバムID（1以上）
         title: 写真タイトル（サニタイズ済み、最大200文字）
-        url: 写真URL（最大500文字）
-        thumbnail_url: サムネイルURL（最大500文字）
+        url: 写真URL（http/https必須、最大500文字）
+        thumbnail_url: サムネイルURL（http/https必須、最大500文字）
 
     """
 
