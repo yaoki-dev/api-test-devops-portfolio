@@ -257,6 +257,9 @@ def _classify_error(
         ログの ``error`` フィールドは省略している。httpx 例外の文字列には
         ホスト名、プロキシ設定等の機密情報が含まれるため、``error_type``
         （例外クラス名）のみ記録してエラー分類に必須情報を確保する。
+        なお、本省略はログ出力にのみ適用され、
+        ``_map_request_error()`` が raise する ``APIClientError`` のメッセージには
+        ``str(e)`` が含まれる点に留意すること。
 
     """
     if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
