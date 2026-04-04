@@ -258,15 +258,9 @@ def _classify_error(
         ホスト名、プロキシ設定等の機密情報が含まれるため、``error_type``
         （例外クラス名）のみ記録してエラー分類に必須情報を確保する。
 
-        cf. ``health_check_failed()`` では ``error=str(e)`` を記録しているが、
-        その ``e`` は ``APIClientError``（独自例外）であり、httpx 生例外と
-        異なりセキュリティリスクが低いため扱いが異なる。
-
     """
     if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
-        # セキュリティ対策: httpx 例外の文字列には接続先 URL・ホスト名等の
-        # 機密情報が含まれるため、error フィールドを省略し、error_type
-        # （例外クラス名）のみを記録する。
+        # error フィールド省略（セキュリティ対策）— 詳細は Notes 参照。
         logger.error(
             "request_error_non_retryable",
             is_async=is_async,
@@ -275,7 +269,7 @@ def _classify_error(
             error_type=type(e).__name__,
         )
     else:
-        # 同上: httpx 生例外のリスク対策として error フィールド省略。
+        # 上記同様: error フィールド省略（セキュリティ対策）— 詳細は Notes 参照。
         logger.warning(
             "request_error",
             is_async=is_async,

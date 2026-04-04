@@ -190,6 +190,7 @@ def test_classify_error_non_retryable_logs_error() -> None:
     assert call_kwargs[1]["error_type"] == "TooManyRedirects"
     assert call_kwargs[1]["method"] == "GET"
     assert call_kwargs[1]["endpoint"] == "/test"
+    assert "error" not in call_kwargs[1]
     assert isinstance(exc_info.value.__cause__, httpx.TooManyRedirects)
     mock_logger.warning.assert_not_called()
 
@@ -206,6 +207,7 @@ def test_classify_error_non_retryable_async_field() -> None:
     call_kwargs = mock_logger.error.call_args
     assert call_kwargs[0][0] == "request_error_non_retryable"
     assert call_kwargs[1]["is_async"] is True
+    assert "error" not in call_kwargs[1]
     assert isinstance(exc_info.value.__cause__, httpx.InvalidURL)
     mock_logger.warning.assert_not_called()
 
@@ -225,6 +227,7 @@ def test_classify_error_retryable_logs_warning() -> None:
     assert call_kwargs[1]["error_type"] == "ConnectError"
     assert call_kwargs[1]["method"] == "POST"
     assert call_kwargs[1]["endpoint"] == "/api"
+    assert "error" not in call_kwargs[1]
 
 
 def test_classify_error_retryable_timeout() -> None:
@@ -240,6 +243,7 @@ def test_classify_error_retryable_timeout() -> None:
     call_kwargs = mock_logger.warning.call_args
     assert call_kwargs[0][0] == "request_error"
     assert call_kwargs[1]["is_async"] is True
+    assert "error" not in call_kwargs[1]
 
 
 def test_classify_error_retryable_network_error() -> None:
@@ -255,6 +259,7 @@ def test_classify_error_retryable_network_error() -> None:
     call_kwargs = mock_logger.warning.call_args
     assert call_kwargs[0][0] == "request_error"
     assert call_kwargs[1]["error_type"] == "ReadError"
+    assert "error" not in call_kwargs[1]
 
 
 # =============================================================================
