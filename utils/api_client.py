@@ -269,7 +269,7 @@ def _classify_error(
             error_type=type(e).__name__,
         )
     else:
-        # 上記同様: error フィールド省略（セキュリティ対策）— 詳細は Notes 参照。
+        # error フィールド省略（セキュリティ対策）— 詳細は Notes 参照。
         logger.warning(
             "request_error",
             is_async=is_async,
