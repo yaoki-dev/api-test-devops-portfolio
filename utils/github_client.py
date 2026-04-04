@@ -10,7 +10,7 @@ import asyncio
 import json
 import re
 from datetime import UTC, datetime
-from typing import Any, NoReturn, Self, cast
+from typing import Any, Literal, NoReturn, Self, cast
 
 import httpx
 
@@ -340,12 +340,12 @@ class AsyncGitHubClient:
         self,
         response: httpx.Response,
         attempt: int,
-    ) -> None:
-        """5xxエラーのリトライ制御。最終試行なら raise、継続なら return None。
+    ) -> Literal[True]:
+        """5xxエラーのリトライ制御。最終試行なら raise、継続なら return True。
 
         raise-or-return パターン (D-10):
-        - return None → 呼び出し元で continue
-        - raise GitHubServerError → リトライ上限到達
+        - Returns: Literal[True] — リトライ継続
+        - Raises: GitHubServerError — リトライ上限到達
         """
         if attempt < self.max_retries - 1:
             delay = exponential_backoff_with_jitter(attempt, base_delay=2.0)
@@ -357,7 +357,7 @@ class AsyncGitHubClient:
                 status_code=response.status_code,
             )
             await asyncio.sleep(delay)
-            return None  # 呼び出し元で continue
+            return True  # 呼び出し元で continue
         raise GitHubServerError(
             f"Server error: {response.status_code} after {self.max_retries} attempts",
         )
@@ -384,7 +384,8 @@ class AsyncGitHubClient:
         """4xxエラーを GitHubAPIError に変換して raise する。
 
         通常フローでは 5xx は _handle_5xx_response() で先に処理済みのため 4xx のみが渡る。
-        ただし防御的コードパスでは 5xx が到達する場合もある（httpx.HTTPStatusError 直接送出時）。
+        httpx.HTTPStatusError として直接 5xx が発生した場合も、呼び出し元の except ブロックで
+        _handle_5xx_response() に転送されるため、このメソッドへの 5xx 到達は想定しない。
 
         設計上の制約: `_cause` は `from e`（元の httpx.HTTPStatusError）ではなく
         新規生成した Exception を使用する。理由: `from e` にすると
@@ -393,10 +394,14 @@ class AsyncGitHubClient:
         漏洩するリスクがある。コーディング規約 Section 5
         「from e でチェーン維持」の例外として意図的に採用。
         """
-        _cause = Exception(f"httpx.HTTPStatusError: HTTP {e.response.status_code} {e.request.url}")
+        _cause = Exception(
+            f"httpx.HTTPStatusError: HTTP {e.response.status_code} {e.request.url.path}"
+        )
         self.logger.warning(
             "http_status_error",
             status_code=e.response.status_code,
+            endpoint=e.request.url.path,
+            method=e.request.method,
             body_preview=e.response.text[:_MAX_ERROR_RESPONSE_TEXT],
         )
         raise GitHubAPIError(f"HTTP {e.response.status_code} error") from _cause
@@ -500,6 +505,10 @@ class AsyncGitHubClient:
                 raise
 
             except httpx.HTTPStatusError as e:
+                if e.response.status_code >= 500:
+                    # 防御的パス: 5xxをhttpx.HTTPStatusErrorとして受信した場合、通常パスと同等に処理
+                    await self._handle_5xx_response(e.response, attempt)
+                    continue
                 self._handle_http_status_error(e)
                 # unreachable: _handle_http_status_error は NoReturn
 

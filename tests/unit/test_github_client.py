@@ -354,6 +354,8 @@ async def test_httpx_status_error_4xx():
     assert not isinstance(exc_info.value, httpx.HTTPStatusError)
     # 例外チェーンが保持されていることを確認（HTTPStatusError 情報を保持した cause に再ラップ）
     assert exc_info.value.__cause__ is not None
+    # __cause__がhttpx.HTTPStatusErrorそのものでないことを型レベルで確認
+    assert not isinstance(exc_info.value.__cause__, httpx.HTTPStatusError)
     assert "httpx.HTTPStatusError" in str(exc_info.value.__cause__)
     assert "401" in str(exc_info.value.__cause__)
     assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
@@ -368,7 +370,8 @@ async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
 
     検証項目:
     - attempt 値の連続性・順序・件数（list(range(1, MAX_RETRIES)) との等価比較）
-    - endpoint / method フィールドが存在しないこと（retrying_http_status_error との設計差異）
+    - endpoint / method フィールドが存在しないこと
+      （_handle_5xx_response はリクエストコンテキスト非保持）
     - status_code / max_retries / delay フィールドの値
     """
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
@@ -399,7 +402,7 @@ async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
     assert actual_attempts == list(range(1, MAX_RETRIES)), f"attempt 値不一致: {actual_attempts}"
     # フィールド検証（順序非依存）
     # Note: retrying_server_error は endpoint/method を含まない
-    #       （retrying_http_status_error との実装上の設計差異）
+    #       （_handle_5xx_response はリクエストコンテキストを持たないため）
     for log_entry in retry_logs:
         assert "endpoint" not in log_entry, (
             f"retrying_server_error に endpoint フィールドが存在: {log_entry}"
@@ -414,31 +417,46 @@ async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
 
 
 @respx.mock
-async def test_httpx_status_error_5xx_defensive_path() -> None:
+@patch("utils.github_client.exponential_backoff_with_jitter", return_value=0.0)
+async def test_httpx_status_error_5xx_defensive_path(mock_backoff: Mock) -> None:
     """httpx.HTTPStatusError（5xx）防御的コードパスの検証
 
-    except httpx.HTTPStatusError パスを直接テストする。
-    通常は response.status_code >= 500 の分岐で処理され、
-    raise_for_status() に到達しないため理論上到達しないが、
-    HTTPStatusErrorが直接発生した場合は _handle_http_status_error(e) を経由して
-    GitHubAPIError として即時 raise される（リトライなし）。
+    C2修正後: httpx.HTTPStatusError として直接 5xx が発生した場合も
+    _handle_5xx_response() を経由してリトライし、GitHubServerError を発生させる。
 
-    Task A の変更により _handle_http_status_error は 4xx のみを対象とし NoReturn。
-    5xx が HTTPStatusError として直接到達した場合も GitHubAPIError を発生させる。
+    検証項目:
+    - MAX_RETRIES 回リトライ後に GitHubServerError が発生すること
+    - route.call_count が MAX_RETRIES であること
+    - retrying_server_error ログが MAX_RETRIES - 1 件出力されること
     """
     request = httpx.Request("GET", f"{GITHUB_API_BASE_URL}/users/octocat")
     response_503 = httpx.Response(503, request=request)
     error_503 = httpx.HTTPStatusError("503 Server Error", request=request, response=response_503)
 
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
-    route.side_effect = [error_503]
+    route.side_effect = [error_503] * MAX_RETRIES
 
-    async with AsyncGitHubClient(max_retries=MAX_RETRIES) as client:
-        with pytest.raises(GitHubAPIError):
-            await client.get_user("octocat")
+    with capture_logs() as log_output:
+        async with AsyncGitHubClient(max_retries=MAX_RETRIES) as client:
+            with pytest.raises(GitHubServerError) as exc_info:
+                await client.get_user("octocat")
 
-    # リトライせず1回で GitHubAPIError が発生する
-    assert route.call_count == 1
+    assert "Server error: 503" in str(exc_info.value)
+    assert route.call_count == MAX_RETRIES
+    assert mock_backoff.call_count == MAX_RETRIES - 1
+
+    retry_logs = [log for log in log_output if log.get("event") == "retrying_server_error"]
+    assert len(retry_logs) == MAX_RETRIES - 1, (
+        f"retrying_server_error ログが{MAX_RETRIES - 1}件を期待 (実際: {len(retry_logs)}件)"
+    )
+    bad_level = [log for log in retry_logs if log.get("log_level") != "warning"]
+    assert not bad_level, f"log_level が warning でないエントリ: {bad_level}"
+    actual_attempts = [log_entry.get("attempt") for log_entry in retry_logs]
+    assert actual_attempts == list(range(1, MAX_RETRIES)), f"attempt 値不一致: {actual_attempts}"
+    for log_entry in retry_logs:
+        assert log_entry["status_code"] == 503
+        assert log_entry["max_retries"] == MAX_RETRIES
+        assert log_entry["delay"] == 0.0
 
 
 @respx.mock
@@ -895,7 +913,7 @@ async def test_handle_5xx_response(
 ) -> None:
     """_handle_5xx_response の2パステスト（D-07）
 
-    - 5xx_non_final_attempt: 5xx + 非最終試行 → return None（continue用）
+    - 5xx_non_final_attempt: 5xx + 非最終試行 → return True（continue用）
     - 5xx_final_attempt: 5xx + 最終試行 → GitHubServerError を raise
     """
     async with AsyncGitHubClient(max_retries=max_retries_val) as client:
@@ -906,7 +924,7 @@ async def test_handle_5xx_response(
                 await client._handle_5xx_response(mock_response, attempt)
         else:
             result = await client._handle_5xx_response(mock_response, attempt)
-            assert result is None
+            assert result is True
 
 
 # ── D-07 追加: _prepare_headers / _handle_304 / _handle_403 / _update_etag_cache ──
