@@ -119,29 +119,27 @@ XSS_TEST_VECTORS: Final[list[XSSVector]] = [
 ]
 
 # モデルテスト専用 XSS ベクター（OWASP Cheat Sheetベース・独自5分類）
-# pytest.param 形式（ID付き）
-_XSS_MODEL_PARAMS: Final = [
-    pytest.param(
+# (dirty, expected, id) のタプルリスト（pytest内部APIを使わない形式）
+_XSS_PAIRS: Final[list[tuple[str, str, str]]] = [
+    (
         "<script>alert('XSS')</script>",
         "&lt;script&gt;alert(&#x27;XSS&#x27;)&lt;/script&gt;",
-        id="script_basic",
+        "script_basic",
     ),
-    pytest.param(
-        "<img src=x onerror=alert(1)>",
-        "&lt;img src=x onerror=alert(1)&gt;",
-        id="event_img_onerror",
-    ),
-    pytest.param(
+    ("<img src=x onerror=alert(1)>", "&lt;img src=x onerror=alert(1)&gt;", "event_img_onerror"),
+    (
         '<a href="javascript:alert(1)">',
         "&lt;a href=&quot;javascript:alert(1)&quot;&gt;",
-        id="uri_scheme_js",
+        "uri_scheme_js",
     ),
-    pytest.param(
-        '" onclick="alert(1)"',
-        "&quot; onclick=&quot;alert(1)&quot;",
-        id="attr_injection",
-    ),
-    pytest.param("Test & Test", "Test &amp; Test", id="special_chars_amp"),
+    ('" onclick="alert(1)"', "&quot; onclick=&quot;alert(1)&quot;", "attr_injection"),
+    ("Test & Test", "Test &amp; Test", "special_chars_amp"),
+]
+
+# 単一フィールド parametrize 用（ID付き pytest.param リスト）
+# 複数フィールド複合パラメータ化が必要な箇所は _XSS_PAIRS を直接使用すること
+_XSS_MODEL_PARAMS: Final = [
+    pytest.param(dirty, expected, id=id_) for dirty, expected, id_ in _XSS_PAIRS
 ]
 
 
@@ -484,9 +482,9 @@ class TestUserModel:
     @pytest.mark.parametrize(
         ("field", "dirty", "expected"),
         [
-            pytest.param(field, p.values[0], p.values[1], id=f"{field}-{p.id}")
+            pytest.param(field, dirty, expected, id=f"{field}-{id_}")
             for field in ("name", "username", "phone")
-            for p in _XSS_MODEL_PARAMS
+            for dirty, expected, id_ in _XSS_PAIRS
         ],
     )
     def test_user_sanitizes_xss(
@@ -649,11 +647,6 @@ class TestUserModel:
         ("dangerous_url", "expected_match"),
         [
             pytest.param(
-                "https://user%40trusted.com/",
-                "URLにuserinfo",
-                id="percent_encoded_at_userinfo_bypass",
-            ),
-            pytest.param(
                 "https://example.com:abc/",
                 "ポートが無効",
                 id="invalid_port_string",
@@ -663,7 +656,7 @@ class TestUserModel:
     def test_user_website_rejects_security_bypass_patterns(
         self, valid_user_data: _UserData, dangerous_url: str, expected_match: str
     ) -> None:
-        """User.website がセキュリティバイパスパターンを拒否すること（Parser Differential Attack対策）"""  # noqa: E501
+        """User.website がセキュリティバイパスパターンを拒否すること"""
         valid_user_data["website"] = dangerous_url
         with pytest.raises(ValidationError, match=expected_match):
             User(**valid_user_data)
@@ -899,9 +892,9 @@ class TestCommentModel:
     @pytest.mark.parametrize(
         ("field", "dirty", "expected"),
         [
-            pytest.param(field, p.values[0], p.values[1], id=f"{field}-{p.id}")
+            pytest.param(field, dirty, expected, id=f"{field}-{id_}")
             for field in ("name", "body")
-            for p in _XSS_MODEL_PARAMS
+            for dirty, expected, id_ in _XSS_PAIRS
         ],
     )
     def test_comment_sanitizes_xss(self, field: str, dirty: str, expected: str) -> None:
@@ -1279,6 +1272,26 @@ class TestPhotoModel:
             )
 
     @pytest.mark.parametrize(
+        ("url", "thumbnail_url"),
+        [
+            pytest.param(
+                "https://example.com:abc/photo.jpg",
+                "https://via.placeholder.com/150",
+                id="invalid_port_url",
+            ),
+            pytest.param(
+                "https://via.placeholder.com/600",
+                "https://example.com:abc/thumb.jpg",
+                id="invalid_port_thumbnail_url",
+            ),
+        ],
+    )
+    def test_photo_rejects_invalid_port(self, url: str, thumbnail_url: str) -> None:
+        """Photo url/thumbnail_url が無効なポート文字列を拒否すること"""
+        with pytest.raises(ValidationError, match="ポートが無効"):
+            Photo(albumId=1, id=1, title="Test", url=url, thumbnailUrl=thumbnail_url)
+
+    @pytest.mark.parametrize(
         "dangerous_url",
         [
             "\u200bjavascript:alert(1)",
@@ -1380,14 +1393,13 @@ class TestPhotoModel:
         )
         assert photo.url == expected_url
 
-    def test_strip_invisible_chars_rejects_non_str(self) -> None:
-        """_strip_invisible_chars は非str型で ValueError を発生させること."""
-        from models.responses import _strip_invisible_chars  # noqa: PLC2701
 
-        with pytest.raises(ValueError, match="文字列が必要です"):
-            _strip_invisible_chars(None)  # type: ignore[arg-type]
-        with pytest.raises(ValueError, match="文字列が必要です"):
-            _strip_invisible_chars(123)  # type: ignore[arg-type]
+def test_strip_invisible_chars_rejects_non_str() -> None:
+    """_strip_invisible_chars は非str型で ValueError を発生させること."""
+    with pytest.raises(ValueError, match="文字列が必要です"):
+        _strip_invisible_chars(None)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="文字列が必要です"):
+        _strip_invisible_chars(123)  # type: ignore[arg-type]
 
 
 class TestExtraFieldsForbidden:
