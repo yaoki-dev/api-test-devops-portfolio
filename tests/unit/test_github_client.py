@@ -907,6 +907,8 @@ def test_handle_304_response_cache_miss() -> None:
     assert len(error_logs) == 1
     assert error_logs[0]["log_level"] == "error"
     assert error_logs[0]["etag"] == "etag-value"
+    assert error_logs[0]["endpoint"] == "/test"
+    assert error_logs[0]["hint"] == "ETag存在時のキャッシュミスは実装バグ"
 
 
 @pytest.mark.unit
