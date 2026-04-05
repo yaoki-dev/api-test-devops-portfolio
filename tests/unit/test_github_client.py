@@ -1069,15 +1069,22 @@ def test_update_etag_cache_with_etag_header() -> None:
 
 
 @pytest.mark.unit
-def test_check_rate_limit_warning_triggers_at_threshold() -> None:
-    """remaining=9 (< _RATE_LIMIT_WARNING_THRESHOLD=10) で警告ログを出力する"""
+@pytest.mark.parametrize(
+    "remaining",
+    [
+        pytest.param(9, id="threshold"),
+        pytest.param(0, id="zero"),
+    ],
+)
+def test_check_rate_limit_warning_triggers(remaining: int) -> None:
+    """remaining が _RATE_LIMIT_WARNING_THRESHOLD(10) 未満のとき警告ログを出力する"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
     headers = httpx.Headers({"X-RateLimit-Reset": "1700000000"})
     with capture_logs() as logs:
-        client._check_rate_limit_warning(headers, remaining=9)
+        client._check_rate_limit_warning(headers, remaining=remaining)
     warning_logs = [log for log in logs if log.get("log_level") == "warning"]
     assert len(warning_logs) == 1
-    assert warning_logs[0]["remaining"] == 9
+    assert warning_logs[0]["remaining"] == remaining
 
 
 @pytest.mark.unit
@@ -1089,18 +1096,6 @@ def test_check_rate_limit_warning_no_warning_at_boundary() -> None:
         client._check_rate_limit_warning(headers, remaining=10)
     warning_logs = [log for log in logs if log.get("log_level") == "warning"]
     assert len(warning_logs) == 0
-
-
-@pytest.mark.unit
-def test_check_rate_limit_warning_triggers_at_zero() -> None:
-    """remaining=0 (< _RATE_LIMIT_WARNING_THRESHOLD=10) で警告ログを出力する"""
-    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
-    headers = httpx.Headers({"X-RateLimit-Reset": "1700000000"})
-    with capture_logs() as logs:
-        client._check_rate_limit_warning(headers, remaining=0)
-    warning_logs = [log for log in logs if log.get("log_level") == "warning"]
-    assert len(warning_logs) == 1
-    assert warning_logs[0]["remaining"] == 0
 
 
 @pytest.mark.unit
