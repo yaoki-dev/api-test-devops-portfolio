@@ -19,7 +19,8 @@ websiteはURL形式のためhtmlコンテキスト出力時は呼び出し元で
 import html
 import re
 import unicodedata
-from urllib.parse import ParseResult, quote, unquote, urlparse, urlunparse
+from typing import Annotated
+from urllib.parse import ParseResult, quote, urlparse, urlunparse
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -95,7 +96,7 @@ def sanitize_user_content(value: str) -> str:
 
     Note:
         主にPydantic field_validator経由で使用されます。
-        v0.x では str | None を受理していたが、現在は str のみ受理する。
+        以前は str | None を受理していたが、現在は str のみ受理する。
         None を渡した場合は ValueError が発生する。
 
     Examples:
@@ -121,12 +122,7 @@ def _validate_netloc(parsed: ParseResult) -> None:
         raise ValueError("ポートが無効です（整数値でなければなりません）") from e
     # 多層防御: parsed.username/password に加え netloc の "@" リテラルも検査
     # （urlparse が特定のエンコード済み入力で username=None を返すエッジケース対策）
-    # さらに %40 エンコード済み "@" のデコード後も検査（Parser Differential Attack 対策）
-    try:
-        netloc_decoded = unquote(parsed.netloc)
-    except Exception:
-        netloc_decoded = parsed.netloc
-    has_at = "@" in parsed.netloc or "@" in netloc_decoded
+    has_at = "@" in parsed.netloc
     has_userinfo = parsed.username is not None or parsed.password is not None
     if has_at or has_userinfo:
         raise ValueError("URLにuserinfo（ユーザー名/パスワード）は指定できません")
@@ -223,9 +219,8 @@ class Comment(BaseModel):
     id: int = Field(..., ge=1, description="コメントID")
     post_id: int = Field(..., ge=1, alias="postId", description="親投稿ID")
     name: str = Field(..., max_length=100, description="コメント投稿者名")
-    email: EmailStr = Field(
+    email: Annotated[EmailStr, Field(max_length=100)] = Field(
         ...,
-        max_length=100,
         description="コメント投稿者メールアドレス（RFC構文チェック済み、DNS検証なし）",
     )
     body: str = Field(..., max_length=2000, description="コメント本文")
@@ -405,9 +400,8 @@ class User(BaseModel):
     id: int = Field(..., ge=1, description="ユーザーID")
     name: str = Field(..., max_length=100, description="ユーザー名")
     username: str = Field(..., max_length=50, description="ユーザー名（英数字）")
-    email: EmailStr = Field(
+    email: Annotated[EmailStr, Field(max_length=100)] = Field(
         ...,
-        max_length=100,
         description="メールアドレス（RFC構文チェック済み、DNS検証なし）",
     )
     address: Address = Field(..., description="住所情報")
@@ -604,8 +598,10 @@ class Photo(BaseModel):
         id: 写真ID（1以上）
         album_id: 親アルバムID（1以上）
         title: 写真タイトル（サニタイズ済み、最大200文字）
-        url: 写真URL（http/https必須、最大500文字）
-        thumbnail_url: サムネイルURL（http/https必須、最大500文字）
+        url: 写真URL（http/https必須・不可視文字除去・userinfo禁止・RFC 3986正規化済み、
+            最大500文字）
+        thumbnail_url: サムネイルURL（http/https必須・不可視文字除去・userinfo禁止・
+            RFC 3986正規化済み、最大500文字）
 
     """
 
@@ -663,6 +659,10 @@ class Photo(BaseModel):
                 - http/https以外のスキーム（またはスキームなし）
                 - 有効なホスト名なし
                 - userinfoを含む（例: https://user@host — RFC 3986 バイパス防止）
+
+        Note:
+            User.validate_website_scheme と異なり、スキームなしURLへの自動補完は行わない。
+            外部API由来URLのためスキームは必須。
 
         """
         sanitized = _strip_invisible_chars(v).strip()
