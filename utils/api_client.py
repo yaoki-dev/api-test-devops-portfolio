@@ -258,12 +258,11 @@ def _classify_error(
         ホスト名、プロキシ設定等の機密情報が含まれるため、``error_type``
         （例外クラス名）のみ記録してエラー分類に必須情報を確保する。
         なお、本省略はログ出力にのみ適用され、
-        ``_map_request_error()`` が raise する ``APIClientError`` のメッセージには
-        ``str(e)`` が含まれる点に留意すること。
+        ``_map_request_error()`` が raise する例外（``APIClientError`` および
+        そのサブクラス）のメッセージには ``str(e)`` が含まれる点に留意すること。
 
     """
     if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
-        # error フィールド省略（セキュリティ対策）— 詳細は Notes 参照。
         logger.error(
             "request_error_non_retryable",
             is_async=is_async,
@@ -272,7 +271,6 @@ def _classify_error(
             error_type=type(e).__name__,
         )
     else:
-        # error フィールド省略（セキュリティ対策）— 詳細は Notes 参照。
         logger.warning(
             "request_error",
             is_async=is_async,
