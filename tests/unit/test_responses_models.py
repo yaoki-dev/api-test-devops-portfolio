@@ -1384,6 +1384,16 @@ class TestPhotoModel:
                 "https://example.com/photo.jpg?name=hello%20world",
                 id="query_space_encoding",
             ),
+            pytest.param(
+                "https://example.com/page#sec<xss>",
+                "https://example.com/page#sec%3Cxss%3E",
+                id="fragment_xss_encoding",
+            ),
+            pytest.param(
+                "https://example.com/page#already%20encoded",
+                "https://example.com/page#already%20encoded",
+                id="fragment_no_double_encoding",
+            ),
         ],
     )
     def test_photo_url_encodes_special_chars(self, input_url: str, expected_url: str) -> None:
@@ -1392,6 +1402,24 @@ class TestPhotoModel:
             albumId=1, id=1, title="Test", url=input_url, thumbnailUrl="https://example.com/t.jpg"
         )
         assert photo.url == expected_url
+
+    def test_photo_url_rejects_percent_encoded_at_with_literal_at(self) -> None:
+        """%40エンコード済み@と@リテラル混在のuserinfoバイパスを拒否すること.
+
+        urlparse は "user%40evil.com@host.example.com" をuserinfoとして解析するため、
+        URLにuserinfoが含まれると判定しValidationErrorを発生させる。
+        """
+        with pytest.raises(ValidationError):
+            Photo(**{**_PHOTO_BASE, "url": "https://user%40evil.com@host.example.com/path.jpg"})
+
+    def test_photo_url_allows_percent_encoded_at_in_host(self) -> None:
+        """%40のみを含むURLはuserinfoなしとして受理すること.
+
+        urlparse は "user%40evil.com" をhostname全体として解析し、
+        usernameはNoneとなるため正常なURLとして扱われる。
+        """
+        photo = Photo(**{**_PHOTO_BASE, "url": "https://user%40evil.com/path.jpg"})
+        assert photo.url is not None
 
 
 def test_strip_invisible_chars_rejects_non_str() -> None:
