@@ -799,6 +799,51 @@ class TestUserModel:
         with pytest.raises(ValidationError, match="URLにuserinfo"):
             User(**valid_user_data)
 
+    @pytest.mark.parametrize(
+        ("input_url", "expected_url"),
+        [
+            pytest.param(
+                "https://example.com/my page",
+                "https://example.com/my%20page",
+                id="path_space_encoding",
+            ),
+            pytest.param(
+                "https://example.com/page#<xss>",
+                "https://example.com/page#%3Cxss%3E",
+                id="fragment_xss_encoding",
+            ),
+            pytest.param(
+                "https://example.com/page#already%20encoded",
+                "https://example.com/page#already%20encoded",
+                id="fragment_no_double_encoding",
+            ),
+            pytest.param(
+                "https://example.com/search?nested?key=val",
+                "https://example.com/search?nested?key=val",
+                id="query_literal_question_mark_preserved",
+            ),
+        ],
+    )
+    def test_user_website_encodes_special_chars(
+        self, valid_user_data: _UserData, input_url: str, expected_url: str
+    ) -> None:
+        """_normalize_url の quote() によるパス・フラグメントのURLエンコード動作を検証する."""
+        valid_user_data["website"] = input_url
+        user = User(**valid_user_data)
+        assert user.website == expected_url
+
+    def test_user_website_rejects_percent_encoded_at_with_literal_at(
+        self, valid_user_data: _UserData
+    ) -> None:
+        """%40エンコード済み@と@リテラル混在のuserinfoバイパスを拒否すること.
+
+        urlparse は "user%40evil.com@host.example.com" をuserinfoとして解析するため、
+        URLにuserinfoが含まれると判定しValidationErrorを発生させる。
+        """
+        valid_user_data["website"] = "https://user%40evil.com@host.example.com"
+        with pytest.raises(ValidationError, match="URLにuserinfo"):
+            User(**valid_user_data)
+
 
 class TestPostModel:
     """Post モデルのテスト"""
