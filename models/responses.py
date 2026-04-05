@@ -34,13 +34,11 @@ _STRIP_CATEGORIES = _INVISIBLE_CATEGORIES | frozenset({"Cs"})
 def _strip_invisible_chars(v: str) -> str:
     """不可視文字・制御文字・Unicode空白をURL文字列から除去
 
-    URLスキームバイパス防止のため、以下のUnicodeカテゴリを除去:
+    URLスキームバイパス防止のため、_STRIP_CATEGORIES（= _INVISIBLE_CATEGORIES | {"Cs"}）
+    に属するUnicodeカテゴリを単一の内包表記で一括除去する:
 
-    前処理（_INVISIBLE_CATEGORIESとは別ロジックで先行除去）:
     - Cs: Surrogate（孤立サロゲート U+D800-U+DFFF）— 有効なUnicode文字列に
           含まれるべきでないためnormalize()前に除去（データ整合性）
-
-    _INVISIBLE_CATEGORIESによる除去:
     - Cf: Format文字（Bidi制御, ゼロ幅文字, Word Joiner等）
     - Cc: 制御文字（C0/C1制御文字, DEL等）
     - Mn: 非スペーシングマーク（Mark, Nonspacing）
@@ -125,7 +123,7 @@ def _validate_netloc(parsed: ParseResult) -> None:
 
 
 def _normalize_url(parsed: ParseResult) -> str:
-    """RFC 3986 §6.2.2.1: スキームとホスト部を小文字正規化し、パス・クエリ・フラグメントをURLエンコードする（§6.2.2.2の既存エンコード大文字化は新規エンコード分のみ適用）."""  # noqa: E501
+    """RFC 3986 §6.2.2.1: スキームとホスト部を小文字正規化し、パス・クエリ・フラグメントをURLエンコードする（§6.2.2.2: 既存%xxシーケンスのヘックス大文字化は未実施 — 新規エンコード分はquote()がUPPERCASEで出力）."""  # noqa: E501
     # ParseResultはnamedtupleだが、tuple直接指定でコードの意図を明示する
     # パス・クエリ・フラグメントのXSS文字をURLエンコード（%を安全文字に含め二重エンコード防止）
     # RFC 3986 §3.3 pchar = unreserved / pct-encoded / sub-delims / ":" / "@"
@@ -133,7 +131,7 @@ def _normalize_url(parsed: ParseResult) -> str:
     # RFC 3986 §3.3 (params は path の一部として扱う)
     safe_params = quote(parsed.params, safe=";=@:!$&'()*+,/%")
     # RFC 3986 §3.4 query = *( pchar / "/" / "?" )
-    safe_query = quote(parsed.query, safe="=&+:@!$'()*,;/%")
+    safe_query = quote(parsed.query, safe="=&+:@!$'()*,;/?%")
     # RFC 3986 §3.5 fragment = *( pchar / "/" / "?" )
     # ._~（RFC 3986 unreserved）をフラグメントに追加: フラグメントはエンドユーザー向けのため
     # 通常の unreserved 文字を過剰エンコードしない（path/query との意図的な非対称）
