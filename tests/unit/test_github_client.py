@@ -836,12 +836,13 @@ def test_handle_403_response(
     expected_exc: type[Exception],
     match: str | None,
 ) -> None:
-    """_handle_403_response の4パステスト（D-07）
+    """_handle_403_response の5パステスト（D-07）
 
     - rate_limit_exceeded: remaining=0 → RateLimitError
     - non_rate_limit_with_message: remaining=50 + JSON message → GitHubAPIError(message)
     - non_rate_limit_no_json: remaining=50 + 非JSON → GitHubAPIError
     - invalid_header_fallback: remaining=invalid → フォールバック(-1) → GitHubAPIError
+    - non_str_message_field: remaining=50 + JSON message(非str) → GitHubAPIError
     """
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
     # 403レスポンスを構築
