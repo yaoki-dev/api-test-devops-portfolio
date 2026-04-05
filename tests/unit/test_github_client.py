@@ -1129,7 +1129,7 @@ def test_handle_http_status_error_truncates_long_body() -> None:
 def test_handle_http_status_error_no_truncation_at_boundary() -> None:
     """境界値(200字)でもレスポンスボディはエラーメッセージに含まれない（Sentryセキュリティ対応）"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
-    exact_body = "y" * 200  # ちょうど200文字（len > 200 が偽になる境界値）
+    exact_body = "y" * 200  # ちょうど200文字（[:200]スライスで切り詰めが発生しない境界値）
     request = httpx.Request("GET", "https://api.github.com/test")
     response = httpx.Response(422, request=request, content=exact_body.encode())
     error = httpx.HTTPStatusError("422", request=request, response=response)
