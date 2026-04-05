@@ -453,6 +453,12 @@ async def test_httpx_status_error_5xx_defensive_path(mock_backoff: Mock) -> None
     actual_attempts = [log_entry.get("attempt") for log_entry in retry_logs]
     assert actual_attempts == list(range(1, MAX_RETRIES)), f"attempt 値不一致: {actual_attempts}"
     for log_entry in retry_logs:
+        assert "endpoint" not in log_entry, (
+            f"retrying_server_error に endpoint フィールドが存在: {log_entry}"
+        )
+        assert "method" not in log_entry, (
+            f"retrying_server_error に method フィールドが存在: {log_entry}"
+        )
         assert log_entry["status_code"] == 503
         assert log_entry["max_retries"] == MAX_RETRIES
         assert log_entry["delay"] == 0.0
