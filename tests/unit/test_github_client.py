@@ -899,8 +899,14 @@ def test_handle_304_response_cache_miss() -> None:
     client._etag_cache["/test"] = "etag-value"
     # _data_cacheは空のまま
 
-    with pytest.raises(GitHubAPIError, match="Cache inconsistency"):
-        client._handle_304_response("/test")
+    with capture_logs() as log_output:
+        with pytest.raises(GitHubAPIError, match="Cache inconsistency"):
+            client._handle_304_response("/test")
+
+    error_logs = [log for log in log_output if log.get("event") == "cache_miss_on_304"]
+    assert len(error_logs) == 1
+    assert error_logs[0]["log_level"] == "error"
+    assert error_logs[0]["etag"] == "etag-value"
 
 
 @pytest.mark.unit
