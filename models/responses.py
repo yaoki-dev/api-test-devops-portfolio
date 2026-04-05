@@ -48,7 +48,8 @@ def _strip_invisible_chars(v: str) -> str:
           副次的に結合文字 U+0300等もMnカテゴリへの帰属により除去）
     - Zs: Unicode空白（NBSP, Ogham Space, 全角空白等。U+0020通常スペースは
           Zsカテゴリに属するが、c == " " の特例条件で保持）
-          ※ NFKC正規化前にも除去（NFKC後にU+0020へ変換される副作用を防止）
+          ※ NFKC正規化前にも除去（U+3000等はNFKC後にU+0020へ変換される副作用を防止。
+          U+1680等はNFKC変換対象外だが一括除去でスキームバイパスを防止）
     - Zl: 行区切り（U+2028 Line Separator）
     - Zp: 段落区切り（U+2029 Paragraph Separator）
 
@@ -66,12 +67,7 @@ def _strip_invisible_chars(v: str) -> str:
         c for c in v if (unicodedata.category(c) not in _STRIP_CATEGORIES) or (c == " ")
     )
     normalized = unicodedata.normalize("NFKC", pre_filtered)
-    # パス2: NFKC後も二重チェック（NFKC変換が新たな不可視文字を生成するケースに備える）
-    return "".join(
-        c
-        for c in normalized
-        if (unicodedata.category(c) not in _INVISIBLE_CATEGORIES) or (c == " ")
-    )
+    return normalized
 
 
 # =============================================================================
@@ -219,10 +215,13 @@ class Comment(BaseModel):
     id: int = Field(..., ge=1, description="コメントID")
     post_id: int = Field(..., ge=1, alias="postId", description="親投稿ID")
     name: str = Field(..., max_length=100, description="コメント投稿者名")
-    email: Annotated[EmailStr, Field(max_length=100)] = Field(
-        ...,
-        description="コメント投稿者メールアドレス（RFC構文チェック済み、DNS検証なし）",
-    )
+    email: Annotated[
+        EmailStr,
+        Field(
+            max_length=100,
+            description="コメント投稿者メールアドレス（RFC構文チェック済み、DNS検証なし）",
+        ),
+    ]
     body: str = Field(..., max_length=2000, description="コメント本文")
 
     model_config = {"populate_by_name": True, "extra": "forbid"}
@@ -400,10 +399,10 @@ class User(BaseModel):
     id: int = Field(..., ge=1, description="ユーザーID")
     name: str = Field(..., max_length=100, description="ユーザー名")
     username: str = Field(..., max_length=50, description="ユーザー名（英数字）")
-    email: Annotated[EmailStr, Field(max_length=100)] = Field(
-        ...,
-        description="メールアドレス（RFC構文チェック済み、DNS検証なし）",
-    )
+    email: Annotated[
+        EmailStr,
+        Field(max_length=100, description="メールアドレス（RFC構文チェック済み、DNS検証なし）"),
+    ]
     address: Address = Field(..., description="住所情報")
     phone: str = Field(..., max_length=50, description="電話番号")
     website: str = Field(
