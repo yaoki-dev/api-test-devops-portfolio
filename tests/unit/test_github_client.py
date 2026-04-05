@@ -890,6 +890,7 @@ def test_handle_http_status_error_raises_on_4xx() -> None:
     assert http_error_logs[0]["status_code"] == 404
     assert http_error_logs[0]["endpoint"] == "/test"  # url.path のみ（クエリパラメータ除外）
     assert http_error_logs[0]["method"] == "GET"
+    assert "body_preview" in http_error_logs[0]  # Sentryトランケーションフィールドの存在確認
 
 
 @pytest.mark.unit
@@ -1096,6 +1097,8 @@ def test_check_rate_limit_warning_no_warning_at_boundary() -> None:
         client._check_rate_limit_warning(headers, remaining=10)
     warning_logs = [log for log in logs if log.get("log_level") == "warning"]
     assert len(warning_logs) == 0
+    for log in logs:
+        assert "remaining" not in log  # threshold以上では remaining フィールドを出力しない
 
 
 @pytest.mark.unit
