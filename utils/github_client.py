@@ -491,7 +491,7 @@ class AsyncGitHubClient:
 
                 if response.status_code >= 500:
                     await self._handle_5xx_response(response, attempt)
-                    continue
+                    continue  # _handle_5xx_response がraiseしない場合（非最終試行）はリトライ継続
 
                 response.raise_for_status()
 
@@ -507,7 +507,7 @@ class AsyncGitHubClient:
                 if e.response.status_code >= 500:
                     # 防御的パス: 5xxをhttpx.HTTPStatusErrorとして受信した場合、通常パスと同等に処理
                     await self._handle_5xx_response(e.response, attempt)
-                    continue
+                    continue  # _handle_5xx_response がraiseしない場合（非最終試行）はリトライ継続
                 self._handle_http_status_error(e)
 
             except httpx.TimeoutException as e:
