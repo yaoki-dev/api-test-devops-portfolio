@@ -718,7 +718,6 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
             # 予期されるAPI例外のみキャッチ
             self.logger.warning(
                 "health_check_failed",
-                error=str(e),
                 error_type=type(e).__name__,
             )
             return False
@@ -1301,7 +1300,6 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             # 予期されるAPI例外のみキャッチ
             self.logger.warning(
                 "health_check_failed",
-                error=str(e),
                 error_type=type(e).__name__,
             )
             return False
@@ -1351,7 +1349,6 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
                     self.logger.warning(
                         "get_user_failed",
                         user_id=user_id,
-                        error=str(e),
                         error_type=type(e).__name__,
                     )
                     return None
