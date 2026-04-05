@@ -258,7 +258,7 @@ def _classify_error(
         ホスト名、プロキシ設定等の機密情報が含まれるため、``error_type``
         （例外クラス名）のみ記録してエラー分類に必須情報を確保する。
         なお、本省略はログ出力にのみ適用され、
-        ``_map_request_error()`` が raise する例外（``APIClientError`` および
+        ``_map_request_error()`` が生成する例外（``APIClientError`` および
         そのサブクラス）のメッセージには ``str(e)`` が含まれる点に留意すること。
 
     """
