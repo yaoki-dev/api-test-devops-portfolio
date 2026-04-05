@@ -879,8 +879,16 @@ def test_handle_http_status_error_raises_on_4xx() -> None:
         request=mock_request,
         response=mock_response,
     )
-    with pytest.raises(GitHubAPIError, match="HTTP 404"):
-        client._handle_http_status_error(error)
+    with capture_logs() as log_output:
+        with pytest.raises(GitHubAPIError, match="HTTP 404"):
+            client._handle_http_status_error(error)
+
+    http_error_logs = [log for log in log_output if log.get("event") == "http_status_error"]
+    assert len(http_error_logs) == 1
+    assert http_error_logs[0]["log_level"] == "warning"
+    assert http_error_logs[0]["status_code"] == 404
+    assert http_error_logs[0]["endpoint"] == "/test"  # url.path のみ（クエリパラメータ除外）
+    assert http_error_logs[0]["method"] == "GET"
 
 
 @pytest.mark.unit
