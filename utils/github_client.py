@@ -10,7 +10,7 @@ import asyncio
 import json
 import re
 from datetime import UTC, datetime
-from typing import Any, Literal, NoReturn, Self, cast
+from typing import Any, NoReturn, Self, cast
 
 import httpx
 
@@ -340,11 +340,10 @@ class AsyncGitHubClient:
         self,
         response: httpx.Response,
         attempt: int,
-    ) -> Literal[True]:
-        """5xxエラーのリトライ制御。最終試行なら raise、継続なら return True。
+    ) -> None:
+        """5xxエラーのリトライ制御。最終試行なら raise、継続なら return（None）。
 
-        raise-or-return パターン (D-10):
-        - Returns: Literal[True] — リトライ継続
+        - Returns: None — リトライ継続
         - Raises: GitHubServerError — リトライ上限到達
         """
         if attempt < self.max_retries - 1:
@@ -357,7 +356,7 @@ class AsyncGitHubClient:
                 status_code=response.status_code,
             )
             await asyncio.sleep(delay)
-            return True  # 呼び出し元で continue
+            return  # 呼び出し元で continue
         raise GitHubServerError(
             f"Server error: {response.status_code} after {self.max_retries} attempts",
         )
@@ -384,8 +383,9 @@ class AsyncGitHubClient:
         """4xxエラーを GitHubAPIError に変換して raise する。
 
         通常フローでは 5xx は _handle_5xx_response() で先に処理済みのため 4xx のみが渡る。
-        httpx.HTTPStatusError として直接 5xx が発生した場合も、呼び出し元の except ブロックで
-        _handle_5xx_response() に転送されるため、このメソッドへの 5xx 到達は想定しない。
+        httpx.HTTPStatusError として直接 5xx が発生した場合も、呼び出し元の except ブロックが
+        先に status_code >= 500 を判定して _handle_5xx_response() へ分岐させるため、
+        このメソッドへの 5xx 到達は想定しない。
 
         設計上の制約: `_cause` は `from e`（元の httpx.HTTPStatusError）ではなく
         新規生成した Exception を使用する。理由: `from e` にすると
@@ -488,7 +488,6 @@ class AsyncGitHubClient:
 
                 if response.status_code == 403:
                     self._handle_403_response(response)
-                    # unreachable: _handle_403_response は NoReturn
 
                 if response.status_code >= 500:
                     await self._handle_5xx_response(response, attempt)
@@ -510,7 +509,6 @@ class AsyncGitHubClient:
                     await self._handle_5xx_response(e.response, attempt)
                     continue
                 self._handle_http_status_error(e)
-                # unreachable: _handle_http_status_error は NoReturn
 
             except httpx.TimeoutException as e:
                 self.logger.warning("request_timeout", endpoint=endpoint, method=method)

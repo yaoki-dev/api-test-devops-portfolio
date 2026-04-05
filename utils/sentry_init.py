@@ -80,6 +80,9 @@ SENSITIVE_KEYS: frozenset[str] = frozenset(
         "credit_card",
         "cvv",
         "card_number",
+        # HTTPレスポンスプレビュー: 現在 warning ログのため Sentry 非送信だが、
+        # 将来 error 昇格時に event["extra"] 経由で送信される場合に備えた予防的スクラブ
+        "body_preview",
     },
 )
 

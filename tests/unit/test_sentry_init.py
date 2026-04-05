@@ -132,8 +132,8 @@ class TestSensitiveKeysCompleteness:
         assert isinstance(SENSITIVE_KEYS, frozenset)
 
     def test_sensitive_keys_count(self) -> None:
-        """30種類の機密キーが定義されている（email追加後）"""
-        assert len(SENSITIVE_KEYS) == 30
+        """31種類の機密キーが定義されている（body_preview追加後）"""
+        assert len(SENSITIVE_KEYS) == 31
 
     @pytest.mark.parametrize(
         "key",
@@ -174,6 +174,8 @@ class TestSensitiveKeysCompleteness:
             "credit_card",
             "cvv",
             "card_number",
+            # HTTPレスポンスプレビュー
+            "body_preview",
         ],
     )
     def test_expected_keys_present(self, key: str) -> None:

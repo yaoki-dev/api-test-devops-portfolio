@@ -356,6 +356,7 @@ async def test_httpx_status_error_4xx():
     assert exc_info.value.__cause__ is not None
     # __cause__がhttpx.HTTPStatusErrorそのものでないことを型レベルで確認
     assert not isinstance(exc_info.value.__cause__, httpx.HTTPStatusError)
+    assert type(exc_info.value.__cause__) is Exception
     assert "httpx.HTTPStatusError" in str(exc_info.value.__cause__)
     assert "401" in str(exc_info.value.__cause__)
     assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
@@ -814,6 +815,14 @@ def test_repo_validation_invalid(repo: str) -> None:
             "Access forbidden",
             id="invalid_header_fallback",
         ),
+        pytest.param(
+            "50",
+            "0",
+            {"message": 999},
+            GitHubAPIError,
+            "Access forbidden",
+            id="non_str_message_field",
+        ),
     ],
 )
 def test_handle_403_response(
@@ -866,7 +875,7 @@ def test_handle_http_status_error_raises_on_4xx() -> None:
         request=mock_request,
         response=mock_response,
     )
-    with pytest.raises(GitHubAPIError):
+    with pytest.raises(GitHubAPIError, match="HTTP 404"):
         client._handle_http_status_error(error)
 
 
@@ -913,7 +922,7 @@ async def test_handle_5xx_response(
 ) -> None:
     """_handle_5xx_response の2パステスト（D-07）
 
-    - 5xx_non_final_attempt: 5xx + 非最終試行 → return True（continue用）
+    - 5xx_non_final_attempt: 5xx + 非最終試行 → return（None）
     - 5xx_final_attempt: 5xx + 最終試行 → GitHubServerError を raise
     """
     async with AsyncGitHubClient(max_retries=max_retries_val) as client:
@@ -923,8 +932,17 @@ async def test_handle_5xx_response(
             with pytest.raises(expected_exc):
                 await client._handle_5xx_response(mock_response, attempt)
         else:
-            result = await client._handle_5xx_response(mock_response, attempt)
-            assert result is True
+            with capture_logs() as log_output:
+                await client._handle_5xx_response(mock_response, attempt)
+            retrying_logs = [
+                log for log in log_output if log.get("event") == "retrying_server_error"
+            ]
+            assert len(retrying_logs) == 1
+            log = retrying_logs[0]
+            assert log["attempt"] == attempt + 1
+            assert log["max_retries"] == max_retries_val
+            assert log["status_code"] == status_code
+            assert log["delay"] == 0.0
 
 
 # ── D-07 追加: _prepare_headers / _handle_304 / _handle_403 / _update_etag_cache ──
@@ -976,6 +994,35 @@ def test_handle_403_response_no_json_log() -> None:
         warning_logs = [log for log in logs if log.get("event") == "failed_to_parse_403_message"]
         assert len(warning_logs) == 1
         assert warning_logs[0]["log_level"] == "warning"
+
+
+@pytest.mark.unit
+def test_parse_json_response_valid_json() -> None:
+    """_parse_json_response: 有効なJSONレスポンスをパースして返す"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    response = httpx.Response(200, json={"id": 1, "login": "user"})
+    result = client._parse_json_response(response, "/user")
+    assert result == {"id": 1, "login": "user"}
+
+
+@pytest.mark.unit
+def test_parse_json_response_invalid_json_raises() -> None:
+    """_parse_json_response: 破損JSONでGitHubAPIError + json_decode_errorログ"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    # 明示的に不正JSONコンテンツを持つレスポンスを構築
+    response = httpx.Response(
+        200,
+        content=b"not-valid-json",
+        headers={"Content-Type": "application/json"},
+    )
+    with capture_logs() as log_output:
+        with pytest.raises(GitHubAPIError, match="Invalid JSON response"):
+            client._parse_json_response(response, "/test-endpoint")
+
+    decode_logs = [log for log in log_output if log.get("event") == "json_decode_error"]
+    assert len(decode_logs) == 1
+    assert decode_logs[0]["endpoint"] == "/test-endpoint"
+    assert "error" in decode_logs[0]
 
 
 @pytest.mark.unit
