@@ -254,12 +254,14 @@ def _classify_error(
             リトライ可能エラーは logger.warning でログ出力し、raise されない。
 
     Notes:
-        ログの ``error`` フィールドは省略している。httpx 例外の文字列には
+        本関数のログ出力（``request_error_non_retryable`` / ``request_error`` イベント）では
+        ``error`` フィールドを省略している。httpx 例外の文字列には
         ホスト名、プロキシ設定等の機密情報が含まれるため、``error_type``
         （例外クラス名）のみ記録してエラー分類に必須情報を確保する。
-        なお、本省略はログ出力にのみ適用され、
-        ``_map_request_error()`` が生成する例外（``APIClientError`` および
-        そのサブクラス）のメッセージには ``str(e)`` が含まれる点に留意すること。
+        ``_map_request_error()`` が生成する例外メッセージも同様に
+        ``type(e).__name__``（例外クラス名）のみ含め、``str(e)`` は含めない。
+        元の例外は ``__cause__`` チェーンで保持されるため、
+        デバッグ時にはトレースバック経由で詳細を確認できる。
 
     """
     if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
