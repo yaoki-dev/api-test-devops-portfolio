@@ -1,0 +1,307 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1775551864425,
+  "projectRoot": "/Users/yuta/projects/python/api-test-devops-portfolio",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      },
+      {
+        "name": "Python",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "pyproject.toml"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "pytest",
+        "version": null,
+        "category": "testing"
+      }
+    ],
+    "packageManager": "npm",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": "pytest",
+    "lintCommand": "ruff check",
+    "devCommand": null,
+    "scripts": {
+      "lint:md": "markdownlint '**/*.md' --ignore node_modules --ignore .venv",
+      "lint:md:fix": "markdownlint '**/*.md' --ignore node_modules --ignore .venv --fix",
+      "lint:text": "textlint '**/*.md' --ignore-path .textlintignore",
+      "lint:text:fix": "textlint '**/*.md' --ignore-path .textlintignore --fix",
+      "lint:links": "find . -name '*.md' -not -path './node_modules/*' -not -path './.venv/*' -not -path './claudedocs/*' -not -path './docs/tools/*' -not -path './docs/main/interview/*' -not -path './docs/main/6週プラン/*' -not -path './docs/analysis/*' -not -name 'DOCS_INDEX.md' | xargs -I {} markdown-link-check {} --config .markdown-link-check.json --quiet",
+      "lint:links:verbose": "find . -name '*.md' -not -path './node_modules/*' -not -path './.venv/*' -not -path './claudedocs/*' -not -path './docs/tools/*' -not -path './docs/main/interview/*' -not -path './docs/main/6週プラン/*' -not -path './docs/analysis/*' -not -name 'DOCS_INDEX.md' | xargs -I {} markdown-link-check {} --config .markdown-link-check.json",
+      "lint:all": "npm run lint:md && npm run lint:text",
+      "lint:all:fix": "npm run lint:md:fix && npm run lint:text:fix"
+    }
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "assets",
+      "docs",
+      "scripts",
+      "tests"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "assets": {
+      "path": "assets",
+      "purpose": "Static assets",
+      "fileCount": 5,
+      "lastAccessed": 1775551863549,
+      "keyFiles": [
+        "demo-cicd.cast",
+        "demo-cicd.gif",
+        "demo-docker.gif",
+        "demo-test.cast",
+        "demo-test.gif"
+      ]
+    },
+    "claudedocs": {
+      "path": "claudedocs",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1775551863553,
+      "keyFiles": [
+        "commit-skill-test-results-ja.md"
+      ]
+    },
+    "config": {
+      "path": "config",
+      "purpose": "Configuration files",
+      "fileCount": 3,
+      "lastAccessed": 1775551863554,
+      "keyFiles": [
+        "CLAUDE.md",
+        "__init__.py",
+        "settings.py"
+      ]
+    },
+    "data": {
+      "path": "data",
+      "purpose": "Data files",
+      "fileCount": 3,
+      "lastAccessed": 1775551864015,
+      "keyFiles": [
+        "cipher-sessions.db",
+        "cipher-sessions.db-shm",
+        "cipher-sessions.db-wal"
+      ]
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 5,
+      "lastAccessed": 1775551864021,
+      "keyFiles": [
+        "CLAUDE.md",
+        "DOCS_INDEX.md",
+        "search_index.json",
+        "terminology_standard.md"
+      ]
+    },
+    "htmlcov": {
+      "path": "htmlcov",
+      "purpose": null,
+      "fileCount": 22,
+      "lastAccessed": 1775551864025,
+      "keyFiles": [
+        "class_index.html",
+        "coverage_html_cb_6fb7b396.js",
+        "coverage_html_cb_bcae5fc4.js",
+        "coverage_html_cb_dd2e7eb5.js",
+        "favicon_32_cb_58284776.png"
+      ]
+    },
+    "logs": {
+      "path": "logs",
+      "purpose": null,
+      "fileCount": 9,
+      "lastAccessed": 1775551864027,
+      "keyFiles": [
+        "backup_structured.log",
+        "mcp-puppeteer-2025-09-26.log",
+        "mcp-puppeteer-2025-09-27.log",
+        "mcp-puppeteer-2025-09-30.log",
+        "mcp-puppeteer-2025-10-01.log"
+      ]
+    },
+    "memory": {
+      "path": "memory",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1775551864140,
+      "keyFiles": []
+    },
+    "models": {
+      "path": "models",
+      "purpose": "Data models",
+      "fileCount": 3,
+      "lastAccessed": 1775551864142,
+      "keyFiles": [
+        "CLAUDE.md",
+        "__init__.py",
+        "responses.py"
+      ]
+    },
+    "monitoring": {
+      "path": "monitoring",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1775551864177,
+      "keyFiles": [
+        "scheduler.log"
+      ]
+    },
+    "obsidian-vault-local": {
+      "path": "obsidian-vault-local",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1775551864263,
+      "keyFiles": []
+    },
+    "performance": {
+      "path": "performance",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1775551864337,
+      "keyFiles": []
+    },
+    "quality": {
+      "path": "quality",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1775551864339,
+      "keyFiles": []
+    },
+    "reports": {
+      "path": "reports",
+      "purpose": null,
+      "fileCount": 22,
+      "lastAccessed": 1775551864352,
+      "keyFiles": [
+        "CLAUDE.md",
+        "code_quality_improvement_plan.md",
+        "config_validation_report.json",
+        "context_management_final_report.md",
+        "context_optimization_config.json"
+      ]
+    },
+    "scripts": {
+      "path": "scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 9,
+      "lastAccessed": 1775551864354,
+      "keyFiles": [
+        "backup_vault.sh",
+        "daily_task_automation.sh",
+        "docker-build.sh",
+        "error_tracker.py",
+        "evaluate_4dimensions.py"
+      ]
+    },
+    "security": {
+      "path": "security",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1775551864356,
+      "keyFiles": []
+    },
+    "testing": {
+      "path": "testing",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1775551864357,
+      "keyFiles": []
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 6,
+      "lastAccessed": 1775551864357,
+      "keyFiles": [
+        "CLAUDE.md",
+        "__init__.py",
+        "conftest.py",
+        "constants.py",
+        "test_smoke.py"
+      ]
+    },
+    "utils": {
+      "path": "utils",
+      "purpose": "Utility functions",
+      "fileCount": 8,
+      "lastAccessed": 1775551864358,
+      "keyFiles": [
+        "CLAUDE.md",
+        "__init__.py",
+        "api_client.py",
+        "cgc_verification_probe_v1.py",
+        "github_client.py"
+      ]
+    },
+    "obsidian-vault-local/docs": {
+      "path": "obsidian-vault-local/docs",
+      "purpose": "Documentation",
+      "fileCount": 3,
+      "lastAccessed": 1775551864422,
+      "keyFiles": [
+        "CLAUDE.md",
+        "Obsidian導入計画.md",
+        "ai_interpretation_visual_guide.md"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": ".mcp.json",
+      "accessCount": 3,
+      "lastAccessed": 1775556569398,
+      "type": "file"
+    },
+    {
+      "path": "cgc_mcp_wrapper.sh",
+      "accessCount": 2,
+      "lastAccessed": 1775556595755,
+      "type": "file"
+    },
+    {
+      "path": "",
+      "accessCount": 1,
+      "lastAccessed": 1775556545317,
+      "type": "directory"
+    },
+    {
+      "path": "logs/mcp_debug.log",
+      "accessCount": 1,
+      "lastAccessed": 1775556652639,
+      "type": "directory"
+    }
+  ],
+  "userDirectives": []
+}

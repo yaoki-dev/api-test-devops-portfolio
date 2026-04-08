@@ -1,0 +1,15 @@
+{
+  "name": "pyright-lsp-python",
+  "description": "Python LSP integration with Pyright for AI-assisted code navigation",
+  "version": "1.0.0",
+  "author": "Yuta Aoki",
+  "lspServers": {
+    "python": {
+      "command": "pyright-langserver",
+      "args": ["--stdio"],
+      "extensionToLanguage": {
+        ".py": "python"
+      }
+    }
+  }
+}

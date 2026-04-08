@@ -1,0 +1,13 @@
+{
+    "folders": [
+        {
+            "path": "../.worktrees/wt-feature01"
+        },
+        {
+            "path": "../.worktrees/wt-feature02"
+        },
+        {
+            "path": "../.worktrees/wt-feature03"
+        }
+    ]
+}
