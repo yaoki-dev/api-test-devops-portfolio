@@ -316,15 +316,15 @@ async def test_async_delete_with_retry(mock_backoff: Mock) -> None:
 
 
 @pytest.mark.parametrize(
-    "exc,expected_error",
+    "exc",
     [
-        (httpx.TooManyRedirects("Max redirects exceeded"), "Max redirects exceeded"),
-        (httpx.InvalidURL("Invalid URL format"), "Invalid URL format"),
+        httpx.TooManyRedirects("Max redirects exceeded"),
+        httpx.InvalidURL("Invalid URL format"),
     ],
 )
 @respx.mock
 async def test_async_non_retryable_error_logs_before_raise(
-    exc: httpx.TooManyRedirects | httpx.InvalidURL, expected_error: str
+    exc: httpx.TooManyRedirects | httpx.InvalidURL,
 ) -> None:
     """非リトライエラー時にlogger.errorが_map_request_error前に実行される
 
@@ -344,13 +344,14 @@ async def test_async_non_retryable_error_logs_before_raise(
     error_logs = [
         log
         for log in log_output
-        if log.get("log_level") == "error"
-        and log.get("event") == "async_request_error_non_retryable"  # noqa: E501
+        if log.get("log_level") == "error" and log.get("event") == "request_error_non_retryable"  # noqa: E501
     ]
     assert len(error_logs) == 1, f"Expected 1 error log, got: {log_output}"
     assert error_logs[0]["method"] == "GET"
     assert error_logs[0]["endpoint"] == "/posts/1"
-    assert expected_error in error_logs[0]["error"]  # error フィールド検証
+    assert "error" not in error_logs[0]  # security: 認証情報漏洩防止
+    assert "error_type" in error_logs[0]  # error_type フィールドの存在確認
+    assert error_logs[0]["is_async"] is True  # AsyncAPIClient 呼び出しの確認
 
 
 @respx.mock
