@@ -26,7 +26,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 
 # RFC 3986 準拠のスキーム検出パターン（scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) ":"）
 _SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
-_HTML_META_RE = re.compile(r'[<>"\'&]')
+_HTML_META_RE: re.Pattern[str] = re.compile(r'[<>"\'&]')
 _INVISIBLE_CATEGORIES = frozenset({"Cf", "Cc", "Mn", "Zs", "Zl", "Zp"})
 # Cs（孤立サロゲート）を _INVISIBLE_CATEGORIES と合算した除去セット（1回目パスで使用）
 _STRIP_CATEGORIES = _INVISIBLE_CATEGORIES | frozenset({"Cs"})
@@ -66,7 +66,7 @@ def _strip_invisible_chars(v: str) -> str:
         c for c in v if (unicodedata.category(c) not in _STRIP_CATEGORIES) or (c == " ")
     )
     normalized = unicodedata.normalize("NFKC", pre_filtered)
-    # パス3: NFKC後に新たに生成された不可視文字を除去
+    # パス2: NFKC後に新たに生成された不可視文字を除去
     # （Csは再出現しないため_INVISIBLE_CATEGORIESのみ）
     return "".join(
         c
