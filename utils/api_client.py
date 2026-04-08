@@ -151,21 +151,21 @@ def _map_request_error(e: httpx.RequestError | httpx.InvalidURL) -> APIClientErr
     """
     # Non-retryable errors - raise immediately (no point in retrying)
     if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
-        raise APIClientError(f"Non-retryable request error: {e}") from e
+        raise APIClientError(f"Non-retryable request error: {type(e).__name__}") from e
 
     # Retryable errors: returnするため `raise ... from e` は使えず __cause__ を手動設定する。
     # PEP 3134: exc.__cause__ = e を設定すると __suppress_context__ が自動で True になり、
     # 呼び出し元が raise した際に `raise exc from e` と同じ例外チェーン表示になる。
     if isinstance(e, httpx.TimeoutException):
-        timeout_exc = APITimeoutError(f"Request timeout: {e}")
+        timeout_exc = APITimeoutError(f"Request timeout: {type(e).__name__}")
         timeout_exc.__cause__ = e
         return timeout_exc
     if isinstance(e, httpx.ConnectError):
-        connect_exc = APIConnectionError(f"Connection failed: {e}")
+        connect_exc = APIConnectionError(f"Connection failed: {type(e).__name__}")
         connect_exc.__cause__ = e
         return connect_exc
     # NetworkError, etc. - retryable network issues
-    network_exc = APIConnectionError(f"Network error: {e}")
+    network_exc = APIConnectionError(f"Network error: {type(e).__name__}")
     network_exc.__cause__ = e
     return network_exc
 
