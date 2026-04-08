@@ -1180,7 +1180,6 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
                         {
                             "index": i,
                             "user_data": user_data_safe,
-                            "error": str(result),
                             "error_type": type(result).__name__,
                         }
                     )
