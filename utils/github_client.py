@@ -340,6 +340,8 @@ class AsyncGitHubClient:
         self,
         response: httpx.Response,
         attempt: int,
+        endpoint: str,
+        method: str,
     ) -> None:
         """5xxエラーのリトライ制御。最終試行なら raise、継続なら return（None）。
 
@@ -354,6 +356,8 @@ class AsyncGitHubClient:
                 max_retries=self.max_retries,
                 delay=delay,
                 status_code=response.status_code,
+                endpoint=endpoint,
+                method=method,
             )
             await asyncio.sleep(delay)
             return  # 呼び出し元で continue
@@ -391,18 +395,24 @@ class AsyncGitHubClient:
         新規生成した Exception を使用する。理由: `from e` にすると
         httpx.HTTPStatusError インスタンス（response body を含む可能性）が
         __cause__ に残り、Sentry 等の APM ツール経由でセンシティブデータが
-        漏洩するリスクがある。コーディング規約 Section 5
+        漏洩するリスクがある。warning ログにはデバッグ用の
+        `body_preview` を 200 文字まで意図的に記録するが、例外チェーンには
+        response body を載せない。コーディング規約 Section 5
         「from e でチェーン維持」の例外として意図的に採用。
         """
         _cause = Exception(
             f"httpx.HTTPStatusError: HTTP {e.response.status_code} {e.request.url.path}"
         )
+        body_preview = e.response.content.decode(
+            e.response.encoding or "utf-8",
+            errors="replace",
+        )[:_MAX_ERROR_RESPONSE_TEXT]
         self.logger.warning(
             "http_status_error",
             status_code=e.response.status_code,
             endpoint=e.request.url.path,
             method=e.request.method,
-            body_preview=e.response.text[:_MAX_ERROR_RESPONSE_TEXT],
+            body_preview=body_preview,
         )
         raise GitHubAPIError(f"HTTP {e.response.status_code} error") from _cause
 
@@ -490,7 +500,7 @@ class AsyncGitHubClient:
                     self._handle_403_response(response)
 
                 if response.status_code >= 500:
-                    await self._handle_5xx_response(response, attempt)
+                    await self._handle_5xx_response(response, attempt, endpoint, method)
                     continue  # _handle_5xx_response がraiseしない場合（非最終試行）はリトライ継続
 
                 response.raise_for_status()
@@ -506,7 +516,7 @@ class AsyncGitHubClient:
             except httpx.HTTPStatusError as e:
                 if e.response.status_code >= 500:
                     # 防御的パス: 5xxをhttpx.HTTPStatusErrorとして受信した場合、通常パスと同等に処理
-                    await self._handle_5xx_response(e.response, attempt)
+                    await self._handle_5xx_response(e.response, attempt, endpoint, method)
                     continue  # _handle_5xx_response がraiseしない場合（非最終試行）はリトライ継続
                 self._handle_http_status_error(e)
 

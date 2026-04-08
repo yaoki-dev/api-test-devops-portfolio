@@ -10,6 +10,7 @@ GitHub API非同期クライアントのUnit Tests
 import asyncio
 import json
 from datetime import UTC, datetime
+from typing import cast
 from unittest.mock import ANY, Mock, patch
 
 import httpx
@@ -306,8 +307,8 @@ async def test_context_manager_initialization():
         assert isinstance(ctx_client._client, httpx.AsyncClient)
 
     # __aexit__でhttpx.AsyncClientがクローズされたことを確認
-    assert client._client is not None
-    assert client._client.is_closed
+    client_after_exit = cast(httpx.AsyncClient, client._client)
+    assert client_after_exit.is_closed
 
 
 async def test_request_without_context_manager():
@@ -400,15 +401,9 @@ async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
     actual_attempts = [log_entry.get("attempt") for log_entry in retry_logs]
     assert actual_attempts == list(range(1, MAX_RETRIES)), f"attempt 値不一致: {actual_attempts}"
     # フィールド検証（順序非依存）
-    # Note: retrying_server_error は endpoint/method を含まない
-    #       （_handle_5xx_response はリクエストコンテキストを持たないため）
     for log_entry in retry_logs:
-        assert "endpoint" not in log_entry, (
-            f"retrying_server_error に endpoint フィールドが存在: {log_entry}"
-        )
-        assert "method" not in log_entry, (
-            f"retrying_server_error に method フィールドが存在: {log_entry}"
-        )
+        assert log_entry["endpoint"] == "/users/octocat"
+        assert log_entry["method"] == "GET"
         assert log_entry["status_code"] == 503
         assert log_entry["max_retries"] == MAX_RETRIES
         # delay は @patch(return_value=0.0) のモック値に対応
@@ -453,12 +448,8 @@ async def test_httpx_status_error_5xx_defensive_path(mock_backoff: Mock) -> None
     actual_attempts = [log_entry.get("attempt") for log_entry in retry_logs]
     assert actual_attempts == list(range(1, MAX_RETRIES)), f"attempt 値不一致: {actual_attempts}"
     for log_entry in retry_logs:
-        assert "endpoint" not in log_entry, (
-            f"retrying_server_error に endpoint フィールドが存在: {log_entry}"
-        )
-        assert "method" not in log_entry, (
-            f"retrying_server_error に method フィールドが存在: {log_entry}"
-        )
+        assert log_entry["endpoint"] == "/users/octocat"
+        assert log_entry["method"] == "GET"
         assert log_entry["status_code"] == 503
         assert log_entry["max_retries"] == MAX_RETRIES
         assert log_entry["delay"] == 0.0
@@ -866,7 +857,9 @@ def test_handle_403_response(
     with pytest.raises(expected_exc, match=match) as exc_info:
         client._handle_403_response(response)
     if expected_exc is RateLimitError:
-        assert exc_info.value.reset_time == int(reset_header)
+        rate_limit_error = exc_info.value
+        assert isinstance(rate_limit_error, RateLimitError)
+        assert rate_limit_error.reset_time == int(reset_header)
 
 
 @pytest.mark.unit
@@ -891,6 +884,7 @@ def test_handle_http_status_error_raises_on_4xx() -> None:
     assert http_error_logs[0]["endpoint"] == "/test"  # url.path のみ（クエリパラメータ除外）
     assert http_error_logs[0]["method"] == "GET"
     assert "body_preview" in http_error_logs[0]  # Sentryトランケーションフィールドの存在確認
+    assert http_error_logs[0]["body_preview"] == ""
 
 
 @pytest.mark.unit
@@ -952,10 +946,20 @@ async def test_handle_5xx_response(
 
         if expected_exc is not None:
             with pytest.raises(expected_exc):
-                await client._handle_5xx_response(mock_response, attempt)
+                await client._handle_5xx_response(
+                    mock_response,
+                    attempt,
+                    "/test",
+                    "GET",
+                )
         else:
             with capture_logs() as log_output:
-                await client._handle_5xx_response(mock_response, attempt)
+                await client._handle_5xx_response(
+                    mock_response,
+                    attempt,
+                    "/test",
+                    "GET",
+                )
             retrying_logs = [
                 log for log in log_output if log.get("event") == "retrying_server_error"
             ]
@@ -965,6 +969,8 @@ async def test_handle_5xx_response(
             assert log["max_retries"] == max_retries_val
             assert log["status_code"] == status_code
             assert log["delay"] == 0.0
+            assert log["endpoint"] == "/test"
+            assert log["method"] == "GET"
 
 
 # ── D-07 追加: _prepare_headers / _handle_304 / _handle_403 / _update_etag_cache ──
@@ -1016,6 +1022,25 @@ def test_handle_403_response_no_json_log() -> None:
         warning_logs = [log for log in logs if log.get("event") == "failed_to_parse_403_message"]
         assert len(warning_logs) == 1
         assert warning_logs[0]["log_level"] == "warning"
+
+
+@pytest.mark.unit
+def test_handle_403_response_truncates_message_to_200_chars() -> None:
+    """403 JSON message は `_MAX_ERROR_RESPONSE_TEXT` で切り詰められる"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    long_message = "z" * 201
+    response = httpx.Response(
+        403,
+        headers={
+            "X-RateLimit-Remaining": "50",
+            "X-RateLimit-Reset": "0",
+            "Content-Type": "application/json",
+        },
+        content=json.dumps({"message": long_message}).encode(),
+    )
+
+    with pytest.raises(GitHubAPIError, match=f"Access forbidden: {'z' * 200}"):
+        client._handle_403_response(response)
 
 
 @pytest.mark.unit
@@ -1143,6 +1168,26 @@ def test_handle_http_status_error_no_truncation_at_boundary() -> None:
     assert len(http_error_logs) == 1
     assert http_error_logs[0]["log_level"] == "warning"
     assert http_error_logs[0]["body_preview"] == exact_body
+
+
+@pytest.mark.unit
+def test_handle_http_status_error_truncates_multibyte_body_to_200_chars() -> None:
+    """多バイト文字のbody_previewも200文字で切り詰める"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    multibyte_body = "あ" * 201
+    request = httpx.Request("GET", "https://api.github.com/test")
+    response = httpx.Response(422, request=request, content=multibyte_body.encode("utf-8"))
+    error = httpx.HTTPStatusError("422", request=request, response=response)
+
+    with capture_logs() as log_output:
+        with pytest.raises(GitHubAPIError) as exc_info:
+            client._handle_http_status_error(error)
+
+    assert multibyte_body not in str(exc_info.value)
+    http_error_logs = [log for log in log_output if log.get("event") == "http_status_error"]
+    assert len(http_error_logs) == 1
+    assert http_error_logs[0]["log_level"] == "warning"
+    assert http_error_logs[0]["body_preview"] == "あ" * 200
 
 
 @pytest.mark.unit
