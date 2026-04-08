@@ -20,12 +20,13 @@ import html
 import re
 import unicodedata
 from typing import Annotated
-from urllib.parse import ParseResult, quote, urlparse, urlunparse
+from urllib.parse import ParseResult, quote, unquote, urlparse, urlunparse
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 # RFC 3986 準拠のスキーム検出パターン（scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) ":"）
 _SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
+_HTML_META_RE = re.compile(r'[<>"\'&]')
 _INVISIBLE_CATEGORIES = frozenset({"Cf", "Cc", "Mn", "Zs", "Zl", "Zp"})
 # Cs（孤立サロゲート）を _INVISIBLE_CATEGORIES と合算した除去セット（1回目パスで使用）
 _STRIP_CATEGORIES = _INVISIBLE_CATEGORIES | frozenset({"Cs"})
@@ -65,7 +66,13 @@ def _strip_invisible_chars(v: str) -> str:
         c for c in v if (unicodedata.category(c) not in _STRIP_CATEGORIES) or (c == " ")
     )
     normalized = unicodedata.normalize("NFKC", pre_filtered)
-    return normalized
+    # パス3: NFKC後に新たに生成された不可視文字を除去
+    # （Csは再出現しないため_INVISIBLE_CATEGORIESのみ）
+    return "".join(
+        c
+        for c in normalized
+        if (unicodedata.category(c) not in _INVISIBLE_CATEGORIES) or (c == " ")
+    )
 
 
 # =============================================================================
@@ -120,6 +127,9 @@ def _validate_netloc(parsed: ParseResult) -> None:
     has_userinfo = parsed.username is not None or parsed.password is not None
     if has_at or has_userinfo:
         raise ValueError("URLにuserinfo（ユーザー名/パスワード）は指定できません")
+    # ホスト部にHTMLメタ文字（<, >, ", ', &）が含まれる場合は拒否
+    if _HTML_META_RE.search(parsed.netloc):
+        raise ValueError("ホスト名に不正な文字が含まれています")
 
 
 def _normalize_url(parsed: ParseResult) -> str:
@@ -492,6 +502,9 @@ class User(BaseModel):
             raise ValueError("危険なURLスキームが検出されました")
         # スキームなし → https:// を補完して検証
         # _validate_netloc / _normalize_url の ValueError はそのまま伝播
+        # パーセントエンコード済み文字による // バイパスを防止（%2F%2F を含む）
+        if "//" in sanitized or "//" in unquote(sanitized):
+            raise ValueError("スキームなしURLに // は指定できません")
         parsed = urlparse("https://" + sanitized)
         _validate_netloc(parsed)
         # スキームなし補完後のポートチェック:
