@@ -526,7 +526,7 @@ class TestUserModel:
         """User.email=101文字（max_length 超過）で ValidationError が発生すること"""
         # 52 + "@"(1) + 36 + ".example.com"(12) = 101文字（local≤64: RFC5321準拠）
         valid_user_data["email"] = "a" * 52 + "@" + "b" * 36 + ".example.com"
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValidationError, match=r"at most 100"):
             User(**valid_user_data)
 
     def test_user_website_is_not_html_escaped(self, valid_user_data: _UserData) -> None:
@@ -538,88 +538,149 @@ class TestUserModel:
         assert user.website == "https://example.com/page?a=1&b=2"  # &amp; にならないことを確認
 
     @pytest.mark.parametrize(
-        "dangerous_url",
+        ("dangerous_url", "expected_match"),
         [
-            "javascript:alert(1)",
-            "JAVASCRIPT:alert(1)",
-            "javascript:void(0)",
-            "data:text/html,<script>alert(1)</script>",
-            "Data:image/png;base64,abc",
-            "vbscript:msgbox(1)",
-            " javascript:alert(1)",
-            "\tjavascript:void(0)",
-            "\u200bjavascript:alert(1)",
-            "java\u200bscript:alert(1)",
-            "\u202ejavascript:alert(1)",
-            "j\u00a0avascript:alert(1)",
-            "\u2060javascript:alert(1)",
-            "\u2066javascript:alert(1)",
-            "\u2069javascript:alert(1)",
-            "vbs\u200bcript:msgbox(1)",
-            "da\u200bta:text/html,x",
-            "vbscript\u202e:msgbox(1)",
-            "da\u200bta:image/png;base64,abc",
-            "java\u2028script:alert(1)",
-            "java\u2029script:alert(1)",
-            "ftp://evil.com",
-            "file:///etc/passwd",
-            "blob:https://evil.com/uuid",
-            "javascript:0",
-            "javascript:1+1",
-            "malicious.js:xyz",
-            "a.b:evil",
-            "example.com:8080",
-            "sub.domain.com:443/path",
-            "example.com:8080/path?query=1",
-            "192.168.1.1:8080",
-            "10.0.0.1:3000/api",
-            "/path/only",
-            "java\ufe00script:alert(1)",
-        ],
-        ids=[
-            "js_basic",
-            "js_uppercase",
-            "js_void",
-            "data_html",
-            "data_image",
-            "vbscript",
-            "js_leading_space",
-            "js_leading_tab",
-            "js_zwsp_prefix",
-            "js_zwsp_mid_scheme",
-            "js_bidi_override",
-            "js_nbsp_mid_scheme",
-            "js_word_joiner_prefix",
-            "js_lri_prefix",
-            "js_pdi_prefix",
-            "vbscript_zwsp_mid",
-            "data_zwsp_mid",
-            "vbscript_bidi_override",
-            "data_zwsp_mid_image",
-            "js_line_separator_mid",
-            "js_paragraph_separator_mid",
-            "ftp_scheme",
-            "file_scheme",
-            "blob_scheme",
-            "js_digit_after_colon",
-            "js_expression_after_colon",
-            "dotted_scheme_non_port",
-            "dotted_scheme_alpha_after_colon",
-            "domain_port_no_scheme",
-            "subdomain_port_path_no_scheme",
-            "domain_port_path_query_no_scheme",
-            "ip_port_no_scheme",
-            "ip_port_path_no_scheme",
-            "path_only_no_host",
-            "js_variation_selector_mn_bypass",
+            pytest.param("javascript:alert(1)", "危険なURLスキームが検出されました", id="js_basic"),
+            pytest.param(
+                "JAVASCRIPT:alert(1)", "危険なURLスキームが検出されました", id="js_uppercase"
+            ),
+            pytest.param("javascript:void(0)", "危険なURLスキームが検出されました", id="js_void"),
+            pytest.param(
+                "data:text/html,<script>alert(1)</script>",
+                "危険なURLスキームが検出されました",
+                id="data_html",
+            ),
+            pytest.param(
+                "Data:image/png;base64,abc", "危険なURLスキームが検出されました", id="data_image"
+            ),
+            pytest.param("vbscript:msgbox(1)", "危険なURLスキームが検出されました", id="vbscript"),
+            pytest.param(
+                " javascript:alert(1)", "危険なURLスキームが検出されました", id="js_leading_space"
+            ),
+            pytest.param(
+                "\tjavascript:void(0)", "危険なURLスキームが検出されました", id="js_leading_tab"
+            ),
+            pytest.param(
+                "\u200bjavascript:alert(1)",
+                "危険なURLスキームが検出されました",
+                id="js_zwsp_prefix",
+            ),
+            pytest.param(
+                "java\u200bscript:alert(1)",
+                "危険なURLスキームが検出されました",
+                id="js_zwsp_mid_scheme",
+            ),
+            pytest.param(
+                "\u202ejavascript:alert(1)",
+                "危険なURLスキームが検出されました",
+                id="js_bidi_override",
+            ),
+            pytest.param(
+                "j\u00a0avascript:alert(1)",
+                "危険なURLスキームが検出されました",
+                id="js_nbsp_mid_scheme",
+            ),
+            pytest.param(
+                "\u2060javascript:alert(1)",
+                "危険なURLスキームが検出されました",
+                id="js_word_joiner_prefix",
+            ),
+            pytest.param(
+                "\u2066javascript:alert(1)", "危険なURLスキームが検出されました", id="js_lri_prefix"
+            ),
+            pytest.param(
+                "\u2069javascript:alert(1)", "危険なURLスキームが検出されました", id="js_pdi_prefix"
+            ),
+            pytest.param(
+                "vbs\u200bcript:msgbox(1)",
+                "危険なURLスキームが検出されました",
+                id="vbscript_zwsp_mid",
+            ),
+            pytest.param(
+                "da\u200bta:text/html,x", "危険なURLスキームが検出されました", id="data_zwsp_mid"
+            ),
+            pytest.param(
+                "vbscript\u202e:msgbox(1)",
+                "危険なURLスキームが検出されました",
+                id="vbscript_bidi_override",
+            ),
+            pytest.param(
+                "da\u200bta:image/png;base64,abc",
+                "危険なURLスキームが検出されました",
+                id="data_zwsp_mid_image",
+            ),
+            pytest.param(
+                "java\u2028script:alert(1)",
+                "危険なURLスキームが検出されました",
+                id="js_line_separator_mid",
+            ),
+            pytest.param(
+                "java\u2029script:alert(1)",
+                "危険なURLスキームが検出されました",
+                id="js_paragraph_separator_mid",
+            ),
+            pytest.param("ftp://evil.com", "危険なURLスキームが検出されました", id="ftp_scheme"),
+            pytest.param(
+                "file:///etc/passwd", "危険なURLスキームが検出されました", id="file_scheme"
+            ),
+            pytest.param(
+                "blob:https://evil.com/uuid", "危険なURLスキームが検出されました", id="blob_scheme"
+            ),
+            pytest.param(
+                "javascript:0", "危険なURLスキームが検出されました", id="js_digit_after_colon"
+            ),
+            pytest.param(
+                "javascript:1+1",
+                "危険なURLスキームが検出されました",
+                id="js_expression_after_colon",
+            ),
+            pytest.param(
+                "malicious.js:xyz", "危険なURLスキームが検出されました", id="dotted_scheme_non_port"
+            ),
+            pytest.param(
+                "a.b:evil",
+                "危険なURLスキームが検出されました",
+                id="dotted_scheme_alpha_after_colon",
+            ),
+            # domain:portはRFC 3986スキーム正規表現(_SCHEME_RE)にマッチするため
+            # 「危険なスキーム」パスに到達する（IPアドレスの場合はマッチしない）
+            pytest.param(
+                "example.com:8080", "危険なURLスキームが検出されました", id="domain_port_no_scheme"
+            ),
+            pytest.param(
+                "sub.domain.com:443/path",
+                "危険なURLスキームが検出されました",
+                id="subdomain_port_path_no_scheme",
+            ),
+            pytest.param(
+                "example.com:8080/path?query=1",
+                "危険なURLスキームが検出されました",
+                id="domain_port_path_query_no_scheme",
+            ),
+            pytest.param(
+                "192.168.1.1:8080",
+                "スキームなしURLにポートは指定できません",
+                id="ip_port_no_scheme",
+            ),
+            pytest.param(
+                "10.0.0.1:3000/api",
+                "スキームなしURLにポートは指定できません",
+                id="ip_port_path_no_scheme",
+            ),
+            pytest.param("/path/only", "有効なホスト名が含まれていません", id="path_only_no_host"),
+            pytest.param(
+                "java\ufe00script:alert(1)",
+                "危険なURLスキームが検出されました",
+                id="js_variation_selector_mn_bypass",
+            ),
         ],
     )
     def test_user_website_rejects_dangerous_scheme(
-        self, valid_user_data: _UserData, dangerous_url: str
+        self, valid_user_data: _UserData, dangerous_url: str, expected_match: str
     ) -> None:
-        """User.website が危険なURLスキームを拒否すること"""
+        """User.website が危険なURLスキームを拒否すること（エラーメッセージも検証）"""
         valid_user_data["website"] = dangerous_url
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValidationError, match=expected_match):
             User(**valid_user_data)
 
     def test_user_website_rejects_protocol_relative_url(self, valid_user_data: _UserData) -> None:
@@ -650,6 +711,21 @@ class TestUserModel:
                 "https://example.com:abc/",
                 "ポートが無効",
                 id="invalid_port_string",
+            ),
+            pytest.param(
+                "%0d%0a//evil.com",
+                "スキームなしURLに // は指定できません",
+                id="percent_encoded_crlf_slash_bypass",
+            ),
+            pytest.param(
+                "%2f%2fevil.com",
+                "スキームなしURLに // は指定できません",
+                id="percent_encoded_slash_bypass",
+            ),
+            pytest.param(
+                "https://evil<script>xss</script>.example.com/path",
+                "ホスト名に不正な文字が含まれています",
+                id="xss_metachar_in_netloc",
             ),
         ],
     )
@@ -964,7 +1040,7 @@ class TestCommentModel:
         """Comment.email=101文字（max_length 超過）で ValidationError が発生すること"""
         # 52 + "@"(1) + 36 + ".example.com"(12) = 101文字（local≤64: RFC5321準拠）
         long_email = "a" * 52 + "@" + "b" * 36 + ".example.com"
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValidationError, match=r"at most 100"):
             Comment(postId=1, id=1, name="Name", email=long_email, body="Body")
 
     def test_comment_email_with_ampersand_accepted_by_emailstr(self) -> None:
