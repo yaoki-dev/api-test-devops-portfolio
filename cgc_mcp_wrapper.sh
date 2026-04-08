@@ -2,7 +2,7 @@
 # CodeGraphContext MCP Server Wrapper (macOS Seatbelt Patch)
 # Purpose: Allow binary loading for tree-sitter under Seatbelt
 
-PROJECT_ROOT="/Users/yuta/projects/python/api-test-devops-portfolio"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && git rev-parse --show-toplevel)"
 GEMINI_TMP="$PROJECT_ROOT/.gemini/tmp"
 DEFAULT_CGC_STATE_BASE="${TMPDIR:-/tmp}/cgc-state"
 PROJECT_KEY="$(printf '%s' "$PROJECT_ROOT" | shasum | awk '{print $1}' | cut -c1-12)"
