@@ -9,7 +9,7 @@ pytest共通設定とフィクスチャ定義
 """
 
 import logging
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +18,7 @@ import pytest_asyncio
 
 from config.settings import _resolve_hostname_cached, reload_settings
 from tests.constants import BASE_URL
-from utils.api_client import AsyncAPIClient, SyncAPIClient
+from utils.api_client import AsyncAPIClient
 
 # =============================================================================
 # Pytest設定
@@ -134,20 +134,6 @@ async def async_client(
 def mock_base_url() -> str:
     """unit テスト用ダミーURL（外部通信なし）"""
     return "https://test.local"
-
-
-@pytest_asyncio.fixture
-async def async_client_mock(mock_base_url: str) -> AsyncGenerator[AsyncAPIClient]:
-    """unit テスト用非同期クライアント（本番URLを使わない）"""
-    async with AsyncAPIClient(base_url=mock_base_url) as client:
-        yield client
-
-
-@pytest.fixture
-def sync_client_mock(mock_base_url: str) -> Generator[SyncAPIClient]:
-    """unit テスト用同期クライアント（本番URLを使わない）"""
-    with SyncAPIClient(base_url=mock_base_url) as client:
-        yield client
 
 
 @pytest.fixture
