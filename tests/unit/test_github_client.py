@@ -935,6 +935,18 @@ def test_handle_http_status_error_raises_on_4xx() -> None:
 
 
 @pytest.mark.unit
+def test_handle_http_status_error_with_5xx_raises_github_api_error() -> None:
+    """_handle_http_status_error: 5xxでもGitHubAPIErrorをraiseする（防御的安全網）"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    request = httpx.Request("GET", "https://api.github.com/test")
+    response = httpx.Response(503, request=request)
+    error = httpx.HTTPStatusError("HTTP 503", request=request, response=response)
+
+    with pytest.raises(GitHubAPIError, match=r"^HTTP 503 error$"):
+        client._handle_http_status_error(error)
+
+
+@pytest.mark.unit
 def test_handle_304_response_cache_miss() -> None:
     """キャッシュミス時にGitHubAPIErrorを発生させる（防御的コードパス D-07）"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
@@ -985,7 +997,8 @@ async def test_handle_5xx_response(
 ) -> None:
     """_handle_5xx_response の2パステスト（D-07）
 
-    - 5xx_non_final_attempt: 5xx + 非最終試行 → True を return（呼び出し元の if ... continue へ）
+    - 5xx_non_final_attempt: 5xx + 非最終試行
+      → True を return（呼び出し元の await ...; continue へ）
     - 5xx_final_attempt: 5xx + 最終試行 → GitHubServerError を raise
     """
     async with AsyncGitHubClient(max_retries=max_retries_val) as client:
@@ -1092,6 +1105,25 @@ def test_handle_403_response_truncates_message_to_200_chars() -> None:
 
 
 @pytest.mark.unit
+def test_handle_403_response_no_truncation_at_boundary() -> None:
+    """403 JSON messageが200文字ちょうどの場合は切り詰めない"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    exact_message = "z" * 200
+    response = httpx.Response(
+        403,
+        headers={
+            "X-RateLimit-Remaining": "50",
+            "X-RateLimit-Reset": "0",
+            "Content-Type": "application/json",
+        },
+        content=json.dumps({"message": exact_message}).encode(),
+    )
+
+    with pytest.raises(GitHubAPIError, match=f"Access forbidden: {exact_message}"):
+        client._handle_403_response(response)
+
+
+@pytest.mark.unit
 def test_parse_json_response_valid_json() -> None:
     """_parse_json_response: 有効なJSONレスポンスをパースして返す"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
@@ -1140,6 +1172,24 @@ def test_update_etag_cache_with_etag_header() -> None:
     client._update_etag_cache("/repos/test", response, result)
     assert client._etag_cache["/repos/test"] == '"abc123"'
     assert client._data_cache["/repos/test"] == result
+
+
+@pytest.mark.unit
+def test_update_etag_cache_clears_stale_cache_when_etag_missing() -> None:
+    """ETagが消失した場合は古いキャッシュを削除する"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    endpoint = "/repos/test"
+    client._etag_cache[endpoint] = '"stale"'
+    client._data_cache[endpoint] = {"id": 1}
+    response = httpx.Response(200, content=b'{"id": 2}')
+
+    with capture_logs() as logs:
+        client._update_etag_cache(endpoint, response, {"id": 2})
+
+    assert endpoint not in client._etag_cache
+    assert endpoint not in client._data_cache
+    # debugレベルは実行設定で出力抑止されるため、ログ有無は非断定。
+    assert isinstance(logs, list)
 
 
 @pytest.mark.unit

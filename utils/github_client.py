@@ -347,7 +347,7 @@ class AsyncGitHubClient:
     ) -> Literal[True]:
         """5xxエラーのリトライ制御。最終試行なら raise、継続なら True を返す。
 
-        - Returns: Literal[True] — リトライ継続（呼び出し元は `if await ...: continue` で使用）
+        - Returns: Literal[True] — リトライ継続（呼び出し元は `await ...; continue` で使用）
         - Raises: GitHubServerError — リトライ上限到達
         """
         if attempt < self.max_retries - 1:
@@ -389,8 +389,8 @@ class AsyncGitHubClient:
         """4xxエラーを GitHubAPIError に変換して raise する。
 
         通常フローでは 5xx は _handle_5xx_response() で先に処理済みのため 4xx のみが渡る。
-        httpx.HTTPStatusError として直接 5xx が発生した場合も、呼び出し元の except ブロックが
-        先に status_code >= 500 を判定して _handle_5xx_response() へ分岐させるため、
+        httpx.HTTPStatusError として直接 5xx が発生した場合も、同一の except ブロック内で
+        status_code >= 500 を判定して _handle_5xx_response() へ分岐させるため、
         このメソッドへの 5xx 到達は想定しない。
 
         設計上の制約: `from e` でなく新規 Exception を __cause__ に使用する。
@@ -426,6 +426,11 @@ class AsyncGitHubClient:
         if "ETag" in response.headers:
             self._etag_cache[endpoint] = response.headers["ETag"]
             self._data_cache[endpoint] = result_json
+        else:
+            if endpoint in self._etag_cache or endpoint in self._data_cache:
+                self.logger.debug("etag_removed", endpoint=endpoint)
+            self._etag_cache.pop(endpoint, None)
+            self._data_cache.pop(endpoint, None)
 
     async def _request(  # noqa: C901 - HTTPプロトコル処理の最小必要分岐（4xxステータス, 5xxリトライ, タイムアウト, キャンセル等）のため許容 CC≈12
         self,
@@ -495,8 +500,8 @@ class AsyncGitHubClient:
                 if response.status_code == 403:
                     self._handle_403_response(response)
                 elif response.status_code >= 500:
-                    if await self._handle_5xx_response(response, attempt, endpoint, method):
-                        continue
+                    await self._handle_5xx_response(response, attempt, endpoint, method)
+                    continue
                 else:
                     response.raise_for_status()
 
@@ -511,8 +516,8 @@ class AsyncGitHubClient:
             except httpx.HTTPStatusError as e:
                 if e.response.status_code >= 500:
                     # 防御的パス: 5xxをhttpx.HTTPStatusErrorとして受信した場合、通常パスと同等に処理
-                    if await self._handle_5xx_response(e.response, attempt, endpoint, method):
-                        continue
+                    await self._handle_5xx_response(e.response, attempt, endpoint, method)
+                    continue
                 self._handle_http_status_error(e)
 
             except httpx.TimeoutException as e:
