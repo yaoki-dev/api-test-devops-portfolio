@@ -20,3 +20,8 @@ obsidian-vault-local/**
 claudedocs/**
 # Claude agent definitions (technical specs, not Japanese documentation)
 .claude/**
+# AI agent instruction files (same category as .claude/**)
+AGENTS.md
+CLAUDE.md
+# GSD planning documents (auto-generated working documents)
+.planning/**
