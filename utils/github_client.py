@@ -10,7 +10,7 @@ import asyncio
 import json
 import re
 from datetime import UTC, datetime
-from typing import Any, NoReturn, Self, cast
+from typing import Any, Literal, NoReturn, Self, cast
 
 import httpx
 
@@ -344,10 +344,10 @@ class AsyncGitHubClient:
         attempt: int,
         endpoint: str,
         method: str,
-    ) -> bool:
+    ) -> Literal[True]:
         """5xxエラーのリトライ制御。最終試行なら raise、継続なら True を返す。
 
-        - Returns: True — リトライ継続（呼び出し元は `if await ...: continue` で使用）
+        - Returns: Literal[True] — リトライ継続（呼び出し元は `if await ...: continue` で使用）
         - Raises: GitHubServerError — リトライ上限到達
         """
         if attempt < self.max_retries - 1:
@@ -393,14 +393,9 @@ class AsyncGitHubClient:
         先に status_code >= 500 を判定して _handle_5xx_response() へ分岐させるため、
         このメソッドへの 5xx 到達は想定しない。
 
-        設計上の制約: `_cause` は `from e`（元の httpx.HTTPStatusError）ではなく
-        新規生成した Exception を使用する。理由: `from e` にすると
-        httpx.HTTPStatusError インスタンス（response body を含む可能性）が
-        __cause__ に残り、Sentry 等の APM ツール経由でセンシティブデータが
-        漏洩するリスクがある。warning ログにはデバッグ用の
-        `body_preview` を `_MAX_ERROR_RESPONSE_TEXT` 文字まで意図的に記録するが、例外チェーンには
-        response body を載せない。コーディング規約 Section 5
-        「from e でチェーン維持」の例外として意図的に採用。
+        設計上の制約: `from e` でなく新規 Exception を __cause__ に使用する。
+        理由: httpx.HTTPStatusError の response body が Sentry 経由で漏洩するリスクを回避。
+        コーディング規約 Section 5「from e でチェーン維持」の意図的例外。
         """
         body_preview = e.response.content.decode(
             e.response.encoding or "utf-8",
@@ -425,8 +420,8 @@ class AsyncGitHubClient:
     ) -> None:
         """ETagとデータキャッシュを同時更新する。
 
-        asyncio シングルスレッド環境で競合なく両キャッシュを更新する。
-        （データベーストランザクション的なアトミック操作ではない）
+        asyncio シングルスレッド環境のため競合は発生しない。
+        （障害時のロールバック機構はないためキャッシュ不整合が生じうる）
         """
         if "ETag" in response.headers:
             self._etag_cache[endpoint] = response.headers["ETag"]

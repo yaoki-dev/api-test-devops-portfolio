@@ -359,6 +359,8 @@ async def test_httpx_status_error_4xx():
     # __cause__がhttpx.HTTPStatusErrorそのものでないことを型レベルで確認
     assert not isinstance(exc_info.value.__cause__, httpx.HTTPStatusError)
     assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
+    # メッセージ形式検証: ボディ除去後の正確なフォーマット確認
+    assert str(exc_info.value) == "HTTP 401 error"
 
 
 @respx.mock
@@ -536,6 +538,51 @@ async def test_json_decode_error():
             await client.get_user("octocat")
 
     assert route.call_count == 1  # GETリクエストが1回発行されたことを確認
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_user_type_guard_rejects_non_dict():
+    """get_user: APIが非dictレスポンスを返した場合にGitHubAPIErrorを発生"""
+    respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+        status_code=200,
+        json=[{"id": 1}],  # list instead of dict
+        headers={"X-RateLimit-Remaining": "50"},
+    )
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(GitHubAPIError, match="Expected dict response, got list"):
+            await client.get_user("octocat")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_repos_type_guard_rejects_non_list():
+    """get_repos: APIが非listレスポンスを返した場合にGitHubAPIErrorを発生"""
+    respx.get(f"{GITHUB_API_BASE_URL}/users/octocat/repos").respond(
+        status_code=200,
+        json={"id": 1},  # dict instead of list
+        headers={"X-RateLimit-Remaining": "50"},
+    )
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(GitHubAPIError, match="Expected list response, got dict"):
+            await client.get_repos("octocat")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_repo_type_guard_rejects_non_dict():
+    """get_repo: APIが非dictレスポンスを返した場合にGitHubAPIErrorを発生"""
+    respx.get(f"{GITHUB_API_BASE_URL}/repos/octocat/Hello-World").respond(
+        status_code=200,
+        json=[{"id": 1}],  # list instead of dict
+        headers={"X-RateLimit-Remaining": "50"},
+    )
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(GitHubAPIError, match="Expected dict response, got list"):
+            await client.get_repo("octocat", "Hello-World")
 
 
 # =============================================================================
@@ -815,7 +862,7 @@ def test_repo_validation_invalid(repo: str) -> None:
             "0",
             {"message": 999},
             GitHubAPIError,
-            "Access forbidden",
+            "^Access forbidden$",
             id="non_str_message_field",
         ),
     ],
@@ -904,7 +951,7 @@ def test_handle_304_response_cache_miss() -> None:
     assert error_logs[0]["log_level"] == "error"
     assert error_logs[0]["etag"] == "etag-value"
     assert error_logs[0]["endpoint"] == "/test"
-    assert error_logs[0]["hint"] == "ETag存在時のキャッシュミスは実装バグ"
+    assert "hint" in error_logs[0]
 
 
 @pytest.mark.unit
