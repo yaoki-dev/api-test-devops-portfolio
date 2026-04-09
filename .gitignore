@@ -133,5 +133,8 @@ gsd-local-patches/
 # OMS - local memory and settings
 .oms/
 
+# OMC (oh-my-claudecode) - runtime state (ephemeral, machine-specific)
+.omc/state/
+
 # VS Code workspace settings (local only)
 api-test-devops-portfolio.code-workspace
