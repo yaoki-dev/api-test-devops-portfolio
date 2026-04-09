@@ -142,32 +142,41 @@ def test_map_request_error_invalid_url() -> None:
 
 def test_map_request_error_timeout() -> None:
     """TimeoutExceptionでAPITimeoutError返却"""
-    error = httpx.TimeoutException("Request timed out")
+    error = httpx.TimeoutException("Request timed out at https://internal.corp/api")
     result = _map_request_error(error)
 
     assert isinstance(result, APITimeoutError)
     assert "timeout" in str(result).lower()
     assert result.__cause__ is error
+    # セキュリティ: str(e) が含まれないこと（機密情報漏洩防止）
+    assert "internal.corp" not in str(result)
+    assert "TimeoutException" in str(result)  # type(e).__name__ が含まれること
 
 
 def test_map_request_error_connect_error() -> None:
     """ConnectErrorでAPIConnectionError返却"""
-    error = httpx.ConnectError("Connection refused")
+    error = httpx.ConnectError("Connection refused to internal-proxy.corp.example.com")
     result = _map_request_error(error)
 
     assert isinstance(result, APIConnectionError)
     assert "connection" in str(result).lower()
     assert result.__cause__ is error
+    # セキュリティ: str(e)（ホスト名等の機密情報）が含まれないこと
+    assert "internal-proxy.corp.example.com" not in str(result)
+    assert "ConnectError" in str(result)  # type(e).__name__ が含まれること
 
 
 def test_map_request_error_network_error() -> None:
     """NetworkError（else分岐）でAPIConnectionError返却"""
-    error = httpx.NetworkError("Network unreachable")
+    error = httpx.NetworkError("Network unreachable via proxy.internal.example.com")
     result = _map_request_error(error)
 
     assert isinstance(result, APIConnectionError)
     assert "network" in str(result).lower()
     assert result.__cause__ is error
+    # セキュリティ: str(e) が含まれないこと（機密情報漏洩防止）
+    assert "proxy.internal.example.com" not in str(result)
+    assert "NetworkError" in str(result)  # type(e).__name__ が含まれること
 
 
 # =============================================================================
