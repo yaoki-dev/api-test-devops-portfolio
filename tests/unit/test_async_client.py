@@ -607,6 +607,12 @@ async def test_async_bulk_create_users_partial_failure_5xx() -> None:
     assert partial_log is not None
     assert partial_log.get("failed_count") == 1
     assert partial_log.get("success_count") == 2
+    # failed_details構造検証: 5xx→APIRetryError のためstatus_codeは含まれない
+    failed_details = partial_log.get("failed_details", [])
+    assert len(failed_details) == 1
+    failed_item = failed_details[0]
+    assert failed_item.get("error_type") == "APIRetryError"
+    assert "status_code" not in failed_item  # 5xxはAPIHTTPErrorでないためstatus_code不在
 
 
 async def test_async_bulk_create_users_cancelled_error_propagates() -> None:
