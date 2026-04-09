@@ -531,6 +531,14 @@ async def test_async_bulk_create_users_partial_failure():
     assert partial_log.get("failed_count") == 1
     assert partial_log.get("success_count") == 2
 
+    # failed_details 構造検証（PR #304 変更: error除去・error_type+status_code追加）
+    failed_details = partial_log.get("failed_details", [])
+    assert len(failed_details) == 1, "1件の失敗詳細が記録されていること"
+    failed_item = failed_details[0]
+    assert "error" not in failed_item, "errorフィールドが除去されていること"
+    assert failed_item.get("error_type") == "APIHTTPError", "エラー種別が記録されていること"
+    assert failed_item.get("status_code") == 422, "HTTPステータスコードが記録されていること"
+
 
 @respx.mock
 async def test_async_bulk_create_users_partial_failure_5xx() -> None:
