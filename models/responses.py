@@ -27,6 +27,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 # RFC 3986 準拠のスキーム検出パターン（scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) ":"）
 _SCHEME_RE: re.Pattern[str] = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 _HTML_META_RE: re.Pattern[str] = re.compile(r'[<>"\'&]')
+_PERCENT_CTRL_RE: re.Pattern[str] = re.compile(r"%0[0-9a-f]|%1[0-9a-f]", re.IGNORECASE)
 _INVISIBLE_CATEGORIES = frozenset({"Cf", "Cc", "Mn", "Zs", "Zl", "Zp"})
 # Cs（孤立サロゲート）を _INVISIBLE_CATEGORIES と合算した除去セット（1回目パスで使用）
 _STRIP_CATEGORIES = _INVISIBLE_CATEGORIES | frozenset({"Cs"})
@@ -155,7 +156,9 @@ def _normalize_url(parsed: ParseResult) -> str:
     safe_fragment = quote(parsed.fragment, safe=":@!$&()*+,;=/?%-._~")
     # hostname は urlparse が自動小文字化済み。netloc.lower() ではなく
     # hostname + port で再構成し、percent-encoded 文字の大文字16進を保持する
-    hostname = parsed.hostname or ""
+    if parsed.hostname is None:
+        raise ValueError("ホスト名の解決に失敗しました（正規化エラー）")
+    hostname = parsed.hostname
     if ":" in hostname:
         hostname = f"[{hostname}]"
     netloc = f"{hostname}:{parsed.port}" if parsed.port is not None else hostname
@@ -476,7 +479,7 @@ class User(BaseModel):
             ValueError: 以下のいずれかの場合:
                 - 入力が文字列でない
                 - 制御文字除去後にURLが空
-                - パーセントエンコードされた制御文字（%0d, %0a等）を含む
+                - パーセントエンコードされた制御文字（%00-%1f（制御文字全範囲））を含む
                 - プロトコル相対URL（//始まり）
                 - http/https以外の危険スキーム
                 - 有効なホスト名なし
@@ -485,7 +488,9 @@ class User(BaseModel):
                 - userinfoを含む（例: https://user@host — RFC 3986 バイパス防止）
                 - スキームなしURLにパス（/）が含まれる（ドメインのみ許可）
                 - スキームなしURLにポートが含まれる
-                  （例: 192.168.1.1:8080 — ドメイン名:portは_SCHEME_REが検出）
+                  （例: 192.168.1.1:8080 — IPアドレス:portはスキームなしとして検出。
+                  ドメイン名:port（例: example.com:8080）は_SCHEME_REがスキームとして
+                  誤検出するため「危険なURLスキーム」として先に拒否される）
 
         Note:
             websiteフィールドの値をHTMLコンテキストへ出力する際は、
@@ -499,11 +504,11 @@ class User(BaseModel):
         # min_length=1 は真の空文字列を、ここでは制御文字のみの文字列を捕捉（2段階チェック）
         if not sanitized:
             raise ValueError("websiteが空になりました（制御文字除去後）")
-        # CRLF injection防止: パーセントエンコードされた制御文字を拒否
+        # CRLF injection防止: パーセントエンコードされた制御文字を拒否（%00-%1f全範囲）
         # _strip_invisible_chars は実際の制御文字を除去するが、
         # %0d%0a 等のエンコード形式はバイパスする
         sanitized_lower = sanitized.lower()
-        if "%0d" in sanitized_lower or "%0a" in sanitized_lower:
+        if _PERCENT_CTRL_RE.search(sanitized_lower):
             raise ValueError("URLにパーセントエンコードされた制御文字が含まれています")
         # プロトコル相対URLを明示的に拒否（攻撃面削減）
         if sanitized.startswith("//"):
@@ -688,7 +693,7 @@ class Photo(BaseModel):
         Raises:
             ValueError: 以下のいずれかの場合:
                 - 制御文字除去後にURLが空
-                - パーセントエンコードされた制御文字（%0d, %0a等）を含む
+                - パーセントエンコードされた制御文字（%00-%1f（制御文字全範囲））を含む
                 - http/https以外のスキーム（またはスキームなし）
                 - 有効なホスト名なし
                 - ホスト名にHTMLメタ文字（<, >, ", ', &）を含む
@@ -703,9 +708,9 @@ class Photo(BaseModel):
         sanitized = _strip_invisible_chars(v).strip()
         if not sanitized:
             raise ValueError("URLが空になりました（制御文字除去後）")
-        # CRLF injection防止: パーセントエンコードされた制御文字を拒否
+        # CRLF injection防止: パーセントエンコードされた制御文字を拒否（%00-%1f全範囲）
         sanitized_lower = sanitized.lower()
-        if "%0d" in sanitized_lower or "%0a" in sanitized_lower:
+        if _PERCENT_CTRL_RE.search(sanitized_lower):
             raise ValueError("URLにパーセントエンコードされた制御文字が含まれています")
         if not sanitized_lower.startswith(("http://", "https://")):
             raise ValueError("URLはhttp://またはhttps://で始まる必要があります")

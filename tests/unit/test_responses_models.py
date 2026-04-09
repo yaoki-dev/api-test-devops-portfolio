@@ -748,6 +748,14 @@ class TestUserModel:
         with pytest.raises(ValidationError, match="プロトコル相対URLは許可されていません"):
             User(**valid_user_data)
 
+    def test_user_website_rejects_fullwidth_javascript_scheme(
+        self, valid_user_data: _UserData
+    ) -> None:
+        """全角文字によるスキームバイパスがNFKC正規化で検出されること"""
+        valid_user_data["website"] = "ｊａｖａｓｃｒｉｐｔ:alert(1)"
+        with pytest.raises(ValidationError, match="危険なURLスキームが検出されました"):
+            User(**valid_user_data)
+
     @pytest.mark.parametrize(
         "empty_netloc_url",
         [
@@ -1688,6 +1696,14 @@ class TestNormalizeUrl:
         result = _normalize_url(urlparse("https://example.com/path%20name"))
         assert "%20" in result
         assert "%2520" not in result  # 二重エンコード防止
+
+    def test_single_quote_encoded_to_percent27(self) -> None:
+        """シングルクォートがXSS防止のため%27にエンコードされること（RFC 3986 safe除外）"""
+        from urllib.parse import urlparse
+
+        result = _normalize_url(urlparse("https://example.com/path/file'.jpg"))
+        assert "%27" in result
+        assert "'" not in result.split("//", 1)[1]  # ホスト以降にシングルクォートなし
 
 
 def test_strip_invisible_chars_rejects_non_str() -> None:
