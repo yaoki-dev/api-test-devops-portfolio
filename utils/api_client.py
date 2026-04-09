@@ -260,10 +260,11 @@ def _classify_error(
         （例外クラス名）のみ記録してエラー分類に必須情報を確保する。
         ``_map_request_error()`` が生成する例外メッセージは固定プレフィックスと
         ``type(e).__name__``（例外クラス名）のみで構成され、``str(e)`` は含めない。
-        元の例外は ``__cause__`` チェーンで保持される（非リトライ
-        エラーは ``raise ... from e`` 構文、リトライ可能エラーは
-        ``exc.__cause__ = e`` 手動設定）ため、呼び出し元で raise
-        された際にトレースバック経由で詳細を確認できる。
+        元の例外は ``__cause__`` チェーンで保持される。非リトライ
+        エラーは ``_map_request_error()`` 内で ``raise ... from e`` により
+        即座にスローされる。リトライ可能エラーは ``exc.__cause__ = e``
+        手動設定後に戻り値として返され、呼び出し元で ``raise`` された際に
+        トレースバック経由で詳細を確認できる。
 
     """
     if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):

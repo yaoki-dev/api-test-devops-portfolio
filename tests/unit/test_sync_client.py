@@ -203,6 +203,36 @@ def test_sync_health_check_connection_error() -> None:
     assert route.call_count == 1  # retry_count=0なのでリトライなし（1回のみ実行）
 
 
+@respx.mock
+def test_sync_health_check_log_structure() -> None:
+    """health_check失敗時のログ構造検証（error_type/endpointフィールド）"""
+    import unittest.mock
+
+    respx.get(f"{BASE_URL}/users", params={"_limit": 1}).mock(
+        side_effect=httpx.ConnectError("Connection refused to secret-host.internal")
+    )
+
+    with SyncJSONPlaceholderClient(retry_count=0) as client:
+        with unittest.mock.patch.object(client, "logger") as mock_logger:
+            result = client.health_check()
+
+    assert result is False
+    # warning は request_error と health_check_failed の2回呼ばれる
+    assert mock_logger.warning.call_count >= 1
+    # health_check_failed の呼び出しを抽出
+    health_check_call = None
+    for call in mock_logger.warning.call_args_list:
+        if call[0][0] == "health_check_failed":
+            health_check_call = call
+            break
+    assert health_check_call is not None, "health_check_failed ログが出力されていない"
+    # 必須フィールドの検証
+    assert health_check_call[1]["error_type"] == "APIRetryError"
+    assert health_check_call[1]["endpoint"] == "/users"
+    # セキュリティ: error フィールドが含まれないこと（機密情報漏洩防止）
+    assert "error" not in health_check_call[1], "error フィールドは意図的に省略されている"
+
+
 def test_sync_client_timeout_zero_not_overridden() -> None:
     """timeout=0.0がデフォルト設定値に上書きされないことを確認（r2850768833回帰テスト）
 

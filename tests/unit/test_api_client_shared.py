@@ -127,6 +127,9 @@ def test_map_request_error_too_many_redirects() -> None:
 
     assert "Non-retryable" in str(exc_info.value)
     assert isinstance(exc_info.value.__cause__, httpx.TooManyRedirects)
+    # セキュリティ: str(e) が含まれないこと（機密情報漏洩防止）
+    assert "Max redirects exceeded" not in str(exc_info.value)
+    assert "TooManyRedirects" in str(exc_info.value)  # type(e).__name__ が含まれること
 
 
 def test_map_request_error_invalid_url() -> None:
@@ -138,6 +141,9 @@ def test_map_request_error_invalid_url() -> None:
 
     assert "Non-retryable" in str(exc_info.value)
     assert isinstance(exc_info.value.__cause__, httpx.InvalidURL)
+    # セキュリティ: str(e) が含まれないこと（機密情報漏洩防止）
+    assert "Invalid URL format" not in str(exc_info.value)
+    assert "InvalidURL" in str(exc_info.value)  # type(e).__name__ が含まれること
 
 
 def test_map_request_error_timeout() -> None:

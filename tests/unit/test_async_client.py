@@ -863,6 +863,37 @@ async def test_async_health_check_connection_error():
     assert route.call_count == 1  # retry_count=0なのでリトライなし（1回のみ実行）
 
 
+@pytest.mark.asyncio
+@respx.mock
+async def test_async_health_check_log_structure() -> None:
+    """health_check失敗時のログ構造検証（error_type/endpointフィールド）"""
+    from unittest.mock import patch
+
+    respx.get(f"{BASE_URL}/users", params={"_limit": 1}).mock(
+        side_effect=httpx.ConnectError("Connection refused to secret-host.internal")
+    )
+
+    async with AsyncJSONPlaceholderClient(retry_count=0) as client:
+        with patch.object(client, "logger") as mock_logger:
+            result = await client.health_check()
+
+    assert result is False
+    # warning は request_error と health_check_failed の2回呼ばれる
+    assert mock_logger.warning.call_count >= 1
+    # health_check_failed の呼び出しを抽出
+    health_check_call = None
+    for call in mock_logger.warning.call_args_list:
+        if call[0][0] == "health_check_failed":
+            health_check_call = call
+            break
+    assert health_check_call is not None, "health_check_failed ログが出力されていない"
+    # 必須フィールドの検証
+    assert health_check_call[1]["error_type"] == "APIRetryError"
+    assert health_check_call[1]["endpoint"] == "/users"
+    # セキュリティ: error フィールドが含まれないこと（機密情報漏洩防止）
+    assert "error" not in health_check_call[1], "error フィールドは意図的に省略されている"
+
+
 # ===============================================================================
 # パフォーマンステスト（オプション：時間のかかるテスト）
 # ===============================================================================
