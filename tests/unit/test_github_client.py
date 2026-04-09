@@ -998,7 +998,7 @@ async def test_handle_5xx_response(
     """_handle_5xx_response の2パステスト（D-07）
 
     - 5xx_non_final_attempt: 5xx + 非最終試行
-      → True を return（呼び出し元の await ...; continue へ）
+      → None を return（呼び出し元の await ...; continue へ）
     - 5xx_final_attempt: 5xx + 最終試行 → GitHubServerError を raise
     """
     async with AsyncGitHubClient(max_retries=max_retries_val) as client:
@@ -1020,7 +1020,7 @@ async def test_handle_5xx_response(
                     "/test",
                     "GET",
                 )
-            assert result is True
+            assert result is None
             retrying_logs = [
                 log for log in log_output if log.get("event") == "retrying_server_error"
             ]
@@ -1286,6 +1286,37 @@ def test_handle_http_status_error_truncates_multibyte_body_to_200_chars() -> Non
     assert len(http_error_logs) == 1
     assert http_error_logs[0]["log_level"] == "warning"
     assert http_error_logs[0]["body_preview"] == "あ" * 200
+
+
+@pytest.mark.unit
+def test_handle_http_status_error_with_invalid_bytes() -> None:
+    """不正UTF-8バイト列でもUnicodeDecodeErrorが発生しない（errors='replace'検証）"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    request = httpx.Request("GET", "https://api.github.com/test")
+    # encoding=None をシミュレート: content に不正バイト列を設定
+    response = httpx.Response(400, request=request, content=b"\xff\xfe invalid bytes \x80\x81")
+    error = httpx.HTTPStatusError("HTTP 400", request=request, response=response)
+
+    with pytest.raises(GitHubAPIError, match=r"^HTTP 400 error$"):
+        client._handle_http_status_error(error)
+
+
+@pytest.mark.unit
+def test_429_handled_as_github_api_error_not_rate_limit_error() -> None:
+    """429 Too Many Requestsは_handle_http_status_error経由でGitHubAPIErrorとなる（設計意図確認）
+
+    GitHubは通常403でRate Limitを通知するが、一部APIは429を返す。
+    現在の設計では429はRateLimitErrorではなくGitHubAPIErrorとして扱う（403限定設計）。
+    """
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    request = httpx.Request("GET", "https://api.github.com/test")
+    response = httpx.Response(429, request=request)
+    error = httpx.HTTPStatusError("HTTP 429", request=request, response=response)
+
+    with pytest.raises(GitHubAPIError, match=r"^HTTP 429 error$") as exc_info:
+        client._handle_http_status_error(error)
+
+    assert not isinstance(exc_info.value, RateLimitError)
 
 
 @pytest.mark.unit

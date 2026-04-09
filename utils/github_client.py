@@ -10,7 +10,7 @@ import asyncio
 import json
 import re
 from datetime import UTC, datetime
-from typing import Any, Literal, NoReturn, Self, cast
+from typing import Any, NoReturn, Self, cast
 
 import httpx
 
@@ -344,11 +344,13 @@ class AsyncGitHubClient:
         attempt: int,
         endpoint: str,
         method: str,
-    ) -> Literal[True]:
-        """5xxエラーのリトライ制御。最終試行なら raise、継続なら True を返す。
+    ) -> None:
+        """5xxエラーのリトライ制御。最終試行なら raise、継続なら return する。
 
-        - Returns: Literal[True] — リトライ継続（呼び出し元は `await ...; continue` で使用）
-        - Raises: GitHubServerError — リトライ上限到達
+        リトライ継続時は return し、呼び出し元が continue する。
+
+        Raises:
+            GitHubServerError: リトライ上限到達
         """
         if attempt < self.max_retries - 1:
             delay = exponential_backoff_with_jitter(attempt, base_delay=2.0)
@@ -362,7 +364,7 @@ class AsyncGitHubClient:
                 method=method,
             )
             await asyncio.sleep(delay)
-            return True
+            return
         raise GitHubServerError(
             f"Server error: {response.status_code} after {self.max_retries} attempts",
         )
@@ -391,7 +393,8 @@ class AsyncGitHubClient:
         通常フローでは 5xx は _handle_5xx_response() で先に処理済みのため 4xx のみが渡る。
         httpx.HTTPStatusError として直接 5xx が発生した場合も、同一の except ブロック内で
         status_code >= 500 を判定して _handle_5xx_response() へ分岐させるため、
-        このメソッドへの 5xx 到達は想定しない。
+        通常はこのメソッドへ 5xx は到達しない。ただし実装は status_code に依存しないため、
+        5xx が直接渡された場合も安全に GitHubAPIError へ変換する（防御的安全網）。
 
         設計上の制約: `from e` でなく新規 Exception を __cause__ に使用する。
         理由: httpx.HTTPStatusError の response body が Sentry 経由で漏洩するリスクを回避。
@@ -537,6 +540,7 @@ class AsyncGitHubClient:
                     endpoint=endpoint,
                     method=method,
                     error=str(e),
+                    error_type=type(e).__qualname__,
                 )
                 raise GitHubAPIError(f"Unexpected error: {e}") from e
 
