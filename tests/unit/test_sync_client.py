@@ -229,8 +229,8 @@ def test_sync_health_check_log_structure() -> None:
     # 必須フィールドの検証
     assert health_check_call[1]["error_type"] == "APIRetryError"
     assert health_check_call[1]["endpoint"] == "/users"
-    # セキュリティ: error フィールドが含まれないこと（機密情報漏洩防止）
-    assert "error" not in health_check_call[1], "error フィールドは意図的に省略されている"
+    # セキュリティ: error フィールド保持（APIClientErrorメッセージはサニタイズ済み）
+    assert "error" in health_check_call[1]  # サニタイズ済みメッセージ
 
 
 def test_sync_client_timeout_zero_not_overridden() -> None:

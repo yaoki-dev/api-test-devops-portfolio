@@ -285,6 +285,12 @@ async def test_partial_failure_graceful_degradation():
     # 2件失敗（user_id=2,4）の警告ログ検証（Sentry監視の保証）
     assert_warning_log_count(log_output, "get_user_failed", 2)
 
+    # セキュリティ: get_user_failed ログの構造検証（APIClientErrorメッセージはサニタイズ済み）
+    for log in log_output:
+        if log.get("event") == "get_user_failed":
+            assert "error" in log  # サニタイズ済みメッセージ
+            assert "error_type" in log
+
 
 @respx.mock
 async def test_all_requests_fail_returns_empty_list():
@@ -317,6 +323,12 @@ async def test_all_requests_fail_returns_empty_list():
 
     # 各ユーザー取得失敗時に警告ログが出力されることを確認（Sentry監視の保証）
     assert_warning_log_count(log_output, "get_user_failed", 3)
+
+    # セキュリティ: get_user_failed ログの構造検証
+    for log in log_output:
+        if log.get("event") == "get_user_failed":
+            assert "error" in log  # サニタイズ済みメッセージ
+            assert "error_type" in log
 
 
 # ===============================================================================
@@ -535,7 +547,7 @@ async def test_async_bulk_create_users_partial_failure():
     failed_details = partial_log.get("failed_details", [])
     assert len(failed_details) == 1, "1件の失敗詳細が記録されていること"
     failed_item = failed_details[0]
-    assert "error" not in failed_item, "errorフィールドが除去されていること"
+    assert "error" in failed_item  # サニタイズ済みメッセージ
     assert failed_item.get("error_type") == "APIHTTPError", "エラー種別が記録されていること"
     assert failed_item.get("status_code") == 422, "HTTPステータスコードが記録されていること"
 
@@ -891,7 +903,7 @@ async def test_async_health_check_log_structure() -> None:
     assert health_check_call[1]["error_type"] == "APIRetryError"
     assert health_check_call[1]["endpoint"] == "/users"
     # セキュリティ: error フィールドが含まれないこと（機密情報漏洩防止）
-    assert "error" not in health_check_call[1], "error フィールドは意図的に省略されている"
+    assert "error" in health_check_call[1]  # サニタイズ済みメッセージ
 
 
 # ===============================================================================

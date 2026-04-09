@@ -118,7 +118,7 @@ def _safe_parse_json(response: httpx.Response) -> Any:
         return response.json()
     except json.JSONDecodeError as e:
         raise APIJSONDecodeError(
-            f"Failed to parse JSON response: {e}",
+            f"Failed to parse JSON response: {type(e).__name__}",
             response=response,
         ) from e
 
@@ -721,9 +721,9 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
             raise
         except APIClientError as e:
             # 予期されるAPI例外のみキャッチ
-            # error=str(e) 省略は意図的（error_type のみで診断に十分）
             self.logger.warning(
                 "health_check_failed",
+                error=str(e),
                 error_type=type(e).__name__,
                 endpoint="/users",  # health_check は常に固定エンドポイント（非機密）
             )
@@ -1188,6 +1188,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
                         {
                             "index": i,
                             "user_data": user_data_safe,
+                            "error": str(result),
                             **error_detail,
                         }
                     )
@@ -1307,9 +1308,9 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             raise
         except APIClientError as e:
             # 予期されるAPI例外のみキャッチ
-            # error=str(e) 省略は意図的（error_type のみで診断に十分）
             self.logger.warning(
                 "health_check_failed",
+                error=str(e),
                 error_type=type(e).__name__,
                 endpoint="/users",  # health_check は常に固定エンドポイント（非機密）
             )
@@ -1357,10 +1358,10 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
                     raise
                 except APIClientError as e:
                     # 予期されるAPI例外のみキャッチ（graceful degradation）
-                    # error=str(e) 省略は意図的（error_type のみで診断に十分）
                     self.logger.warning(
                         "get_user_failed",
                         user_id=user_id,
+                        error=str(e),
                         error_type=type(e).__name__,
                     )
                     return None
@@ -1424,7 +1425,7 @@ def main() -> None:
             print(f"  - Title: {new_post.get('title', 'N/A')}")
 
         except APIClientError as e:
-            print(f"エラーが発生しました: {e}")
+            print(f"エラーが発生しました: {type(e).__name__}")
             if settings.debug:
                 import traceback
 
