@@ -543,13 +543,15 @@ async def test_async_bulk_create_users_partial_failure():
     assert partial_log.get("failed_count") == 1
     assert partial_log.get("success_count") == 2
 
-    # failed_details 構造検証（error=サニタイズ済みメッセージ・error_type+status_code）
+    # failed_details 構造検証（error_type+status_code、error フィールドは省略）
     failed_details = partial_log.get("failed_details", [])
     assert len(failed_details) == 1, "1件の失敗詳細が記録されていること"
     failed_item = failed_details[0]
-    assert "error" in failed_item  # サニタイズ済みメッセージ
+    assert "error" not in failed_item  # _classify_error と同方針で省略
     assert failed_item.get("error_type") == "APIHTTPError", "エラー種別が記録されていること"
     assert failed_item.get("status_code") == 422, "HTTPステータスコードが記録されていること"
+    assert "index" in failed_item, "失敗ユーザーのインデックスが記録されていること"
+    assert "user_data" in failed_item, "失敗ユーザーのデータが記録されていること"
 
 
 @respx.mock
@@ -623,8 +625,11 @@ async def test_async_bulk_create_users_partial_failure_5xx() -> None:
     failed_details = partial_log.get("failed_details", [])
     assert len(failed_details) == 1
     failed_item = failed_details[0]
+    assert "error" not in failed_item  # _classify_error と同方針で省略
     assert failed_item.get("error_type") == "APIRetryError"
     assert "status_code" not in failed_item  # 5xxはAPIHTTPErrorでないためstatus_code不在
+    assert "index" in failed_item, "失敗ユーザーのインデックスが記録されていること"
+    assert "user_data" in failed_item, "失敗ユーザーのデータが記録されていること"
 
 
 async def test_async_bulk_create_users_cancelled_error_propagates() -> None:
@@ -902,8 +907,8 @@ async def test_async_health_check_log_structure() -> None:
     # 必須フィールドの検証
     assert health_check_call[1]["error_type"] == "APIRetryError"
     assert health_check_call[1]["endpoint"] == "/users"
-    # セキュリティ: error フィールド保持（APIClientErrorメッセージはサニタイズ済み）
-    assert "error" in health_check_call[1]  # サニタイズ済みメッセージ
+    # セキュリティ: error フィールド省略（_classify_error と同方針）
+    assert "error" not in health_check_call[1]
 
 
 # ===============================================================================

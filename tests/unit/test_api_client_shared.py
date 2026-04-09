@@ -93,8 +93,7 @@ def test_safe_parse_json_invalid_json() -> None:
         _safe_parse_json(mock_response)
 
     assert "Failed to parse JSON" in str(exc_info.value)
-    assert "JSONDecodeError" in str(exc_info.value)  # type(e).__name__
-    assert "Invalid JSON" not in str(exc_info.value)  # raw msg excluded
+    assert "Invalid JSON" in str(exc_info.value)  # str(e) の診断情報を保持
     assert exc_info.value.response == mock_response
 
 

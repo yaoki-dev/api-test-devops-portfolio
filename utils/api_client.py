@@ -113,12 +113,18 @@ def _safe_parse_json(response: httpx.Response) -> Any:
     Raises:
         APIJSONDecodeError: JSONパース失敗時
 
+    Notes:
+        ``json.JSONDecodeError`` の ``str(e)`` にはパース位置情報（行番号・
+        文字位置）が含まれるが、httpx例外と異なりホスト名・プロキシ設定等の
+        機密情報は含まれない。デバッグに有用な診断情報を保持するため
+        ``str(e)`` をそのまま使用する。
+
     """
     try:
         return response.json()
     except json.JSONDecodeError as e:
         raise APIJSONDecodeError(
-            f"Failed to parse JSON response: {type(e).__name__}",
+            f"Failed to parse JSON response: {e}",
             response=response,
         ) from e
 
@@ -265,6 +271,9 @@ def _classify_error(
         即座にスローされる。リトライ可能エラーは ``exc.__cause__ = e``
         手動設定後に戻り値として返され、呼び出し元で ``raise`` された際に
         トレースバック経由で詳細を確認できる。
+
+        ``health_check()`` のログ出力も同方針に従い、``error`` フィールドを
+        省略して ``error_type`` のみ記録する。
 
     """
     if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
@@ -723,7 +732,6 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
             # 予期されるAPI例外のみキャッチ
             self.logger.warning(
                 "health_check_failed",
-                error=str(e),
                 error_type=type(e).__name__,
                 endpoint="/users",  # health_check は常に固定エンドポイント（非機密）
             )
@@ -1188,7 +1196,6 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
                         {
                             "index": i,
                             "user_data": user_data_safe,
-                            "error": str(result),
                             **error_detail,
                         }
                     )
@@ -1310,7 +1317,6 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             # 予期されるAPI例外のみキャッチ
             self.logger.warning(
                 "health_check_failed",
-                error=str(e),
                 error_type=type(e).__name__,
                 endpoint="/users",  # health_check は常に固定エンドポイント（非機密）
             )
@@ -1429,7 +1435,7 @@ def main() -> None:
             if settings.debug:
                 import traceback
 
-                traceback.print_exc()
+                traceback.print_exception(e, chain=False)
 
     print("\n=== Demo completed ===")
 
