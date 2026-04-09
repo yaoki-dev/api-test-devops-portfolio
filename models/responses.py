@@ -137,13 +137,14 @@ def _validate_netloc(parsed: ParseResult) -> None:
 
 
 def _normalize_url(parsed: ParseResult) -> str:
-    """RFC 3986 §6.2.2.1: スキームとホスト部を小文字正規化し、パス・クエリ・フラグメントをURLエンコードする（§6.2.2.2: 既存%xxシーケンスのヘックス大文字化は未実施 — 新規エンコード分はquote()がUPPERCASEで出力）."""  # noqa: E501
+    """RFC 3986 §6.2.2.1: スキームとホスト部を小文字正規化し、パス・パラメータ・クエリ・フラグメントをURLエンコードする（§6.2.2.2: 既存%xxシーケンスのヘックス大文字化は未実施 — 新規エンコード分はquote()がUPPERCASEで出力）."""  # noqa: E501
     # ParseResultはnamedtupleだが、tuple直接指定でコードの意図を明示する
     # パス・クエリ・フラグメントのXSS文字をURLエンコード（%を安全文字に含め二重エンコード防止）
     # RFC 3986 §3.3 pchar = unreserved / pct-encoded / sub-delims / ":" / "@"
     # XSS防止: ' (single quote) を safe から除外 → %27 にエンコード
     # &はquery/fragmentでパラメータ区切りとして必要なため保持（HTML出力時は呼び出し元でエスケープ）
-    safe_path = quote(parsed.path, safe="/:@!$()*+,;=%")
+    # -._~ は Python quote() の _ALWAYS_SAFE に含まれるが、RFC 仕様との対応を明示
+    safe_path = quote(parsed.path, safe="/:@!$()*+,;=%-._~")
     # RFC 3986 §3.3 (params は path の一部として扱う)
     safe_params = quote(parsed.params, safe=";=@:!$()*+,/%")
     # RFC 3986 §3.4 query = *( pchar / "/" / "?" )
@@ -155,6 +156,8 @@ def _normalize_url(parsed: ParseResult) -> str:
     # hostname は urlparse が自動小文字化済み。netloc.lower() ではなく
     # hostname + port で再構成し、percent-encoded 文字の大文字16進を保持する
     hostname = parsed.hostname or ""
+    if ":" in hostname:
+        hostname = f"[{hostname}]"
     netloc = f"{hostname}:{parsed.port}" if parsed.port is not None else hostname
     return urlunparse(
         (
@@ -481,7 +484,8 @@ class User(BaseModel):
                 - ポートが無効（整数値でない）
                 - userinfoを含む（例: https://user@host — RFC 3986 バイパス防止）
                 - スキームなしURLにパス（/）が含まれる（ドメインのみ許可）
-                - スキームなしURLにポートが含まれる（例: example.com:8080）
+                - スキームなしURLにポートが含まれる
+                  （例: 192.168.1.1:8080 — ドメイン名:portは_SCHEME_REが検出）
 
         Note:
             websiteフィールドの値をHTMLコンテキストへ出力する際は、

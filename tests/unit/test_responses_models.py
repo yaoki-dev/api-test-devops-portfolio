@@ -24,6 +24,7 @@ from models.responses import (
     Post,
     Todo,
     User,
+    _normalize_url,  # noqa: PLC2701
     _strip_invisible_chars,  # noqa: PLC2701
     sanitize_user_content,  # noqa: PLC2701
 )
@@ -387,12 +388,12 @@ class TestAddressModel:
         assert address.street == expected
 
     @pytest.mark.parametrize(
-        ("dirty", "expected", "field_id"),
-        [(d, e, i) for d, e, i in _XSS_PAIRS],
+        ("dirty", "expected"),
+        _XSS_MODEL_PARAMS,
     )
     @pytest.mark.parametrize("field", ["suite", "city"])
     def test_address_sanitizes_xss_all_fields(
-        self, valid_geo: Geo, dirty: str, expected: str, field_id: str, field: str
+        self, valid_geo: Geo, dirty: str, expected: str, field: str
     ) -> None:
         """Address の suite/city フィールドの XSS サニタイゼーション"""
         kwargs: dict[str, Any] = {
@@ -405,6 +406,24 @@ class TestAddressModel:
         kwargs[field] = dirty
         address = Address(**kwargs)
         assert getattr(address, field) == expected
+
+    @pytest.mark.parametrize(
+        ("dirty", "expected"),
+        [
+            pytest.param(
+                '" onclick="a"',
+                "&quot; onclick=&quot;a&quot;",
+                id="attr_injection",
+            ),
+            pytest.param("Test & Test", "Test &amp; Test", id="special_chars_amp"),
+        ],
+    )
+    def test_address_zipcode_sanitizes_xss(self, valid_geo: Geo, dirty: str, expected: str) -> None:
+        """Address.zipcode の XSS サニタイゼーション（max_length=20制約内）"""
+        address = Address(
+            street="Normal", suite="Normal", city="Normal", zipcode=dirty, geo=valid_geo
+        )
+        assert address.zipcode == expected
 
 
 class TestCompanyModel:
@@ -447,13 +466,11 @@ class TestCompanyModel:
         assert company.name == expected
 
     @pytest.mark.parametrize(
-        ("dirty", "expected", "field_id"),
-        [(d, e, i) for d, e, i in _XSS_PAIRS],
+        ("dirty", "expected"),
+        _XSS_MODEL_PARAMS,
     )
     @pytest.mark.parametrize("field", ["catch_phrase", "bs"])
-    def test_company_sanitizes_xss_all_fields(
-        self, dirty: str, expected: str, field_id: str, field: str
-    ) -> None:
+    def test_company_sanitizes_xss_all_fields(self, dirty: str, expected: str, field: str) -> None:
         """Company の catch_phrase/bs フィールドの XSS サニタイゼーション"""
         alias_map = {"catch_phrase": "catchPhrase", "bs": "bs"}
         kwargs: dict[str, Any] = {
@@ -1628,7 +1645,49 @@ class TestPhotoModel:
         usernameはNoneとなるため正常なURLとして扱われる。
         """
         photo = Photo(**{**_PHOTO_BASE, "url": "https://user%40evil.com/path.jpg"})
-        assert photo.url is not None
+        assert photo.url == "https://user%40evil.com/path.jpg"
+
+
+class TestNormalizeUrl:
+    """_normalize_url の直接ユニットテスト"""
+
+    pytestmark = pytest.mark.unit
+
+    def test_basic_normalization(self) -> None:
+        """スキームとホストの小文字正規化"""
+        from urllib.parse import urlparse
+
+        result = _normalize_url(urlparse("HTTPS://EXAMPLE.COM/Path"))
+        assert result == "https://example.com/Path"
+
+    def test_ipv6_bracket_preservation(self) -> None:
+        """IPv6アドレスのブラケット復元"""
+        from urllib.parse import urlparse
+
+        result = _normalize_url(urlparse("https://[::1]:8080/path"))
+        assert result == "https://[::1]:8080/path"
+
+    def test_safe_params_encoding(self) -> None:
+        """RFC 3986 §3.3 パラメータ部のエンコード"""
+        from urllib.parse import urlparse
+
+        result = _normalize_url(urlparse("https://example.com/path;type=pdf"))
+        assert ";type=pdf" in result
+
+    def test_fragment_preserves_unreserved(self) -> None:
+        """フラグメントのunreserved文字（._~）が過剰エンコードされないこと"""
+        from urllib.parse import urlparse
+
+        result = _normalize_url(urlparse("https://example.com/page#section_1.2~draft"))
+        assert result.endswith("#section_1.2~draft")
+
+    def test_existing_percent_encoding_preserved(self) -> None:
+        """既存の%エンコードが二重エンコードされないこと"""
+        from urllib.parse import urlparse
+
+        result = _normalize_url(urlparse("https://example.com/path%20name"))
+        assert "%20" in result
+        assert "%2520" not in result  # 二重エンコード防止
 
 
 def test_strip_invisible_chars_rejects_non_str() -> None:
