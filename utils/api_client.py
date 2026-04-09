@@ -258,8 +258,8 @@ def _classify_error(
         ``error`` フィールドを省略している。httpx 例外の文字列には
         ホスト名、プロキシ設定等の機密情報が含まれるため、``error_type``
         （例外クラス名）のみ記録してエラー分類に必須情報を確保する。
-        ``_map_request_error()`` が生成する例外メッセージも同様に
-        ``type(e).__name__``（例外クラス名）のみ含め、``str(e)`` は含めない。
+        ``_map_request_error()`` が生成する例外メッセージは固定プレフィックスと
+        ``type(e).__name__``（例外クラス名）のみで構成され、``str(e)`` は含めない。
         元の例外は ``__cause__`` チェーンで保持される（非リトライ
         エラーは ``raise ... from e`` 構文、リトライ可能エラーは
         ``exc.__cause__ = e`` 手動設定）ため、呼び出し元で raise
@@ -720,10 +720,11 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
             raise
         except APIClientError as e:
             # 予期されるAPI例外のみキャッチ
-            # error=str(e) 省略は意図的（_classify_error と設計統一）
+            # error=str(e) 省略は意図的（error_type のみで診断に十分）
             self.logger.warning(
                 "health_check_failed",
                 error_type=type(e).__name__,
+                endpoint="/users",  # health_check は常に固定エンドポイント（非機密）
             )
             return False
 
@@ -1179,11 +1180,14 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
                             "name": raw.get("name"),
                             "email": raw.get("email"),
                         }
+                    error_detail: dict[str, Any] = {"error_type": type(result).__name__}
+                    if isinstance(result, APIHTTPError):
+                        error_detail["status_code"] = result.status_code  # 422 vs 503 を区別
                     failed_details.append(
                         {
                             "index": i,
                             "user_data": user_data_safe,
-                            "error_type": type(result).__name__,
+                            **error_detail,
                         }
                     )
             self.logger.warning(
@@ -1302,10 +1306,11 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             raise
         except APIClientError as e:
             # 予期されるAPI例外のみキャッチ
-            # error=str(e) 省略は意図的（_classify_error と設計統一）
+            # error=str(e) 省略は意図的（error_type のみで診断に十分）
             self.logger.warning(
                 "health_check_failed",
                 error_type=type(e).__name__,
+                endpoint="/users",  # health_check は常に固定エンドポイント（非機密）
             )
             return False
 
@@ -1351,7 +1356,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
                     raise
                 except APIClientError as e:
                     # 予期されるAPI例外のみキャッチ（graceful degradation）
-                    # error=str(e) 省略は意図的（_classify_error と設計統一）
+                    # error=str(e) 省略は意図的（error_type のみで診断に十分）
                     self.logger.warning(
                         "get_user_failed",
                         user_id=user_id,
