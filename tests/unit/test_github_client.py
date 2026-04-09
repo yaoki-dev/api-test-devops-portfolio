@@ -10,7 +10,6 @@ GitHub API非同期クライアントのUnit Tests
 import asyncio
 import json
 from datetime import UTC, datetime
-from typing import cast
 from unittest.mock import ANY, Mock, patch
 
 import httpx
@@ -297,6 +296,7 @@ async def test_etag_cache_hit():
 async def test_context_manager_initialization():
     """async withコンテキストマネージャーの初期化・終了処理"""
     client = AsyncGitHubClient()
+    managed_client: httpx.AsyncClient | None = None
     assert client._client is None
 
     async with client as ctx_client:
@@ -305,10 +305,11 @@ async def test_context_manager_initialization():
         # __aenter__で_clientが初期化される
         assert ctx_client._client is not None
         assert isinstance(ctx_client._client, httpx.AsyncClient)
+        managed_client = ctx_client._client
 
     # __aexit__でhttpx.AsyncClientがクローズされたことを確認
-    client_after_exit = cast(httpx.AsyncClient, client._client)
-    assert client_after_exit.is_closed
+    assert managed_client is not None
+    assert managed_client.is_closed
 
 
 async def test_request_without_context_manager():
@@ -370,8 +371,8 @@ async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
 
     検証項目:
     - attempt 値の連続性・順序・件数（list(range(1, MAX_RETRIES)) との等価比較）
-    - endpoint / method フィールドが存在しないこと
-      （_handle_5xx_response はリクエストコンテキスト非保持）
+    - endpoint / method フィールドの値
+      （_handle_5xx_response はリクエストコンテキストを保持）
     - status_code / max_retries / delay フィールドの値
     """
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
@@ -874,7 +875,7 @@ def test_handle_http_status_error_raises_on_4xx() -> None:
         response=mock_response,
     )
     with capture_logs() as log_output:
-        with pytest.raises(GitHubAPIError, match="HTTP 404"):
+        with pytest.raises(GitHubAPIError, match=r"^HTTP 404 error$"):
             client._handle_http_status_error(error)
 
     http_error_logs = [log for log in log_output if log.get("event") == "http_status_error"]
@@ -938,7 +939,7 @@ async def test_handle_5xx_response(
 ) -> None:
     """_handle_5xx_response の2パステスト（D-07）
 
-    - 5xx_non_final_attempt: 5xx + 非最終試行 → return（None）
+    - 5xx_non_final_attempt: 5xx + 非最終試行 → True を return（呼び出し元の if ... continue へ）
     - 5xx_final_attempt: 5xx + 最終試行 → GitHubServerError を raise
     """
     async with AsyncGitHubClient(max_retries=max_retries_val) as client:
@@ -954,12 +955,13 @@ async def test_handle_5xx_response(
                 )
         else:
             with capture_logs() as log_output:
-                await client._handle_5xx_response(
+                result = await client._handle_5xx_response(
                     mock_response,
                     attempt,
                     "/test",
                     "GET",
                 )
+            assert result is True
             retrying_logs = [
                 log for log in log_output if log.get("event") == "retrying_server_error"
             ]

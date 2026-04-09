@@ -342,10 +342,10 @@ class AsyncGitHubClient:
         attempt: int,
         endpoint: str,
         method: str,
-    ) -> None:
-        """5xxエラーのリトライ制御。最終試行なら raise、継続なら return（None）。
+    ) -> bool:
+        """5xxエラーのリトライ制御。最終試行なら raise、継続なら True を返す。
 
-        - Returns: None — リトライ継続
+        - Returns: True — リトライ継続（呼び出し元は `if await ...: continue` で使用）
         - Raises: GitHubServerError — リトライ上限到達
         """
         if attempt < self.max_retries - 1:
@@ -360,7 +360,7 @@ class AsyncGitHubClient:
                 method=method,
             )
             await asyncio.sleep(delay)
-            return  # 呼び出し元で continue
+            return True
         raise GitHubServerError(
             f"Server error: {response.status_code} after {self.max_retries} attempts",
         )
@@ -498,12 +498,11 @@ class AsyncGitHubClient:
 
                 if response.status_code == 403:
                     self._handle_403_response(response)
-
-                if response.status_code >= 500:
-                    await self._handle_5xx_response(response, attempt, endpoint, method)
-                    continue  # _handle_5xx_response がraiseしない場合（非最終試行）はリトライ継続
-
-                response.raise_for_status()
+                elif response.status_code >= 500:
+                    if await self._handle_5xx_response(response, attempt, endpoint, method):
+                        continue
+                else:
+                    response.raise_for_status()
 
                 result_json = self._parse_json_response(response, endpoint)
                 self._update_etag_cache(endpoint, response, result_json)
@@ -516,8 +515,8 @@ class AsyncGitHubClient:
             except httpx.HTTPStatusError as e:
                 if e.response.status_code >= 500:
                     # 防御的パス: 5xxをhttpx.HTTPStatusErrorとして受信した場合、通常パスと同等に処理
-                    await self._handle_5xx_response(e.response, attempt, endpoint, method)
-                    continue  # _handle_5xx_response がraiseしない場合（非最終試行）はリトライ継続
+                    if await self._handle_5xx_response(e.response, attempt, endpoint, method):
+                        continue
                 self._handle_http_status_error(e)
 
             except httpx.TimeoutException as e:
