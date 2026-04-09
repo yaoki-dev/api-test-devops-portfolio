@@ -260,8 +260,10 @@ def _classify_error(
         （例外クラス名）のみ記録してエラー分類に必須情報を確保する。
         ``_map_request_error()`` が生成する例外メッセージも同様に
         ``type(e).__name__``（例外クラス名）のみ含め、``str(e)`` は含めない。
-        元の例外は ``__cause__`` チェーンで保持されるため、
-        デバッグ時にはトレースバック経由で詳細を確認できる。
+        元の例外は ``__cause__`` チェーンで保持される（非リトライ
+        エラーは ``raise ... from e`` 構文、リトライ可能エラーは
+        ``exc.__cause__ = e`` 手動設定）ため、呼び出し元で raise
+        された際にトレースバック経由で詳細を確認できる。
 
     """
     if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
@@ -718,6 +720,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
             raise
         except APIClientError as e:
             # 予期されるAPI例外のみキャッチ
+            # error=str(e) 省略は意図的（_classify_error と設計統一）
             self.logger.warning(
                 "health_check_failed",
                 error_type=type(e).__name__,
@@ -1299,6 +1302,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             raise
         except APIClientError as e:
             # 予期されるAPI例外のみキャッチ
+            # error=str(e) 省略は意図的（_classify_error と設計統一）
             self.logger.warning(
                 "health_check_failed",
                 error_type=type(e).__name__,
@@ -1347,6 +1351,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
                     raise
                 except APIClientError as e:
                     # 予期されるAPI例外のみキャッチ（graceful degradation）
+                    # error=str(e) 省略は意図的（_classify_error と設計統一）
                     self.logger.warning(
                         "get_user_failed",
                         user_id=user_id,
