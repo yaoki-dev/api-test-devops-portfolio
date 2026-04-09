@@ -324,17 +324,19 @@ class AsyncGitHubClient:
             )
             raise RateLimitError(reset_time)
         # その他の403エラー（IPブロック、アクセス権限不足等）
-        error_message = "Access forbidden"
+        error_message = ""
         try:
             parsed = response.json()
             if isinstance(parsed, dict):
-                raw_message = parsed.get("message", error_message)
+                raw_message = parsed.get("message", "")
                 if isinstance(raw_message, str):
                     error_message = raw_message[:_MAX_ERROR_RESPONSE_TEXT]
         except json.JSONDecodeError as parse_err:
             # JSONパース失敗は想定内（非JSON応答の可能性）— 削除禁止 (CONTEXT.md specifics)
             self.logger.warning("failed_to_parse_403_message", error=str(parse_err))
-        raise GitHubAPIError(f"Access forbidden: {error_message}")
+        raise GitHubAPIError(
+            f"Access forbidden: {error_message}" if error_message else "Access forbidden"
+        )
 
     async def _handle_5xx_response(
         self,
@@ -396,13 +398,10 @@ class AsyncGitHubClient:
         httpx.HTTPStatusError インスタンス（response body を含む可能性）が
         __cause__ に残り、Sentry 等の APM ツール経由でセンシティブデータが
         漏洩するリスクがある。warning ログにはデバッグ用の
-        `body_preview` を 200 文字まで意図的に記録するが、例外チェーンには
+        `body_preview` を `_MAX_ERROR_RESPONSE_TEXT` 文字まで意図的に記録するが、例外チェーンには
         response body を載せない。コーディング規約 Section 5
         「from e でチェーン維持」の例外として意図的に採用。
         """
-        _cause = Exception(
-            f"httpx.HTTPStatusError: HTTP {e.response.status_code} {e.request.url.path}"
-        )
         body_preview = e.response.content.decode(
             e.response.encoding or "utf-8",
             errors="replace",
@@ -414,7 +413,9 @@ class AsyncGitHubClient:
             method=e.request.method,
             body_preview=body_preview,
         )
-        raise GitHubAPIError(f"HTTP {e.response.status_code} error") from _cause
+        raise GitHubAPIError(f"HTTP {e.response.status_code} error") from Exception(
+            f"httpx.HTTPStatusError: HTTP {e.response.status_code} {e.request.url.path}"
+        )
 
     def _update_etag_cache(
         self,

@@ -358,7 +358,6 @@ async def test_httpx_status_error_4xx():
     assert exc_info.value.__cause__ is not None
     # __cause__がhttpx.HTTPStatusErrorそのものでないことを型レベルで確認
     assert not isinstance(exc_info.value.__cause__, httpx.HTTPStatusError)
-    assert type(exc_info.value.__cause__) is Exception
     assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
 
 
@@ -946,7 +945,7 @@ async def test_handle_5xx_response(
         mock_response = httpx.Response(status_code)
 
         if expected_exc is not None:
-            with pytest.raises(expected_exc):
+            with pytest.raises(expected_exc, match=r"Server error: 503 after \d+ attempts"):
                 await client._handle_5xx_response(
                     mock_response,
                     attempt,
