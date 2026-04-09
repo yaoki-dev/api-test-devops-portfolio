@@ -17,6 +17,3 @@
 .cgc_state
 node_modules
 __pycache__
-.pre-commit-cache
-.gemini
-.cgc_state

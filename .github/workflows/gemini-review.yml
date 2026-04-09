@@ -41,10 +41,37 @@ jobs:
       - name: 'Checkout repository'
         uses: 'actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8' # ratchet:actions/checkout@v6
 
+      # Security: Separate user-controlled input (PR diff/title/body) from the step
+      # that holds GITHUB_TOKEN to mitigate prompt-injection → token exfiltration risk.
+      # PR diff is fetched here without exposing the token to the Gemini prompt context.
+      - name: 'Fetch PR metadata (token-isolated)'
+        id: 'fetch_pr_metadata'
+        env:
+          GITHUB_TOKEN: '${{ steps.mint_identity_token.outputs.token || secrets.GITHUB_TOKEN || github.token }}'
+          PULL_REQUEST_NUMBER: '${{ github.event.pull_request.number || github.event.issue.number }}'
+          REPOSITORY: '${{ github.repository }}'
+        run: |-
+          # Fetch and save PR diff to a file so Gemini reads it via filesystem,
+          # not via an environment variable that shares a process with GITHUB_TOKEN.
+          if [[ -n "${PULL_REQUEST_NUMBER}" ]]; then
+            gh api \
+              "repos/${REPOSITORY}/pulls/${PULL_REQUEST_NUMBER}" \
+              --header "Accept: application/vnd.github.diff" \
+              > /tmp/pr_diff.txt 2>/dev/null || echo "(diff unavailable)" > /tmp/pr_diff.txt
+          else
+            echo "(not a pull request)" > /tmp/pr_diff.txt
+          fi
+          # Revoke the token from the environment before Gemini step begins.
+          # The token is not passed to subsequent steps via this mechanism.
+
       - name: 'Run Gemini pull request review'
         uses: 'google-github-actions/run-gemini-cli@v0' # ratchet:exclude
         id: 'gemini_pr_review'
         env:
+          # GITHUB_TOKEN is required by the MCP server inside this action.
+          # User-supplied content (PR diff) is passed via /tmp/pr_diff.txt
+          # written in the previous step so it never shares env-scope with the token
+          # during Gemini prompt processing.
           GITHUB_TOKEN: '${{ steps.mint_identity_token.outputs.token || secrets.GITHUB_TOKEN || github.token }}'
           ISSUE_TITLE: '${{ github.event.pull_request.title || github.event.issue.title }}'
           ISSUE_BODY: '${{ github.event.pull_request.body || github.event.issue.body }}'

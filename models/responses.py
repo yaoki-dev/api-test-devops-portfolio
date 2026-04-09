@@ -25,7 +25,7 @@ from urllib.parse import ParseResult, quote, unquote, urlparse, urlunparse
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 # RFC 3986 準拠のスキーム検出パターン（scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) ":"）
-_SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
+_SCHEME_RE: re.Pattern[str] = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 _HTML_META_RE: re.Pattern[str] = re.compile(r'[<>"\'&]')
 _INVISIBLE_CATEGORIES = frozenset({"Cf", "Cc", "Mn", "Zs", "Zl", "Zp"})
 # Cs（孤立サロゲート）を _INVISIBLE_CATEGORIES と合算した除去セット（1回目パスで使用）
@@ -124,7 +124,11 @@ def _validate_netloc(parsed: ParseResult) -> None:
     # 多層防御: parsed.username/password に加え netloc の "@" リテラルも検査
     # （urlparse が特定のエンコード済み入力で username=None を返すエッジケース対策）
     has_at = "@" in parsed.netloc
-    has_userinfo = parsed.username is not None or parsed.password is not None
+    try:
+        has_userinfo = parsed.username is not None or parsed.password is not None
+    except ValueError:
+        # 不正なパーセントエンコード等で username/password アクセスが失敗するケース
+        has_userinfo = True
     if has_at or has_userinfo:
         raise ValueError("URLにuserinfo（ユーザー名/パスワード）は指定できません")
     # ホスト部にHTMLメタ文字（<, >, ", ', &）が含まれる場合は拒否
@@ -137,19 +141,25 @@ def _normalize_url(parsed: ParseResult) -> str:
     # ParseResultはnamedtupleだが、tuple直接指定でコードの意図を明示する
     # パス・クエリ・フラグメントのXSS文字をURLエンコード（%を安全文字に含め二重エンコード防止）
     # RFC 3986 §3.3 pchar = unreserved / pct-encoded / sub-delims / ":" / "@"
-    safe_path = quote(parsed.path, safe="/:@!$&'()*+,;=%")
+    # XSS防止: ' (single quote) を safe から除外 → %27 にエンコード
+    # &はquery/fragmentでパラメータ区切りとして必要なため保持（HTML出力時は呼び出し元でエスケープ）
+    safe_path = quote(parsed.path, safe="/:@!$()*+,;=%")
     # RFC 3986 §3.3 (params は path の一部として扱う)
-    safe_params = quote(parsed.params, safe=";=@:!$&'()*+,/%")
+    safe_params = quote(parsed.params, safe=";=@:!$()*+,/%")
     # RFC 3986 §3.4 query = *( pchar / "/" / "?" )
-    safe_query = quote(parsed.query, safe="=&+:@!$'()*,;/?%")
+    safe_query = quote(parsed.query, safe="=&+:@!$()*,;/?%")
     # RFC 3986 §3.5 fragment = *( pchar / "/" / "?" )
     # ._~（RFC 3986 unreserved）をフラグメントに追加: フラグメントはエンドユーザー向けのため
     # 通常の unreserved 文字を過剰エンコードしない（path/query との意図的な非対称）
-    safe_fragment = quote(parsed.fragment, safe=":@!$&'()*+,;=/?%-._~")
+    safe_fragment = quote(parsed.fragment, safe=":@!$&()*+,;=/?%-._~")
+    # hostname は urlparse が自動小文字化済み。netloc.lower() ではなく
+    # hostname + port で再構成し、percent-encoded 文字の大文字16進を保持する
+    hostname = parsed.hostname or ""
+    netloc = f"{hostname}:{parsed.port}" if parsed.port is not None else hostname
     return urlunparse(
         (
             parsed.scheme.lower(),
-            parsed.netloc.lower(),  # ポート番号は数字のみのためlower()で変化しない
+            netloc,
             safe_path,
             safe_params,
             safe_query,
@@ -463,10 +473,14 @@ class User(BaseModel):
             ValueError: 以下のいずれかの場合:
                 - 入力が文字列でない
                 - 制御文字除去後にURLが空
+                - パーセントエンコードされた制御文字（%0d, %0a等）を含む
                 - プロトコル相対URL（//始まり）
                 - http/https以外の危険スキーム
                 - 有効なホスト名なし
+                - ホスト名にHTMLメタ文字（<, >, ", ', &）を含む
+                - ポートが無効（整数値でない）
                 - userinfoを含む（例: https://user@host — RFC 3986 バイパス防止）
+                - スキームなしURLにパス（/）が含まれる（ドメインのみ許可）
                 - スキームなしURLにポートが含まれる（例: example.com:8080）
 
         Note:
@@ -481,12 +495,15 @@ class User(BaseModel):
         # min_length=1 は真の空文字列を、ここでは制御文字のみの文字列を捕捉（2段階チェック）
         if not sanitized:
             raise ValueError("websiteが空になりました（制御文字除去後）")
+        # CRLF injection防止: パーセントエンコードされた制御文字を拒否
+        # _strip_invisible_chars は実際の制御文字を除去するが、
+        # %0d%0a 等のエンコード形式はバイパスする
+        sanitized_lower = sanitized.lower()
+        if "%0d" in sanitized_lower or "%0a" in sanitized_lower:
+            raise ValueError("URLにパーセントエンコードされた制御文字が含まれています")
         # プロトコル相対URLを明示的に拒否（攻撃面削減）
         if sanitized.startswith("//"):
             raise ValueError("プロトコル相対URLは許可されていません")
-        # RFC 3986 §6.2.2.1: スキーム・ホストのみ小文字正規化対象。パス部は大文字小文字を保持する
-        # ため、スキームチェックには lower() 済みの文字列を使いつつ、urlparse にはオリジナルを渡す
-        sanitized_lower = sanitized.lower()
         # urlparseは各分岐で1回のみ呼び出す
         # （http/httpsブランチと補完ブランチで入力が異なるため共通化不可）
         if sanitized_lower.startswith(("http://", "https://")):
@@ -502,9 +519,10 @@ class User(BaseModel):
             raise ValueError("危険なURLスキームが検出されました")
         # スキームなし → https:// を補完して検証
         # _validate_netloc / _normalize_url の ValueError はそのまま伝播
-        # パーセントエンコード済み文字による // バイパスを防止（%2F%2F を含む）
-        if "//" in sanitized or "//" in unquote(sanitized):
-            raise ValueError("スキームなしURLに // は指定できません")
+        # 設計意図: スキームなしURLはドメインのみ許可（パス付きURLは拒否）
+        # パーセントエンコード済み %2F によるバイパスも防止
+        if "/" in sanitized or "/" in unquote(sanitized):
+            raise ValueError("スキームなしURLにパスは指定できません")
         parsed = urlparse("https://" + sanitized)
         _validate_netloc(parsed)
         # スキームなし補完後のポートチェック:
@@ -666,8 +684,11 @@ class Photo(BaseModel):
         Raises:
             ValueError: 以下のいずれかの場合:
                 - 制御文字除去後にURLが空
+                - パーセントエンコードされた制御文字（%0d, %0a等）を含む
                 - http/https以外のスキーム（またはスキームなし）
                 - 有効なホスト名なし
+                - ホスト名にHTMLメタ文字（<, >, ", ', &）を含む
+                - ポートが無効（整数値でない）
                 - userinfoを含む（例: https://user@host — RFC 3986 バイパス防止）
 
         Note:
@@ -678,8 +699,10 @@ class Photo(BaseModel):
         sanitized = _strip_invisible_chars(v).strip()
         if not sanitized:
             raise ValueError("URLが空になりました（制御文字除去後）")
-        # RFC 3986 §6.2.2.1: パス部の大文字小文字保持のため urlparse にはオリジナルを渡す
+        # CRLF injection防止: パーセントエンコードされた制御文字を拒否
         sanitized_lower = sanitized.lower()
+        if "%0d" in sanitized_lower or "%0a" in sanitized_lower:
+            raise ValueError("URLにパーセントエンコードされた制御文字が含まれています")
         if not sanitized_lower.startswith(("http://", "https://")):
             raise ValueError("URLはhttp://またはhttps://で始まる必要があります")
         # _validate_netloc / _normalize_url の ValueError はそのまま伝播

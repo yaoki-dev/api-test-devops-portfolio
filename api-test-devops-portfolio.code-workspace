@@ -8,6 +8,9 @@
         },
         {
             "path": "../.worktrees/wt-feature03"
+        },
+        {
+            "path": "."
         }
     ]
 }

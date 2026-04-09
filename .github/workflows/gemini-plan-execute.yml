@@ -20,6 +20,17 @@ jobs:
   plan-execute:
     timeout-minutes: 30
     runs-on: 'ubuntu-latest'
+    # SECURITY NOTE: `contents: write` is required for this workflow to create branches
+    # and commit files via the GitHub MCP server tools (create_branch, create_or_update_file).
+    # Combined with prompt injection risk from user-supplied issue/PR content and the
+    # code-change tooling available to Gemini, this creates an elevated risk surface.
+    # Mitigations applied:
+    #   1. Dispatch gate (gemini-dispatch.yml) restricts triggering to OWNER/MEMBER/COLLABORATOR.
+    #   2. The plan-execute prompt requires a pre-approved 'AI Assistant: Plan of Action'
+    #      comment before taking any action.
+    #   3. User-supplied variables ($TITLE, $DESCRIPTION) are wrapped in boundary markers
+    #      in the prompt template to reduce prompt injection surface.
+    # Recommendation: further restrict write access or add branch protection rules.
     permissions:
       contents: 'write'
       id-token: 'write'
@@ -44,6 +55,10 @@ jobs:
 
       - name: 'Run Gemini CLI'
         id: 'run_gemini'
+        # SECURITY NOTE: This action uses a floating tag (@v0) which is a supply chain risk.
+        # Recommendation: pin to a specific commit SHA, e.g.:
+        #   google-github-actions/run-gemini-cli@<commit-sha>
+        # Track upstream releases at: https://github.com/google-github-actions/run-gemini-cli/releases
         uses: 'google-github-actions/run-gemini-cli@v0' # ratchet:exclude
         env:
           TITLE: '${{ github.event.pull_request.title || github.event.issue.title }}'

@@ -9,7 +9,7 @@ Pydantic レスポンスモデル テスト
 """
 
 import html
-from typing import Final, TypedDict
+from typing import Any, Final, TypedDict
 
 import pytest
 from pydantic import ValidationError
@@ -386,6 +386,26 @@ class TestAddressModel:
         address = Address(street=dirty, suite="Test", city="City", zipcode="12345", geo=valid_geo)
         assert address.street == expected
 
+    @pytest.mark.parametrize(
+        ("dirty", "expected", "field_id"),
+        [(d, e, i) for d, e, i in _XSS_PAIRS],
+    )
+    @pytest.mark.parametrize("field", ["suite", "city"])
+    def test_address_sanitizes_xss_all_fields(
+        self, valid_geo: Geo, dirty: str, expected: str, field_id: str, field: str
+    ) -> None:
+        """Address の suite/city フィールドの XSS サニタイゼーション"""
+        kwargs: dict[str, Any] = {
+            "street": "Normal",
+            "suite": "Normal",
+            "city": "Normal",
+            "zipcode": "12345",
+            "geo": valid_geo,
+        }
+        kwargs[field] = dirty
+        address = Address(**kwargs)
+        assert getattr(address, field) == expected
+
 
 class TestCompanyModel:
     """Company モデルのテスト
@@ -425,6 +445,25 @@ class TestCompanyModel:
         """Company.name フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
         company = Company(name=dirty, catchPhrase="Normal", bs="Normal")
         assert company.name == expected
+
+    @pytest.mark.parametrize(
+        ("dirty", "expected", "field_id"),
+        [(d, e, i) for d, e, i in _XSS_PAIRS],
+    )
+    @pytest.mark.parametrize("field", ["catch_phrase", "bs"])
+    def test_company_sanitizes_xss_all_fields(
+        self, dirty: str, expected: str, field_id: str, field: str
+    ) -> None:
+        """Company の catch_phrase/bs フィールドの XSS サニタイゼーション"""
+        alias_map = {"catch_phrase": "catchPhrase", "bs": "bs"}
+        kwargs: dict[str, Any] = {
+            "name": "Normal",
+            "catchPhrase": "Normal",
+            "bs": "Normal",
+        }
+        kwargs[alias_map[field]] = dirty
+        company = Company(**kwargs)
+        assert getattr(company, field) == expected
 
 
 class TestUserModel:
@@ -531,10 +570,9 @@ class TestUserModel:
 
     def test_user_website_is_not_html_escaped(self, valid_user_data: _UserData) -> None:
         """websiteはhtml.escape対象外（URL内の&がエスケープされない）"""
-        value = "example.com/page?a=1&b=2"
+        value = "https://example.com/page?a=1&b=2"
         valid_user_data["website"] = value
         user = User(**valid_user_data)
-        # スキームなしURLはhttps://が補完される
         assert user.website == "https://example.com/page?a=1&b=2"  # &amp; にならないことを確認
 
     @pytest.mark.parametrize(
@@ -664,10 +702,14 @@ class TestUserModel:
             ),
             pytest.param(
                 "10.0.0.1:3000/api",
-                "スキームなしURLにポートは指定できません",
+                "スキームなしURLにパスは指定できません",
                 id="ip_port_path_no_scheme",
             ),
-            pytest.param("/path/only", "有効なホスト名が含まれていません", id="path_only_no_host"),
+            pytest.param(
+                "/path/only",
+                "スキームなしURLにパスは指定できません",
+                id="path_only_no_host",
+            ),
             pytest.param(
                 "java\ufe00script:alert(1)",
                 "危険なURLスキームが検出されました",
@@ -713,19 +755,39 @@ class TestUserModel:
                 id="invalid_port_string",
             ),
             pytest.param(
+                "%0d%0aevil.com",
+                "パーセントエンコードされた制御文字",
+                id="percent_encoded_crlf_injection",
+            ),
+            pytest.param(
                 "%0d%0a//evil.com",
-                "スキームなしURLに // は指定できません",
+                "パーセントエンコードされた制御文字",
                 id="percent_encoded_crlf_slash_bypass",
             ),
             pytest.param(
                 "%2f%2fevil.com",
-                "スキームなしURLに // は指定できません",
+                "スキームなしURLにパスは指定できません",
                 id="percent_encoded_slash_bypass",
+            ),
+            pytest.param(
+                "example.com/path",
+                "スキームなしURLにパスは指定できません",
+                id="schemeless_with_path",
+            ),
+            pytest.param(
+                "example.com%2Fpath",
+                "スキームなしURLにパスは指定できません",
+                id="schemeless_with_encoded_path",
             ),
             pytest.param(
                 "https://evil<script>xss</script>.example.com/path",
                 "ホスト名に不正な文字が含まれています",
                 id="xss_metachar_in_netloc",
+            ),
+            pytest.param(
+                "Example.COM/path",
+                "スキームなしURLにパスは指定できません",
+                id="schemeless_uppercase_host_with_path",
             ),
         ],
     )
@@ -767,10 +829,6 @@ class TestUserModel:
             pytest.param("http://example.com:8080", "http://example.com:8080", id="http_with_port"),
             # スキームなし → https:// 補完（N2設計変更）
             pytest.param("hildegard.org", "https://hildegard.org", id="schemeless_domain"),
-            pytest.param("example.com/path", "https://example.com/path", id="schemeless_with_path"),
-            pytest.param(
-                "Example.COM/path", "https://example.com/path", id="schemeless_uppercase_host"
-            ),
         ],
     )
     def test_user_website_allows_safe_url(
@@ -1284,6 +1342,36 @@ class TestPhotoModel:
                 url="https://example.com/photo.jpg",
                 thumbnailUrl="example.com/thumb.jpg",
             )
+
+    @pytest.mark.parametrize(
+        ("url", "thumbnail_url", "expected_match"),
+        [
+            pytest.param(
+                "https://evil.com%0d%0aInjected",
+                "https://example.com/thumb.jpg",
+                "パーセントエンコードされた制御文字",
+                id="crlf_in_url",
+            ),
+            pytest.param(
+                "https://example.com/photo.jpg",
+                "https://evil.com%0aInjected",
+                "パーセントエンコードされた制御文字",
+                id="lf_in_thumbnail",
+            ),
+            pytest.param(
+                "https://example.com%0D%0A/photo.jpg",
+                "https://example.com/thumb.jpg",
+                "パーセントエンコードされた制御文字",
+                id="uppercase_crlf_in_url",
+            ),
+        ],
+    )
+    def test_photo_rejects_percent_encoded_crlf(
+        self, url: str, thumbnail_url: str, expected_match: str
+    ) -> None:
+        """Photo.validate_url_scheme がパーセントエンコードされたCRLFを拒否すること"""
+        with pytest.raises(ValidationError, match=expected_match):
+            Photo(albumId=1, id=1, title="Test", url=url, thumbnailUrl=thumbnail_url)
 
     @pytest.mark.parametrize(
         ("url", "thumbnail_url"),

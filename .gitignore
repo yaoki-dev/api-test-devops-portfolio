@@ -126,3 +126,12 @@ docs/analysis/
 # GSD - local planning artifacts
 .planning/
 gsd-local-patches/
+
+# gemini-cli settings
+.gemini/
+
+# OMS - local memory and settings
+.oms/
+
+# VS Code workspace settings (local only)
+api-test-devops-portfolio.code-workspace

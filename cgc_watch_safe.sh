@@ -2,7 +2,7 @@
 # CodeGraphContext Live Sync Safe Watch (macOS Seatbelt Patch)
 # Author: Senior Engineer Assistant
 
-PROJECT_ROOT=$(pwd)
+PROJECT_ROOT=$(git rev-parse --show-toplevel)
 GEMINI_TMP="$PROJECT_ROOT/.gemini/tmp"
 LIBS_PATH="$GEMINI_TMP/tree-sitter-libs"
 DEFAULT_CGC_STATE_BASE="${TMPDIR:-/tmp}/cgc-state"
