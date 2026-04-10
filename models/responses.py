@@ -168,7 +168,9 @@ def _normalize_url(parsed: ParseResult) -> str:
     # hostname は urlparse が自動小文字化済み。netloc.lower() ではなく
     # hostname + port で再構成し、percent-encoded 文字の大文字16進を保持する
     hostname = parsed.hostname
-    assert hostname is not None  # _validate_netloc で hostname is None を排除済み
+    if hostname is None:
+        # _validate_netloc 経由の通常パスでは到達しないが、直接呼び出し時のセーフガード
+        raise ValueError(f"ホスト名の解決に失敗しました（netloc={parsed.netloc!r}）")
     if ":" in hostname:
         hostname = f"[{hostname}]"
     netloc = f"{hostname}:{parsed.port}" if parsed.port is not None else hostname
