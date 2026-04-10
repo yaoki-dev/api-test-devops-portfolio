@@ -2,7 +2,7 @@ name: '📋 Gemini Scheduled Issue Triage'
 
 on:
   schedule:
-    - cron: '0 * * * *' # Runs every hour
+    - cron: '0 0 * * *' # Runs daily at UTC 00:00
   pull_request:
     branches:
       - 'main'
@@ -36,6 +36,11 @@ jobs:
       pull-requests: 'read'
     outputs:
       available_labels: '${{ steps.get_labels.outputs.available_labels }}'
+      # SECURITY NOTE: TRIAGED_ISSUES is written to GITHUB_ENV by the Gemini CLI action.
+      # AI-generated output → GITHUB_ENV is an injection risk vector (e.g., malicious
+      # label names or crafted JSON). Mitigation: the 'label' job validates all proposed
+      # labels against the repository's available labels allowlist, rejecting any value
+      # not in the pre-fetched label set.
       triaged_issues: '${{ env.TRIAGED_ISSUES }}'
     steps:
       - name: 'Get repository labels'
@@ -122,8 +127,7 @@ jobs:
               "tools": {
                 "core": [
                   "run_shell_command(echo)",
-                  "run_shell_command(jq)",
-                  "run_shell_command(printenv)"
+                  "run_shell_command(jq)"
                 ]
               }
             }

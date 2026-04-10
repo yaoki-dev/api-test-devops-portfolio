@@ -10,6 +10,7 @@ Pydantic レスポンスモデル テスト
 
 import html
 from typing import Any, Final, TypedDict
+from urllib.parse import urlparse
 
 import pytest
 from pydantic import ValidationError
@@ -837,7 +838,7 @@ class TestUserModel:
     ) -> None:
         """User.website が非文字列入力を拒否すること"""
         valid_user_data["website"] = non_str_input
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValidationError, match="文字列が必要です"):
             User(**valid_user_data)
 
     @pytest.mark.parametrize(
@@ -1663,47 +1664,42 @@ class TestNormalizeUrl:
 
     def test_basic_normalization(self) -> None:
         """スキームとホストの小文字正規化"""
-        from urllib.parse import urlparse
-
         result = _normalize_url(urlparse("HTTPS://EXAMPLE.COM/Path"))
         assert result == "https://example.com/Path"
 
     def test_ipv6_bracket_preservation(self) -> None:
         """IPv6アドレスのブラケット復元"""
-        from urllib.parse import urlparse
-
         result = _normalize_url(urlparse("https://[::1]:8080/path"))
         assert result == "https://[::1]:8080/path"
 
     def test_safe_params_encoding(self) -> None:
         """RFC 3986 §3.3 パラメータ部のエンコード"""
-        from urllib.parse import urlparse
-
         result = _normalize_url(urlparse("https://example.com/path;type=pdf"))
         assert ";type=pdf" in result
 
     def test_fragment_preserves_unreserved(self) -> None:
         """フラグメントのunreserved文字（._~）が過剰エンコードされないこと"""
-        from urllib.parse import urlparse
-
         result = _normalize_url(urlparse("https://example.com/page#section_1.2~draft"))
         assert result.endswith("#section_1.2~draft")
 
     def test_existing_percent_encoding_preserved(self) -> None:
         """既存の%エンコードが二重エンコードされないこと"""
-        from urllib.parse import urlparse
-
         result = _normalize_url(urlparse("https://example.com/path%20name"))
         assert "%20" in result
         assert "%2520" not in result  # 二重エンコード防止
 
     def test_single_quote_encoded_to_percent27(self) -> None:
         """シングルクォートがXSS防止のため%27にエンコードされること（RFC 3986 safe除外）"""
-        from urllib.parse import urlparse
-
         result = _normalize_url(urlparse("https://example.com/path/file'.jpg"))
         assert "%27" in result
         assert "'" not in result.split("//", 1)[1]  # ホスト以降にシングルクォートなし
+
+    def test_hostname_none_raises_error(self) -> None:
+        """hostname=None（netloc=':8080'）で ValueError が発生すること"""
+        parsed = urlparse("https://:8080/path")
+        assert parsed.hostname is None, "前提条件: hostname が None であること"
+        with pytest.raises(ValueError, match="ホスト名の解決に失敗しました"):
+            _normalize_url(parsed)
 
 
 def test_strip_invisible_chars_rejects_non_str() -> None:

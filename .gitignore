@@ -130,7 +130,7 @@ gsd-local-patches/
 # gemini-cli settings
 .gemini/
 
-# OMS - local memory and settings
+# OMS (oh-my-claudecode)  - local memory and settings
 .oms/
 
 # OMC (oh-my-claudecode) - runtime state (ephemeral, machine-specific)

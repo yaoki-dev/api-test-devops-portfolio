@@ -127,9 +127,10 @@ def _validate_netloc(parsed: ParseResult) -> None:
     has_at = "@" in parsed.netloc
     try:
         has_userinfo = parsed.username is not None or parsed.password is not None
-    except ValueError:
+    except ValueError as e:
         # 不正なパーセントエンコード等で username/password アクセスが失敗するケース
-        has_userinfo = True
+        # 元の例外チェーンを保持してデバッグを可能にする
+        raise ValueError(f"URLのuserinfoパースに失敗しました（netloc={parsed.netloc!r}）") from e
     if has_at or has_userinfo:
         raise ValueError("URLにuserinfo（ユーザー名/パスワード）は指定できません")
     # ホスト部にHTMLメタ文字（<, >, ", ', &）が含まれる場合は拒否
@@ -157,7 +158,7 @@ def _normalize_url(parsed: ParseResult) -> str:
     # hostname は urlparse が自動小文字化済み。netloc.lower() ではなく
     # hostname + port で再構成し、percent-encoded 文字の大文字16進を保持する
     if parsed.hostname is None:
-        raise ValueError("ホスト名の解決に失敗しました（正規化エラー）")
+        raise ValueError(f"ホスト名の解決に失敗しました（正規化エラー、netloc={parsed.netloc!r}）")
     hostname = parsed.hostname
     if ":" in hostname:
         hostname = f"[{hostname}]"
@@ -523,8 +524,7 @@ class User(BaseModel):
         # RFC 3986スキーム検出: http/https以外のスキームが存在すれば拒否
         # is_domain_portロジックを削除: domain:portはスキームなし扱いのため
         # http(s)://を明示しない限り拒否（例: example.com:8080 → ValueError）
-        scheme_match = _SCHEME_RE.match(sanitized_lower)
-        if scheme_match:
+        if _SCHEME_RE.match(sanitized_lower):
             raise ValueError("危険なURLスキームが検出されました")
         # スキームなし → https:// を補完して検証
         # _validate_netloc / _normalize_url の ValueError はそのまま伝播
@@ -535,7 +535,9 @@ class User(BaseModel):
         parsed = urlparse("https://" + sanitized)
         _validate_netloc(parsed)
         # スキームなし補完後のポートチェック:
-        # example.com:8080 → https://example.com:8080 に補完されポートが検出される
+        # IPアドレス:port形式（例: 192.168.1.1:8080）がここに到達する
+        # （ドメイン:port形式（例: example.com:8080）は _SCHEME_RE にマッチし
+        #  「危険なURLスキーム」として上流で拒否されるため、このチェックに到達しない）
         if parsed.port is not None:
             raise ValueError(
                 "スキームなしURLにポートは指定できません（http(s)://を明示してください）"

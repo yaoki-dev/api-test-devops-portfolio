@@ -40,6 +40,26 @@ jobs:
       - name: 'Checkout Code'
         uses: 'actions/checkout@v4' # ratchet:exclude
 
+      - name: 'Save user inputs to file (token-isolated)'
+        # Security: Write user-controlled input (title/body/context) to files so
+        # the Gemini prompt can read from filesystem instead of environment variables
+        # that share process scope with GITHUB_TOKEN. This mitigates the
+        # prompt-injection → token exfiltration attack vector.
+        # Reference: gemini-review.yml 'Fetch PR metadata (token-isolated)' step.
+        # LIMITATION: User inputs are ALSO still passed as env vars in the Gemini CLI
+        # step below (for prompt template backward compatibility). Full isolation requires
+        # updating the prompt to read from /tmp/ files and removing env vars.
+        # TODO: Update /gemini-invoke prompt to read from /tmp/ files, then remove
+        # TITLE/DESCRIPTION/ADDITIONAL_CONTEXT from the 'Run Gemini CLI' step env.
+        run: |-
+          printf '%s' "${TITLE_VAL}" > /tmp/title.txt
+          printf '%s' "${DESC_VAL}" > /tmp/description.txt
+          printf '%s' "${CTX_VAL}" > /tmp/additional_context.txt
+        env:
+          TITLE_VAL: '${{ github.event.pull_request.title || github.event.issue.title }}'
+          DESC_VAL: '${{ github.event.pull_request.body || github.event.issue.body }}'
+          CTX_VAL: '${{ inputs.additional_context }}'
+
       - name: 'Run Gemini CLI'
         id: 'run_gemini'
         uses: 'google-github-actions/run-gemini-cli@v0' # ratchet:exclude
