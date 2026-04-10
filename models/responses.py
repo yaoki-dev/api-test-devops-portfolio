@@ -117,7 +117,7 @@ def sanitize_user_content(value: str) -> str:
 
 
 def _validate_netloc(parsed: ParseResult) -> None:
-    """netloc の存在確認と userinfo 禁止チェックを共通化する."""
+    """netloc の存在確認・userinfo 禁止・hostname 解決チェックを共通化する."""
     if not parsed.netloc:
         raise ValueError("有効なホスト名が含まれていません")
     # 不正ポート文字列バイパス対策: parsed.port は整数でない場合 ValueError を送出する
@@ -129,17 +129,23 @@ def _validate_netloc(parsed: ParseResult) -> None:
     # 多層防御: parsed.username/password に加え netloc の "@" リテラルも検査
     # （urlparse が特定のエンコード済み入力で username=None を返すエッジケース対策）
     has_at = "@" in parsed.netloc
+    if has_at:
+        raise ValueError("URLにuserinfo（ユーザー名/パスワード）は指定できません")
+    # @が含まれない場合のみ username/password を確認
+    # （urlparse が特定のエンコード済み入力で username=None を返すエッジケース対策）
     try:
         has_userinfo = parsed.username is not None or parsed.password is not None
     except ValueError as e:
         # 不正なパーセントエンコード等で username/password アクセスが失敗するケース
-        # 元の例外チェーンを保持してデバッグを可能にする
         raise ValueError(f"URLのuserinfoパースに失敗しました（netloc={parsed.netloc!r}）") from e
-    if has_at or has_userinfo:
+    if has_userinfo:
         raise ValueError("URLにuserinfo（ユーザー名/パスワード）は指定できません")
     # ホスト部にHTMLメタ文字（<, >, ", ', &）が含まれる場合は拒否
     if _HTML_META_RE.search(parsed.netloc):
         raise ValueError("ホスト名に不正な文字が含まれています")
+    # hostname が None になるケース（例: 不正な IPv6 形式）を _normalize_url に渡す前に排除
+    if parsed.hostname is None:
+        raise ValueError("有効なホスト名が含まれていません")
 
 
 def _normalize_url(parsed: ParseResult) -> str:
@@ -161,9 +167,8 @@ def _normalize_url(parsed: ParseResult) -> str:
     safe_fragment = quote(parsed.fragment, safe=":@!$&()*+,;=/?%-._~")
     # hostname は urlparse が自動小文字化済み。netloc.lower() ではなく
     # hostname + port で再構成し、percent-encoded 文字の大文字16進を保持する
-    if parsed.hostname is None:
-        raise ValueError(f"ホスト名の解決に失敗しました（正規化エラー、netloc={parsed.netloc!r}）")
     hostname = parsed.hostname
+    assert hostname is not None  # _validate_netloc で hostname is None を排除済み
     if ":" in hostname:
         hostname = f"[{hostname}]"
     netloc = f"{hostname}:{parsed.port}" if parsed.port is not None else hostname
