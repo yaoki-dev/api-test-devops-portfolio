@@ -655,7 +655,7 @@ class TestUserModel:
     ) -> None:
         """User.email が RFC 5322 非準拠メールアドレスを拒否すること"""
         valid_user_data["email"] = invalid_email
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValidationError, match=r"value is not a valid email address"):
             User(**valid_user_data)
 
     def test_user_email_max_length_valid(self, valid_user_data: _UserData) -> None:
