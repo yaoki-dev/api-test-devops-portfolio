@@ -493,6 +493,32 @@ async def test_httpx_status_error_403_defensive_path() -> None:
 
 
 @respx.mock
+async def test_httpx_status_error_403_auth_error_defensive_path() -> None:
+    """httpx.HTTPStatusError（403・非Rate Limit）防御的コードパスの検証
+
+    防御的パス: Rate Limitヘッダーなしの403をhttpx.HTTPStatusErrorとして受信した場合、
+    _handle_403_response() を経由してGitHubAPIError（Access forbidden）を発生させる。
+
+    検証項目:
+    - httpx.HTTPStatusError(403・Rate Limitヘッダーなし)がGitHubAPIErrorに変換されること
+    - "Access forbidden"メッセージが含まれること
+    - リクエストが1回のみ実行されること
+    """
+    request = httpx.Request("GET", f"{GITHUB_API_BASE_URL}/users/octocat")
+    response_403 = httpx.Response(403, request=request)  # Rate Limitヘッダーなし
+    error_403 = httpx.HTTPStatusError("403 Forbidden", request=request, response=response_403)
+
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
+    route.side_effect = [error_403]
+
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(GitHubAPIError, match="Access forbidden"):
+            await client.get_user("octocat")
+
+    assert route.call_count == 1
+
+
+@respx.mock
 async def test_unexpected_exception():
     """予期しない例外処理の検証"""
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(
