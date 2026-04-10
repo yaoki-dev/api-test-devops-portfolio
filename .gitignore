@@ -135,6 +135,11 @@ gsd-local-patches/
 
 # OMC (oh-my-claudecode) - runtime state (ephemeral, machine-specific)
 .omc/state/
+.omc/project-memory.json
 
 # VS Code workspace settings (local only)
 api-test-devops-portfolio.code-workspace
+
+# CGC (CodeGraphContext)
+cgc_mcp_wrapper.sh
+cgc_watch_safe.sh
