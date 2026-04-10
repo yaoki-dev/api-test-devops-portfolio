@@ -218,19 +218,25 @@ def test_sync_health_check_log_structure() -> None:
 
     assert result is False
     # warning は request_error と health_check_failed の2回呼ばれる
-    assert mock_logger.warning.call_count >= 1
+    assert mock_logger.warning.call_count == 2
     # health_check_failed の呼び出しを抽出
-    health_check_call = None
-    for call in mock_logger.warning.call_args_list:
-        if call[0][0] == "health_check_failed":
-            health_check_call = call
-            break
+    health_check_call = next(
+        (c for c in mock_logger.warning.call_args_list if c[0][0] == "health_check_failed"),
+        None,
+    )
     assert health_check_call is not None, "health_check_failed ログが出力されていない"
     # 必須フィールドの検証
     assert health_check_call[1]["error_type"] == "APIRetryError"
     assert health_check_call[1]["endpoint"] == "/users"
     # セキュリティ: error フィールド省略（_classify_error と同方針）
     assert "error" not in health_check_call[1]
+    # all_retries_failed の error フィールド省略検証（機密情報保護）
+    all_retries_call = next(
+        (c for c in mock_logger.error.call_args_list if c[0][0] == "all_retries_failed"),
+        None,
+    )
+    assert all_retries_call is not None, "all_retries_failed ログが出力されていること"
+    assert "error" not in all_retries_call[1]
 
 
 def test_sync_client_timeout_zero_not_overridden() -> None:

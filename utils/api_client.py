@@ -264,6 +264,8 @@ def _classify_error(
         ``error`` フィールドを省略している。httpx 例外の文字列には
         ホスト名、プロキシ設定等の機密情報が含まれるため、``error_type``
         （例外クラス名）のみ記録してエラー分類に必須情報を確保する。
+        非リトライエラー（``request_error_non_retryable``）は ``logger.error``、
+        リトライ可能エラー（``request_error``）は ``logger.warning`` でログ出力される。
         ``_map_request_error()`` が生成する例外メッセージは固定プレフィックスと
         ``type(e).__name__``（例外クラス名）のみで構成され、``str(e)`` は含めない。
         元の例外は ``__cause__`` チェーンで保持される。非リトライ
@@ -1191,7 +1193,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
                         }
                     )
             # PII除去設計: ログには index/error_type/status_code のみ記録。
-            # 呼び出し元は users_data[failed_item["index"]] でユーザー情報を復元可能。
+            # index はリクエスト配列内の元位置を示す（失敗行の特定・照合用）。
             self.logger.warning(
                 "bulk_create_partial_failure",
                 failed_count=len(failed),
