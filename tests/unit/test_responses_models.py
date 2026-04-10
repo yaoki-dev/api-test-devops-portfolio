@@ -901,6 +901,11 @@ class TestUserModel:
                 "スキームなしURLにパスは指定できません",
                 id="schemeless_uppercase_host_with_path",
             ),
+            pytest.param(
+                "example.com%80",
+                "不正なパーセントエンコード",
+                id="invalid_utf8_percent_encoding",
+            ),
         ],
     )
     def test_user_website_rejects_security_bypass_patterns(

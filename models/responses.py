@@ -532,7 +532,14 @@ class User(BaseModel):
         # _validate_netloc / _normalize_url の ValueError はそのまま伝播
         # 設計意図: スキームなしURLはドメインのみ許可（パス付きURLは拒否）
         # パーセントエンコード済み %2F によるバイパスも防止
-        if "/" in sanitized or "/" in unquote(sanitized):
+        # errors='strict': 不正なパーセントエンコードをサイレント置換せず明示的エラーとして扱う
+        try:
+            decoded = unquote(sanitized, errors="strict")
+        except UnicodeDecodeError as e:
+            raise ValueError(
+                f"URLに不正なパーセントエンコードが含まれています: {e}"
+            ) from e
+        if "/" in sanitized or "/" in decoded:
             raise ValueError("スキームなしURLにパスは指定できません")
         parsed = urlparse("https://" + sanitized)
         _validate_netloc(parsed)
