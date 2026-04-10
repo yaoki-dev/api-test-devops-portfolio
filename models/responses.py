@@ -39,7 +39,8 @@ def _strip_invisible_chars(v: str) -> str:
     """不可視文字・制御文字・Unicode空白をURL文字列から除去
 
     URLスキームバイパス防止のため、_STRIP_CATEGORIES（= _INVISIBLE_CATEGORIES | {"Cs"}）
-    に属するUnicodeカテゴリを単一の内包表記で一括除去する:
+    に属するUnicodeカテゴリを2パスの内包表記で除去する
+    （パス1: NFKC正規化前・Cs含む全カテゴリ、パス2: NFKC正規化後・Cs除外）:
 
     - Cs: Surrogate（孤立サロゲート U+D800-U+DFFF）— 有効なUnicode文字列に
           含まれるべきでないためnormalize()前に除去（データ整合性）
