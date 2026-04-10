@@ -1436,7 +1436,7 @@ def main() -> None:
             print(f"  - Title: {new_post.get('title', 'N/A')}")
 
         except APIClientError as e:
-            # {e} はサニタイズ済み（固定プレフィックス+クラス名のみ）、デモ用表示のみ
+            # {e}: _map_request_error()経由の場合は固定プレフィックス+クラス名のみ。デモ用表示のみ
             print(f"エラーが発生しました: {type(e).__name__}: {e}")
             if settings.debug:
                 import traceback
