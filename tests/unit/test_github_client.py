@@ -458,6 +458,41 @@ async def test_httpx_status_error_5xx_defensive_path(mock_backoff: Mock) -> None
 
 
 @respx.mock
+async def test_httpx_status_error_403_defensive_path() -> None:
+    """httpx.HTTPStatusError（403）防御的コードパスの検証
+
+    防御的パス: 403をhttpx.HTTPStatusErrorとして受信した場合も
+    _handle_403_response() を経由してRateLimitErrorを発生させる。
+
+    検証項目:
+    - httpx.HTTPStatusError(403)がRateLimitErrorに変換されること
+    - reset_time属性が正しく設定されること
+    - リクエストが1回のみ実行されること
+    """
+    request = httpx.Request("GET", f"{GITHUB_API_BASE_URL}/users/octocat")
+    response_403 = httpx.Response(
+        403,
+        headers={
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": "1640000000",
+        },
+        request=request,
+    )
+    error_403 = httpx.HTTPStatusError("403 Forbidden", request=request, response=response_403)
+
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
+    route.side_effect = [error_403]
+
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(RateLimitError) as exc_info:
+            await client.get_user("octocat")
+
+    assert exc_info.value.reset_time == 1640000000
+    assert "Rate limit exceeded" in str(exc_info.value)
+    assert route.call_count == 1
+
+
+@respx.mock
 async def test_unexpected_exception():
     """予期しない例外処理の検証"""
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(
@@ -1183,13 +1218,11 @@ def test_update_etag_cache_clears_stale_cache_when_etag_missing() -> None:
     client._data_cache[endpoint] = {"id": 1}
     response = httpx.Response(200, content=b'{"id": 2}')
 
-    with capture_logs() as logs:
+    with capture_logs():
         client._update_etag_cache(endpoint, response, {"id": 2})
 
     assert endpoint not in client._etag_cache
     assert endpoint not in client._data_cache
-    # debugレベルは実行設定で出力抑止されるため、ログ有無は非断定。
-    assert isinstance(logs, list)
 
 
 @pytest.mark.unit
@@ -1269,9 +1302,11 @@ def test_handle_http_status_error_no_truncation_at_boundary() -> None:
 
 
 @pytest.mark.unit
-def test_handle_http_status_error_truncates_multibyte_body_to_200_chars() -> None:
-    """多バイト文字のbody_previewも200文字で切り詰める"""
+def test_handle_http_status_error_truncates_multibyte_body_to_200_bytes() -> None:
+    """多バイト文字のbody_previewも200バイトで切り詰める（境界はerrors='replace'で補完）"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    # "あ" は UTF-8 で3バイト。201文字 = 603バイト → 200バイトスライス後:
+    # 66文字分(198バイト) + 2バイト(不完全な"あ") → errors="replace" で U+FFFD に置換
     multibyte_body = "あ" * 201
     request = httpx.Request("GET", "https://api.github.com/test")
     response = httpx.Response(422, request=request, content=multibyte_body.encode("utf-8"))
@@ -1285,7 +1320,7 @@ def test_handle_http_status_error_truncates_multibyte_body_to_200_chars() -> Non
     http_error_logs = [log for log in log_output if log.get("event") == "http_status_error"]
     assert len(http_error_logs) == 1
     assert http_error_logs[0]["log_level"] == "warning"
-    assert http_error_logs[0]["body_preview"] == "あ" * 200
+    assert http_error_logs[0]["body_preview"] == "あ" * 66 + "\ufffd"
 
 
 @pytest.mark.unit
