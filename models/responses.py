@@ -143,7 +143,7 @@ def _validate_netloc(parsed: ParseResult) -> None:
 
 
 def _normalize_url(parsed: ParseResult) -> str:
-    """RFC 3986 §6.2.2.1: スキームとホスト部を小文字正規化し、パス・パラメータ・クエリ・フラグメントをURLエンコードする（§6.2.2.2: 既存%xxシーケンスのヘックス大文字化は未実施 — 新規エンコード分はquote()がUPPERCASEで出力）."""  # noqa: E501
+    """RFC 3986 §6.2.2.1（Case Normalization）: スキームとホスト部を小文字正規化する。パス・パラメータ・クエリ・フラグメントは §3.3–§3.5 の構文定義に従いURLエンコードする（§6.2.2.2: 既存%xxシーケンスのヘックス大文字化は未実施 — 新規エンコード分はquote()がUPPERCASEで出力）."""  # noqa: E501
     # ParseResultはnamedtupleだが、tuple直接指定でコードの意図を明示する
     # パス・クエリ・フラグメントのXSS文字をURLエンコード（%を安全文字に含め二重エンコード防止）
     # RFC 3986 §3.3 pchar = unreserved / pct-encoded / sub-delims / ":" / "@"
@@ -515,7 +515,7 @@ class User(BaseModel):
         # _strip_invisible_chars は実際の制御文字を除去するが、
         # %0d%0a 等のエンコード形式はバイパスする
         sanitized_lower = sanitized.lower()
-        if _PERCENT_CTRL_RE.search(sanitized):
+        if _PERCENT_CTRL_RE.search(sanitized_lower):
             raise ValueError("URLにパーセントエンコードされた制御文字が含まれています")
         # プロトコル相対URLを明示的に拒否（攻撃面削減）
         if sanitized.startswith("//"):
@@ -725,7 +725,7 @@ class Photo(BaseModel):
             raise ValueError("URLが空になりました（制御文字除去後）")
         # CRLF injection防止: パーセントエンコードされた制御文字を拒否（%00-%1f全範囲）
         sanitized_lower = sanitized.lower()
-        if _PERCENT_CTRL_RE.search(sanitized):
+        if _PERCENT_CTRL_RE.search(sanitized_lower):
             raise ValueError("URLにパーセントエンコードされた制御文字が含まれています")
         if not sanitized_lower.startswith(("http://", "https://")):
             raise ValueError("URLはhttp://またはhttps://で始まる必要があります")
