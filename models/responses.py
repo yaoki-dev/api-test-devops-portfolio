@@ -27,7 +27,9 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 # RFC 3986 準拠のスキーム検出パターン（scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) ":"）
 _SCHEME_RE: re.Pattern[str] = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 _HTML_META_RE: re.Pattern[str] = re.compile(r'[<>"\'&]')
-_PERCENT_CTRL_RE: re.Pattern[str] = re.compile(r"%0[0-9a-f]|%1[0-9a-f]", re.IGNORECASE)
+_PERCENT_CTRL_RE: re.Pattern[str] = re.compile(
+    r"%0[0-9a-f]|%1[0-9a-f]|%7f",  # %00-%1f および %7f(DEL) をカバー
+)
 _INVISIBLE_CATEGORIES = frozenset({"Cf", "Cc", "Mn", "Zs", "Zl", "Zp"})
 # Cs（孤立サロゲート）を _INVISIBLE_CATEGORIES と合算した除去セット（1回目パスで使用）
 _STRIP_CATEGORIES = _INVISIBLE_CATEGORIES | frozenset({"Cs"})
