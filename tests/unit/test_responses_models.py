@@ -27,7 +27,7 @@ from models.responses import (
     User,
     _normalize_url,  # noqa: PLC2701
     _strip_invisible_chars,  # noqa: PLC2701
-    sanitize_user_content,  # noqa: PLC2701
+    sanitize_user_content,
 )
 
 pytestmark = pytest.mark.unit
@@ -349,6 +349,34 @@ class TestGeoModel:
 
         assert "extra" in str(exc_info.value).lower()
 
+    @pytest.mark.parametrize(
+        ("lat", "lng"),
+        [
+            pytest.param("0", "0", id="zero_zero"),
+            pytest.param("a" * 50, "b" * 50, id="max_length_50"),
+            pytest.param("-90.0000", "180.0000", id="typical_coordinate_values"),
+        ],
+    )
+    def test_geo_lat_lng_boundary_values(self, lat: str, lng: str) -> None:
+        """Geo.lat/lng の max_length=50 境界値（上限）で正常作成できること"""
+        geo = Geo(lat=lat, lng=lng)
+        assert geo.lat == lat
+        assert geo.lng == lng
+
+    @pytest.mark.parametrize(
+        "field",
+        [
+            pytest.param("lat", id="lat_too_long"),
+            pytest.param("lng", id="lng_too_long"),
+        ],
+    )
+    def test_geo_lat_lng_exceeds_max_length(self, field: str) -> None:
+        """Geo.lat/lng が 51 文字（max_length=50 超過）で ValidationError が発生すること"""
+        kwargs = {"lat": "0", "lng": "0"}
+        kwargs[field] = "x" * 51
+        with pytest.raises(ValidationError, match=field):
+            Geo(**kwargs)
+
 
 class TestAddressModel:
     """Address モデルのテスト
@@ -425,6 +453,45 @@ class TestAddressModel:
             street="Normal", suite="Normal", city="Normal", zipcode=dirty, geo=valid_geo
         )
         assert address.zipcode == expected
+
+    def test_address_boundary_values(self, valid_geo: Geo) -> None:
+        """Address フィールドの max_length 境界値（上限）で正常作成できること
+
+        street=200, suite=100, city=100, zipcode=20 が各フィールドの上限。
+        """
+        address = Address(
+            street="a" * 200,
+            suite="b" * 100,
+            city="c" * 100,
+            zipcode="d" * 20,
+            geo=valid_geo,
+        )
+        assert len(address.street) == 200
+        assert len(address.suite) == 100
+        assert len(address.city) == 100
+        assert len(address.zipcode) == 20
+
+    @pytest.mark.parametrize(
+        ("field", "max_len"),
+        [
+            pytest.param("street", 200, id="street_too_long"),
+            pytest.param("suite", 100, id="suite_too_long"),
+            pytest.param("city", 100, id="city_too_long"),
+            pytest.param("zipcode", 20, id="zipcode_too_long"),
+        ],
+    )
+    def test_address_exceeds_max_length(self, valid_geo: Geo, field: str, max_len: int) -> None:
+        """Address フィールドが max_length 超過で ValidationError が発生すること"""
+        kwargs: dict[str, str | Geo] = {
+            "street": "Normal",
+            "suite": "Normal",
+            "city": "Normal",
+            "zipcode": "12345",
+            "geo": valid_geo,
+        }
+        kwargs[field] = "x" * (max_len + 1)
+        with pytest.raises(ValidationError, match=field):
+            Address(**kwargs)
 
 
 class TestCompanyModel:
@@ -569,6 +636,25 @@ class TestUserModel:
     def test_user_email_must_be_valid_format(self, valid_user_data: _UserData) -> None:
         """User.email が EmailStr 型により無効なメールアドレスを拒否すること"""
         valid_user_data["email"] = "not-an-email"
+        with pytest.raises(ValidationError, match=r"value is not a valid email address"):
+            User(**valid_user_data)
+
+    @pytest.mark.parametrize(
+        "invalid_email",
+        [
+            pytest.param("user@", id="missing_domain"),
+            pytest.param("@domain.com", id="missing_local_part"),
+            pytest.param(".start@example.com", id="leading_dot_local"),
+            pytest.param("user..double@example.com", id="consecutive_dots"),
+            pytest.param("user@.domain.com", id="leading_dot_domain"),
+            pytest.param("", id="empty_string"),
+        ],
+    )
+    def test_user_email_rejects_rfc_noncompliant(
+        self, valid_user_data: _UserData, invalid_email: str
+    ) -> None:
+        """User.email が RFC 5322 非準拠メールアドレスを拒否すること"""
+        valid_user_data["email"] = invalid_email
         with pytest.raises(ValidationError):
             User(**valid_user_data)
 
@@ -1070,6 +1156,11 @@ class TestPostModel:
             Post(id=1, userId=1, title="Test", body=long_body)
         assert "body" in str(exc_info.value)
 
+    def test_post_body_max_length_valid(self) -> None:
+        """body=5000文字（max_length 上限）で正常作成できること（境界値: ちょうど上限）"""
+        post = Post(title="T", body="a" * 5000, userId=1, id=1)
+        assert len(post.body) == 5000
+
 
 class TestCommentModel:
     """Comment モデルのテスト
@@ -1110,7 +1201,7 @@ class TestCommentModel:
 
     def test_comment_email_must_be_valid_format(self) -> None:
         """Comment.email が EmailStr 型により無効なメールアドレスを拒否すること"""
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValidationError, match=r"value is not a valid email address"):
             Comment(postId=1, id=1, name="Name", email="not-an-email", body="Body")
 
     def test_comment_email_max_length_valid(self) -> None:
@@ -1349,7 +1440,9 @@ class TestPhotoModel:
 
     def test_photo_rejects_schemeless_url(self) -> None:
         """Photo.url がスキームなしURLを拒否すること"""
-        with pytest.raises(ValidationError):
+        with pytest.raises(
+            ValidationError, match=r"URLはhttp://またはhttps://で始まる必要があります"
+        ):
             Photo(
                 albumId=1,
                 id=1,
@@ -1360,7 +1453,9 @@ class TestPhotoModel:
 
     def test_photo_rejects_schemeless_thumbnail_url(self) -> None:
         """Photo.thumbnail_url がスキームなしURLを拒否すること"""
-        with pytest.raises(ValidationError):
+        with pytest.raises(
+            ValidationError, match=r"URLはhttp://またはhttps://で始まる必要があります"
+        ):
             Photo(
                 albumId=1,
                 id=1,
@@ -1644,7 +1739,7 @@ class TestPhotoModel:
         urlparse は "user%40evil.com@host.example.com" をuserinfoとして解析するため、
         URLにuserinfoが含まれると判定しValidationErrorを発生させる。
         """
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValidationError, match=r"URLにuserinfo"):
             Photo(**{**_PHOTO_BASE, "url": "https://user%40evil.com@host.example.com/path.jpg"})
 
     def test_photo_url_allows_percent_encoded_at_in_host(self) -> None:
