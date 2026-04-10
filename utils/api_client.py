@@ -272,9 +272,6 @@ def _classify_error(
         手動設定後に戻り値として返され、呼び出し元で ``raise`` された際に
         トレースバック経由で詳細を確認できる。
 
-        ``health_check()`` のログ出力も同方針に従い、``error`` フィールドを
-        省略して ``error_type`` のみ記録する。
-
     """
     if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
         logger.error(
@@ -715,6 +712,8 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         Note:
             Async版と同一インターフェースで統一。
             CLI、スクリプト、レガシーシステム統合時に使用。
+            ログ出力（``health_check_failed`` イベント）では ``_classify_error()`` と
+            同方針で ``error`` フィールドを省略し、``error_type`` のみ記録する。
 
         Example:
             >>> with SyncJSONPlaceholderClient() as client:
@@ -1189,14 +1188,17 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
                             "name": raw.get("name"),
                             "email": raw.get("email"),
                         }
-                    error_detail: dict[str, Any] = {"error_type": type(result).__name__}
-                    if isinstance(result, APIHTTPError):
-                        error_detail["status_code"] = result.status_code  # 422 vs 503 を区別
                     failed_details.append(
                         {
                             "index": i,
                             "user_data": user_data_safe,
-                            **error_detail,
+                            "error_type": type(result).__name__,
+                            # 422 vs 503 を区別
+                            **(
+                                {"status_code": result.status_code}
+                                if isinstance(result, APIHTTPError)
+                                else {}
+                            ),
                         }
                     )
             self.logger.warning(
@@ -1296,6 +1298,10 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         Returns:
             bool: API到達可能ならTrue、エラー時はFalse
 
+        Note:
+            ログ出力（``health_check_failed`` イベント）では ``_classify_error()`` と
+            同方針で ``error`` フィールドを省略し、``error_type`` のみ記録する。
+
         学習ポイント:
         - Readiness Probe: コンテナがトラフィックを受け入れ可能か確認
         - Liveness Probe: コンテナが正常に動作しているか確認
@@ -1367,7 +1373,6 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
                     self.logger.warning(
                         "get_user_failed",
                         user_id=user_id,
-                        error=str(e),
                         error_type=type(e).__name__,
                     )
                     return None
@@ -1431,10 +1436,11 @@ def main() -> None:
             print(f"  - Title: {new_post.get('title', 'N/A')}")
 
         except APIClientError as e:
-            print(f"エラーが発生しました: {type(e).__name__}")
+            print(f"エラーが発生しました: {type(e).__name__}: {e}")
             if settings.debug:
                 import traceback
 
+                # chain=False: __cause__チェーン非表示（デモ用途では例外クラス名で診断十分）
                 traceback.print_exception(e, chain=False)
 
     print("\n=== Demo completed ===")
