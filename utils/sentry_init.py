@@ -80,9 +80,9 @@ SENSITIVE_KEYS: frozenset[str] = frozenset(
         "credit_card",
         "cvv",
         "card_number",
-        # HTTPレスポンスプレビュー: 現在 warning レベルのため capture_message は呼ばれず
-        # _before_send スクラブは実行されない。将来 error 昇格後に capture_message 経由で
-        # 送信された際に event["extra"] 経由の漏洩を防ぐための予防的登録。
+        # HTTPレスポンスプレビュー: _before_send は capture_exception 専用フックのため
+        # capture_message（例外なしの error ログ）では呼ばれない。
+        # 将来 capture_exception 経由で送信されるケースへの予防的登録。
         "body_preview",
     },
 )

@@ -1011,18 +1011,16 @@ def test_handle_http_status_error_raises_on_4xx() -> None:
         request=mock_request,
         response=mock_response,
     )
-    with capture_logs() as log_output:
+    with patch.object(client, "logger") as mock_logger:
         with pytest.raises(GitHubAPIError, match=r"^HTTP 404 error$"):
             client._handle_http_status_error(error)
-
-    http_error_logs = [log for log in log_output if log.get("event") == "http_status_error"]
-    assert len(http_error_logs) == 1
-    assert http_error_logs[0]["log_level"] == "warning"
-    assert http_error_logs[0]["status_code"] == 404
-    assert http_error_logs[0]["endpoint"] == "/test"  # url.path のみ（クエリパラメータ除外）
-    assert http_error_logs[0]["method"] == "GET"
-    assert "body_preview" in http_error_logs[0]  # Sentryトランケーションフィールドの存在確認
-    assert http_error_logs[0]["body_preview"] == ""
+        mock_logger.debug.assert_called_once_with(
+            "http_status_error",
+            status_code=404,
+            endpoint="/test",
+            method="GET",
+            body_preview="",
+        )
 
 
 @pytest.mark.unit
@@ -1274,8 +1272,9 @@ def test_update_etag_cache_clears_stale_cache_when_etag_missing() -> None:
     client._data_cache[endpoint] = {"id": 1}
     response = httpx.Response(200, content=b'{"id": 2}')
 
-    with capture_logs():
+    with patch.object(client, "logger") as mock_logger:
         client._update_etag_cache(endpoint, response, {"id": 2})
+        mock_logger.debug.assert_called_once_with("etag_removed", endpoint=endpoint)
 
     assert endpoint not in client._etag_cache
     assert endpoint not in client._data_cache
@@ -1322,17 +1321,13 @@ def test_handle_http_status_error_truncates_long_body() -> None:
     response = httpx.Response(422, request=request, content=long_body.encode())
     error = httpx.HTTPStatusError("422", request=request, response=response)
 
-    with capture_logs() as log_output:
+    with patch.object(client, "logger") as mock_logger:
         with pytest.raises(GitHubAPIError) as exc_info:
             client._handle_http_status_error(error)
+        assert mock_logger.debug.call_args.kwargs["body_preview"] == "x" * 200
 
     # エラーメッセージにボディが含まれないこと
     assert "x" not in str(exc_info.value)
-    # logger.warningでbody_previewが記録されること
-    http_error_logs = [log for log in log_output if log.get("event") == "http_status_error"]
-    assert len(http_error_logs) == 1
-    assert http_error_logs[0]["log_level"] == "warning"
-    assert http_error_logs[0]["body_preview"] == "x" * 200
 
 
 @pytest.mark.unit
@@ -1344,17 +1339,13 @@ def test_handle_http_status_error_no_truncation_at_boundary() -> None:
     response = httpx.Response(422, request=request, content=exact_body.encode())
     error = httpx.HTTPStatusError("422", request=request, response=response)
 
-    with capture_logs() as log_output:
+    with patch.object(client, "logger") as mock_logger:
         with pytest.raises(GitHubAPIError) as exc_info:
             client._handle_http_status_error(error)
+        assert mock_logger.debug.call_args.kwargs["body_preview"] == exact_body
 
     # エラーメッセージにボディが含まれないこと
     assert exact_body not in str(exc_info.value)
-    # logger.warningでbody_previewが記録されること
-    http_error_logs = [log for log in log_output if log.get("event") == "http_status_error"]
-    assert len(http_error_logs) == 1
-    assert http_error_logs[0]["log_level"] == "warning"
-    assert http_error_logs[0]["body_preview"] == exact_body
 
 
 @pytest.mark.unit
@@ -1368,15 +1359,12 @@ def test_handle_http_status_error_truncates_multibyte_body_to_200_bytes() -> Non
     response = httpx.Response(422, request=request, content=multibyte_body.encode("utf-8"))
     error = httpx.HTTPStatusError("422", request=request, response=response)
 
-    with capture_logs() as log_output:
+    with patch.object(client, "logger") as mock_logger:
         with pytest.raises(GitHubAPIError) as exc_info:
             client._handle_http_status_error(error)
+        assert mock_logger.debug.call_args.kwargs["body_preview"] == "あ" * 66 + "\ufffd"
 
     assert multibyte_body not in str(exc_info.value)
-    http_error_logs = [log for log in log_output if log.get("event") == "http_status_error"]
-    assert len(http_error_logs) == 1
-    assert http_error_logs[0]["log_level"] == "warning"
-    assert http_error_logs[0]["body_preview"] == "あ" * 66 + "\ufffd"
 
 
 @pytest.mark.unit
@@ -1394,10 +1382,10 @@ def test_handle_http_status_error_with_invalid_bytes() -> None:
 
 @pytest.mark.unit
 def test_429_handled_as_github_api_error_not_rate_limit_error() -> None:
-    """429 Too Many Requestsは_handle_http_status_error経由でGitHubAPIErrorとなる（設計意図確認）
+    """_handle_http_status_error単体では429をGitHubAPIErrorとして扱う（メソッド直接呼び出し確認）
 
-    GitHubは通常403でRate Limitを通知するが、一部APIは429を返す。
-    現在の設計では429はRateLimitErrorではなくGitHubAPIErrorとして扱う（403限定設計）。
+    _handle_http_status_errorは汎用4xxハンドラのため429を識別しない。
+    実際の429→RateLimitError変換は_requestレベルで行う（test_429_response_raises_rate_limit_error参照）。
     """
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
     request = httpx.Request("GET", "https://api.github.com/test")
@@ -1408,6 +1396,92 @@ def test_429_handled_as_github_api_error_not_rate_limit_error() -> None:
         client._handle_http_status_error(error)
 
     assert not isinstance(exc_info.value, RateLimitError)
+
+
+@respx.mock
+@pytest.mark.unit
+async def test_429_response_raises_rate_limit_error() -> None:
+    """429 Too Many RequestsはRateLimitErrorに変換される（_requestレベル・通常パス）
+
+    GitHub Secondary Rate LimitはHTTP 429を返す。_requestは429を検出し、
+    X-RateLimit-ResetヘッダーからリセットタイムをパースしてRateLimitErrorを発生させる。
+    """
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+        429,
+        headers={"X-RateLimit-Reset": "1700000000"},
+    )
+
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(RateLimitError) as exc_info:
+            await client.get_user("octocat")
+
+    assert exc_info.value.reset_time == 1700000000
+    assert route.call_count == 1
+
+
+@respx.mock
+@pytest.mark.unit
+async def test_httpx_status_error_429_defensive_path() -> None:
+    """httpx.HTTPStatusError（429）防御的コードパスの検証
+
+    防御的パス: 429をhttpx.HTTPStatusErrorとして受信した場合も
+    RateLimitErrorに変換される。
+    """
+    request = httpx.Request("GET", f"{GITHUB_API_BASE_URL}/users/octocat")
+    response_429 = httpx.Response(
+        429,
+        headers={"X-RateLimit-Reset": "1640000000"},
+        request=request,
+    )
+    error_429 = httpx.HTTPStatusError(
+        "429 Too Many Requests", request=request, response=response_429
+    )
+
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
+    route.side_effect = [error_429]
+
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(RateLimitError) as exc_info:
+            await client.get_user("octocat")
+
+    assert exc_info.value.reset_time == 1640000000
+    assert "Rate limit exceeded" in str(exc_info.value)
+    assert route.call_count == 1
+
+
+@respx.mock
+@pytest.mark.unit
+async def test_429_response_missing_reset_header_falls_back_to_zero() -> None:
+    """X-RateLimit-Resetヘッダー欠損時は reset_time=0 にフォールバックする（通常パス）"""
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(429)
+
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(RateLimitError) as exc_info:
+            await client.get_user("octocat")
+
+    assert exc_info.value.reset_time == 0
+    assert route.call_count == 1
+
+
+@respx.mock
+@pytest.mark.unit
+async def test_httpx_status_error_429_missing_reset_header_falls_back_to_zero() -> None:
+    """X-RateLimit-Resetヘッダー欠損時は reset_time=0 にフォールバックする（防御的パス）"""
+    request = httpx.Request("GET", f"{GITHUB_API_BASE_URL}/users/octocat")
+    response_429 = httpx.Response(429, request=request)
+    error_429 = httpx.HTTPStatusError(
+        "429 Too Many Requests", request=request, response=response_429
+    )
+
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
+    route.side_effect = [error_429]
+
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(RateLimitError) as exc_info:
+            await client.get_user("octocat")
+
+    assert exc_info.value.reset_time == 0
+    assert route.call_count == 1
 
 
 @pytest.mark.unit
@@ -1423,9 +1497,11 @@ def test_handle_http_status_error_cause_excludes_response_body() -> None:
     response = httpx.Response(422, request=request, text=sensitive_body)
     error = httpx.HTTPStatusError("422", request=request, response=response)
 
-    with capture_logs() as log_output:
+    with patch.object(client, "logger") as mock_logger:
         with pytest.raises(GitHubAPIError) as exc_info:
             client._handle_http_status_error(error)
+        # logger.debugでbody_previewにセンシティブデータが記録されること（デバッグ用途）
+        assert sensitive_body in mock_logger.debug.call_args.kwargs["body_preview"]
 
     cause_str = str(exc_info.value.__cause__)
     # __cause__はURL+ステータスのみ保持し、response bodyを含まない
@@ -1434,7 +1510,3 @@ def test_handle_http_status_error_cause_excludes_response_body() -> None:
     assert not isinstance(exc_info.value.__cause__, httpx.HTTPStatusError)
     # GitHubAPIError本体にもセンシティブデータが含まれないこと
     assert sensitive_body not in str(exc_info.value)
-    # logger.warningでbody_previewにセンシティブデータが記録されること（デバッグ用途）
-    http_error_logs = [log for log in log_output if log.get("event") == "http_status_error"]
-    assert len(http_error_logs) == 1
-    assert sensitive_body in http_error_logs[0]["body_preview"]

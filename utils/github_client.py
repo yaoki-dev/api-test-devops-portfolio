@@ -81,7 +81,7 @@ class GitHubAPIError(APIClientError):
 
 
 class RateLimitError(GitHubAPIError):
-    """Rate Limit超過エラー（403 Forbidden）"""
+    """Rate Limit超過エラー（403/429）"""
 
     def __init__(self, reset_time: int):
         self.reset_time = reset_time
@@ -203,6 +203,10 @@ class AsyncGitHubClient:
 
         Raises:
             ValueError: 無効なユーザー名
+            RateLimitError: 403 Rate Limit超過 または 429 Too Many Requests
+            NotFoundError: リソースが見つからない場合
+            GitHubServerError: 5xxエラー（リトライ上限後）
+            GitHubAPIError: タイムアウト等の予期しないエラー
 
         Example:
             >>> repos = await client.get_repos("octocat", sort="updated")
@@ -228,6 +232,10 @@ class AsyncGitHubClient:
 
         Raises:
             ValueError: 無効なオーナー名またはリポジトリ名
+            RateLimitError: 403 Rate Limit超過 または 429 Too Many Requests
+            NotFoundError: リソースが見つからない場合
+            GitHubServerError: 5xxエラー（リトライ上限後）
+            GitHubAPIError: タイムアウト等の予期しないエラー
 
         Example:
             >>> repo = await client.get_repo("octocat", "Hello-World")
@@ -404,7 +412,9 @@ class AsyncGitHubClient:
             e.response.encoding or "utf-8",
             errors="replace",
         )
-        self.logger.warning(
+        # 401 (Unauthorized) は認証エラーのため warning、404/422 等の想定内4xx は debug に抑制
+        log_fn = self.logger.warning if e.response.status_code == 401 else self.logger.debug
+        log_fn(
             "http_status_error",
             status_code=e.response.status_code,
             endpoint=e.request.url.path,
@@ -460,7 +470,7 @@ class AsyncGitHubClient:
 
         Raises:
             NotFoundError: 404エラー
-            RateLimitError: 403 Rate Limit超過
+            RateLimitError: 403 Rate Limit超過 または 429 Too Many Requests
             GitHubServerError: 5xxエラー（リトライ上限後）
             GitHubAPIError: タイムアウト等の予期しないエラー
 
@@ -500,6 +510,14 @@ class AsyncGitHubClient:
                 if response.status_code == 404:
                     raise NotFoundError(f"Resource not found: {endpoint}")
 
+                # 通常パス: raise_for_status()より前に429を検出してRateLimitErrorに変換
+                # from None不要: defensive pathはfrom Noneで明示的に抑制
+                if response.status_code == 429:
+                    reset_time = self._parse_rate_limit_header(
+                        response.headers, "X-RateLimit-Reset", _RATE_LIMIT_RESET_FALLBACK
+                    )
+                    raise RateLimitError(reset_time)
+
                 if response.status_code == 403:
                     self._handle_403_response(response)
                 elif response.status_code >= 500:
@@ -521,6 +539,12 @@ class AsyncGitHubClient:
                     # 防御的パス: 5xxをhttpx.HTTPStatusErrorとして受信した場合、通常パスと同等に処理
                     await self._handle_5xx_response(e.response, attempt, endpoint, method)
                     continue
+                if e.response.status_code == 429:
+                    # 防御的パス: 429をhttpx.HTTPStatusErrorとして受信した場合もRateLimitErrorに変換
+                    reset_time = self._parse_rate_limit_header(
+                        e.response.headers, "X-RateLimit-Reset", _RATE_LIMIT_RESET_FALLBACK
+                    )
+                    raise RateLimitError(reset_time) from None
                 if e.response.status_code == 403:
                     # 防御的パス: 403をhttpx.HTTPStatusErrorとして受信した場合も詳細分析を実施
                     self._handle_403_response(e.response)
