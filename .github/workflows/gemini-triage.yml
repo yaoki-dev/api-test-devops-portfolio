@@ -63,6 +63,9 @@ jobs:
         env:
           GITHUB_TOKEN: '' # Do NOT pass any auth tokens here since this runs on untrusted inputs
           ISSUE_TITLE: '${{ github.event.issue.title }}'
+          # プロンプトインジェクション対策: ISSUE_BODY は env: 経由で環境変数として渡すことで
+          # シェルコマンド内への直接展開を防止。gemini-triage.toml では !{echo $ISSUE_BODY} で
+          # コードブロック内に分離展開されるため、システム命令との混在リスクを軽減している。
           ISSUE_BODY: '${{ github.event.issue.body }}'
           AVAILABLE_LABELS: '${{ steps.get_labels.outputs.available_labels }}'
         with:

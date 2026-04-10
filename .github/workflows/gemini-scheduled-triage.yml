@@ -85,6 +85,11 @@ jobs:
           )"
 
           echo '📝 Setting output for GitHub Actions...'
+          # GITHUB_OUTPUT は1MBの上限があるため、サイズを事前確認
+          ISSUES_SIZE=${#ISSUES}
+          if [ "${ISSUES_SIZE}" -gt 900000 ]; then
+            echo "::warning::issues_to_triage データが900KBを超えています (${ISSUES_SIZE} bytes)。GITHUB_OUTPUT 1MB上限に近い可能性があります。"
+          fi
           echo "issues_to_triage=${ISSUES}" >> "${GITHUB_OUTPUT}"
 
           ISSUE_COUNT="$(echo "${ISSUES}" | jq 'length')"

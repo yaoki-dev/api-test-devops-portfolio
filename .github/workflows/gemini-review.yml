@@ -57,7 +57,7 @@ jobs:
             gh api \
               "repos/${REPOSITORY}/pulls/${PULL_REQUEST_NUMBER}" \
               --header "Accept: application/vnd.github.diff" \
-              > /tmp/pr_diff.txt 2>/dev/null || echo "(diff unavailable)" > /tmp/pr_diff.txt
+              > /tmp/pr_diff.txt
           else
             echo "(not a pull request)" > /tmp/pr_diff.txt
           fi
