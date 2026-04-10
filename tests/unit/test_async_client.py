@@ -483,9 +483,9 @@ async def test_async_bulk_create_users():
 
 
 @respx.mock
-async def test_async_bulk_create_users_partial_failure():
+async def test_async_bulk_create_users_partial_failure_4xx_returns_only_successful():
     """
-    複数ユーザーの並行作成における部分失敗テスト（silent failure設計の検証）
+    4xx部分失敗時の返却値テスト（silent partial failure + 成功分のみ返却）
 
     検証項目：
     - 一部リクエストが4xxエラーで失敗してもbulk_create_usersは例外を発生させない
@@ -516,10 +516,9 @@ async def test_async_bulk_create_users_partial_failure():
         Response(201, json={"id": 103, "name": "User 3", "email": "user3@test.com"}),
     ]
 
-    with capture_logs() as log_output:
-        async with AsyncJSONPlaceholderClient() as client:
-            # 例外なく完了することを確認（silent partial failure）
-            results = await client.bulk_create_users(users_to_create)
+    async with AsyncJSONPlaceholderClient() as client:
+        # 例外なく完了することを確認（silent partial failure）
+        results = await client.bulk_create_users(users_to_create)
 
     # 部分失敗: 3件中1件(422)が失敗するため成功件数は正確に2件
     # Note: respxのside_effectはリクエスト到着順（task作成順）に消費され決定論的
@@ -534,12 +533,50 @@ async def test_async_bulk_create_users_partial_failure():
     assert "User 3" in created_names  # 3件目成功
     assert "User 2" not in created_names  # 2件目は422エラーで失敗、返却されない
 
+
+@respx.mock
+async def test_async_bulk_create_users_partial_failure_4xx_log_structure():
+    """
+    4xx部分失敗時のwarningログ構造テスト（Sentry監視 + PII保護）
+
+    検証項目：
+    - bulk_create_partial_failure warningログが出力されること
+    - failed_count / success_count が正しいこと
+    - failed_detailsにerror_type / status_code / indexが含まれること
+    - errorフィールドが省略されていること（_classify_errorと同方針）
+    - user_dataフィールドが含まれないこと（PII保護: emailの漏洩防止）
+
+    設計根拠：
+    ログ構造はSentry監視の基盤であり、フィールド削除はリグレッションとして検出する。
+    PII（user_data）がログに混入するとセキュリティインシデントとなるため、
+    不在を明示的にアサートしてセキュリティリグレッションを防止する。
+    """
+    users_to_create = [
+        {"name": "User 1", "email": "user1@test.com"},
+        {"name": "User 2", "email": "user2@test.com"},  # この1件を422エラーで失敗させる
+        {"name": "User 3", "email": "user3@test.com"},
+    ]
+
+    # 2件目のリクエストを422（Unprocessable Entity）で失敗させる
+    # 4xxはリトライなし即失敗 → APIHTTPError を return_exceptions が捕捉
+    post_route = respx.post(f"{BASE_URL}/users")
+    post_route.side_effect = [
+        Response(201, json={"id": 101, "name": "User 1", "email": "user1@test.com"}),
+        Response(422, json={"error": "Unprocessable Entity"}),  # 2件目: 422で即失敗
+        Response(201, json={"id": 103, "name": "User 3", "email": "user3@test.com"}),
+    ]
+
+    with capture_logs() as log_output:
+        async with AsyncJSONPlaceholderClient() as client:
+            await client.bulk_create_users(users_to_create)
+
     # warningログ検証（Sentry監視の保証: ログ削除時のリグレッション検出）
     partial_log = next(
         (log for log in log_output if log.get("event") == "bulk_create_partial_failure"),
         None,
     )
     assert partial_log is not None
+    assert partial_log.get("log_level") == "warning"  # warningレベルであること
     assert partial_log.get("failed_count") == 1
     assert partial_log.get("success_count") == 2
 
@@ -548,16 +585,16 @@ async def test_async_bulk_create_users_partial_failure():
     assert len(failed_details) == 1, "1件の失敗詳細が記録されていること"
     failed_item = failed_details[0]
     assert "error" not in failed_item  # _classify_error と同方針で省略
+    assert "user_data" not in failed_item  # PII保護: emailは含まれないこと
     assert failed_item.get("error_type") == "APIHTTPError", "エラー種別が記録されていること"
     assert failed_item.get("status_code") == 422, "HTTPステータスコードが記録されていること"
     assert "index" in failed_item, "失敗ユーザーのインデックスが記録されていること"
-    assert "user_data" in failed_item, "失敗ユーザーのデータが記録されていること"
 
 
 @respx.mock
-async def test_async_bulk_create_users_partial_failure_5xx() -> None:
+async def test_async_bulk_create_users_partial_failure_5xx_returns_only_successful() -> None:
     """
-    5xxエラー（サーバーエラー）時の部分失敗テスト（APIRetryError経路の検証）
+    5xx部分失敗時の返却値テスト（silent partial failure + 成功分のみ返却）
 
     検証項目：
     - 一部リクエストが5xxエラーで失敗してもbulk_create_usersは例外を発生させない
@@ -594,10 +631,9 @@ async def test_async_bulk_create_users_partial_failure_5xx() -> None:
     ]
 
     # retry_count=0: 5xxリトライなし → 即APIRetryError → side_effectは3件で決定論的
-    with capture_logs() as log_output:
-        async with AsyncJSONPlaceholderClient(retry_count=0) as client:
-            # 例外なく完了することを確認（silent partial failure）
-            results = await client.bulk_create_users(users_to_create)
+    async with AsyncJSONPlaceholderClient(retry_count=0) as client:
+        # 例外なく完了することを確認（silent partial failure）
+        results = await client.bulk_create_users(users_to_create)
 
     # 部分失敗: 3件中1件(500→APIRetryError)が失敗するため成功件数は正確に2件
     assert len(results) == 2, (
@@ -613,12 +649,58 @@ async def test_async_bulk_create_users_partial_failure_5xx() -> None:
     assert "User 3" in created_names  # 3件目成功
     assert "User 2" not in created_names  # 2件目は500エラーで失敗、返却されない
 
+
+@respx.mock
+async def test_async_bulk_create_users_partial_failure_5xx_log_structure() -> None:
+    """
+    5xx部分失敗時のwarningログ構造テスト（Sentry監視 + PII保護）
+
+    検証項目：
+    - bulk_create_partial_failure warningログが出力されること
+    - failed_count / success_count が正しいこと
+    - failed_detailsにerror_type / indexが含まれること
+    - status_codeが含まれないこと（5xxはAPIRetryErrorのためstatus_code不在）
+    - errorフィールドが省略されていること（_classify_errorと同方針）
+    - user_dataフィールドが含まれないこと（PII保護: emailの漏洩防止）
+
+    設計根拠：
+    ログ構造はSentry監視の基盤であり、フィールド削除はリグレッションとして検出する。
+    PII（user_data）がログに混入するとセキュリティインシデントとなるため、
+    不在を明示的にアサートしてセキュリティリグレッションを防止する。
+    5xxはAPIRetryError（リトライ上限到達後の例外）であり、APIHTTPErrorと異なり
+    status_codeを保持しないため、status_code不在もアサートする。
+    """
+    users_to_create = [
+        {"name": "User 1", "email": "user1@test.com"},
+        {"name": "User 2", "email": "user2@test.com"},  # この1件を500エラーで失敗させる
+        {"name": "User 3", "email": "user3@test.com"},
+    ]
+
+    # 2件目のリクエストを500（Internal Server Error）で失敗させる
+    # 5xxはリトライ対象だが、retry_count=0でリトライを無効化 → 即APIRetryErrorに変換
+    # → return_exceptionsで捕捉され、成功分のみ返却される
+    # side_effectリスト要素数は並行タスク数と一致させること。
+    # retry_count=0 の場合: 各タスクは初回(1) のみ = 3タスク × 1リクエスト = 3要素。
+    # 不一致時はStopIterationが発生しデバッグが困難になる。
+    post_route = respx.post(f"{BASE_URL}/users")
+    post_route.side_effect = [
+        Response(201, json={"id": 101, "name": "User 1", "email": "user1@test.com"}),
+        Response(500, json={"error": "Internal Server Error"}),  # 2件目: 500で失敗
+        Response(201, json={"id": 103, "name": "User 3", "email": "user3@test.com"}),
+    ]
+
+    # retry_count=0: 5xxリトライなし → 即APIRetryError → side_effectは3件で決定論的
+    with capture_logs() as log_output:
+        async with AsyncJSONPlaceholderClient(retry_count=0) as client:
+            await client.bulk_create_users(users_to_create)
+
     # warningログ検証（Sentry監視の保証: ログ削除時のリグレッション検出）
     partial_log = next(
         (log for log in log_output if log.get("event") == "bulk_create_partial_failure"),
         None,
     )
     assert partial_log is not None
+    assert partial_log.get("log_level") == "warning"  # warningレベルであること
     assert partial_log.get("failed_count") == 1
     assert partial_log.get("success_count") == 2
     # failed_details構造検証: 5xx→APIRetryError のためstatus_codeは含まれない
@@ -626,10 +708,10 @@ async def test_async_bulk_create_users_partial_failure_5xx() -> None:
     assert len(failed_details) == 1
     failed_item = failed_details[0]
     assert "error" not in failed_item  # _classify_error と同方針で省略
+    assert "user_data" not in failed_item  # PII保護: emailは含まれないこと
     assert failed_item.get("error_type") == "APIRetryError"
     assert "status_code" not in failed_item  # 5xxはAPIHTTPErrorでないためstatus_code不在
     assert "index" in failed_item, "失敗ユーザーのインデックスが記録されていること"
-    assert "user_data" in failed_item, "失敗ユーザーのデータが記録されていること"
 
 
 async def test_async_bulk_create_users_cancelled_error_propagates() -> None:

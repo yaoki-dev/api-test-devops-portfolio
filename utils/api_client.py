@@ -1175,23 +1175,12 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 
         # 失敗時はログ出力（A1: デバッグ改善）
         if failed:
-            # 失敗したユーザーデータのコンテキストを収集（リトライ可能性向上）
-            # Note: user_dataにはPII含まれる可能性あり。Sentryスクラブで保護済み。
             failed_details = []
             for i, result in enumerate(results):
                 if isinstance(result, BaseException):
-                    # PIIリスク軽減: nameとemailのみ抽出（password等は除外）
-                    user_data_safe = None
-                    if i < len(users_data):
-                        raw = users_data[i]
-                        user_data_safe = {
-                            "name": raw.get("name"),
-                            "email": raw.get("email"),
-                        }
                     failed_details.append(
                         {
                             "index": i,
-                            "user_data": user_data_safe,
                             "error_type": type(result).__name__,
                             # 422 vs 503 を区別
                             **(
@@ -1201,6 +1190,8 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
                             ),
                         }
                     )
+            # PII除去設計: ログには index/error_type/status_code のみ記録。
+            # 呼び出し元は users_data[failed_item["index"]] でユーザー情報を復元可能。
             self.logger.warning(
                 "bulk_create_partial_failure",
                 failed_count=len(failed),
