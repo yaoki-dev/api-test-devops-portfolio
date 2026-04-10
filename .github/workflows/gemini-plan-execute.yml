@@ -78,10 +78,9 @@ jobs:
         # SECURITY NOTE: This action uses a floating tag (@v0) which is a supply chain risk.
         # A compromised upstream tag could execute arbitrary code in this workflow
         # (which has contents: write permission).
-        # TODO(security): Pin to a specific commit SHA once a stable release is available, e.g.:
-        #   google-github-actions/run-gemini-cli@<commit-sha>  # ratchet:google-github-actions/run-gemini-cli@vX.Y.Z
-        # Track upstream releases at: https://github.com/google-github-actions/run-gemini-cli/releases
-        uses: 'google-github-actions/run-gemini-cli@v0' # ratchet:exclude
+        # Pinned to v0.1.21 SHA for supply chain security.
+        # To update: gh api repos/google-github-actions/run-gemini-cli/git/refs/tags/v0 --jq '.object.sha'
+        uses: 'google-github-actions/run-gemini-cli@9dbec29a20fab3f35017a40ad0eb798a257d4d51' # v0.1.21
         env:
           TITLE: '${{ github.event.pull_request.title || github.event.issue.title }}'
           DESCRIPTION: '${{ github.event.pull_request.body || github.event.issue.body }}'
