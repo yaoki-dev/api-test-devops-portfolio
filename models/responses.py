@@ -29,6 +29,7 @@ _SCHEME_RE: re.Pattern[str] = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 _HTML_META_RE: re.Pattern[str] = re.compile(r'[<>"\'&]')
 _PERCENT_CTRL_RE: re.Pattern[str] = re.compile(
     r"%0[0-9a-f]|%1[0-9a-f]|%7f",  # %00-%1f および %7f(DEL) をカバー
+    re.IGNORECASE,
 )
 _INVISIBLE_CATEGORIES = frozenset({"Cf", "Cc", "Mn", "Zs", "Zl", "Zp"})
 # Cs（孤立サロゲート）を _INVISIBLE_CATEGORIES と合算した除去セット（1回目パスで使用）
@@ -512,7 +513,7 @@ class User(BaseModel):
         # _strip_invisible_chars は実際の制御文字を除去するが、
         # %0d%0a 等のエンコード形式はバイパスする
         sanitized_lower = sanitized.lower()
-        if _PERCENT_CTRL_RE.search(sanitized_lower):
+        if _PERCENT_CTRL_RE.search(sanitized):
             raise ValueError("URLにパーセントエンコードされた制御文字が含まれています")
         # プロトコル相対URLを明示的に拒否（攻撃面削減）
         if sanitized.startswith("//"):
@@ -722,7 +723,7 @@ class Photo(BaseModel):
             raise ValueError("URLが空になりました（制御文字除去後）")
         # CRLF injection防止: パーセントエンコードされた制御文字を拒否（%00-%1f全範囲）
         sanitized_lower = sanitized.lower()
-        if _PERCENT_CTRL_RE.search(sanitized_lower):
+        if _PERCENT_CTRL_RE.search(sanitized):
             raise ValueError("URLにパーセントエンコードされた制御文字が含まれています")
         if not sanitized_lower.startswith(("http://", "https://")):
             raise ValueError("URLはhttp://またはhttps://で始まる必要があります")
