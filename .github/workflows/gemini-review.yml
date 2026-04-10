@@ -57,7 +57,10 @@ jobs:
             gh api \
               "repos/${REPOSITORY}/pulls/${PULL_REQUEST_NUMBER}" \
               --header "Accept: application/vnd.github.diff" \
-              > /tmp/pr_diff.txt
+              > /tmp/pr_diff.txt || {
+              echo "::warning::PR diff の取得に失敗しました。空のdiffでGeminiレビューを続行します。"
+              echo "(diff unavailable)" > /tmp/pr_diff.txt
+            }
           else
             echo "(not a pull request)" > /tmp/pr_diff.txt
           fi
