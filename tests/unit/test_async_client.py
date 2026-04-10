@@ -288,7 +288,7 @@ async def test_partial_failure_graceful_degradation():
     # セキュリティ: get_user_failed ログの構造検証（APIClientErrorメッセージはサニタイズ済み）
     for log in log_output:
         if log.get("event") == "get_user_failed":
-            assert "error" in log  # サニタイズ済みメッセージ
+            assert "error" not in log  # _classify_error と同方針で省略
             assert "error_type" in log
 
 
@@ -327,7 +327,7 @@ async def test_all_requests_fail_returns_empty_list():
     # セキュリティ: get_user_failed ログの構造検証
     for log in log_output:
         if log.get("event") == "get_user_failed":
-            assert "error" in log  # サニタイズ済みメッセージ
+            assert "error" not in log  # _classify_error と同方針で省略
             assert "error_type" in log
 
 
@@ -880,7 +880,6 @@ async def test_async_health_check_connection_error():
     assert route.call_count == 1  # retry_count=0なのでリトライなし（1回のみ実行）
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_async_health_check_log_structure() -> None:
     """health_check失敗時のログ構造検証（error_type/endpointフィールド）"""
