@@ -67,6 +67,14 @@ jobs:
           # Revoke the token from the environment before Gemini step begins.
           # The token is not passed to subsequent steps via this mechanism.
 
+      - name: 'Save user inputs to file (token-isolated)'
+        # Security: Write ADDITIONAL_CONTEXT to a file so the Gemini prompt reads
+        # from filesystem instead of env vars that share scope with GITHUB_TOKEN.
+        run: |-
+          printf '%s' "${CTX_VAL}" > /tmp/additional_context.txt
+        env:
+          CTX_VAL: '${{ inputs.additional_context }}'
+
       - name: 'Run Gemini pull request review'
         uses: 'google-github-actions/run-gemini-cli@9dbec29a20fab3f35017a40ad0eb798a257d4d51' # v0.1.21
         id: 'gemini_pr_review'
@@ -76,11 +84,8 @@ jobs:
           # written in the previous step so it never shares env-scope with the token
           # during Gemini prompt processing.
           GITHUB_TOKEN: '${{ steps.mint_identity_token.outputs.token || secrets.GITHUB_TOKEN || github.token }}'
-          ISSUE_TITLE: '${{ github.event.pull_request.title || github.event.issue.title }}'
-          ISSUE_BODY: '${{ github.event.pull_request.body || github.event.issue.body }}'
           PULL_REQUEST_NUMBER: '${{ github.event.pull_request.number || github.event.issue.number }}'
           REPOSITORY: '${{ github.repository }}'
-          ADDITIONAL_CONTEXT: '${{ inputs.additional_context }}'
         with:
           gcp_location: '${{ vars.GOOGLE_CLOUD_LOCATION }}'
           gcp_project_id: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
