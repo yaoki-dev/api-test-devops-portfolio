@@ -547,9 +547,7 @@ class User(BaseModel):
         try:
             decoded = unquote(sanitized, errors="strict")
         except UnicodeDecodeError as e:
-            raise ValueError(
-                f"URLに不正なパーセントエンコードが含まれています: {e}"
-            ) from e
+            raise ValueError(f"URLに不正なパーセントエンコードが含まれています: {e}") from e
         if "/" in sanitized or "/" in decoded:
             raise ValueError("スキームなしURLにパスは指定できません")
         parsed = urlparse("https://" + sanitized)

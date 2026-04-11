@@ -130,11 +130,10 @@ gsd-local-patches/
 # gemini-cli settings
 .gemini/
 
-# OMS (oh-my-claudecode)  - local memory and settings
+# OMS (oh-my-claudecode)
 .oms/
-
-# OMC (oh-my-claudecode) - runtime state (ephemeral, machine-specific)
 .omc/state/
+.omc/sessions/
 .omc/project-memory.json
 
 # VS Code workspace settings (local only)
