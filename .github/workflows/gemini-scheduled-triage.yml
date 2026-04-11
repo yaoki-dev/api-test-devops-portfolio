@@ -90,7 +90,13 @@ jobs:
           if [ "${ISSUES_SIZE}" -gt 900000 ]; then
             echo "::warning::issues_to_triage データが900KBを超えています (${ISSUES_SIZE} bytes)。GITHUB_OUTPUT 1MB上限に近い可能性があります。"
           fi
-          echo "issues_to_triage=${ISSUES}" >> "${GITHUB_OUTPUT}"
+          # random-delimiter heredoc: 改行を含む値でのGITHUB_OUTPUT injection を防止
+          DELIMITER="$(dd if=/dev/urandom bs=15 count=1 status=none | base64)"
+          {
+            echo "issues_to_triage<<${DELIMITER}"
+            echo "${ISSUES}"
+            echo "${DELIMITER}"
+          } >> "${GITHUB_OUTPUT}"
 
           ISSUE_COUNT="$(echo "${ISSUES}" | jq 'length')"
           echo "✅ Found ${ISSUE_COUNT} issue(s) to triage! 🎯"
@@ -137,6 +143,20 @@ jobs:
               }
             }
           prompt: '/gemini-scheduled-triage'
+
+      - name: 'Validate Gemini output (GITHUB_ENV injection guard)'
+        # Security: run-gemini-cli writes AI-generated output to GITHUB_ENV (TRIAGED_ISSUES).
+        # Validate that the value is a proper JSON array before it propagates to the
+        # label job. The allowlist check in 'Apply labels' is the primary mitigation,
+        # but this step adds an early-fail guard against malformed or injected payloads.
+        if: |-
+          ${{ env.TRIAGED_ISSUES != '' }}
+        run: |-
+          echo "${TRIAGED_ISSUES}" | jq -e 'type == "array"' > /dev/null || {
+            echo "::error::TRIAGED_ISSUESが有効なJSON配列ではありません。Gemini出力のバリデーションに失敗しました。"
+            exit 1
+          }
+          echo "✅ TRIAGED_ISSUES JSON バリデーション通過"
 
   label:
     runs-on: 'ubuntu-latest'
