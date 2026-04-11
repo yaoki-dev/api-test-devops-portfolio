@@ -879,6 +879,11 @@ class TestUserModel:
                 id="percent_encoded_crlf_slash_bypass",
             ),
             pytest.param(
+                "%7f",
+                "パーセントエンコードされた制御文字",
+                id="percent_encoded_del_character",
+            ),
+            pytest.param(
                 "%2f%2fevil.com",
                 "スキームなしURLにパスは指定できません",
                 id="percent_encoded_slash_bypass",
