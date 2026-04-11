@@ -25,7 +25,7 @@ from utils.api_client import AsyncAPIClient
 # =============================================================================
 
 
-def pytest_configure(config):
+def pytest_configure(config: pytest.Config) -> None:
     """pytest実行時の共通設定"""
     # ログ設定
     logging.basicConfig(
@@ -49,7 +49,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "smoke: スモークテスト（main PR用、基本機能の動作確認）")
 
 
-def pytest_collection_modifyitems(config, items):
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     """テスト実行順序の最適化"""
     # 高速テストを先に実行
     items.sort(
