@@ -118,6 +118,10 @@ def _safe_parse_json(response: httpx.Response) -> Any:
         文字位置）が含まれるが、httpx例外と異なりホスト名・プロキシ設定等の
         機密情報は含まれない。デバッグに有用な診断情報を保持するため
         ``str(e)`` をそのまま使用する。
+        また、``APIJSONDecodeError.response`` に元の ``httpx.Response``
+        オブジェクトを保持するが、レスポンスボディには機密データが含まれる
+        可能性があるためログには出力しない。デバッグ時は呼び出し元で
+        ``e.response`` を通じてアクセス可能。
 
     """
     try:
@@ -153,6 +157,17 @@ def _map_request_error(e: httpx.RequestError | httpx.InvalidURL) -> APIClientErr
           TooManyRedirects → 即座にraise
         - 独立例外（RequestError のサブクラスではない、非リトライ）:
           InvalidURL → 即座にraise
+        生成される例外メッセージは固定プレフィックスと ``type(e).__name__``
+        （例外クラス名）のみで構成され、``str(e)`` は含めない。
+        非リトライエラーは ``raise ... from e`` により即座にスローされる。
+        リトライ可能エラーは ``__cause__ = e`` 手動設定後に返され、
+        呼び出し元で ``raise`` された際にトレースバックで確認できる。
+        なお、``__cause__`` に保持される httpx 例外の文字列には
+        ホスト名・プロキシ設定等の機密情報が含まれることがあり、
+        ``traceback.print_exception(chain=True)``（デフォルト）では
+        この ``__cause__`` チェーンが展開されるため、表示用途では
+        ``chain=False`` を指定して機密漏洩を防ぐこと。
+        参照: ``main()`` の ``traceback.print_exception(e, chain=False)`` 実装。
 
     """
     # Non-retryable errors - raise immediately (no point in retrying)
@@ -266,13 +281,7 @@ def _classify_error(
         （例外クラス名）のみ記録してエラー分類に必須情報を確保する。
         非リトライエラー（``request_error_non_retryable``）は ``logger.error``、
         リトライ可能エラー（``request_error``）は ``logger.warning`` でログ出力される。
-        ``_map_request_error()`` が生成する例外メッセージは固定プレフィックスと
-        ``type(e).__name__``（例外クラス名）のみで構成され、``str(e)`` は含めない。
-        元の例外は ``__cause__`` チェーンで保持される。非リトライ
-        エラーは ``_map_request_error()`` 内で ``raise ... from e`` により
-        即座にスローされる。リトライ可能エラーは ``exc.__cause__ = e``
-        手動設定後に戻り値として返され、呼び出し元で ``raise`` された際に
-        トレースバック経由で詳細を確認できる。
+        例外の生成・チェーン設定の詳細は ``_map_request_error()`` 参照。
 
     """
     if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
@@ -714,8 +723,9 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         Note:
             Async版と同一インターフェースで統一。
             CLI、スクリプト、レガシーシステム統合時に使用。
-            ログ出力（``health_check_failed`` イベント）では ``_classify_error()`` と
-            同方針で ``error`` フィールドを省略し、``error_type`` のみ記録する。
+            ログ出力（``health_check_failed`` イベント）では ``error`` フィールドを省略し、
+            ``error_type`` のみ記録する（``_classify_error()`` は経由せず
+            直接 ``logger.warning`` を呼び出す）。
 
         Example:
             >>> with SyncJSONPlaceholderClient() as client:
@@ -1292,8 +1302,9 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             bool: API到達可能ならTrue、エラー時はFalse
 
         Note:
-            ログ出力（``health_check_failed`` イベント）では ``_classify_error()`` と
-            同方針で ``error`` フィールドを省略し、``error_type`` のみ記録する。
+            ログ出力（``health_check_failed`` イベント）では ``error`` フィールドを省略し、
+            ``error_type`` のみ記録する（``_classify_error()`` は経由せず
+            直接 ``logger.warning`` を呼び出す）。
 
         学習ポイント:
         - Readiness Probe: コンテナがトラフィックを受け入れ可能か確認
