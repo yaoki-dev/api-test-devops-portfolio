@@ -113,6 +113,16 @@ def _safe_parse_json(response: httpx.Response) -> Any:
     Raises:
         APIJSONDecodeError: JSONパース失敗時
 
+    Notes:
+        ``json.JSONDecodeError`` の ``str(e)`` にはパース位置情報（行番号・
+        文字位置）が含まれるが、httpx例外と異なりホスト名・プロキシ設定等の
+        機密情報は含まれない。デバッグに有用な診断情報を保持するため
+        ``str(e)`` をそのまま使用する。
+        また、``APIJSONDecodeError.response`` に元の ``httpx.Response``
+        オブジェクトを保持するが、レスポンスボディには機密データが含まれる
+        可能性があるためログには出力しない。デバッグ時は呼び出し元で
+        ``e.response`` を通じてアクセス可能。
+
     """
     try:
         return response.json()
@@ -147,25 +157,39 @@ def _map_request_error(e: httpx.RequestError | httpx.InvalidURL) -> APIClientErr
           TooManyRedirects → 即座にraise
         - 独立例外（RequestError のサブクラスではない、非リトライ）:
           InvalidURL → 即座にraise
+        生成される例外メッセージは固定プレフィックスと ``type(e).__name__``
+        （例外クラス名）のみで構成され、``str(e)`` は含めない。
+        非リトライエラーは ``raise ... from e`` により即座にスローされる。
+        リトライ可能エラーは ``__cause__ = e`` 手動設定後に返され、
+        呼び出し元で ``raise`` された際にトレースバックで確認できる。
+        なお、``__cause__`` に保持される httpx 例外の文字列には
+        ホスト名・プロキシ設定等の機密情報が含まれることがあり、
+        ``traceback.print_exception(chain=True)``（デフォルト）では
+        この ``__cause__`` チェーンが展開されるため、表示用途では
+        ``chain=False`` を指定して機密漏洩を防ぐこと。
+        ``main()`` で受け取る ``e`` は ``APIClientError`` なので、
+        ``chain=False`` が抑止するのは ``__cause__`` 側の httpx 例外チェーンであり、
+        ``APIClientError`` 本体のスタックトレースは引き続き表示される。
+        参照: ``main()`` の ``traceback.print_exception(e, chain=False)`` 実装。
 
     """
     # Non-retryable errors - raise immediately (no point in retrying)
     if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
-        raise APIClientError(f"Non-retryable request error: {e}") from e
+        raise APIClientError(f"Non-retryable request error: {type(e).__name__}") from e
 
     # Retryable errors: returnするため `raise ... from e` は使えず __cause__ を手動設定する。
     # PEP 3134: exc.__cause__ = e を設定すると __suppress_context__ が自動で True になり、
     # 呼び出し元が raise した際に `raise exc from e` と同じ例外チェーン表示になる。
     if isinstance(e, httpx.TimeoutException):
-        timeout_exc = APITimeoutError(f"Request timeout: {e}")
+        timeout_exc = APITimeoutError(f"Request timeout: {type(e).__name__}")
         timeout_exc.__cause__ = e
         return timeout_exc
     if isinstance(e, httpx.ConnectError):
-        connect_exc = APIConnectionError(f"Connection failed: {e}")
+        connect_exc = APIConnectionError(f"Connection failed: {type(e).__name__}")
         connect_exc.__cause__ = e
         return connect_exc
     # NetworkError, etc. - retryable network issues
-    network_exc = APIConnectionError(f"Network error: {e}")
+    network_exc = APIConnectionError(f"Network error: {type(e).__name__}")
     network_exc.__cause__ = e
     return network_exc
 
@@ -252,6 +276,15 @@ def _classify_error(
             （logger.error でログ出力後、_map_request_error() を経由して raise される）。
             注: サブクラスではなく APIClientError 基底クラスが raise される。
             リトライ可能エラーは logger.warning でログ出力し、raise されない。
+
+    Notes:
+        本関数のログ出力（``request_error_non_retryable`` / ``request_error`` イベント）では
+        ``error`` フィールドを省略している。httpx 例外の文字列には
+        ホスト名、プロキシ設定等の機密情報が含まれるため、``error_type``
+        （例外クラス名）のみ記録してエラー分類に必須情報を確保する。
+        非リトライエラー（``request_error_non_retryable``）は ``logger.error``、
+        リトライ可能エラー（``request_error``）は ``logger.warning`` でログ出力される。
+        例外の生成・チェーン設定の詳細は ``_map_request_error()`` 参照。
 
     """
     if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
@@ -693,6 +726,9 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         Note:
             Async版と同一インターフェースで統一。
             CLI、スクリプト、レガシーシステム統合時に使用。
+            ログ出力（``health_check_failed`` イベント）では ``error`` フィールドを省略し、
+            ``error_type`` のみ記録する（``_classify_error()`` は経由せず
+            直接 ``logger.warning`` を呼び出す）。
 
         Example:
             >>> with SyncJSONPlaceholderClient() as client:
@@ -710,8 +746,8 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
             # 予期されるAPI例外のみキャッチ
             self.logger.warning(
                 "health_check_failed",
-                error=str(e),
                 error_type=type(e).__name__,
+                endpoint="/users",  # health_check は常に固定エンドポイント（非機密）
             )
             return False
 
@@ -1154,27 +1190,23 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 
         # 失敗時はログ出力（A1: デバッグ改善）
         if failed:
-            # 失敗したユーザーデータのコンテキストを収集（リトライ可能性向上）
-            # Note: user_dataにはPII含まれる可能性あり。Sentryスクラブで保護済み。
             failed_details = []
             for i, result in enumerate(results):
                 if isinstance(result, BaseException):
-                    # PIIリスク軽減: nameとemailのみ抽出（password等は除外）
-                    user_data_safe = None
-                    if i < len(users_data):
-                        raw = users_data[i]
-                        user_data_safe = {
-                            "name": raw.get("name"),
-                            "email": raw.get("email"),
-                        }
                     failed_details.append(
                         {
                             "index": i,
-                            "user_data": user_data_safe,
-                            "error": str(result),
                             "error_type": type(result).__name__,
+                            # 422 vs 503 を区別
+                            **(
+                                {"status_code": result.status_code}
+                                if isinstance(result, APIHTTPError)
+                                else {}
+                            ),
                         }
                     )
+            # PII除去設計: ログには index/error_type/status_code のみ記録。
+            # index はリクエスト配列内の元位置を示す（失敗行の特定・照合用）。
             self.logger.warning(
                 "bulk_create_partial_failure",
                 failed_count=len(failed),
@@ -1272,6 +1304,11 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         Returns:
             bool: API到達可能ならTrue、エラー時はFalse
 
+        Note:
+            ログ出力（``health_check_failed`` イベント）では ``error`` フィールドを省略し、
+            ``error_type`` のみ記録する（``_classify_error()`` は経由せず
+            直接 ``logger.warning`` を呼び出す）。
+
         学習ポイント:
         - Readiness Probe: コンテナがトラフィックを受け入れ可能か確認
         - Liveness Probe: コンテナが正常に動作しているか確認
@@ -1293,8 +1330,8 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             # 予期されるAPI例外のみキャッチ
             self.logger.warning(
                 "health_check_failed",
-                error=str(e),
                 error_type=type(e).__name__,
+                endpoint="/users",  # health_check は常に固定エンドポイント（非機密）
             )
             return False
 
@@ -1343,7 +1380,6 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
                     self.logger.warning(
                         "get_user_failed",
                         user_id=user_id,
-                        error=str(e),
                         error_type=type(e).__name__,
                     )
                     return None
@@ -1407,11 +1443,13 @@ def main() -> None:
             print(f"  - Title: {new_post.get('title', 'N/A')}")
 
         except APIClientError as e:
-            print(f"エラーが発生しました: {e}")
+            # {e}: _map_request_error()経由の場合は固定プレフィックス+クラス名のみ。デモ用表示のみ
+            print(f"エラーが発生しました: {type(e).__name__}: {e}")
             if settings.debug:
                 import traceback
 
-                traceback.print_exc()
+                # chain=False: __cause__のhttpx例外チェーンのみ非表示。本体のスタックトレースは表示される  # noqa: E501
+                traceback.print_exception(e, chain=False)
 
     print("\n=== Demo completed ===")
 

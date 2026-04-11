@@ -93,6 +93,7 @@ def test_safe_parse_json_invalid_json() -> None:
         _safe_parse_json(mock_response)
 
     assert "Failed to parse JSON" in str(exc_info.value)
+    assert "Invalid JSON" in str(exc_info.value)  # str(e) の診断情報を保持
     assert exc_info.value.response == mock_response
 
 
@@ -127,6 +128,9 @@ def test_map_request_error_too_many_redirects() -> None:
 
     assert "Non-retryable" in str(exc_info.value)
     assert isinstance(exc_info.value.__cause__, httpx.TooManyRedirects)
+    # セキュリティ: str(e) が含まれないこと（機密情報漏洩防止）
+    assert "Max redirects exceeded" not in str(exc_info.value)
+    assert "TooManyRedirects" in str(exc_info.value)  # type(e).__name__ が含まれること
 
 
 def test_map_request_error_invalid_url() -> None:
@@ -138,36 +142,48 @@ def test_map_request_error_invalid_url() -> None:
 
     assert "Non-retryable" in str(exc_info.value)
     assert isinstance(exc_info.value.__cause__, httpx.InvalidURL)
+    # セキュリティ: str(e) が含まれないこと（機密情報漏洩防止）
+    assert "Invalid URL format" not in str(exc_info.value)
+    assert "InvalidURL" in str(exc_info.value)  # type(e).__name__ が含まれること
 
 
 def test_map_request_error_timeout() -> None:
     """TimeoutExceptionでAPITimeoutError返却"""
-    error = httpx.TimeoutException("Request timed out")
+    error = httpx.TimeoutException("Request timed out at https://internal.corp/api")
     result = _map_request_error(error)
 
     assert isinstance(result, APITimeoutError)
     assert "timeout" in str(result).lower()
     assert result.__cause__ is error
+    # セキュリティ: str(e) が含まれないこと（機密情報漏洩防止）
+    assert "internal.corp" not in str(result)
+    assert "TimeoutException" in str(result)  # type(e).__name__ が含まれること
 
 
 def test_map_request_error_connect_error() -> None:
     """ConnectErrorでAPIConnectionError返却"""
-    error = httpx.ConnectError("Connection refused")
+    error = httpx.ConnectError("Connection refused to internal-proxy.corp.example.com")
     result = _map_request_error(error)
 
     assert isinstance(result, APIConnectionError)
     assert "connection" in str(result).lower()
     assert result.__cause__ is error
+    # セキュリティ: str(e)（ホスト名等の機密情報）が含まれないこと
+    assert "internal-proxy.corp.example.com" not in str(result)
+    assert "ConnectError" in str(result)  # type(e).__name__ が含まれること
 
 
 def test_map_request_error_network_error() -> None:
     """NetworkError（else分岐）でAPIConnectionError返却"""
-    error = httpx.NetworkError("Network unreachable")
+    error = httpx.NetworkError("Network unreachable via proxy.internal.example.com")
     result = _map_request_error(error)
 
     assert isinstance(result, APIConnectionError)
     assert "network" in str(result).lower()
     assert result.__cause__ is error
+    # セキュリティ: str(e) が含まれないこと（機密情報漏洩防止）
+    assert "proxy.internal.example.com" not in str(result)
+    assert "NetworkError" in str(result)  # type(e).__name__ が含まれること
 
 
 # =============================================================================
@@ -190,6 +206,7 @@ def test_classify_error_non_retryable_logs_error() -> None:
     assert call_kwargs[1]["error_type"] == "TooManyRedirects"
     assert call_kwargs[1]["method"] == "GET"
     assert call_kwargs[1]["endpoint"] == "/test"
+    assert "error" not in call_kwargs[1]
     assert isinstance(exc_info.value.__cause__, httpx.TooManyRedirects)
     mock_logger.warning.assert_not_called()
 
@@ -206,6 +223,7 @@ def test_classify_error_non_retryable_async_field() -> None:
     call_kwargs = mock_logger.error.call_args
     assert call_kwargs[0][0] == "request_error_non_retryable"
     assert call_kwargs[1]["is_async"] is True
+    assert "error" not in call_kwargs[1]
     assert isinstance(exc_info.value.__cause__, httpx.InvalidURL)
     mock_logger.warning.assert_not_called()
 
@@ -225,6 +243,7 @@ def test_classify_error_retryable_logs_warning() -> None:
     assert call_kwargs[1]["error_type"] == "ConnectError"
     assert call_kwargs[1]["method"] == "POST"
     assert call_kwargs[1]["endpoint"] == "/api"
+    assert "error" not in call_kwargs[1]
 
 
 def test_classify_error_retryable_timeout() -> None:
@@ -240,6 +259,7 @@ def test_classify_error_retryable_timeout() -> None:
     call_kwargs = mock_logger.warning.call_args
     assert call_kwargs[0][0] == "request_error"
     assert call_kwargs[1]["is_async"] is True
+    assert "error" not in call_kwargs[1]
 
 
 def test_classify_error_retryable_network_error() -> None:
@@ -255,6 +275,7 @@ def test_classify_error_retryable_network_error() -> None:
     call_kwargs = mock_logger.warning.call_args
     assert call_kwargs[0][0] == "request_error"
     assert call_kwargs[1]["error_type"] == "ReadError"
+    assert "error" not in call_kwargs[1]
 
 
 # =============================================================================
