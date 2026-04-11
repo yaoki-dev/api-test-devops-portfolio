@@ -167,6 +167,9 @@ def _map_request_error(e: httpx.RequestError | httpx.InvalidURL) -> APIClientErr
         ``traceback.print_exception(chain=True)``（デフォルト）では
         この ``__cause__`` チェーンが展開されるため、表示用途では
         ``chain=False`` を指定して機密漏洩を防ぐこと。
+        ``main()`` で受け取る ``e`` は ``APIClientError`` なので、
+        ``chain=False`` が抑止するのは ``__cause__`` 側の httpx 例外チェーンであり、
+        ``APIClientError`` 本体のスタックトレースは引き続き表示される。
         参照: ``main()`` の ``traceback.print_exception(e, chain=False)`` 実装。
 
     """
@@ -1445,7 +1448,7 @@ def main() -> None:
             if settings.debug:
                 import traceback
 
-                # chain=False: __cause__チェーン非表示（デモ用途では例外クラス名で診断十分）
+                # chain=False: __cause__のhttpx例外チェーンのみ非表示。本体のスタックトレースは表示される  # noqa: E501
                 traceback.print_exception(e, chain=False)
 
     print("\n=== Demo completed ===")

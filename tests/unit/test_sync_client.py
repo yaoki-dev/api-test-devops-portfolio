@@ -206,14 +206,12 @@ def test_sync_health_check_connection_error() -> None:
 @respx.mock
 def test_sync_health_check_log_structure() -> None:
     """health_check失敗時のログ構造検証（error_type/endpointフィールド）"""
-    import unittest.mock
-
     respx.get(f"{BASE_URL}/users", params={"_limit": 1}).mock(
         side_effect=httpx.ConnectError("Connection refused to secret-host.internal")
     )
 
     with SyncJSONPlaceholderClient(retry_count=0) as client:
-        with unittest.mock.patch.object(client, "logger") as mock_logger:
+        with patch.object(client, "logger") as mock_logger:
             result = client.health_check()
 
     assert result is False

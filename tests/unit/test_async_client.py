@@ -965,8 +965,6 @@ async def test_async_health_check_connection_error():
 @respx.mock
 async def test_async_health_check_log_structure() -> None:
     """health_check失敗時のログ構造検証（error_type/endpointフィールド）"""
-    from unittest.mock import patch
-
     respx.get(f"{BASE_URL}/users", params={"_limit": 1}).mock(
         side_effect=httpx.ConnectError("Connection refused to secret-host.internal")
     )
