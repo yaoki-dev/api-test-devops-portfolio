@@ -51,19 +51,13 @@ jobs:
           permission-pull-requests: 'write'
 
       - name: 'Checkout Code'
-        uses: 'actions/checkout@v4' # ratchet:exclude
+        uses: 'actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd' # ratchet:actions/checkout@v6.0.2
 
       - name: 'Save user inputs to file (token-isolated)'
         # Security: Write user-controlled input (title/body/context) to files so
         # the Gemini prompt can read from filesystem instead of environment variables
         # that share process scope with GITHUB_TOKEN. This mitigates the
         # prompt-injection → token exfiltration attack vector.
-        # Reference: gemini-review.yml 'Fetch PR metadata (token-isolated)' step.
-        # LIMITATION: User inputs are ALSO still passed as env vars in the Gemini CLI
-        # step below (for prompt template backward compatibility). Full isolation requires
-        # updating the prompt to read from /tmp/ files and removing env vars.
-        # TODO: Update /gemini-plan-execute prompt to read from /tmp/ files, then
-        # remove TITLE/DESCRIPTION/ADDITIONAL_CONTEXT from the 'Run Gemini CLI' env.
         run: |-
           printf '%s' "${TITLE_VAL}" > /tmp/title.txt
           printf '%s' "${DESC_VAL}" > /tmp/description.txt
@@ -82,14 +76,11 @@ jobs:
         # To update: gh api repos/google-github-actions/run-gemini-cli/git/refs/tags/v0 --jq '.object.sha'
         uses: 'google-github-actions/run-gemini-cli@9dbec29a20fab3f35017a40ad0eb798a257d4d51' # v0.1.21
         env:
-          TITLE: '${{ github.event.pull_request.title || github.event.issue.title }}'
-          DESCRIPTION: '${{ github.event.pull_request.body || github.event.issue.body }}'
           EVENT_NAME: '${{ github.event_name }}'
           GITHUB_TOKEN: '${{ steps.mint_identity_token.outputs.token || secrets.GITHUB_TOKEN || github.token }}'
           IS_PULL_REQUEST: '${{ !!github.event.pull_request }}'
           ISSUE_NUMBER: '${{ github.event.pull_request.number || github.event.issue.number }}'
           REPOSITORY: '${{ github.repository }}'
-          ADDITIONAL_CONTEXT: '${{ inputs.additional_context }}'
         with:
           gcp_location: '${{ vars.GOOGLE_CLOUD_LOCATION }}'
           gcp_project_id: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
