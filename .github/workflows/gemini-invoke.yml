@@ -38,7 +38,7 @@ jobs:
           permission-pull-requests: 'write'
 
       - name: 'Checkout Code'
-        uses: 'actions/checkout@v4' # ratchet:exclude
+        uses: 'actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd' # ratchet:actions/checkout@v6.0.2
 
       - name: 'Save user inputs to file (token-isolated)'
         # Security: Write user-controlled input (title/body/context) to files so
