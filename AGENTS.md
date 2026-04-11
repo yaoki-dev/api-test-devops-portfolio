@@ -235,7 +235,7 @@ SECURITY__API_KEY=your-secret-key
 **Git運用** (Git Flow):
 
 | ブランチ | 用途 | マージ戦略 |
-|---------|------|-----------
+|---------|------|-----------|
 | `main` | 本番リリース | Regular Merge |
 | `develop` | 開発統合 | Squash Merge (from feature) |
 | `feature/*` | 機能開発 | → develop |
@@ -300,7 +300,7 @@ git checkout -b feature/<次のタスク> origin/develop
 **ast-grep vs mgrep選択**:
 - **コード変更時**: ast-grep必須（AST保証、リファクタリング◎）
 - **文書構造探索時**: mgrep推奨（Markdown構造◎、利用できない場合は `rg` で代替）
-- **詳細な機能差**: memory `$HOME/projects/python/api-test-devops-portfolio/.serena/memories/command_usage_guide.mdcommand_usage_guide` Section 9.3参照
+- **詳細な機能差**: memory `$HOME/projects/python/api-test-devops-portfolio/.serena/memories/command_usage_guide.md` Section 9.3参照
 **種別の違い**:
 - **Plugin/Hook/Command**: ローカル環境に存在する補助資産（例: `~/.claude/...`）。Codex セッションで実行可能かは別途確認する
 - **Skill**: セッションに露出しているスキル（存在しない名前は使わない）
@@ -380,7 +380,7 @@ git checkout -b feature/<次のタスク> origin/develop
 ```
 
 <!-- preserve-on-compact: Quality Gates -->
-**※1 worktree**: 固定worktree運用（${HOME}/projects/python/.worktrees/wt-feature0[1-3]（個人環境ごとにカスタマイズ））。セッション開始時にwatch_directoryの設定を確認する（mcp__CodeGraphContext__list_watched_paths）
+**※1 worktree**: 固定worktree運用（${HOME}/projects/python/.worktrees/wt-feature0[1-3]（個人環境ごとにカスタマイズ））。セッション開始時にwatch_directoryの設定を確認する（利用可能な場合: `mcp__CodeGraphContext__list_watched_paths`）
 **※2 品質ゲート**: `uv run pytest -n auto -m "(unit or integration) and not external" --cov=utils --cov=config --cov=models --cov-report=term-missing &&
 uv run ruff check . && uv run mypy utils/ config/ models/`
 
@@ -437,5 +437,4 @@ uv run mypy --show-error-codes --pretty utils/ config/ models/
 ## Notes
 
 - `.claude/CLAUDE.md` と `.claude/rules/` は元資料として参照してよいが、Claude 固有のマクロやスラッシュコマンド等は Codex の運用に読み替える（本ファイルではそれらの表記に依存しない）。
-
-`$HOME/.codex/RTK.md`
+- Codex 環境でのトークン最適化ガイドは `$HOME/.codex/RTK.md` を参照する。
