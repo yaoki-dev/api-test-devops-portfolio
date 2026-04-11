@@ -1001,8 +1001,8 @@ def test_handle_403_response(
 
 
 @pytest.mark.unit
-def test_handle_http_status_error_raises_on_4xx() -> None:
-    """_handle_http_status_error: 4xxステータスで GitHubAPIError を raise する（D-07）"""
+def test_handle_http_status_error_uses_debug_for_other_4xx() -> None:
+    """_handle_http_status_error: 401以外の4xxでは debug ログを使う"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
     mock_request = httpx.Request("GET", "https://api.github.com/test")
     mock_response = httpx.Response(404, request=mock_request)
@@ -1021,6 +1021,57 @@ def test_handle_http_status_error_raises_on_4xx() -> None:
             method="GET",
             body_preview="",
         )
+        mock_logger.warning.assert_not_called()
+
+
+@pytest.mark.unit
+def test_handle_http_status_error_uses_warning_for_401() -> None:
+    """_handle_http_status_error: 401ステータスでは warning ログを使う"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    mock_request = httpx.Request("GET", "https://api.github.com/test")
+    mock_response = httpx.Response(401, request=mock_request)
+    error = httpx.HTTPStatusError(
+        "HTTP 401",
+        request=mock_request,
+        response=mock_response,
+    )
+
+    with patch.object(client, "logger") as mock_logger:
+        with pytest.raises(GitHubAPIError, match=r"^HTTP 401 error$"):
+            client._handle_http_status_error(error)
+        mock_logger.warning.assert_called_once_with(
+            "http_status_error",
+            status_code=401,
+            endpoint="/test",
+            method="GET",
+            body_preview="",
+        )
+        mock_logger.debug.assert_not_called()
+
+
+@pytest.mark.unit
+def test_handle_http_status_error_warning_truncates_body_preview_for_401() -> None:
+    """_handle_http_status_error: 401レスポンスで body_preview が200バイトに切り詰められる"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    mock_request = httpx.Request("GET", "https://api.github.com/test")
+    mock_response = httpx.Response(401, content=b"A" * 201, request=mock_request)
+    error = httpx.HTTPStatusError(
+        "HTTP 401",
+        request=mock_request,
+        response=mock_response,
+    )
+
+    with patch.object(client, "logger") as mock_logger:
+        with pytest.raises(GitHubAPIError, match=r"^HTTP 401 error$"):
+            client._handle_http_status_error(error)
+        mock_logger.warning.assert_called_once_with(
+            "http_status_error",
+            status_code=401,
+            endpoint="/test",
+            method="GET",
+            body_preview="A" * 200,
+        )
+        mock_logger.debug.assert_not_called()
 
 
 @pytest.mark.unit
@@ -1103,13 +1154,12 @@ async def test_handle_5xx_response(
                 )
         else:
             with capture_logs() as log_output:
-                result = await client._handle_5xx_response(
+                await client._handle_5xx_response(
                     mock_response,
                     attempt,
                     "/test",
                     "GET",
                 )
-            assert result is None
             retrying_logs = [
                 log for log in log_output if log.get("event") == "retrying_server_error"
             ]
@@ -1176,7 +1226,7 @@ def test_handle_403_response_no_json_log() -> None:
 
 @pytest.mark.unit
 def test_handle_403_response_truncates_message_to_200_chars() -> None:
-    """403 JSON message は `_MAX_ERROR_RESPONSE_TEXT` で切り詰められる"""
+    """403 JSON message は 200 文字で切り詰められる"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
     long_message = "z" * 201
     response = httpx.Response(
