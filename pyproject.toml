@@ -173,10 +173,6 @@ warn_unreachable = true
 strict_equality = true
 
 [[tool.mypy.overrides]]
-module = "tests.*"
-disallow_untyped_defs = false
-
-[[tool.mypy.overrides]]
 module = "utils.api_client"
 warn_return_any = false  # _safe_parse_json()がAnyを返すのは設計上妥当（JSONパースは実行時まで型不明）
 
