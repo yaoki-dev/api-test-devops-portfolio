@@ -28,7 +28,7 @@ jobs:
       - name: Update pre-commit hooks
         run: |
           pip install pre-commit
-          pre-commit autoupdate
+          pre-commit autoupdate --freeze
 
       # gitleaksインストール（pre-commit language: system用）
       # NOTE: .pre-commit-config.yamlでlanguage: systemを使用しているため
@@ -72,7 +72,7 @@ jobs:
           body: |
             ## Automated pre-commit hooks update
             
-            Updated by `pre-commit autoupdate`.
+            Updated by `pre-commit autoupdate --freeze`.
             
             ### Verification
             ```bash
