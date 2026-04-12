@@ -55,14 +55,15 @@ jobs:
         id: git-check
         run: |
           if git diff --quiet .pre-commit-config.yaml; then
-            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           else
-            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
       # NOTE: 企業環境ではSHA pinning推奨（例: @67ccf781d68cd99b580ae25a5c18a1cc84ffff1f）
       # ポートフォリオではメジャーバージョンタグで保守性とセキュリティをバランス
       - name: Create Pull Request
+        id: create-pr
         if: steps.git-check.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@c0f553fe549906ede9cf27b5156039d195d2ece0 # v8.1.0
         with:
@@ -83,3 +84,11 @@ jobs:
             dependencies
             pre-commit
           delete-branch: true
+
+      - name: Verify pull request output
+        if: steps.git-check.outputs.changed == 'true'
+        run: |
+          if [ -z "${{ steps.create-pr.outputs.pull-request-url }}" ]; then
+            echo "Create Pull Request step did not produce pull-request-url output" >&2
+            exit 1
+          fi
