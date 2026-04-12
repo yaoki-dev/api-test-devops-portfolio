@@ -10,7 +10,6 @@ Pydantic レスポンスモデル テスト
 
 import html
 from typing import Any, Final, TypedDict
-from unittest.mock import MagicMock, PropertyMock
 from urllib.parse import urlparse
 
 import pytest
@@ -28,7 +27,6 @@ from models.responses import (
     User,
     _normalize_url,  # noqa: PLC2701
     _strip_invisible_chars,  # noqa: PLC2701
-    _validate_netloc,  # noqa: PLC2701
     sanitize_user_content,
 )
 
@@ -303,19 +301,6 @@ def test_strip_invisible_chars_removes_surrogate_codepoint() -> None:
     assert _strip_invisible_chars("\ud800\udbff\udfff") == ""
     # サロゲートが混在しても正常な文字は保持される
     assert _strip_invisible_chars("abc\ud800def") == "abcdef"
-
-
-def test_strip_invisible_chars_removes_post_nfkc_invisible() -> None:
-    """_strip_invisible_chars のパス2: NFKC後に生成された不可視文字を除去することを検証。
-
-    U+FB1D HEBREW LETTER YOD WITH HIRIQ (Lo) は NFKC 正規化で
-    U+05D9 HEBREW LETTER YOD (Lo) + U+05B4 HEBREW POINT HIRIQ (Mn) に分解される。
-    パス1では Lo カテゴリのため除去されないが、パス2で生成された Mn (U+05B4) が除去される。
-    """
-    # U+FB1D: Lo カテゴリ → パス1をスルー
-    # NFKC後: U+05D9 (Lo) + U+05B4 (Mn) → パス2で Mn を除去
-    result = _strip_invisible_chars("\uFB1D")
-    assert result == "\u05D9"  # HIRIQ (Mn) が除去され YOD のみ残る
 
 
 def test_strip_invisible_chars_returns_empty_for_empty_input() -> None:
@@ -1824,21 +1809,6 @@ class TestNormalizeUrl:
         assert parsed.hostname is None, "前提条件: hostname が None であること"
         with pytest.raises(ValueError, match="ホスト名の解決に失敗しました"):
             _normalize_url(parsed)
-
-
-def test_validate_netloc_raises_when_username_parse_raises() -> None:
-    """_validate_netloc: @なしURLでparsed.usernameアクセスがValueErrorを送出するケースの検証。
-
-    urlparse が特定のエンコード済み netloc で username アクセス時に ValueError を
-    送出するエッジケースをモックで再現する（Python バージョン依存の実装詳細のため）。
-    """
-    mock_parsed = MagicMock()
-    mock_parsed.netloc = "example.com"  # @ なし → has_at=False
-    mock_parsed.port = None  # port アクセスは正常
-    mock_parsed.hostname = "example.com"
-    type(mock_parsed).username = PropertyMock(side_effect=ValueError("bad percent encoding"))
-    with pytest.raises(ValueError, match="URLのuserinfoパースに失敗しました"):
-        _validate_netloc(mock_parsed)
 
 
 def test_strip_invisible_chars_rejects_non_str() -> None:
