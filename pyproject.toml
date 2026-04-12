@@ -157,6 +157,7 @@ section-order = ["future", "standard-library", "third-party", "first-party", "lo
 # mypy設定（型チェック）
 [tool.mypy]
 python_version = "3.14"
+plugins = ["pydantic.mypy"]
 explicit_package_bases = true
 warn_return_any = true
 warn_unused_configs = true

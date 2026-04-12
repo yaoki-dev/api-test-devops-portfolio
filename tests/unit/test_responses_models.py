@@ -186,7 +186,7 @@ class _UserData(TypedDict):
 class _CommentBaseData(TypedDict):
     """TestCommentModel XSS テスト用 Comment 基底データ型."""
 
-    postId: int
+    post_id: int
     id: int
     name: str
     email: str
@@ -194,7 +194,7 @@ class _CommentBaseData(TypedDict):
 
 
 _COMMENT_BASE: Final[_CommentBaseData] = {
-    "postId": 1,
+    "post_id": 1,
     "id": 1,
     "name": "safe_name",
     "email": "safe@example.com",
@@ -507,7 +507,7 @@ class TestCompanyModel:
         """基本的な Company モデル作成"""
         company = Company(
             name="Romaguera-Crona",
-            catchPhrase="Multi-layered client-server neural-net",
+            catch_phrase="Multi-layered client-server neural-net",
             bs="harness real-time e-markets",
         )
 
@@ -518,7 +518,7 @@ class TestCompanyModel:
         """Company モデルの alias (catchPhrase → catch_phrase) が機能することを確認"""
         company = Company(
             name="Test",
-            catchPhrase="Test Phrase",
+            catch_phrase="Test Phrase",
             bs="test",
         )
 
@@ -530,7 +530,7 @@ class TestCompanyModel:
     )
     def test_company_sanitizes_xss(self, dirty: str, expected: str) -> None:
         """Company.name フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
-        company = Company(name=dirty, catchPhrase="Normal", bs="Normal")
+        company = Company(name=dirty, catch_phrase="Normal", bs="Normal")
         assert company.name == expected
 
     @pytest.mark.parametrize(
@@ -668,11 +668,29 @@ class TestUserModel:
     def test_user_email_max_length_invalid(self, valid_user_data: _UserData) -> None:
         """User.email=101文字（max_length 超過）で ValidationError が発生すること"""
         # 52 + "@"(1) + 36 + ".example.com"(12) = 101文字（local≤64: RFC5321準拠）
-        # error_count で検証（email-validatorバージョン依存のmatch文字列を回避）
+        # emailフィールドのloc確認で検証（email-validatorバージョン依存のmatch文字列を回避）
         valid_user_data["email"] = "a" * 52 + "@" + "b" * 36 + ".example.com"
         with pytest.raises(ValidationError) as exc_info:
             User(**valid_user_data)
-        assert exc_info.value.error_count() >= 1
+        errors = exc_info.value.errors()
+        assert any(e["loc"] == ("email",) for e in errors), (
+            f"emailフィールドのバリデーションエラーが期待されたが: {errors}"
+        )
+
+    def test_user_website_max_length_boundary(self, valid_user_data: _UserData) -> None:
+        """website max_length=200 の境界値テスト."""
+        # 200文字ちょうど: https:// (8文字) + ドメイン + パスで200文字
+        # _normalize_url後の長さが200以内であること
+        base = "https://example.com/"
+        path = "a" * (200 - len(base))
+        valid_user_data["website"] = base + path
+        user = User(**valid_user_data)
+        assert len(user.website) == 200
+
+        # 201文字: ValidationError
+        valid_user_data["website"] = base + "a" * (201 - len(base))
+        with pytest.raises(ValidationError):
+            User(**valid_user_data)
 
     def test_user_website_is_not_html_escaped(self, valid_user_data: _UserData) -> None:
         """websiteはhtml.escape対象外（URL内の&がエスケープされない）"""
@@ -935,7 +953,7 @@ class TestUserModel:
         self, valid_user_data: _UserData, non_str_input: object
     ) -> None:
         """User.website が非文字列入力を拒否すること"""
-        valid_user_data["website"] = non_str_input
+        valid_user_data["website"] = non_str_input  # type: ignore[typeddict-item]
         with pytest.raises(ValidationError, match="文字列が必要です"):
             User(**valid_user_data)
 
@@ -1108,14 +1126,14 @@ class TestPostModel:
 
     def test_post_basic_creation(self) -> None:
         """基本的な Post モデル作成"""
-        post = Post(userId=1, id=1, title="Test Title", body="Test Body")
+        post = Post(user_id=1, id=1, title="Test Title", body="Test Body")
 
         assert post.user_id == 1
         assert post.title == "Test Title"
 
     def test_post_alias_working(self) -> None:
         """Post モデルの alias (userId → user_id) が機能することを確認"""
-        post = Post(userId=5, id=1, title="Test", body="Test")
+        post = Post(user_id=5, id=1, title="Test", body="Test")
 
         assert post.user_id == 5
 
@@ -1125,7 +1143,7 @@ class TestPostModel:
     )
     def test_post_title_sanitizes_xss(self, dirty: str, expected: str) -> None:
         """Post.title フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
-        post = Post(userId=1, id=1, title=dirty, body="Normal body")
+        post = Post(user_id=1, id=1, title=dirty, body="Normal body")
         assert post.title == expected
 
     @pytest.mark.parametrize(
@@ -1134,7 +1152,7 @@ class TestPostModel:
     )
     def test_post_body_sanitizes_xss(self, dirty: str, expected: str) -> None:
         """Post.body フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
-        post = Post(userId=1, id=1, title="Normal title", body=dirty)
+        post = Post(user_id=1, id=1, title="Normal title", body=dirty)
         assert post.body == expected
 
     @pytest.mark.parametrize(
@@ -1147,30 +1165,30 @@ class TestPostModel:
     def test_post_invalid_id_raises_validation_error(self, invalid_id: int) -> None:
         """id が ge=1 制約（id は1以上）に違反した場合 ValidationError が発生する"""
         with pytest.raises(ValidationError) as exc_info:
-            Post(id=invalid_id, userId=1, title="Test", body="Body")
+            Post(id=invalid_id, user_id=1, title="Test", body="Body")
         assert "id" in str(exc_info.value)
 
     def test_post_title_max_length_valid(self) -> None:
         """title=200文字（max_length 上限）で正常作成できること"""
-        post = Post(id=1, userId=1, title="a" * 200, body="Body")
+        post = Post(id=1, user_id=1, title="a" * 200, body="Body")
         assert len(post.title) == 200
 
     def test_post_title_max_length_invalid(self) -> None:
         """title=201文字（max_length 超過）で ValidationError が発生すること"""
         with pytest.raises(ValidationError) as exc_info:
-            Post(id=1, userId=1, title="a" * 201, body="Body")
+            Post(id=1, user_id=1, title="a" * 201, body="Body")
         assert "title" in str(exc_info.value)
 
     def test_post_body_exceeds_max_length_raises_validation_error(self) -> None:
         """body>5000文字でValidationErrorが発生する（境界値テスト: max_length=5000）"""
         long_body = "a" * 5001
         with pytest.raises(ValidationError) as exc_info:
-            Post(id=1, userId=1, title="Test", body=long_body)
+            Post(id=1, user_id=1, title="Test", body=long_body)
         assert "body" in str(exc_info.value)
 
     def test_post_body_max_length_valid(self) -> None:
         """body=5000文字（max_length 上限）で正常作成できること（境界値: ちょうど上限）"""
-        post = Post(title="T", body="a" * 5000, userId=1, id=1)
+        post = Post(title="T", body="a" * 5000, user_id=1, id=1)
         assert len(post.body) == 5000
 
 
@@ -1187,7 +1205,7 @@ class TestCommentModel:
     def test_comment_basic_creation(self) -> None:
         """基本的な Comment モデル作成"""
         comment = Comment(
-            postId=1,
+            post_id=1,
             id=1,
             name="Test Name",
             email="test@example.com",
@@ -1207,30 +1225,33 @@ class TestCommentModel:
     )
     def test_comment_sanitizes_xss(self, field: str, dirty: str, expected: str) -> None:
         """Comment XSS サニタイゼーション（name/body x OWASP CS・独自5分類）"""
-        data: dict[str, str | int] = {**_COMMENT_BASE, field: dirty}
+        data: dict[str, str | int] = {**_COMMENT_BASE, field: dirty}  # type: ignore[dict-item]
         comment = Comment.model_validate(data)
         assert getattr(comment, field) == expected
 
     def test_comment_email_must_be_valid_format(self) -> None:
         """Comment.email が EmailStr 型により無効なメールアドレスを拒否すること"""
         with pytest.raises(ValidationError, match=r"value is not a valid email address"):
-            Comment(postId=1, id=1, name="Name", email="not-an-email", body="Body")
+            Comment(post_id=1, id=1, name="Name", email="not-an-email", body="Body")
 
     def test_comment_email_max_length_valid(self) -> None:
         """Comment.email=100文字（max_length 上限）で正常作成できること"""
         # 52 + "@"(1) + 35 + ".example.com"(12) = 100文字（local≤64: RFC5321準拠）
         long_email = "a" * 52 + "@" + "b" * 35 + ".example.com"
-        comment = Comment(postId=1, id=1, name="Name", email=long_email, body="Body")
+        comment = Comment(post_id=1, id=1, name="Name", email=long_email, body="Body")
         assert len(comment.email) == 100
 
     def test_comment_email_max_length_invalid(self) -> None:
         """Comment.email=101文字（max_length 超過）で ValidationError が発生すること"""
         # 52 + "@"(1) + 36 + ".example.com"(12) = 101文字（local≤64: RFC5321準拠）
-        # error_count で検証（email-validatorバージョン依存のmatch文字列を回避）
+        # emailフィールドのloc確認で検証（email-validatorバージョン依存のmatch文字列を回避）
         long_email = "a" * 52 + "@" + "b" * 36 + ".example.com"
         with pytest.raises(ValidationError) as exc_info:
-            Comment(postId=1, id=1, name="Name", email=long_email, body="Body")
-        assert exc_info.value.error_count() >= 1
+            Comment(post_id=1, id=1, name="Name", email=long_email, body="Body")
+        errors = exc_info.value.errors()
+        assert any(e["loc"] == ("email",) for e in errors), (
+            f"emailフィールドのバリデーションエラーが期待されたが: {errors}"
+        )
 
     def test_comment_email_with_ampersand_accepted_by_emailstr(self) -> None:
         """EmailStr は & を含むローカルパートを受理し、html.escape を適用しないこと。
@@ -1238,9 +1259,16 @@ class TestCommentModel:
         email-validator は RFC 5321 の dot-atom で & を許容する。
         動作変更時はこのテストが失敗するため、設計の再評価が必要。
         """
-        comment = Comment(postId=1, id=1, name="Name", email="user&tag@example.com", body="Body")
+        comment = Comment(post_id=1, id=1, name="Name", email="user&tag@example.com", body="Body")
         # html.escape は適用されないため & は &amp; に変換されない
         assert comment.email == "user&tag@example.com"
+
+    def test_comment_email_rejects_html_meta_chars(self) -> None:
+        """EmailStrが<>を含むアドレスを拒否することを確認（html.escape非適用の安全根拠）."""
+        with pytest.raises(ValidationError):
+            Comment(post_id=1, id=1, name="Name", email="<xss>@evil.com", body="Body")
+        with pytest.raises(ValidationError):
+            Comment(post_id=1, id=1, name="Name", email="user&amp;@evil.com", body="Body")
 
 
 class TestTodoModel:
@@ -1248,7 +1276,7 @@ class TestTodoModel:
 
     def test_todo_basic_creation(self) -> None:
         """基本的な Todo モデル作成"""
-        todo = Todo(userId=1, id=1, title="Test TODO", completed=False)
+        todo = Todo(user_id=1, id=1, title="Test TODO", completed=False)
 
         assert todo.user_id == 1
         assert todo.title == "Test TODO"
@@ -1260,7 +1288,7 @@ class TestTodoModel:
     )
     def test_todo_title_sanitizes_xss(self, dirty: str, expected: str) -> None:
         """Todo.title フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
-        todo = Todo(userId=1, id=1, title=dirty, completed=False)
+        todo = Todo(user_id=1, id=1, title=dirty, completed=False)
         assert todo.title == expected
 
 
@@ -1269,7 +1297,7 @@ class TestAlbumModel:
 
     def test_album_basic_creation(self) -> None:
         """基本的な Album モデル作成"""
-        album = Album(userId=1, id=1, title="Test Album")
+        album = Album(user_id=1, id=1, title="Test Album")
 
         assert album.user_id == 1
         assert album.title == "Test Album"
@@ -1280,7 +1308,7 @@ class TestAlbumModel:
     )
     def test_album_title_sanitizes_xss(self, dirty: str, expected: str) -> None:
         """Album.title フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
-        album = Album(userId=1, id=1, title=dirty)
+        album = Album(user_id=1, id=1, title=dirty)
         assert album.title == expected
 
 
@@ -1309,11 +1337,11 @@ class TestPhotoModel:
     def test_photo_basic_creation(self) -> None:
         """基本的な Photo モデル作成"""
         photo = Photo(
-            albumId=1,
+            album_id=1,
             id=1,
             title="Test Photo",
             url="https://via.placeholder.com/600/92c952",
-            thumbnailUrl="https://via.placeholder.com/150/92c952",
+            thumbnail_url="https://via.placeholder.com/150/92c952",
         )
 
         assert photo.album_id == 1
@@ -1358,11 +1386,11 @@ class TestPhotoModel:
     ) -> None:
         """Photo.validate_url_scheme が http/https URLを許可・スキームを小文字正規化すること"""
         photo = Photo(
-            albumId=1,
+            album_id=1,
             id=1,
             title="Test",
             url=url,
-            thumbnailUrl=thumbnail_url,
+            thumbnail_url=thumbnail_url,
         )
         assert photo.url == expected_url
         assert photo.thumbnail_url == expected_thumbnail
@@ -1402,11 +1430,11 @@ class TestPhotoModel:
     ) -> None:
         """Photo.validate_url_schemeがホスト部を小文字正規化すること（RFC 3986）"""
         photo = Photo(
-            albumId=1,
+            album_id=1,
             id=1,
             title="Test",
             url=url,
-            thumbnailUrl=thumbnail_url,
+            thumbnail_url=thumbnail_url,
         )
         assert photo.url == expected_url
         assert photo.thumbnail_url == expected_thumbnail
@@ -1418,11 +1446,11 @@ class TestPhotoModel:
     def test_photo_title_sanitizes_xss(self, dirty: str, expected: str) -> None:
         """Photo.title フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
         photo = Photo(
-            albumId=1,
+            album_id=1,
             id=1,
             title=dirty,
             url="https://example.com/photo.jpg",
-            thumbnailUrl="https://example.com/thumb.jpg",
+            thumbnail_url="https://example.com/thumb.jpg",
         )
         assert photo.title == expected
 
@@ -1430,11 +1458,11 @@ class TestPhotoModel:
         """Photo モデルが javascript: スキームを拒否することを確認"""
         with pytest.raises(ValidationError) as exc_info:
             Photo(
-                albumId=1,
+                album_id=1,
                 id=1,
                 title="Test",
                 url="javascript:alert('XSS')",
-                thumbnailUrl="https://example.com/thumb.jpg",
+                thumbnail_url="https://example.com/thumb.jpg",
             )
 
         assert "URLはhttp://またはhttps://で始まる必要があります" in str(exc_info.value)
@@ -1443,11 +1471,11 @@ class TestPhotoModel:
         """Photo モデルが data: スキームを拒否することを確認"""
         with pytest.raises(ValidationError) as exc_info:
             Photo(
-                albumId=1,
+                album_id=1,
                 id=1,
                 title="Test",
                 url="https://example.com/photo.jpg",
-                thumbnailUrl="data:image/png;base64,iVBORw0KGgo=",
+                thumbnail_url="data:image/png;base64,iVBORw0KGgo=",
             )
 
         assert "URLはhttp://またはhttps://で始まる必要があります" in str(exc_info.value)
@@ -1458,11 +1486,11 @@ class TestPhotoModel:
             ValidationError, match=r"URLはhttp://またはhttps://で始まる必要があります"
         ):
             Photo(
-                albumId=1,
+                album_id=1,
                 id=1,
                 title="Test",
                 url="example.com/photo.jpg",
-                thumbnailUrl="https://example.com/thumb.jpg",
+                thumbnail_url="https://example.com/thumb.jpg",
             )
 
     def test_photo_rejects_schemeless_thumbnail_url(self) -> None:
@@ -1471,11 +1499,11 @@ class TestPhotoModel:
             ValidationError, match=r"URLはhttp://またはhttps://で始まる必要があります"
         ):
             Photo(
-                albumId=1,
+                album_id=1,
                 id=1,
                 title="Test",
                 url="https://example.com/photo.jpg",
-                thumbnailUrl="example.com/thumb.jpg",
+                thumbnail_url="example.com/thumb.jpg",
             )
 
     @pytest.mark.parametrize(
@@ -1506,7 +1534,7 @@ class TestPhotoModel:
     ) -> None:
         """Photo.validate_url_scheme がパーセントエンコードされたCRLFを拒否すること"""
         with pytest.raises(ValidationError, match=expected_match):
-            Photo(albumId=1, id=1, title="Test", url=url, thumbnailUrl=thumbnail_url)
+            Photo(album_id=1, id=1, title="Test", url=url, thumbnail_url=thumbnail_url)
 
     @pytest.mark.parametrize(
         ("url", "thumbnail_url"),
@@ -1526,7 +1554,7 @@ class TestPhotoModel:
     def test_photo_rejects_control_char_only_url_fields(self, url: str, thumbnail_url: str) -> None:
         """制御文字のみのPhoto url/thumbnail_urlが空文字エラーで拒否されること"""
         with pytest.raises(ValidationError, match="URLが空になりました"):
-            Photo(albumId=1, id=1, title="Test", url=url, thumbnailUrl=thumbnail_url)
+            Photo(album_id=1, id=1, title="Test", url=url, thumbnail_url=thumbnail_url)
 
     @pytest.mark.parametrize(
         "url",
@@ -1540,11 +1568,11 @@ class TestPhotoModel:
         """Photo.url に netloc 空の URL が渡されたとき ValidationError を発生させること"""
         with pytest.raises(ValidationError, match="有効なホスト名が含まれていません"):
             Photo(
-                albumId=1,
+                album_id=1,
                 id=1,
                 title="Test",
                 url=url,
-                thumbnailUrl="https://example.com/thumb.jpg",
+                thumbnail_url="https://example.com/thumb.jpg",
             )
 
     @pytest.mark.parametrize(
@@ -1558,11 +1586,11 @@ class TestPhotoModel:
         """Photo.thumbnail_url に netloc 空の URL が渡されたとき ValidationError を発生させること"""
         with pytest.raises(ValidationError, match="有効なホスト名が含まれていません"):
             Photo(
-                albumId=1,
+                album_id=1,
                 id=1,
                 title="Test",
                 url="https://example.com/photo.jpg",
-                thumbnailUrl=thumbnail_url,
+                thumbnail_url=thumbnail_url,
             )
 
     @pytest.mark.parametrize(
@@ -1580,11 +1608,11 @@ class TestPhotoModel:
         """Photo.url にuserinfo付きURLが渡されたとき ValidationError を発生させること"""
         with pytest.raises(ValidationError, match="URLにuserinfo"):
             Photo(
-                albumId=1,
+                album_id=1,
                 id=1,
                 title="Test",
                 url=url,
-                thumbnailUrl="https://example.com/thumb.jpg",
+                thumbnail_url="https://example.com/thumb.jpg",
             )
 
     @pytest.mark.parametrize(
@@ -1608,11 +1636,11 @@ class TestPhotoModel:
         """Photo.thumbnail_urlがuserinfo付きURLを拒否すること（RFC 3986バイパス防止）"""
         with pytest.raises(ValidationError, match="URLにuserinfo"):
             Photo(
-                albumId=1,
+                album_id=1,
                 id=1,
                 title="Test",
                 url="https://example.com/photo.jpg",
-                thumbnailUrl=thumbnail_url,
+                thumbnail_url=thumbnail_url,
             )
 
     @pytest.mark.parametrize(
@@ -1633,7 +1661,7 @@ class TestPhotoModel:
     def test_photo_rejects_invalid_port(self, url: str, thumbnail_url: str) -> None:
         """Photo url/thumbnail_url が無効なポート文字列を拒否すること"""
         with pytest.raises(ValidationError, match="ポートが無効"):
-            Photo(albumId=1, id=1, title="Test", url=url, thumbnailUrl=thumbnail_url)
+            Photo(album_id=1, id=1, title="Test", url=url, thumbnail_url=thumbnail_url)
 
     @pytest.mark.parametrize(
         "dangerous_url",
@@ -1658,11 +1686,11 @@ class TestPhotoModel:
             ValidationError, match="URLはhttp://またはhttps://で始まる必要があります"
         ):
             Photo(
-                albumId=1,
+                album_id=1,
                 id=1,
                 title="Test",
                 url=dangerous_url,
-                thumbnailUrl="https://example.com/thumb.jpg",
+                thumbnail_url="https://example.com/thumb.jpg",
             )
 
     def test_photo_url_rejects_surrogate_codepoint(self) -> None:
@@ -1674,11 +1702,11 @@ class TestPhotoModel:
         """
         with pytest.raises(ValidationError, match="string_unicode"):
             Photo(
-                albumId=1,
+                album_id=1,
                 id=1,
                 title="Test",
                 url="https://\ud800example.com/photo.jpg",
-                thumbnailUrl="https://via.placeholder.com/150",
+                thumbnail_url="https://via.placeholder.com/150",
             )
 
     def test_photo_url_rejects_empty_string(self) -> None:
@@ -1689,11 +1717,11 @@ class TestPhotoModel:
         """
         with pytest.raises(ValidationError, match="URLが空になりました"):
             Photo(
-                albumId=1,
+                album_id=1,
                 id=1,
                 title="Test",
                 url="",
-                thumbnailUrl="https://example.com/thumb.jpg",
+                thumbnail_url="https://example.com/thumb.jpg",
             )
 
     def test_photo_thumbnail_url_strips_bidi(self) -> None:
@@ -1708,11 +1736,11 @@ class TestPhotoModel:
         """Photo.thumbnail_url に空文字列を渡すと ValidationError が発生すること。"""
         with pytest.raises(ValidationError, match="URLが空になりました"):
             Photo(
-                albumId=1,
+                album_id=1,
                 id=1,
                 title="Test",
                 url="https://example.com/photo.jpg",
-                thumbnailUrl="",
+                thumbnail_url="",
             )
 
     @pytest.mark.parametrize(
@@ -1743,7 +1771,7 @@ class TestPhotoModel:
     def test_photo_url_encodes_special_chars(self, input_url: str, expected_url: str) -> None:
         """_normalize_url の quote() によるパス・クエリのURLエンコード動作を検証する."""
         photo = Photo(
-            albumId=1, id=1, title="Test", url=input_url, thumbnailUrl="https://example.com/t.jpg"
+            album_id=1, id=1, title="Test", url=input_url, thumbnail_url="https://example.com/t.jpg"
         )
         assert photo.url == expected_url
 
@@ -1756,14 +1784,14 @@ class TestPhotoModel:
         with pytest.raises(ValidationError, match=r"URLにuserinfo"):
             Photo(**{**_PHOTO_BASE, "url": "https://user%40evil.com@host.example.com/path.jpg"})
 
-    def test_photo_url_allows_percent_encoded_at_in_host(self) -> None:
-        """%40のみを含むURLはuserinfoなしとして受理すること.
+    def test_photo_url_rejects_percent_encoded_at_in_host(self) -> None:
+        """%40（エンコード済み@）を含むURLはuserinfoバイパスとして拒否すること.
 
-        urlparse は "user%40evil.com" をhostname全体として解析し、
-        usernameはNoneとなるため正常なURLとして扱われる。
+        urlparse は "user%40evil.com" をhostname全体として解析するが、
+        unquote後に@が検出されるためセキュリティ上拒否する。
         """
-        photo = Photo(**{**_PHOTO_BASE, "url": "https://user%40evil.com/path.jpg"})
-        assert photo.url == "https://user%40evil.com/path.jpg"
+        with pytest.raises(ValidationError):
+            Photo(**{**_PHOTO_BASE, "url": "https://user%40evil.com/path.jpg"})
 
 
 class TestNormalizeUrl:

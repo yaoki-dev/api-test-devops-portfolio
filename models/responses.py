@@ -128,7 +128,8 @@ def _validate_netloc(parsed: ParseResult) -> None:
         raise ValueError("ポートが無効です（整数値でなければなりません）") from e
     # 多層防御: parsed.username/password に加え netloc の "@" リテラルも検査
     # （urlparse が特定のエンコード済み入力で username=None を返すエッジケース対策）
-    has_at = "@" in parsed.netloc
+    decoded_netloc = unquote(parsed.netloc, errors="replace")
+    has_at = "@" in parsed.netloc or "@" in decoded_netloc
     if has_at:
         raise ValueError("URLにuserinfo（ユーザー名/パスワード）は指定できません")
     # @が含まれない場合のみ username/password を確認
@@ -144,7 +145,7 @@ def _validate_netloc(parsed: ParseResult) -> None:
     if _HTML_META_RE.search(parsed.netloc):
         raise ValueError("ホスト名に不正な文字が含まれています")
     # hostname が None になるケース（例: 不正な IPv6 形式）を _normalize_url に渡す前に排除
-    if parsed.hostname is None:
+    if not parsed.hostname:
         raise ValueError("有効なホスト名が含まれていません")
 
 
