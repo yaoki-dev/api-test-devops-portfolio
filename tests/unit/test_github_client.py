@@ -527,6 +527,20 @@ async def test_403_non_rate_limit():
 
 
 @respx.mock
+async def test_403_non_string_message_uses_default():
+    """403応答のmessageフィールドが非string型の場合、デフォルトメッセージを使用"""
+    respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+        status_code=403,
+        json={"message": None},  # 非string: isinstance(msg_value, str) is False
+        headers={"X-RateLimit-Remaining": "50"},
+    )
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(GitHubAPIError, match="Access forbidden: Access forbidden") as exc_info:
+            await client.get_user("octocat")
+    assert not isinstance(exc_info.value, RateLimitError)
+
+
+@respx.mock
 async def test_json_decode_error():
     """JSONパース失敗時にGitHubAPIError発生"""
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
@@ -774,3 +788,73 @@ def test_repo_validation_invalid(repo: str) -> None:
     """無効なリポジトリ名でValueError発生（セキュリティ境界テスト）"""
     with pytest.raises(ValueError, match="Invalid GitHub repository name"):
         validate_github_repo(repo)
+
+
+# =============================================================================
+# 型安全性テスト（type-guard: 非期待型レスポンス防御）
+# =============================================================================
+
+
+@respx.mock
+async def test_get_user_type_guard_rejects_non_dict():
+    """get_user()が非dict JSONレスポンスを受け取った場合にGitHubAPIErrorを発生させる
+
+    検証項目:
+    - APIがリスト型のJSONを返した場合にGitHubAPIError発生
+    - エラーメッセージに "Expected dict" が含まれること
+    """
+    respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+        status_code=200,
+        json=["not", "a", "dict"],  # 不正なレスポンス型（list）
+        headers={"X-RateLimit-Remaining": "59"},
+    )
+
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(GitHubAPIError) as exc_info:
+            await client.get_user("octocat")
+
+    assert "Expected dict" in str(exc_info.value)
+
+
+@respx.mock
+async def test_get_repos_type_guard_rejects_non_list():
+    """get_repos()が非list JSONレスポンスを受け取った場合にGitHubAPIErrorを発生させる
+
+    検証項目:
+    - APIがdict型のJSONを返した場合にGitHubAPIError発生
+    - エラーメッセージに "Expected list" が含まれること
+    """
+    respx.get(
+        f"{GITHUB_API_BASE_URL}/users/octocat/repos", params={"sort": "updated", "per_page": 30}
+    ).respond(
+        status_code=200,
+        json={"not": "a list"},  # 不正なレスポンス型（dict）
+        headers={"X-RateLimit-Remaining": "59"},
+    )
+
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(GitHubAPIError) as exc_info:
+            await client.get_repos("octocat")
+
+    assert "Expected list" in str(exc_info.value)
+
+
+@respx.mock
+async def test_get_repo_type_guard_rejects_non_dict():
+    """get_repo()が非dict JSONレスポンスを受け取った場合にGitHubAPIErrorを発生させる
+
+    検証項目:
+    - APIがリスト型のJSONを返した場合にGitHubAPIError発生
+    - エラーメッセージに "Expected dict" が含まれること
+    """
+    respx.get(f"{GITHUB_API_BASE_URL}/repos/octocat/Hello-World").respond(
+        status_code=200,
+        json=["not", "a", "dict"],  # 不正なレスポンス型（list）
+        headers={"X-RateLimit-Remaining": "59"},
+    )
+
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(GitHubAPIError) as exc_info:
+            await client.get_repo("octocat", "Hello-World")
+
+    assert "Expected dict" in str(exc_info.value)

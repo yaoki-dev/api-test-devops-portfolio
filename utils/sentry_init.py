@@ -22,7 +22,7 @@ structlogと連携し、ERROR以上のログをSentryに送信。
     環境変数 SENTRY_DEBUG=true で初期化失敗の警告を有効化。
 
 セキュリティ:
-    - before_sendフックで機密データを自動除外（29種類のキーパターン）
+    - before_sendフックで機密データを自動除外（30種類のキーパターン）
     - DSNはSecretStrで管理（config/settings.py）
     - enabled=Falseで完全無効化可能
 """
