@@ -494,7 +494,8 @@ class User(BaseModel):
         http/httpsスキームおよびホスト部はRFC 3986 Section 6.2.2.1に従い小文字に正規化。
 
         Args:
-            v: バリデーション対象のURL文字列
+            v: バリデーション対象の値（mode="before"のため任意型。
+               str以外の場合はValueErrorを送出）
 
         Returns:
             バリデーション済みURL文字列（スキームなしの場合はhttps://を補完、
