@@ -58,8 +58,8 @@ jobs:
               "repos/${REPOSITORY}/pulls/${PULL_REQUEST_NUMBER}" \
               --header "Accept: application/vnd.github.diff" \
               > /tmp/pr_diff.txt || {
-              echo "::warning::PR diff の取得に失敗しました。空のdiffでGeminiレビューを続行します。"
-              echo "(diff unavailable)" > /tmp/pr_diff.txt
+              echo "::error::PR diff の取得に失敗しました。レビューを中断します。"
+              exit 1
             }
           else
             echo "(not a pull request)" > /tmp/pr_diff.txt
