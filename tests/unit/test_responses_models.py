@@ -1115,12 +1115,27 @@ class TestUserModel:
                 "https://example.com/search?nested?key=val",
                 id="query_literal_question_mark_preserved",
             ),
+            pytest.param(
+                "https://example.com/search?q=<script>",
+                "https://example.com/search?q=%3Cscript%3E",
+                id="query_lt_gt_xss_encoding",
+            ),
+            pytest.param(
+                "https://example.com/search?q=alert('xss')",
+                "https://example.com/search?q=alert(%27xss%27)",
+                id="query_single_quote_encoding",
+            ),
+            pytest.param(
+                "https://example.com/search?q=<script>alert('xss')</script>",
+                "https://example.com/search?q=%3Cscript%3Ealert(%27xss%27)%3C/script%3E",
+                id="query_combined_xss_payload_encoding",
+            ),
         ],
     )
     def test_user_website_encodes_special_chars(
         self, valid_user_data: _UserData, input_url: str, expected_url: str
     ) -> None:
-        """_normalize_url の quote() によるパス・フラグメントのURLエンコード動作を検証する."""
+        """_normalize_url の quote() によるパス・クエリ・フラグメントのエンコード動作を検証する."""
         valid_user_data["website"] = input_url
         user = User(**valid_user_data)
         assert user.website == expected_url
