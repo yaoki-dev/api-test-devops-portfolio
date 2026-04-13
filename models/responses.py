@@ -483,7 +483,7 @@ class User(BaseModel):
 
     @field_validator("website", mode="before")
     @classmethod
-    def validate_website_scheme(cls, v: str) -> str:
+    def validate_website_scheme(cls, v: object) -> str:
         """websiteフィールドのURLスキーム検証（allowlist方式）
 
         RFC 3986準拠のスキーム検出で、http://とhttps://のみ許可する。
