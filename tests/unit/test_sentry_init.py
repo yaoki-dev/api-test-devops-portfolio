@@ -132,8 +132,8 @@ class TestSensitiveKeysCompleteness:
         assert isinstance(SENSITIVE_KEYS, frozenset)
 
     def test_sensitive_keys_count(self) -> None:
-        """30種類の機密キーが定義されている（email追加後）"""
-        assert len(SENSITIVE_KEYS) == 30
+        """31種類の機密キーが定義されている（body_preview追加後）"""
+        assert len(SENSITIVE_KEYS) == 31
 
     @pytest.mark.parametrize(
         "key",
@@ -174,6 +174,8 @@ class TestSensitiveKeysCompleteness:
             "credit_card",
             "cvv",
             "card_number",
+            # HTTPレスポンスプレビュー
+            "body_preview",
         ],
     )
     def test_expected_keys_present(self, key: str) -> None:
@@ -212,6 +214,12 @@ class TestBeforeSend:
         event = cast(Event, {"extra": {"token": "secret_token"}})
         result_dict = self._call_before_send(event)
         assert result_dict["extra"]["token"] == "[REDACTED]"  # noqa: S105
+
+    def test_scrub_extra_body_preview(self) -> None:
+        """extra.body_preview がスクラブされる"""
+        event = cast(Event, {"extra": {"body_preview": "password=secret"}})
+        result_dict = self._call_before_send(event)
+        assert result_dict["extra"]["body_preview"] == "[REDACTED]"  # noqa: S105
 
     def test_scrub_tags(self) -> None:
         """タグがスクラブされる"""
