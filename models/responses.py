@@ -31,6 +31,7 @@ _PERCENT_CTRL_RE: re.Pattern[str] = re.compile(
     r"%0[0-9a-f]|%1[0-9a-f]|%7f",  # %00-%1f および %7f(DEL) をカバー
     re.IGNORECASE,
 )
+_WEBSITE_MAX_LENGTH = 200
 _INVISIBLE_CATEGORIES = frozenset({"Cf", "Cc", "Mn", "Zs", "Zl", "Zp"})
 # Cs（孤立サロゲート）を _INVISIBLE_CATEGORIES と合算した除去セット（1回目パスで使用）
 _STRIP_CATEGORIES = _INVISIBLE_CATEGORIES | frozenset({"Cs"})
@@ -128,7 +129,10 @@ def _validate_netloc(parsed: ParseResult) -> None:
         raise ValueError("ポートが無効です（整数値でなければなりません）") from e
     # 多層防御: parsed.username/password に加え netloc の "@" リテラルも検査
     # （urlparse が特定のエンコード済み入力で username=None を返すエッジケース対策）
-    decoded_netloc = unquote(parsed.netloc, errors="replace")
+    try:
+        decoded_netloc = unquote(parsed.netloc, errors="strict")
+    except UnicodeDecodeError as e:
+        raise ValueError(f"URLに不正なパーセントエンコードが含まれています: {e}") from e
     has_at = "@" in parsed.netloc or "@" in decoded_netloc
     if has_at:
         raise ValueError("URLにuserinfo（ユーザー名/パスワード）は指定できません")
@@ -163,8 +167,7 @@ def _normalize_url(parsed: ParseResult) -> str:
     # RFC 3986 §3.4 query = *( pchar / "/" / "?" )
     safe_query = quote(parsed.query, safe="=&+:@!$()*,;/?%")
     # RFC 3986 §3.5 fragment = *( pchar / "/" / "?" )
-    # ._~（RFC 3986 unreserved）をフラグメントに追加: フラグメントはエンドユーザー向けのため
-    # 通常の unreserved 文字を過剰エンコードしない（path/query との意図的な非対称）
+    # フラグメントは path/query より "&" と "?" を緩く扱い、unreserved 文字は過剰エンコードしない
     safe_fragment = quote(parsed.fragment, safe=":@!$&()*+,;=/?%-._~")
     # hostname は urlparse が自動小文字化済み。netloc.lower() ではなく
     # hostname + port で再構成し、percent-encoded 文字の大文字16進を保持する
@@ -185,6 +188,15 @@ def _normalize_url(parsed: ParseResult) -> str:
             safe_fragment,
         )
     )
+
+
+def _ensure_website_max_length(url: str) -> str:
+    """website の正規化後長を上限内に収める."""
+    if len(url) > _WEBSITE_MAX_LENGTH:
+        raise ValueError(
+            f"URL補完後の長さが上限{_WEBSITE_MAX_LENGTH}文字を超過しています（{len(url)}文字）"
+        )
+    return url
 
 
 # =============================================================================
@@ -445,8 +457,8 @@ class User(BaseModel):
     website: str = Field(
         ...,
         min_length=1,
-        max_length=200,
-        description="ウェブサイトURL（制御文字除去・前後空白除去・http/httpsスキーム検証済み）",
+        max_length=2048,
+        description="ウェブサイトURL（正規化後200文字以内、制御文字除去・前後空白除去・http/httpsスキーム検証済み）",
     )
     company: Company = Field(..., description="企業情報")
 
@@ -534,7 +546,7 @@ class User(BaseModel):
             # _validate_netloc / _normalize_url の ValueError はそのまま伝播
             parsed = urlparse(sanitized)
             _validate_netloc(parsed)
-            return _normalize_url(parsed)
+            return _ensure_website_max_length(_normalize_url(parsed))
         # RFC 3986スキーム検出: http/https以外のスキームが存在すれば拒否
         # is_domain_portロジックを削除: domain:portはスキームなし扱いのため
         # http(s)://を明示しない限り拒否（例: example.com:8080 → ValueError）
@@ -561,7 +573,7 @@ class User(BaseModel):
             raise ValueError(
                 "スキームなしURLにポートは指定できません（http(s)://を明示してください）"
             )
-        return _normalize_url(parsed)
+        return _ensure_website_max_length(_normalize_url(parsed))
 
 
 # =============================================================================

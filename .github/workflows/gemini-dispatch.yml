@@ -45,7 +45,7 @@ jobs:
   dispatch:
     # For PRs: only if not from a fork
     # For issues: only on open/reopen
-    # For comments: only if user types @gemini-cli and is OWNER/MEMBER/COLLABORATOR
+    # For comments: runtime safety step blocks fork PRs before command extraction
     if: |-
       (
         github.event_name == 'pull_request' &&
@@ -56,8 +56,8 @@ jobs:
         contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association)
       ) || (
         github.event.sender.type == 'User' &&
-        startsWith(github.event.comment.body || github.event.review.body || github.event.issue.body, '@gemini-cli') &&
-        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association || github.event.review.author_association || github.event.issue.author_association)
+        startsWith(github.event.comment.body || github.event.review.body, '@gemini-cli') &&
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association || github.event.review.author_association)
       )
     runs-on: 'ubuntu-latest'
     permissions:
@@ -70,10 +70,35 @@ jobs:
       additional_context: '${{ steps.extract_command.outputs.additional_context }}'
       issue_number: '${{ github.event.pull_request.number || github.event.issue.number }}'
     steps:
+      - name: 'Determine dispatch safety (fork PR guard)'
+        id: 'dispatch_safety'
+        uses: 'actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea' # ratchet:actions/github-script@v7
+        env:
+          EVENT_NAME: '${{ github.event_name }}'
+        with:
+          script: |
+            const eventName = process.env.EVENT_NAME;
+            let isForkPr = false;
+
+            if (eventName === 'pull_request_review' || eventName === 'pull_request_review_comment') {
+              const fork = context.payload.pull_request?.head?.repo?.fork;
+              isForkPr = fork === undefined || fork === null ? true : Boolean(fork);
+            } else if (eventName === 'issue_comment' && context.payload.issue?.pull_request) {
+              const { data: pullRequest } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.issue.number,
+              });
+              const fork = pullRequest.head?.repo?.fork;
+              isForkPr = fork === undefined || fork === null ? true : Boolean(fork);
+            }
+
+            core.setOutput('is_safe', String(!isForkPr));
+
       - name: 'Mint identity token'
         id: 'mint_identity_token'
         if: |-
-          ${{ vars.APP_ID }}
+          ${{ vars.APP_ID && steps.dispatch_safety.outputs.is_safe == 'true' }}
         uses: 'actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf' # ratchet:actions/create-github-app-token@v2
         with:
           app-id: '${{ vars.APP_ID }}'
@@ -87,12 +112,19 @@ jobs:
         uses: 'actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea' # ratchet:actions/github-script@v7
         env:
           EVENT_TYPE: '${{ github.event_name }}.${{ github.event.action }}'
-          REQUEST: '${{ github.event.comment.body || github.event.review.body || github.event.issue.body }}'
+          IS_SAFE_DISPATCH: '${{ steps.dispatch_safety.outputs.is_safe }}'
+          REQUEST: '${{ github.event.comment.body || github.event.review.body }}'
         with:
           script: |
             const eventType = process.env.EVENT_TYPE;
-            const request = process.env.REQUEST;
+            const isSafeDispatch = process.env.IS_SAFE_DISPATCH === 'true';
+            const request = process.env.REQUEST || '';
             core.setOutput('request', request);
+
+            if (!isSafeDispatch) {
+              core.setOutput('command', 'fallthrough');
+              return;
+            }
 
             if (eventType === 'pull_request.opened') {
               core.setOutput('command', 'review');
@@ -115,6 +147,8 @@ jobs:
             }
 
       - name: 'Acknowledge request'
+        if: |-
+          ${{ steps.extract_command.outputs.command != 'fallthrough' }}
         env:
           GITHUB_TOKEN: '${{ steps.mint_identity_token.outputs.token || secrets.GITHUB_TOKEN || github.token }}'
           ISSUE_NUMBER: '${{ github.event.pull_request.number || github.event.issue.number }}'

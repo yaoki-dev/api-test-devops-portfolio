@@ -16,6 +16,7 @@ import pytest
 from pydantic import ValidationError
 
 from models.responses import (
+    _WEBSITE_MAX_LENGTH,  # noqa: PLC2701
     Address,
     Album,
     Comment,
@@ -687,9 +688,20 @@ class TestUserModel:
         user = User(**valid_user_data)
         assert len(user.website) == 200
 
+        # スキームなし → https:// 補完後に _WEBSITE_MAX_LENGTH 超過
+        domain_suffix = ".example.com"
+        pad = _WEBSITE_MAX_LENGTH - len("https://") - len(domain_suffix) + 1
+        schemeless = "a" * pad + domain_suffix
+        valid_user_data["website"] = schemeless
+        with pytest.raises(
+            ValidationError,
+            match=r"URL補完後の長さが上限200文字を超過しています",
+        ):
+            User(**valid_user_data)
+
         # 201文字: ValidationError
         valid_user_data["website"] = base + "a" * (201 - len(base))
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValidationError, match=r"URL補完後の長さが上限"):
             User(**valid_user_data)
 
     def test_user_website_is_not_html_escaped(self, valid_user_data: _UserData) -> None:
@@ -927,6 +939,11 @@ class TestUserModel:
                 id="schemeless_uppercase_host_with_path",
             ),
             pytest.param(
+                "https://example.com%80",
+                "不正なパーセントエンコード",
+                id="invalid_utf8_percent_encoding_https",
+            ),
+            pytest.param(
                 "example.com%80",
                 "不正なパーセントエンコード",
                 id="invalid_utf8_percent_encoding",
@@ -1133,7 +1150,7 @@ class TestPostModel:
 
     def test_post_alias_working(self) -> None:
         """Post モデルの alias (userId → user_id) が機能することを確認"""
-        post = Post(user_id=5, id=1, title="Test", body="Test")
+        post = Post(userId=5, id=1, title="Test", body="Test")
 
         assert post.user_id == 5
 
