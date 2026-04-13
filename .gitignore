@@ -136,9 +136,6 @@ gsd-local-patches/
 .omc/sessions/
 .omc/project-memory.json
 
-# VS Code workspace settings (local only)
-api-test-devops-portfolio.code-workspace
-
 # CGC (CodeGraphContext)
 cgc_mcp_wrapper.sh
 cgc_watch_safe.sh
