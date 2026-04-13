@@ -48,7 +48,7 @@ dev = [
     "pytest-xdist>=3.5.0",
     "respx>=0.22.0",            # httpx用モックライブラリ
     # 品質管理
-    "ruff>=0.15.5,<0.16",       # pre-commitと整合（uv.lock同期）
+    "ruff>=0.15.10,<0.16",       # pre-commitと整合（uv.lock同期）
     "mypy>=1.8.0",
     "bandit>=1.8.6",
     "safety>=3.6.0",
