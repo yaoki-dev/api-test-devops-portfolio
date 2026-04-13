@@ -22,7 +22,7 @@ structlogと連携し、ERROR以上のログをSentryに送信。
     環境変数 SENTRY_DEBUG=true で初期化失敗の警告を有効化。
 
 セキュリティ:
-    - before_sendフックで機密データを自動除外（29種類のキーパターン）
+    - before_sendフックで機密データを自動除外（31種類のキーパターン）
     - DSNはSecretStrで管理（config/settings.py）
     - enabled=Falseで完全無効化可能
 """
@@ -80,6 +80,9 @@ SENSITIVE_KEYS: frozenset[str] = frozenset(
         "credit_card",
         "cvv",
         "card_number",
+        # HTTPレスポンスプレビュー: _before_send は capture_exception / capture_message の
+        # 両方で適用され、body_preview は extra 経由のペイロードをスクラブする。
+        "body_preview",
     },
 )
 
