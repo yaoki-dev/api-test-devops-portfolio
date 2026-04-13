@@ -87,8 +87,16 @@ jobs:
 
       - name: Verify pull request output
         if: steps.git-check.outputs.changed == 'true'
+        env:
+          PULL_REQUEST_OPERATION: ${{ steps.create-pr.outputs.pull-request-operation }}
+          PULL_REQUEST_URL: ${{ steps.create-pr.outputs.pull-request-url }}
         run: |
-          if [ -z "${{ steps.create-pr.outputs.pull-request-url }}" ]; then
+          if [ "$PULL_REQUEST_OPERATION" = "none" ]; then
+            echo "Create Pull Request step reported no pull request changes"
+            exit 0
+          fi
+
+          if [ -z "$PULL_REQUEST_URL" ]; then
             echo "Create Pull Request step did not produce pull-request-url output" >&2
             exit 1
           fi
