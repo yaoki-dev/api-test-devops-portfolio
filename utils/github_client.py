@@ -174,6 +174,8 @@ class AsyncGitHubClient:
             ValueError: 無効なユーザー名
             NotFoundError: ユーザーが存在しない
             RateLimitError: Rate Limit超過
+            GitHubServerError: 5xxエラー（リトライ上限後）
+            GitHubAPIError: タイムアウト等の予期しないエラー、または不正なレスポンス型
 
         Example:
             >>> async with AsyncGitHubClient() as client:
@@ -332,7 +334,7 @@ class AsyncGitHubClient:
             reset_time = self._parse_rate_limit_header(
                 response.headers, "X-RateLimit-Reset", _RATE_LIMIT_RESET_FALLBACK
             )
-            raise RateLimitError(reset_time)
+            raise RateLimitError(reset_time) from None
         # その他の403エラー（IPブロック、アクセス権限不足等）
         error_message = ""
         try:
@@ -346,7 +348,7 @@ class AsyncGitHubClient:
             self.logger.warning("failed_to_parse_403_message", error=str(parse_err))
         raise GitHubAPIError(
             f"Access forbidden: {error_message}" if error_message else "Access forbidden"
-        )
+        ) from None
 
     async def _handle_5xx_response(
         self,
@@ -476,6 +478,7 @@ class AsyncGitHubClient:
             JSONレスポンス（dict or list[dict]）
 
         Raises:
+            RuntimeError: クライアント未初期化（`async with` 未使用）
             NotFoundError: 404エラー
             RateLimitError: 403 Rate Limit超過 または 429 Too Many Requests
             GitHubServerError: 5xxエラー（リトライ上限後）

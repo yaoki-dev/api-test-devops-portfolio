@@ -215,6 +215,12 @@ class TestBeforeSend:
         result_dict = self._call_before_send(event)
         assert result_dict["extra"]["token"] == "[REDACTED]"  # noqa: S105
 
+    def test_scrub_extra_body_preview(self) -> None:
+        """extra.body_preview がスクラブされる"""
+        event = cast(Event, {"extra": {"body_preview": "password=secret"}})
+        result_dict = self._call_before_send(event)
+        assert result_dict["extra"]["body_preview"] == "[REDACTED]"  # noqa: S105
+
     def test_scrub_tags(self) -> None:
         """タグがスクラブされる"""
         event = cast(Event, {"tags": {"api_key": "key123"}})

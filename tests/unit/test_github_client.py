@@ -1347,6 +1347,7 @@ def test_check_rate_limit_warning_triggers(remaining: int) -> None:
     warning_logs = [log for log in logs if log.get("log_level") == "warning"]
     assert len(warning_logs) == 1
     assert warning_logs[0]["remaining"] == remaining
+    assert warning_logs[0]["reset_time"] == datetime.fromtimestamp(1700000000, tz=UTC).isoformat()
 
 
 @pytest.mark.unit
