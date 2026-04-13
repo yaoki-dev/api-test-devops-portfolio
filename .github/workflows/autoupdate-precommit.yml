@@ -91,12 +91,28 @@ jobs:
           PULL_REQUEST_OPERATION: ${{ steps.create-pr.outputs.pull-request-operation }}
           PULL_REQUEST_URL: ${{ steps.create-pr.outputs.pull-request-url }}
         run: |
-          if [ "$PULL_REQUEST_OPERATION" = "none" ]; then
-            echo "Create Pull Request step reported no pull request changes"
-            exit 0
-          fi
-
-          if [ -z "$PULL_REQUEST_URL" ]; then
-            echo "Create Pull Request step did not produce pull-request-url output" >&2
-            exit 1
-          fi
+          case "$PULL_REQUEST_OPERATION" in
+            created|updated)
+              if [ -z "$PULL_REQUEST_URL" ]; then
+                echo "::error::pull-request-operation='${PULL_REQUEST_OPERATION}' but pull-request-url is empty" >&2
+                exit 1
+              fi
+              echo "Pull request ${PULL_REQUEST_OPERATION}: ${PULL_REQUEST_URL}"
+              ;;
+            closed)
+              echo "::error::Create Pull Request step closed the pull request (url=${PULL_REQUEST_URL})" >&2
+              exit 1
+              ;;
+            none)
+              echo "Create Pull Request step reported no pull request changes (operation=none)"
+              exit 0
+              ;;
+            "")
+              echo "::error::Create Pull Request step did not produce pull-request-operation output (step may have failed)" >&2
+              exit 1
+              ;;
+            *)
+              echo "::error::Unexpected pull-request-operation value: '${PULL_REQUEST_OPERATION}'" >&2
+              exit 1
+              ;;
+          esac
