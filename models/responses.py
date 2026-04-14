@@ -220,9 +220,10 @@ def _validate_scheme_less_url(sanitized: str) -> None:
         raise ValueError("URLに不完全なパーセントエンコードが含まれています")
     if "/" in sanitized or "/" in decoded:
         raise ValueError("スキームなしURLにパスは指定できません")
-    if "#" in sanitized:
+    # %23（#）と %3F（?）のバイパス検出: decoded に含まれる#/?も検出
+    if "#" in sanitized or "#" in decoded:
         raise ValueError("スキームなしURLにフラグメントは指定できません")
-    if "?" in sanitized:
+    if "?" in sanitized or "?" in decoded:
         raise ValueError("スキームなしURLにクエリは指定できません")
 
 
