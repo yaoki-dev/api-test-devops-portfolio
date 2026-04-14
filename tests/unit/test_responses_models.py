@@ -519,7 +519,7 @@ class TestCompanyModel:
         """Company モデルの alias (catchPhrase → catch_phrase) が機能することを確認"""
         company = Company(
             name="Test",
-            catch_phrase="Test Phrase",
+            catchPhrase="Test Phrase",
             bs="test",
         )
 
