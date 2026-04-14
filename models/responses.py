@@ -33,7 +33,7 @@ _PERCENT_CTRL_RE: re.Pattern[str] = re.compile(
 )
 # 不完全な%シーケンス検出 — unquoteがリテラル扱いするためUnicodeDecodeErrorが発生しない
 _INCOMPLETE_PCT_RE: re.Pattern[str] = re.compile(r"%(?![0-9a-fA-F]{2})")
-_WEBSITE_MAX_LENGTH = 200
+_WEBSITE_MAX_LENGTH: int = 200
 _INVISIBLE_CATEGORIES = frozenset({"Cf", "Cc", "Mn", "Zs", "Zl", "Zp"})
 # Cs（孤立サロゲート）を _INVISIBLE_CATEGORIES と合算した除去セット（1回目パスで使用）
 _STRIP_CATEGORIES = _INVISIBLE_CATEGORIES | frozenset({"Cs"})
