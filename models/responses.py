@@ -31,6 +31,8 @@ _PERCENT_CTRL_RE: re.Pattern[str] = re.compile(
     r"%0[0-9a-f]|%1[0-9a-f]|%7f",  # %00-%1f および %7f(DEL) をカバー
     re.IGNORECASE,
 )
+# 不完全な%シーケンス検出 — unquoteがリテラル扱いするためUnicodeDecodeErrorが発生しない
+_INCOMPLETE_PCT_RE: re.Pattern[str] = re.compile(r"%(?![0-9a-fA-F]{2})")
 _WEBSITE_MAX_LENGTH = 200
 _INVISIBLE_CATEGORIES = frozenset({"Cf", "Cc", "Mn", "Zs", "Zl", "Zp"})
 # Cs（孤立サロゲート）を _INVISIBLE_CATEGORIES と合算した除去セット（1回目パスで使用）
@@ -197,6 +199,31 @@ def _ensure_website_max_length(url: str) -> str:
             f"URL補完後の長さが上限{_WEBSITE_MAX_LENGTH}文字を超過しています（{len(url)}文字）"
         )
     return url
+
+
+def _validate_scheme_less_url(sanitized: str) -> None:
+    """スキームなしURLのパーセントエンコード・パス・フラグメント・クエリを検証する。
+
+    Args:
+        sanitized: 前処理済み（不可視文字除去・strip済み）のURL文字列
+
+    Raises:
+        ValueError: 不正なパーセントエンコード、パス、フラグメント、クエリが含まれる場合
+    """
+    # errors='strict': 不正なパーセントエンコードをサイレント置換せず明示的エラーとして扱う
+    try:
+        decoded = unquote(sanitized, errors="strict")
+    except (UnicodeDecodeError, ValueError) as e:
+        raise ValueError(f"URLに不正なパーセントエンコードが含まれています: {e}") from e
+    # 不完全な%シーケンス（例: %、%GG）はunquoteがリテラル扱いするため個別チェック
+    if _INCOMPLETE_PCT_RE.search(sanitized):
+        raise ValueError("URLに不完全なパーセントエンコードが含まれています")
+    if "/" in sanitized or "/" in decoded:
+        raise ValueError("スキームなしURLにパスは指定できません")
+    if "#" in sanitized:
+        raise ValueError("スキームなしURLにフラグメントは指定できません")
+    if "?" in sanitized:
+        raise ValueError("スキームなしURLにクエリは指定できません")
 
 
 # =============================================================================
@@ -458,7 +485,7 @@ class User(BaseModel):
         ...,
         min_length=1,
         max_length=2048,
-        description="ウェブサイトURL（正規化後200文字以内、制御文字除去・前後空白除去・http/httpsスキーム検証済み）",
+        description="ウェブサイトURL（入力時最大2048文字・正規化後200文字以内、制御文字除去・前後空白除去・http/httpsスキーム検証済み）",
     )
     company: Company = Field(..., description="企業情報")
 
@@ -545,6 +572,8 @@ class User(BaseModel):
         # （http/httpsブランチと補完ブランチで入力が異なるため共通化不可）
         if sanitized_lower.startswith(("http://", "https://")):
             # _validate_netloc / _normalize_url の ValueError はそのまま伝播
+            # NOTE: sanitized（元の大文字混在）を使用 — スキーム小文字化は _normalize_url に委譲
+            # （sanitized_lower は path/query の大文字を失うため使用不可）
             parsed = urlparse(sanitized)
             _validate_netloc(parsed)
             return _ensure_website_max_length(_normalize_url(parsed))
@@ -557,13 +586,7 @@ class User(BaseModel):
         # _validate_netloc / _normalize_url の ValueError はそのまま伝播
         # 設計意図: スキームなしURLはドメインのみ許可（パス付きURLは拒否）
         # パーセントエンコード済み %2F によるバイパスも防止
-        # errors='strict': 不正なパーセントエンコードをサイレント置換せず明示的エラーとして扱う
-        try:
-            decoded = unquote(sanitized, errors="strict")
-        except UnicodeDecodeError as e:
-            raise ValueError(f"URLに不正なパーセントエンコードが含まれています: {e}") from e
-        if "/" in sanitized or "/" in decoded:
-            raise ValueError("スキームなしURLにパスは指定できません")
+        _validate_scheme_less_url(sanitized)
         parsed = urlparse("https://" + sanitized)
         _validate_netloc(parsed)
         # スキームなし補完後のポートチェック:
