@@ -170,9 +170,9 @@ def _normalize_url(parsed: ParseResult) -> str:
     # -._~ は Python quote() の _ALWAYS_SAFE に含まれるが、RFC 仕様との対応を明示
     safe_path = quote(parsed.path, safe="/:@!$()*+,;=%-._~")
     # RFC 3986 §3.3 (params は path の一部として扱う)
-    safe_params = quote(parsed.params, safe=";=@:!$()*+,/%")
+    safe_params = quote(parsed.params, safe=";=@:!$()*+,/%-._~")
     # RFC 3986 §3.4 query = *( pchar / "/" / "?" )
-    safe_query = quote(parsed.query, safe="=&+:@!$()*,;/?%")
+    safe_query = quote(parsed.query, safe="=&+:@!$()*,;/?%-._~")
     # RFC 3986 §3.5 fragment = *( pchar / "/" / "?" )
     # フラグメントは path/query より "&" と "?" を緩く扱い、unreserved 文字は過剰エンコードしない
     safe_fragment = quote(parsed.fragment, safe=":@!$&()*+,;=/?%-._~")
@@ -553,6 +553,8 @@ class User(BaseModel):
                   誤検出するため「危険なURLスキーム」として先に拒否される）
                 - スキームなしURLに不正なパーセントエンコードが含まれる
                   （例: example.com%80 — UTF-8として不正なバイト列）
+                - スキームなしURLに不完全なパーセントエンコードが含まれる
+                  （例: % 単独、%GG 等の不正な16進シーケンス）
 
         Note:
             websiteフィールドの値をHTMLコンテキストへ出力する際は、
@@ -780,6 +782,9 @@ class Photo(BaseModel):
         sanitized_lower = sanitized.lower()
         if _PERCENT_CTRL_RE.search(sanitized_lower):
             raise ValueError("URLにパーセントエンコードされた制御文字が含まれています")
+        # 不完全な%シーケンス（%、%G、%GGなど）はunquoteがリテラル扱いするため個別チェック
+        if _INCOMPLETE_PCT_RE.search(sanitized):
+            raise ValueError("URLに不完全なパーセントエンコードが含まれています")
         if not sanitized_lower.startswith(("http://", "https://")):
             raise ValueError("URLはhttp://またはhttps://で始まる必要があります")
         # _validate_netloc / _normalize_url の ValueError はそのまま伝播
