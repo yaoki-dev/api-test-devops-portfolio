@@ -473,7 +473,7 @@ class User(BaseModel):
         address: 住所情報（ネストされたAddressモデル）
         phone: 電話番号（サニタイズ済み、最大50文字）
         website: ウェブサイトURL（制御文字除去・前後空白除去・http/httpsスキーム検証済み、
-            入力時最大2048文字・正規化後200文字以内）
+            入力時最大2048文字・正規化後2048文字以内）
         company: 企業情報（ネストされたCompanyモデル）
 
     """
@@ -552,7 +552,7 @@ class User(BaseModel):
                   誤検出するため「危険なURLスキーム」として先に拒否される）
                 - スキームなしURLに不正なパーセントエンコードが含まれる
                   （例: example.com%80 — UTF-8として不正なバイト列）
-                - スキームなしURLに不完全なパーセントエンコードが含まれる
+                - 不完全なパーセントエンコードが含まれる（スキーム有無を問わず）
                   （例: % 単独、%GG 等の不正な16進シーケンス）
 
         Note:
@@ -573,8 +573,8 @@ class User(BaseModel):
         sanitized_lower = sanitized.lower()
         if _PERCENT_CTRL_RE.search(sanitized_lower):
             raise ValueError("URLにパーセントエンコードされた制御文字が含まれています")
-        # 不完全な%シーケンス検出（http/httpsブランチ）
-        # スキームなしブランチは _validate_scheme_less_url で検出済み
+        # 不完全な%シーケンス検出（全ブランチ共通 — http/httpsおよびスキームなし両対応）
+        # _validate_scheme_less_url でも同様にチェックするが多層防御として二重確認
         if _INCOMPLETE_PCT_RE.search(sanitized):
             raise ValueError("URLに不完全なパーセントエンコードが含まれています")
         # プロトコル相対URLを明示的に拒否（攻撃面削減）
