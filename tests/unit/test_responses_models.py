@@ -16,7 +16,7 @@ import pytest
 from pydantic import ValidationError
 
 from models.responses import (
-    _WEBSITE_MAX_LENGTH,  # noqa: PLC2701
+    _WEBSITE_NORMALIZED_MAX_LENGTH,  # noqa: PLC2701
     Address,
     Album,
     Comment,
@@ -698,28 +698,28 @@ class TestUserModel:
         )
 
     def test_user_website_max_length_boundary(self, valid_user_data: _UserData) -> None:
-        """website max_length=200 の境界値テスト."""
-        # 200文字ちょうど: https:// (8文字) + ドメイン + パスで200文字
-        # _normalize_url後の長さが200以内であること
+        """website の正規化後URL長 _WEBSITE_NORMALIZED_MAX_LENGTH(2048) 境界値テスト."""
+        max_len = _WEBSITE_NORMALIZED_MAX_LENGTH  # 2048
         base = "https://example.com/"
-        path = "a" * (200 - len(base))
+        # ちょうど max_len 文字: 正常
+        path = "a" * (max_len - len(base))
         valid_user_data["website"] = base + path
         user = User(**valid_user_data)
-        assert len(user.website) == 200
+        assert len(user.website) == max_len
 
-        # スキームなし → https:// 補完後に _WEBSITE_MAX_LENGTH 超過
+        # スキームなし → https:// 補完後に max_len 超過
         domain_suffix = ".example.com"
-        pad = _WEBSITE_MAX_LENGTH - len("https://") - len(domain_suffix) + 1
+        pad = max_len - len("https://") - len(domain_suffix) + 1
         schemeless = "a" * pad + domain_suffix
         valid_user_data["website"] = schemeless
         with pytest.raises(
             ValidationError,
-            match=r"URL補完後の長さが上限200文字を超過しています",
+            match=rf"URL補完後の長さが上限{max_len}文字を超過しています",
         ):
             User(**valid_user_data)
 
-        # 201文字: ValidationError
-        valid_user_data["website"] = base + "a" * (201 - len(base))
+        # max_len + 1 文字: ValidationError
+        valid_user_data["website"] = base + "a" * (max_len + 1 - len(base))
         with pytest.raises(ValidationError, match=r"URL補完後の長さが上限"):
             User(**valid_user_data)
 
@@ -1923,14 +1923,6 @@ class TestValidateSchemeLessUrl:
     def test_accepts_valid_domain(self) -> None:
         """有効なドメイン名はエラーなしで通過すること"""
         _validate_scheme_less_url("example.com")  # 例外なし = 成功
-
-
-def test_strip_invisible_chars_rejects_non_str() -> None:
-    """_strip_invisible_chars は非str型で ValueError を発生させること."""
-    with pytest.raises(ValueError, match="文字列が必要です"):
-        _strip_invisible_chars(None)  # type: ignore[arg-type]
-    with pytest.raises(ValueError, match="文字列が必要です"):
-        _strip_invisible_chars(123)  # type: ignore[arg-type]
 
 
 class TestExtraFieldsForbidden:

@@ -29,11 +29,13 @@ _SCHEME_RE: re.Pattern[str] = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 _HTML_META_RE: re.Pattern[str] = re.compile(r'[<>"\'&]')
 _PERCENT_CTRL_RE: re.Pattern[str] = re.compile(
     r"%0[0-9a-f]|%1[0-9a-f]|%7f",  # C0制御文字(%00-%1f)およびDEL(%7f)を検出
+    # 注: C1制御文字(%80-%9f)は対象外（UTF-8マルチバイト先頭バイトと重複し誤検出リスク）
+    # 注: %20(スペース)は制御文字ではないため非対象
     re.IGNORECASE,
 )
 # 不完全な%シーケンス検出 — unquoteがリテラル扱いするためUnicodeDecodeErrorが発生しない
 _INCOMPLETE_PCT_RE: re.Pattern[str] = re.compile(r"%(?![0-9a-fA-F]{2})")
-_WEBSITE_MAX_LENGTH: int = 200
+_WEBSITE_NORMALIZED_MAX_LENGTH: int = 2048
 _INVISIBLE_CATEGORIES = frozenset({"Cf", "Cc", "Mn", "Zs", "Zl", "Zp"})
 # Cs（孤立サロゲート）を _INVISIBLE_CATEGORIES と合算した除去セット（1回目パスで使用）
 _STRIP_CATEGORIES = _INVISIBLE_CATEGORIES | frozenset({"Cs"})
@@ -63,9 +65,6 @@ def _strip_invisible_chars(v: str) -> str:
     Python に同梱の Unicode バージョン内の新規文字に自動対応する。
     （Unicode バージョン自体の更新には Python バージョンアップが必要）
     """
-    # 防御的チェック: validate_website_scheme 経由では到達しないが、直接呼び出し時のガード
-    if not isinstance(v, str):
-        raise ValueError(f"文字列が必要です（受け取った型: {type(v).__name__}）")
     # パス1: Cs（孤立サロゲート）と不可視文字を一括除去
     # _STRIP_CATEGORIES = _INVISIBLE_CATEGORIES | {"Cs"} で Cs の個別除去を統合
     # NFKC前にZs等を除去（NFKC後にU+0020へ変換される副作用防止）
@@ -138,7 +137,7 @@ def _validate_netloc(parsed: ParseResult) -> None:
     has_at = "@" in parsed.netloc or "@" in decoded_netloc
     if has_at:
         raise ValueError("URLにuserinfo（ユーザー名/パスワード）は指定できません")
-    # @が含まれない場合のみ username/password を確認
+    # @が含まれない場合のみ username/password を確認（urlparseのエッジケース補完）
     # （urlparse が特定のエンコード済み入力で username=None を返すエッジケース対策）
     try:
         has_userinfo = parsed.username is not None or parsed.password is not None
@@ -179,7 +178,7 @@ def _normalize_url(parsed: ParseResult) -> str:
     # hostname は urlparse が自動小文字化済み。netloc.lower() ではなく
     # hostname + port で再構成し、percent-encoded 文字の大文字16進を保持する
     hostname = parsed.hostname
-    if hostname is None:
+    if not hostname:
         # _validate_netloc の `not parsed.hostname` で空文字列・None ケースは排除済み
         # ここは直接呼び出し時のセーフガード（通常パスでは到達しない）
         raise ValueError(f"ホスト名の解決に失敗しました（netloc={parsed.netloc!r}）")
@@ -199,10 +198,10 @@ def _normalize_url(parsed: ParseResult) -> str:
 
 
 def _ensure_website_max_length(url: str) -> str:
-    """正規化後URL長の上限チェック（_WEBSITE_MAX_LENGTH文字）."""
-    if len(url) > _WEBSITE_MAX_LENGTH:
+    """正規化後URL長の上限チェック（_WEBSITE_NORMALIZED_MAX_LENGTH文字）."""
+    if len(url) > _WEBSITE_NORMALIZED_MAX_LENGTH:
         raise ValueError(
-            f"URL補完後の長さが上限{_WEBSITE_MAX_LENGTH}文字を超過しています（{len(url)}文字）"
+            f"URL補完後の長さが上限{_WEBSITE_NORMALIZED_MAX_LENGTH}文字を超過しています（{len(url)}文字）"
         )
     return url
 
@@ -492,7 +491,7 @@ class User(BaseModel):
         ...,
         min_length=1,
         max_length=2048,
-        description="ウェブサイトURL（入力時最大2048文字・正規化後200文字以内、制御文字除去・前後空白除去・http/httpsスキーム検証済み）",
+        description="ウェブサイトURL（入力時最大2048文字・正規化後2048文字以内、制御文字除去・前後空白除去・http/httpsスキーム検証済み）",
     )
     company: Company = Field(..., description="企業情報")
 
@@ -579,7 +578,7 @@ class User(BaseModel):
         if _INCOMPLETE_PCT_RE.search(sanitized):
             raise ValueError("URLに不完全なパーセントエンコードが含まれています")
         # プロトコル相対URLを明示的に拒否（攻撃面削減）
-        if sanitized.startswith("//"):
+        if sanitized_lower.startswith("//"):
             raise ValueError("プロトコル相対URLは許可されていません")
         # urlparseは各分岐で1回のみ呼び出す
         # （http/httpsブランチと補完ブランチで入力が異なるため共通化不可）
@@ -706,19 +705,19 @@ class Photo(BaseModel):
         album_id: 親アルバムID（1以上）
         title: 写真タイトル（サニタイズ済み、最大200文字）
         url: 写真URL（http/https必須・不可視文字除去・userinfo禁止・RFC 3986正規化済み、
-            最大500文字）
+            最大2048文字）
         thumbnail_url: サムネイルURL（http/https必須・不可視文字除去・userinfo禁止・
-            RFC 3986正規化済み、最大500文字）
+            RFC 3986正規化済み、最大2048文字）
 
     """
 
     id: int = Field(..., ge=1, description="写真ID")
     album_id: int = Field(..., ge=1, alias="albumId", description="親アルバムID")
     title: str = Field(..., max_length=200, description="写真タイトル")
-    url: str = Field(..., max_length=500, description="写真URL")
+    url: str = Field(..., max_length=2048, description="写真URL")
     thumbnail_url: str = Field(
         ...,
-        max_length=500,
+        max_length=2048,
         alias="thumbnailUrl",
         description="サムネイルURL",
     )
