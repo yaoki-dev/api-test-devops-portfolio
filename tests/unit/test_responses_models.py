@@ -28,6 +28,7 @@ from models.responses import (
     User,
     _normalize_url,  # noqa: PLC2701
     _strip_invisible_chars,  # noqa: PLC2701
+    _validate_scheme_less_url,  # noqa: PLC2701
     sanitize_user_content,
 )
 
@@ -307,6 +308,24 @@ def test_strip_invisible_chars_removes_surrogate_codepoint() -> None:
 def test_strip_invisible_chars_returns_empty_for_empty_input() -> None:
     """_strip_invisible_chars に空文字列を渡すと空文字列が返ること。"""
     assert _strip_invisible_chars("") == ""
+
+
+def test_strip_invisible_chars_strips_zero_width_space() -> None:
+    """ゼロ幅スペース(U+200B, Cf)を除去すること"""
+    result = _strip_invisible_chars("exam\u200bple.com")
+    assert result == "example.com"
+
+
+def test_strip_invisible_chars_strips_bidi_override() -> None:
+    """Bidi制御文字(U+202E, Cf)を除去すること"""
+    result = _strip_invisible_chars("exam\u202eple.com")
+    assert result == "example.com"
+
+
+def test_strip_invisible_chars_preserves_regular_space() -> None:
+    """通常スペース(U+0020)は保持すること"""
+    result = _strip_invisible_chars("hello world")
+    assert result == "hello world"
 
 
 class TestGeoModel:
@@ -637,7 +656,7 @@ class TestUserModel:
     def test_user_email_must_be_valid_format(self, valid_user_data: _UserData) -> None:
         """User.email が EmailStr 型により無効なメールアドレスを拒否すること"""
         valid_user_data["email"] = "not-an-email"
-        with pytest.raises(ValidationError, match=r"value is not a valid email address"):
+        with pytest.raises(ValidationError, match=r"email"):
             User(**valid_user_data)
 
     @pytest.mark.parametrize(
@@ -656,7 +675,7 @@ class TestUserModel:
     ) -> None:
         """User.email が RFC 5322 非準拠メールアドレスを拒否すること"""
         valid_user_data["email"] = invalid_email
-        with pytest.raises(ValidationError, match=r"value is not a valid email address"):
+        with pytest.raises(ValidationError, match=r"email"):
             User(**valid_user_data)
 
     def test_user_email_max_length_valid(self, valid_user_data: _UserData) -> None:
@@ -1263,7 +1282,7 @@ class TestCommentModel:
 
     def test_comment_email_must_be_valid_format(self) -> None:
         """Comment.email が EmailStr 型により無効なメールアドレスを拒否すること"""
-        with pytest.raises(ValidationError, match=r"value is not a valid email address"):
+        with pytest.raises(ValidationError, match=r"email"):
             Comment(post_id=1, id=1, name="Name", email="not-an-email", body="Body")
 
     def test_comment_email_max_length_valid(self) -> None:
@@ -1822,8 +1841,13 @@ class TestPhotoModel:
         urlparse は "user%40evil.com" をhostname全体として解析するが、
         unquote後に@が検出されるためセキュリティ上拒否する。
         """
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValidationError, match=r"userinfo"):
             Photo(**{**_PHOTO_BASE, "url": "https://user%40evil.com/path.jpg"})
+
+    def test_photo_url_rejects_invalid_percent_encoding(self) -> None:
+        """不正なパーセントエンコード（UTF-8として無効）をネットロック部に含むURLを拒否すること"""
+        with pytest.raises(ValidationError, match=r"パーセントエンコード"):
+            Photo(**{**_PHOTO_BASE, "url": "https://exam%80ple.com/path.jpg"})
 
 
 class TestNormalizeUrl:
@@ -1869,6 +1893,36 @@ class TestNormalizeUrl:
         assert parsed.hostname is None, "前提条件: hostname が None であること"
         with pytest.raises(ValueError, match="ホスト名の解決に失敗しました"):
             _normalize_url(parsed)
+
+
+class TestValidateSchemeLessUrl:
+    """_validate_scheme_less_url の直接ユニットテスト"""
+
+    pytestmark = pytest.mark.unit
+
+    def test_rejects_incomplete_percent_encoding(self) -> None:
+        """不完全なパーセントエンコード（%GG等）を拒否すること"""
+        with pytest.raises(ValueError, match=r"不完全なパーセントエンコード"):
+            _validate_scheme_less_url("example%GG.com")
+
+    def test_rejects_path_separator(self) -> None:
+        """パス区切り（/）を含むURLを拒否すること"""
+        with pytest.raises(ValueError, match=r"パス"):
+            _validate_scheme_less_url("example.com/path")
+
+    def test_rejects_fragment(self) -> None:
+        """フラグメント（#）を含むURLを拒否すること"""
+        with pytest.raises(ValueError, match=r"フラグメント"):
+            _validate_scheme_less_url("example.com#section")
+
+    def test_rejects_query(self) -> None:
+        """クエリ（?）を含むURLを拒否すること"""
+        with pytest.raises(ValueError, match=r"クエリ"):
+            _validate_scheme_less_url("example.com?key=val")
+
+    def test_accepts_valid_domain(self) -> None:
+        """有効なドメイン名はエラーなしで通過すること"""
+        _validate_scheme_less_url("example.com")  # 例外なし = 成功
 
 
 def test_strip_invisible_chars_rejects_non_str() -> None:

@@ -28,7 +28,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 _SCHEME_RE: re.Pattern[str] = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 _HTML_META_RE: re.Pattern[str] = re.compile(r'[<>"\'&]')
 _PERCENT_CTRL_RE: re.Pattern[str] = re.compile(
-    r"%0[0-9a-f]|%1[0-9a-f]|%7f",  # %00-%1f および %7f(DEL) をカバー
+    r"%0[0-9a-f]|%1[0-9a-f]|%7f",  # C0制御文字(%00-%1f)およびDEL(%7f)を検出
     re.IGNORECASE,
 )
 # 不完全な%シーケンス検出 — unquoteがリテラル扱いするためUnicodeDecodeErrorが発生しない
@@ -40,7 +40,7 @@ _STRIP_CATEGORIES = _INVISIBLE_CATEGORIES | frozenset({"Cs"})
 
 
 def _strip_invisible_chars(v: str) -> str:
-    """不可視文字・制御文字・Unicode空白をURL文字列から除去
+    """不可視文字・制御文字・Unicode空白をURL文字列から除去（NFKC正規化含む2パス処理）
 
     URLスキームバイパス防止のため、_STRIP_CATEGORIES（= _INVISIBLE_CATEGORIES | {"Cs"}）
     に属するUnicodeカテゴリを2パスの内包表記で除去する
@@ -63,7 +63,7 @@ def _strip_invisible_chars(v: str) -> str:
     Python に同梱の Unicode バージョン内の新規文字に自動対応する。
     （Unicode バージョン自体の更新には Python バージョンアップが必要）
     """
-    # Pydantic バリデータ経由で呼ばれるため、フィールド名は Pydantic が付加する
+    # 防御的チェック: validate_website_scheme 経由では到達しないが、直接呼び出し時のガード
     if not isinstance(v, str):
         raise ValueError(f"文字列が必要です（受け取った型: {type(v).__name__}）")
     # パス1: Cs（孤立サロゲート）と不可視文字を一括除去
@@ -89,7 +89,7 @@ def _strip_invisible_chars(v: str) -> str:
 
 
 def sanitize_user_content(value: str) -> str:
-    """ユーザー生成コンテンツをサニタイズ
+    """ユーザー生成コンテンツをHTMLエスケープでサニタイズ
 
     XSS攻撃を防ぐため、HTMLエスケープを適用。
     特殊文字（<, >, &, ", '）をHTMLエンティティに変換。
@@ -120,7 +120,7 @@ def sanitize_user_content(value: str) -> str:
 
 
 def _validate_netloc(parsed: ParseResult) -> None:
-    """netloc の存在確認・userinfo 禁止・hostname 解決チェックを共通化する."""
+    """netloc のバリデーション: 存在確認・userinfo禁止・HTMLメタ文字拒否・hostname解決チェック."""
     if not parsed.netloc:
         raise ValueError("有効なホスト名が含まれていません")
     # 不正ポート文字列バイパス対策: parsed.port は整数でない場合 ValueError を送出する
@@ -143,7 +143,7 @@ def _validate_netloc(parsed: ParseResult) -> None:
     try:
         has_userinfo = parsed.username is not None or parsed.password is not None
     except ValueError as e:
-        # 不正なパーセントエンコード等で username/password アクセスが失敗するケース
+        # parsed.username/password は内部で独自にunquoteするため、L135-137のチェックとは独立
         raise ValueError(f"URLのuserinfoパースに失敗しました（netloc={parsed.netloc!r}）") from e
     if has_userinfo:
         raise ValueError("URLにuserinfo（ユーザー名/パスワード）は指定できません")
@@ -156,7 +156,12 @@ def _validate_netloc(parsed: ParseResult) -> None:
 
 
 def _normalize_url(parsed: ParseResult) -> str:
-    """RFC 3986 §6.2.2.1（Case Normalization）: スキームとホスト部を小文字正規化する。パス・パラメータ・クエリ・フラグメントは §3.3–§3.5 の構文定義に従いURLエンコードする（§6.2.2.2: 既存%xxシーケンスのヘックス大文字化は未実施 — 新規エンコード分はquote()がUPPERCASEで出力）."""  # noqa: E501
+    """RFC 3986 §6.2.2.1（Case Normalization）に従いスキームとホスト部を小文字正規化する。
+
+    パス・パラメータ・クエリ・フラグメントは RFC 3986 §3.3–§3.5 の構文定義に従い
+    URLエンコードする。§6.2.2.2 の既存 %xx シーケンスのヘックス大文字化は未実施
+    （新規エンコード分は quote() が UPPERCASE で出力する）。
+    """
     # ParseResultはnamedtupleだが、tuple直接指定でコードの意図を明示する
     # パス・クエリ・フラグメントのXSS文字をURLエンコード（%を安全文字に含め二重エンコード防止）
     # RFC 3986 §3.3 pchar = unreserved / pct-encoded / sub-delims / ":" / "@"
@@ -175,7 +180,8 @@ def _normalize_url(parsed: ParseResult) -> str:
     # hostname + port で再構成し、percent-encoded 文字の大文字16進を保持する
     hostname = parsed.hostname
     if hostname is None:
-        # _validate_netloc 経由の通常パスでは到達しないが、直接呼び出し時のセーフガード
+        # _validate_netloc の `not parsed.hostname` で空文字列・None ケースは排除済み
+        # ここは直接呼び出し時のセーフガード（通常パスでは到達しない）
         raise ValueError(f"ホスト名の解決に失敗しました（netloc={parsed.netloc!r}）")
     if ":" in hostname:
         hostname = f"[{hostname}]"
@@ -193,7 +199,7 @@ def _normalize_url(parsed: ParseResult) -> str:
 
 
 def _ensure_website_max_length(url: str) -> str:
-    """website の正規化後長を上限内に収める."""
+    """正規化後URL長の上限チェック（_WEBSITE_MAX_LENGTH文字）."""
     if len(url) > _WEBSITE_MAX_LENGTH:
         raise ValueError(
             f"URL補完後の長さが上限{_WEBSITE_MAX_LENGTH}文字を超過しています（{len(url)}文字）"
@@ -202,7 +208,7 @@ def _ensure_website_max_length(url: str) -> str:
 
 
 def _validate_scheme_less_url(sanitized: str) -> None:
-    """スキームなしURLのパーセントエンコード・パス・フラグメント・クエリを検証する。
+    """スキームなしURLのバリデーション: パーセントエンコード・パス・フラグメント・クエリを検証する。
 
     Args:
         sanitized: 前処理済み（不可視文字除去・strip済み）のURL文字列
@@ -213,7 +219,7 @@ def _validate_scheme_less_url(sanitized: str) -> None:
     # errors='strict': 不正なパーセントエンコードをサイレント置換せず明示的エラーとして扱う
     try:
         decoded = unquote(sanitized, errors="strict")
-    except (UnicodeDecodeError, ValueError) as e:
+    except UnicodeDecodeError as e:
         raise ValueError(f"URLに不正なパーセントエンコードが含まれています: {e}") from e
     # 不完全な%シーケンス（例: %、%GG）はunquoteがリテラル扱いするため個別チェック
     if _INCOMPLETE_PCT_RE.search(sanitized):
@@ -566,6 +572,10 @@ class User(BaseModel):
         sanitized_lower = sanitized.lower()
         if _PERCENT_CTRL_RE.search(sanitized_lower):
             raise ValueError("URLにパーセントエンコードされた制御文字が含まれています")
+        # 不完全な%シーケンス検出（http/httpsブランチ）
+        # スキームなしブランチは _validate_scheme_less_url で検出済み
+        if _INCOMPLETE_PCT_RE.search(sanitized):
+            raise ValueError("URLに不完全なパーセントエンコードが含まれています")
         # プロトコル相対URLを明示的に拒否（攻撃面削減）
         if sanitized.startswith("//"):
             raise ValueError("プロトコル相対URLは許可されていません")
