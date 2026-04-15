@@ -473,7 +473,7 @@ class User(BaseModel):
         address: 住所情報（ネストされたAddressモデル）
         phone: 電話番号（サニタイズ済み、最大50文字）
         website: ウェブサイトURL（制御文字除去・前後空白除去・http/httpsスキーム検証済み、
-            最大200文字）
+            入力時最大2048文字・正規化後200文字以内）
         company: 企業情報（ネストされたCompanyモデル）
 
     """
