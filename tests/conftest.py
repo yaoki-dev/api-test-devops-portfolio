@@ -67,7 +67,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
 
 @pytest.fixture(autouse=True)
-def disable_sentry_for_tests(monkeypatch):
+def disable_sentry_for_tests(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     テスト実行時にSentry SDKを無効化。
 

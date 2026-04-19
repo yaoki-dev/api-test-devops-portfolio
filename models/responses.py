@@ -35,10 +35,24 @@ _PERCENT_CTRL_RE: re.Pattern[str] = re.compile(
 )
 # 不完全な%シーケンス検出 — unquoteがリテラル扱いするためUnicodeDecodeErrorが発生しない
 _INCOMPLETE_PCT_RE: re.Pattern[str] = re.compile(r"%(?![0-9a-fA-F]{2})")
+_ASCII_WHITESPACE_RE: re.Pattern[str] = re.compile(r"[ \t\n\r\f\v]")
+_VARIATION_SELECTORS: frozenset[str] = frozenset(
+    {chr(codepoint) for codepoint in range(0xFE00, 0xFE10)}
+    | {chr(codepoint) for codepoint in range(0xE0100, 0xE01F0)}
+)
 _WEBSITE_NORMALIZED_MAX_LENGTH: int = 2048
-_INVISIBLE_CATEGORIES = frozenset({"Cf", "Cc", "Mn", "Zs", "Zl", "Zp"})
+_INVISIBLE_CATEGORIES = frozenset({"Cf", "Cc", "Zs", "Zl", "Zp"})
 # Cs（孤立サロゲート）を _INVISIBLE_CATEGORIES と合算した除去セット（1回目パスで使用）
 _STRIP_CATEGORIES = _INVISIBLE_CATEGORIES | frozenset({"Cs"})
+
+
+def _is_strippable_char(c: str, categories: frozenset[str]) -> bool:
+    """不可視文字として除去すべき文字か判定する。
+
+    Variation Selectors は Mn に分類されるが、結合文字（例: U+0301）は保持し、
+    NFD由来のホスト名をサイレントに別文字列へ改変しない。
+    """
+    return c != " " and (unicodedata.category(c) in categories or c in _VARIATION_SELECTORS)
 
 
 def _strip_invisible_chars(v: str) -> str:
@@ -52,9 +66,9 @@ def _strip_invisible_chars(v: str) -> str:
           含まれるべきでないためnormalize()前に除去（データ整合性）
     - Cf: Format文字（Bidi制御, ゼロ幅文字, Word Joiner等）
     - Cc: 制御文字（C0/C1制御文字, DEL等）
-    - Mn: 非スペーシングマーク（Mark, Nonspacing）
-          （主目的: Variation Selectors U+FE00-U+FE0F によるスキームバイパス防止、
-          副次的に結合文字 U+0300等もMnカテゴリへの帰属により除去）
+    - Mn: 非スペーシングマーク（Variation Selectors U+FE00-U+FE0F と
+          Variation Selectors Supplement U+E0100-U+E01EF は個別除去。
+          結合文字 U+0300等は保持し、NFD由来のホスト名改変を避ける）
     - Zs: Unicode空白（NBSP, Ogham Space, 全角空白等。U+0020通常スペースは
           Zsカテゴリに属するが、c == " " の特例条件で保持）
           ※ NFKC正規化前にも除去（U+3000等はNFKC後にU+0020へ変換される副作用を防止。
@@ -69,17 +83,11 @@ def _strip_invisible_chars(v: str) -> str:
     # _STRIP_CATEGORIES = _INVISIBLE_CATEGORIES | {"Cs"} で Cs の個別除去を統合
     # NFKC前にZs等を除去（NFKC後にU+0020へ変換される副作用防止）
     # 全角英字（Ll/Lu等）はNFKC前に残し、NFKC正規化でASCIIに変換される
-    pre_filtered = "".join(
-        c for c in v if (unicodedata.category(c) not in _STRIP_CATEGORIES) or (c == " ")
-    )
+    pre_filtered = "".join(c for c in v if not _is_strippable_char(c, _STRIP_CATEGORIES))
     normalized = unicodedata.normalize("NFKC", pre_filtered)
     # パス2: NFKC後に新たに生成された不可視文字を除去
     # （Csは再出現しないため_INVISIBLE_CATEGORIESのみ）
-    return "".join(
-        c
-        for c in normalized
-        if (unicodedata.category(c) not in _INVISIBLE_CATEGORIES) or (c == " ")
-    )
+    return "".join(c for c in normalized if not _is_strippable_char(c, _INVISIBLE_CATEGORIES))
 
 
 # =============================================================================
@@ -122,6 +130,8 @@ def _validate_netloc(parsed: ParseResult) -> None:
     """netloc のバリデーション: 存在確認・userinfo禁止・HTMLメタ文字拒否・hostname解決チェック."""
     if not parsed.netloc:
         raise ValueError("有効なホスト名が含まれていません")
+    if _ASCII_WHITESPACE_RE.search(parsed.netloc):
+        raise ValueError("ホスト名に空白文字が含まれています")
     # 不正ポート文字列バイパス対策: parsed.port は整数でない場合 ValueError を送出する
     # （例: https://example.com:abc/path は netloc チェックをパスするが port アクセスで検出）
     try:
@@ -141,7 +151,7 @@ def _validate_netloc(parsed: ParseResult) -> None:
     # （urlparse が特定のエンコード済み入力で username=None を返すエッジケース対策）
     try:
         has_userinfo = parsed.username is not None or parsed.password is not None
-    except ValueError as e:
+    except (ValueError, OverflowError) as e:
         # parsed.username/password は内部で独自にunquoteするため、L135-137のチェックとは独立
         raise ValueError(f"URLのuserinfoパースに失敗しました（netloc={parsed.netloc!r}）") from e
     if has_userinfo:
@@ -532,7 +542,8 @@ class User(BaseModel):
 
         Returns:
             バリデーション済みURL文字列（スキームなしの場合はhttps://を補完、
-            制御文字除去・前後空白除去済み）
+            制御文字除去・前後空白除去・RFC 3986 §6.2.2.1正規化済み、
+            最大2048文字以内）
 
         Raises:
             ValueError: 以下のいずれかの場合:
@@ -751,13 +762,16 @@ class Photo(BaseModel):
 
         セキュリティのため、javascript:やdata:などの
         潜在的に危険なスキームを拒否。
-        不可視文字（Cf/Cs/Cc/Mn/Zs/Zl/Zpカテゴリ）を除去してからスキーム検証を行う。
+        不可視文字（Cf/Cs/Cc/Zs/Zl/Zpカテゴリ）と Variation Selector を除去してから
+        スキーム検証を行う。Mn 文字のうち結合文字は保持し、NFD由来のホスト名を
+        サイレントに別文字列へ改変しない。
 
         Args:
             v: 検証対象のURL文字列
 
         Returns:
-            検証済みURL文字列（制御文字除去・前後空白除去済み）
+            検証済みURL文字列（制御文字除去・前後空白除去・RFC 3986正規化済み、
+            最大2048文字以内）
 
         Raises:
             ValueError: 以下のいずれかの場合:
@@ -768,10 +782,13 @@ class Photo(BaseModel):
                 - ホスト名にHTMLメタ文字（<, >, ", ', &）を含む
                 - ポートが無効（整数値でない）
                 - userinfoを含む（例: https://user@host — RFC 3986 バイパス防止）
+                - 正規化後URL長が2048文字を超える
 
         Note:
             User.validate_website_scheme と異なり、スキームなしURLへの自動補完は行わない。
             外部API由来URLのためスキームは必須。
+            HTMLコンテキストへ出力する場合は、呼び出し元で html.escape() による
+            エスケープが必須。
 
         """
         sanitized = _strip_invisible_chars(v).strip()
@@ -789,7 +806,7 @@ class Photo(BaseModel):
         # _validate_netloc / _normalize_url の ValueError はそのまま伝播
         parsed = urlparse(sanitized)
         _validate_netloc(parsed)
-        return _normalize_url(parsed)
+        return _ensure_website_max_length(_normalize_url(parsed))
 
 
 # =============================================================================

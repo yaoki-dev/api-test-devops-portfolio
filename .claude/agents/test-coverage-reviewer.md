@@ -1,7 +1,7 @@
 ---
 name: test-coverage-reviewer
 description: Use this agent when you need to review testing implementation and coverage.
-tools: Glob, Grep, Bash(mgrep:*), Bash(git diff:*), Read, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__find_code, mcp__ast-grep__find_code_by_rule, mcp__morph-mcp__warpgrep_codebase_search, mcp__CodeGraphContext__find_dead_code
+tools: Glob, Grep, Bash(mgrep:*), Bash(git diff:*), Read, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__find_code, mcp__ast-grep__find_code_by_rule, mcp__morph-mcp__warpgrep_codebase_search, mcp__CodeGraphContext__find_dead_code, mcp__plugin_semgrep_semgrep__*
 model: inherit
 ---
 

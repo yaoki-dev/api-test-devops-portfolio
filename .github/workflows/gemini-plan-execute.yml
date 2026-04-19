@@ -77,7 +77,7 @@ jobs:
         uses: 'google-github-actions/run-gemini-cli@9dbec29a20fab3f35017a40ad0eb798a257d4d51' # v0.1.21
         env:
           EVENT_NAME: '${{ github.event_name }}'
-          GITHUB_TOKEN: '${{ steps.mint_identity_token.outputs.token || secrets.GITHUB_TOKEN || github.token }}'
+          GITHUB_PERSONAL_ACCESS_TOKEN: '${{ steps.mint_identity_token.outputs.token || secrets.GITHUB_TOKEN || github.token }}'
           IS_PULL_REQUEST: '${{ !!github.event.pull_request }}'
           ISSUE_NUMBER: '${{ github.event.pull_request.number || github.event.issue.number }}'
           REPOSITORY: '${{ github.repository }}'
@@ -133,17 +133,12 @@ jobs:
                     "search_code"
                   ],
                   "env": {
-                    "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+                    "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
                   }
                 }
               },
               "tools": {
-                "core": [
-                  "run_shell_command(cat)",
-                  "run_shell_command(grep)",
-                  "run_shell_command(head)",
-                  "run_shell_command(tail)"
-                ]
+                "core": []
               }
             }
           prompt: '/gemini-plan-execute'

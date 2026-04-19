@@ -139,3 +139,5 @@ gsd-local-patches/
 # CGC (CodeGraphContext)
 cgc_mcp_wrapper.sh
 cgc_watch_safe.sh
+# Added by code-review-graph
+.code-review-graph/

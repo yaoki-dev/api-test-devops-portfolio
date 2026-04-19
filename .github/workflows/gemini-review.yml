@@ -79,11 +79,11 @@ jobs:
         uses: 'google-github-actions/run-gemini-cli@9dbec29a20fab3f35017a40ad0eb798a257d4d51' # v0.1.21
         id: 'gemini_pr_review'
         env:
-          # GITHUB_TOKEN is required by the MCP server inside this action.
+          # GITHUB_PERSONAL_ACCESS_TOKEN is required by the MCP server inside this action.
           # User-supplied content (PR diff) is passed via /tmp/pr_diff.txt
           # written in the previous step so it never shares env-scope with the token
           # during Gemini prompt processing.
-          GITHUB_TOKEN: '${{ steps.mint_identity_token.outputs.token || secrets.GITHUB_TOKEN || github.token }}'
+          GITHUB_PERSONAL_ACCESS_TOKEN: '${{ steps.mint_identity_token.outputs.token || secrets.GITHUB_TOKEN || github.token }}'
           PULL_REQUEST_NUMBER: '${{ github.event.pull_request.number || github.event.issue.number }}'
           REPOSITORY: '${{ github.repository }}'
         with:
@@ -127,17 +127,12 @@ jobs:
                     "pull_request_review_write"
                   ],
                   "env": {
-                    "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+                    "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
                   }
                 }
               },
               "tools": {
-                "core": [
-                  "run_shell_command(cat)",
-                  "run_shell_command(grep)",
-                  "run_shell_command(head)",
-                  "run_shell_command(tail)"
-                ]
+                "core": []
               }
             }
           prompt: '/gemini-review'

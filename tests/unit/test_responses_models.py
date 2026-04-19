@@ -15,8 +15,9 @@ from urllib.parse import urlparse
 import pytest
 from pydantic import ValidationError
 
+import models.responses as responses_module
 from models.responses import (
-    _WEBSITE_NORMALIZED_MAX_LENGTH,  # noqa: PLC2701
+    _WEBSITE_NORMALIZED_MAX_LENGTH,  # noqa: PLC2701 - private helper length invariantを直接検証するため
     Address,
     Album,
     Comment,
@@ -26,9 +27,9 @@ from models.responses import (
     Post,
     Todo,
     User,
-    _normalize_url,  # noqa: PLC2701
-    _strip_invisible_chars,  # noqa: PLC2701
-    _validate_scheme_less_url,  # noqa: PLC2701
+    _normalize_url,  # noqa: PLC2701 - private helper length invariantを直接検証するため
+    _strip_invisible_chars,  # noqa: PLC2701 - private sanitizerの挙動を直接検証するため
+    _validate_scheme_less_url,  # noqa: PLC2701 - private validatorのバイパス防止を直接検証するため
     sanitize_user_content,
 )
 
@@ -188,7 +189,7 @@ class _UserData(TypedDict):
 class _CommentBaseData(TypedDict):
     """TestCommentModel XSS テスト用 Comment 基底データ型."""
 
-    post_id: int
+    postId: int
     id: int
     name: str
     email: str
@@ -196,7 +197,7 @@ class _CommentBaseData(TypedDict):
 
 
 _COMMENT_BASE: Final[_CommentBaseData] = {
-    "post_id": 1,
+    "postId": 1,
     "id": 1,
     "name": "safe_name",
     "email": "safe@example.com",
@@ -283,8 +284,10 @@ def test_strip_invisible_chars_preserves_ascii_space() -> None:
     assert _strip_invisible_chars("https://\u00a0example.com") == "https://example.com"
     # 全角スペース (U+3000: Zs) はNFKC前に除去される
     assert _strip_invisible_chars("https://\u3000example.com") == "https://example.com"
-    # Variation Selector-1 (U+FE00: Mn) は除去される
+    # Variation Selector-1 (U+FE00) は除去される
     assert _strip_invisible_chars("java\ufe00script:alert(1)") == "javascript:alert(1)"
+    # Variation Selector Supplement (U+E0100) も除去される
+    assert _strip_invisible_chars("java\U000e0100script:alert(1)") == "javascript:alert(1)"
     # Line Separator (U+2028: Zl) は除去される
     assert _strip_invisible_chars("java\u2028script:alert(1)") == "javascript:alert(1)"
     # Paragraph Separator (U+2029: Zp) は除去される
@@ -326,6 +329,12 @@ def test_strip_invisible_chars_preserves_regular_space() -> None:
     """通常スペース(U+0020)は保持すること"""
     result = _strip_invisible_chars("hello world")
     assert result == "hello world"
+
+
+def test_strip_invisible_chars_preserves_combining_mark() -> None:
+    """結合文字は保持され、NFD由来のホスト名をサイレントに改変しないこと。"""
+    result = _strip_invisible_chars("cafe\u0301.com")
+    assert result == "café.com"
 
 
 class TestGeoModel:
@@ -870,6 +879,11 @@ class TestUserModel:
                 "危険なURLスキームが検出されました",
                 id="js_variation_selector_mn_bypass",
             ),
+            pytest.param(
+                "java\U000e0100script:alert(1)",
+                "危険なURLスキームが検出されました",
+                id="js_variation_selector_supplement_mn_bypass",
+            ),
         ],
     )
     def test_user_website_rejects_dangerous_scheme(
@@ -907,6 +921,58 @@ class TestUserModel:
         """User.website が空のnetlocを拒否すること"""
         valid_user_data["website"] = empty_netloc_url
         with pytest.raises(ValidationError, match="有効なホスト名が含まれていません"):
+            User(**valid_user_data)
+
+    @pytest.mark.parametrize(
+        "invalid_host_url",
+        [
+            pytest.param("https://example .com", id="schemeful_host_space"),
+            pytest.param("example .com", id="schemeless_host_space"),
+        ],
+    )
+    def test_user_website_rejects_ascii_whitespace_in_host(
+        self, valid_user_data: _UserData, invalid_host_url: str
+    ) -> None:
+        """User.website がホスト部のASCII空白を拒否すること."""
+        valid_user_data["website"] = invalid_host_url
+        with pytest.raises(ValidationError, match="ホスト名に空白文字が含まれています"):
+            User(**valid_user_data)
+
+    def test_user_website_wraps_overflowerror_in_validationerror(
+        self, valid_user_data: _UserData, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """parsed.username/password アクセス時の OverflowError が ValidationError になること."""
+
+        class _OverflowingParseResult:
+            netloc = "example.com"
+            path = ""
+            params = ""
+            query = ""
+            fragment = ""
+
+            @property
+            def port(self) -> None:
+                return None
+
+            @property
+            def username(self) -> None:
+                return None
+
+            @property
+            def password(self) -> str:
+                raise OverflowError("simulated overflow during password access")
+
+            @property
+            def hostname(self) -> str:
+                return "example.com"
+
+        def fake_urlparse(_: str) -> _OverflowingParseResult:
+            return _OverflowingParseResult()
+
+        monkeypatch.setattr(responses_module, "urlparse", fake_urlparse)
+        valid_user_data["website"] = "https://example.com"
+
+        with pytest.raises(ValidationError, match="URLのuserinfoパースに失敗しました"):
             User(**valid_user_data)
 
     @pytest.mark.parametrize(
@@ -1644,6 +1710,13 @@ class TestPhotoModel:
                 thumbnail_url=thumbnail_url,
             )
 
+    @pytest.mark.parametrize("field_name", ["url", "thumbnail_url"], ids=["url", "thumbnail"])
+    def test_photo_rejects_ascii_whitespace_in_host(self, field_name: str) -> None:
+        """Photo の URL フィールドがホスト部のASCII空白を拒否すること."""
+        key = "url" if field_name == "url" else "thumbnailUrl"
+        with pytest.raises(ValidationError, match="ホスト名に空白文字が含まれています"):
+            Photo.model_validate({**_PHOTO_BASE, key: "https://example .com/photo.jpg"})
+
     @pytest.mark.parametrize(
         "url",
         [
@@ -1825,6 +1898,21 @@ class TestPhotoModel:
             album_id=1, id=1, title="Test", url=input_url, thumbnail_url="https://example.com/t.jpg"
         )
         assert photo.url == expected_url
+
+    @pytest.mark.parametrize("field_name", ["url", "thumbnail_url"], ids=["url", "thumbnail"])
+    def test_photo_rejects_normalized_length_overflow(self, field_name: str) -> None:
+        """Photo のURLは正規化後も 2048 文字以内である必要があることを検証する。"""
+        long_path = "あ" * 250
+        key = "url" if field_name == "url" else "thumbnailUrl"
+        photo_data = {
+            **_PHOTO_BASE,
+            key: f"https://example.com/{long_path}",
+        }
+        with pytest.raises(
+            ValidationError,
+            match=rf"URL補完後の長さが上限{_WEBSITE_NORMALIZED_MAX_LENGTH}文字を超過しています",
+        ):
+            Photo.model_validate(photo_data)
 
     def test_photo_url_rejects_percent_encoded_at_with_literal_at(self) -> None:
         """%40エンコード済み@と@リテラル混在のuserinfoバイパスを拒否すること.

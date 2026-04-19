@@ -47,6 +47,7 @@ dev = [
     "pytest-cov>=4.1.0",
     "pytest-xdist>=3.5.0",
     "respx>=0.23.1",            # httpx用モックライブラリ
+    "socksio>=1.0.0",           # SOCKS5 proxy support for httpx
     # 品質管理
     "ruff>=0.15.5,<0.16",       # pre-commit frozen: v0.15.10（.pre-commit-config.yaml参照）
     "mypy>=1.20.1",
