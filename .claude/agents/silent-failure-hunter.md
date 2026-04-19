@@ -1,7 +1,7 @@
 ---
 name: silent-failure-hunter
 description: Use this agent when reviewing code for silent failures, inadequate error handling, and inappropriate fallback behavior.
-tools: Glob, Grep, Bash(mgrep:*), Read, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__find_code, mcp__ast-grep__find_code_by_rule, mcp__morph-mcp__warpgrep_codebase_search, mcp__CodeGraphContext__analyze_code_relationships, "mcp__code-review-graph__*"
+tools: Glob, Grep, Bash(mgrep:*), Read, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__find_code, mcp__ast-grep__find_code_by_rule, mcp__morph-mcp__warpgrep_codebase_search, mcp__CodeGraphContext__analyze_code_relationships, mcp__code-review-graph__*
 model: inherit
 ---
 

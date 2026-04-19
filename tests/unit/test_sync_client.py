@@ -849,7 +849,7 @@ def test_sync_get_photos_invalid_album_id(album_id: int) -> None:
 # =============================================================================
 
 
-@pytest.mark.parametrize("base_url", INVALID_BASE_URLS)
+@pytest.mark.parametrize("base_url", INVALID_BASE_URLS, ids=["empty", "spaces", "tab", "newline"])
 def test_sync_client_base_url_validation_raises_value_error(base_url: str) -> None:
     """base_url が空・空白・タブ・改行の場合、初期化時に ValueError が発生する
 

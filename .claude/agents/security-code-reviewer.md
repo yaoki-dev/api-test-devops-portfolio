@@ -1,7 +1,7 @@
 ---
 name: security-code-reviewer
 description: Use this agent when you need to review code for security vulnerabilities, input validation issues, or authentication/authorization flaws.
-tools: Glob, Grep, Bash(mgrep:*), Read, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__find_code, mcp__ast-grep__find_code_by_rule, mcp__morph-mcp__warpgrep_codebase_search, mcp__CodeGraphContext__analyze_code_relationships, mcp__plugin_semgrep_semgrep__*, mcp__morph-mcp__codebase_search__*, "mcp__code-review-graph__*"
+tools: Glob, Grep, Bash(mgrep:*), Read, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__find_code, mcp__ast-grep__find_code_by_rule, mcp__morph-mcp__warpgrep_codebase_search, mcp__CodeGraphContext__analyze_code_relationships, mcp__plugin_semgrep_semgrep__*, mcp__morph-mcp__codebase_search__*, mcp__code-review-graph__*
 model: inherit
 ---
 

@@ -130,8 +130,6 @@ def _validate_netloc(parsed: ParseResult) -> None:
     """netloc のバリデーション: 存在確認・userinfo禁止・HTMLメタ文字拒否・hostname解決チェック."""
     if not parsed.netloc:
         raise ValueError("有効なホスト名が含まれていません")
-    if _ASCII_WHITESPACE_RE.search(parsed.netloc):
-        raise ValueError("ホスト名に空白文字が含まれています")
     # 不正ポート文字列バイパス対策: parsed.port は整数でない場合 ValueError を送出する
     # （例: https://example.com:abc/path は netloc チェックをパスするが port アクセスで検出）
     try:
@@ -144,6 +142,9 @@ def _validate_netloc(parsed: ParseResult) -> None:
         decoded_netloc = unquote(parsed.netloc, errors="strict")
     except UnicodeDecodeError as e:
         raise ValueError(f"URLに不正なパーセントエンコードが含まれています: {e}") from e
+    # raw と decoded 両方をチェック（%エンコードバイパス対策: https://example.com%20evil.com 等）
+    if _ASCII_WHITESPACE_RE.search(parsed.netloc) or _ASCII_WHITESPACE_RE.search(decoded_netloc):
+        raise ValueError("ホスト名に空白文字が含まれています")
     has_at = "@" in parsed.netloc or "@" in decoded_netloc
     if has_at:
         raise ValueError("URLにuserinfo（ユーザー名/パスワード）は指定できません")
@@ -157,7 +158,7 @@ def _validate_netloc(parsed: ParseResult) -> None:
     if has_userinfo:
         raise ValueError("URLにuserinfo（ユーザー名/パスワード）は指定できません")
     # ホスト部にHTMLメタ文字（<, >, ", ', &）が含まれる場合は拒否
-    if _HTML_META_RE.search(parsed.netloc):
+    if _HTML_META_RE.search(parsed.netloc) or _HTML_META_RE.search(decoded_netloc):
         raise ValueError("ホスト名に不正な文字が含まれています")
     # hostname が None になるケース（例: 不正な IPv6 形式）を _normalize_url に渡す前に排除
     if not parsed.hostname:
