@@ -30,7 +30,7 @@ dependencies = [
     "pydantic-settings>=2.0.0", # 設定管理
     "psutil>=6.1.1",            # システムメトリクス
     "pyyaml>=6.0",              # YAML設定ファイル読み込み
-    "sentry-sdk[httpx]>=2.57.0,<3.0.0",  # エラー監視（httpx統合）
+    "sentry-sdk[httpx]>=2.58.0,<3.0.0",  # エラー監視（httpx統合）
 ]
 
 [project.urls]
