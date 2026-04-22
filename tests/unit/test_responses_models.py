@@ -1283,7 +1283,8 @@ class TestPostModel:
         """id が ge=1 制約（id は1以上）に違反した場合 ValidationError が発生する"""
         with pytest.raises(ValidationError) as exc_info:
             Post(id=invalid_id, user_id=1, title="Test", body="Body")
-        assert "id" in str(exc_info.value)
+        errors = exc_info.value.errors()
+        assert any(e["loc"] == ("id",) and e["type"].startswith("greater_than") for e in errors)
 
     def test_post_title_max_length_valid(self) -> None:
         """title=200文字（max_length 上限）で正常作成できること"""
@@ -1294,14 +1295,16 @@ class TestPostModel:
         """title=201文字（max_length 超過）で ValidationError が発生すること"""
         with pytest.raises(ValidationError) as exc_info:
             Post(id=1, user_id=1, title="a" * 201, body="Body")
-        assert "title" in str(exc_info.value)
+        errors = exc_info.value.errors()
+        assert any(e["loc"] == ("title",) and e["type"] == "string_too_long" for e in errors)
 
     def test_post_body_exceeds_max_length_raises_validation_error(self) -> None:
         """body>5000文字でValidationErrorが発生する（境界値テスト: max_length=5000）"""
         long_body = "a" * 5001
         with pytest.raises(ValidationError) as exc_info:
             Post(id=1, user_id=1, title="Test", body=long_body)
-        assert "body" in str(exc_info.value)
+        errors = exc_info.value.errors()
+        assert any(e["loc"] == ("body",) and e["type"] == "string_too_long" for e in errors)
 
     def test_post_body_max_length_valid(self) -> None:
         """body=5000文字（max_length 上限）で正常作成できること（境界値: ちょうど上限）"""
