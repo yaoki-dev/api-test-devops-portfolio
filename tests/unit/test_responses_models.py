@@ -1284,7 +1284,7 @@ class TestPostModel:
         with pytest.raises(ValidationError) as exc_info:
             Post(id=invalid_id, user_id=1, title="Test", body="Body")
         errors = exc_info.value.errors()
-        assert any(e["loc"] == ("id",) and e["type"].startswith("greater_than") for e in errors)
+        assert any(e["loc"] == ("id",) and e["type"] == "greater_than_equal" for e in errors)
 
     def test_post_title_max_length_valid(self) -> None:
         """title=200文字（max_length 上限）で正常作成できること"""
