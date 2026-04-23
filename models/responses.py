@@ -22,14 +22,16 @@ import unicodedata
 from typing import Annotated
 from urllib.parse import ParseResult, quote, unquote, urlparse, urlunparse
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 # RFC 3986 準拠のスキーム検出パターン（scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) ":"）
 _SCHEME_RE: re.Pattern[str] = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 _HTML_META_RE: re.Pattern[str] = re.compile(r'[<>"\'&]')
 _PERCENT_CTRL_RE: re.Pattern[str] = re.compile(
-    r"%0[0-9a-f]|%1[0-9a-f]|%7f",  # C0制御文字(%00-%1f)およびDEL(%7f)を検出
-    # 注: C1制御文字(%80-%9f)は対象外（UTF-8マルチバイト先頭バイトと重複し誤検出リスク）
+    r"%[01][0-9a-f]|%7f",  # C0制御文字(%00-%1f)およびDEL(%7f)を検出
+    # 注: C1制御文字(%80-%9f)は対象外。
+    # UTF-8/IRI由来のpercent-encoded内容と重複するため、グローバル拒否ではなく
+    # netlocのみunquote(errors="strict")で不正UTF-8として検出する。
     # 注: %20(スペース)は制御文字ではないため非対象
     re.IGNORECASE,
 )
@@ -127,7 +129,11 @@ def sanitize_user_content(value: str) -> str:
 
 
 def _validate_netloc(parsed: ParseResult) -> None:
-    """netloc のバリデーション: 存在確認・userinfo禁止・HTMLメタ文字拒否・hostname解決チェック."""
+    """netloc のバリデーション.
+
+    存在確認・空白文字拒否・不正percent decode拒否・userinfo禁止・
+    HTMLメタ文字拒否・hostname解決チェックを行う。
+    """
     if not parsed.netloc:
         raise ValueError("有効なホスト名が含まれていません")
     # 不正ポート文字列バイパス対策: parsed.port は整数でない場合 ValueError を送出する
@@ -267,7 +273,7 @@ class Post(BaseModel):
     title: str = Field(..., max_length=200, description="投稿タイトル")
     body: str = Field(..., max_length=5000, description="投稿本文")
 
-    model_config = {"populate_by_name": True, "extra": "forbid"}
+    model_config = ConfigDict(validate_by_name=True, validate_by_alias=True, extra="forbid")
 
     @field_validator("title", "body")
     @classmethod
@@ -317,7 +323,7 @@ class Comment(BaseModel):
     ]
     body: str = Field(..., max_length=2000, description="コメント本文")
 
-    model_config = {"populate_by_name": True, "extra": "forbid"}
+    model_config = ConfigDict(validate_by_name=True, validate_by_alias=True, extra="forbid")
 
     @field_validator("name", "body")
     @classmethod
@@ -365,7 +371,7 @@ class Geo(BaseModel):
     lat: str = Field(..., max_length=50, description="緯度")
     lng: str = Field(..., max_length=50, description="経度")
 
-    model_config = {"extra": "forbid"}
+    model_config = ConfigDict(extra="forbid")
 
     @field_validator("lat", "lng")
     @classmethod
@@ -406,7 +412,7 @@ class Address(BaseModel):
     zipcode: str = Field(..., max_length=20, description="郵便番号")
     geo: Geo = Field(..., description="地理座標")
 
-    model_config = {"extra": "forbid"}
+    model_config = ConfigDict(extra="forbid")
 
     @field_validator("street", "suite", "city", "zipcode")
     @classmethod
@@ -448,7 +454,7 @@ class Company(BaseModel):
     )
     bs: str = Field(..., max_length=200, description="ビジネススローガン")
 
-    model_config = {"populate_by_name": True, "extra": "forbid"}
+    model_config = ConfigDict(validate_by_name=True, validate_by_alias=True, extra="forbid")
 
     @field_validator("name", "catch_phrase", "bs")
     @classmethod
@@ -506,7 +512,7 @@ class User(BaseModel):
     )
     company: Company = Field(..., description="企業情報")
 
-    model_config = {"populate_by_name": True, "extra": "forbid"}
+    model_config = ConfigDict(validate_by_name=True, validate_by_alias=True, extra="forbid")
 
     @field_validator("name", "username", "phone")
     @classmethod
@@ -561,7 +567,7 @@ class User(BaseModel):
                 - スキームなしURLにポートが含まれる
                   （例: 192.168.1.1:8080 — IPアドレス:portはスキームなしとして検出。
                   ドメイン名:port（例: example.com:8080）は_SCHEME_REがスキームとして
-                  誤検出するため「危険なURLスキーム」として先に拒否される）
+                  構文マッチするため「危険なURLスキーム」として先に拒否される）
                 - スキームなしURLに不正なパーセントエンコードが含まれる
                   （例: example.com%80 — UTF-8として不正なバイト列）
                 - 不完全なパーセントエンコードが含まれる（スキーム有無を問わず）
@@ -648,7 +654,7 @@ class Todo(BaseModel):
     title: str = Field(..., max_length=200, description="TODOタイトル")
     completed: bool = Field(..., description="完了フラグ")
 
-    model_config = {"populate_by_name": True, "extra": "forbid"}
+    model_config = ConfigDict(validate_by_name=True, validate_by_alias=True, extra="forbid")
 
     @field_validator("title")
     @classmethod
@@ -685,7 +691,7 @@ class Album(BaseModel):
     user_id: int = Field(..., ge=1, alias="userId", description="所有者ユーザーID")
     title: str = Field(..., max_length=200, description="アルバムタイトル")
 
-    model_config = {"populate_by_name": True, "extra": "forbid"}
+    model_config = ConfigDict(validate_by_name=True, validate_by_alias=True, extra="forbid")
 
     @field_validator("title")
     @classmethod
@@ -734,7 +740,7 @@ class Photo(BaseModel):
         description="サムネイルURL",
     )
 
-    model_config = {"populate_by_name": True, "extra": "forbid"}
+    model_config = ConfigDict(validate_by_name=True, validate_by_alias=True, extra="forbid")
 
     @field_validator("title")
     @classmethod

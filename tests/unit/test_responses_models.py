@@ -13,7 +13,7 @@ from typing import Any, Final, TypedDict
 from urllib.parse import urlparse
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 import models.responses as responses_module
 from models.responses import (
@@ -31,6 +31,9 @@ from models.responses import (
     _strip_invisible_chars,  # noqa: PLC2701 - private sanitizerの挙動を直接検証するため
     _validate_scheme_less_url,  # noqa: PLC2701 - private validatorのバイパス防止を直接検証するため
     sanitize_user_content,
+)
+from tests.types import (
+    _UserData,  # noqa: PLC2701 - test-internal helper naming preserved
 )
 
 pytestmark = pytest.mark.unit
@@ -146,44 +149,6 @@ _XSS_PAIRS: Final[list[tuple[str, str, str]]] = [
 _XSS_MODEL_PARAMS: Final = [
     pytest.param(dirty, expected, id=id_) for dirty, expected, id_ in _XSS_PAIRS
 ]
-
-
-class _GeoData(TypedDict):
-    """Geo モデル入力データ型."""
-
-    lat: str
-    lng: str
-
-
-class _AddressData(TypedDict):
-    """Address モデル入力データ型."""
-
-    street: str
-    suite: str
-    city: str
-    zipcode: str
-    geo: _GeoData
-
-
-class _CompanyData(TypedDict):
-    """Company モデル入力データ型."""
-
-    name: str
-    catchPhrase: str
-    bs: str
-
-
-class _UserData(TypedDict):
-    """User モデル入力データ型."""
-
-    id: int
-    name: str
-    username: str
-    email: str
-    address: _AddressData
-    phone: str
-    website: str
-    company: _CompanyData
 
 
 class _CommentBaseData(TypedDict):
@@ -545,9 +510,11 @@ class TestCompanyModel:
 
     def test_company_alias_working(self) -> None:
         """Company モデルの alias (catchPhrase → catch_phrase) が機能することを確認"""
+        # mypy: pydantic.mypy plugin は alias kwarg を field として認識しないため抑制
+        # validate_by_name=True により runtime は正常 (alias 動作の意図的検証)
         company = Company(
             name="Test",
-            catchPhrase="Test Phrase",
+            catchPhrase="Test Phrase",  # type: ignore[call-arg]
             bs="test",
         )
 
@@ -647,9 +614,9 @@ class TestUserModel:
         user = User(**{**valid_user_data, field: dirty})
         assert getattr(user, field) == expected
 
-    def test_user_populate_by_name(self, valid_user_data: _UserData) -> None:
-        """User モデルの populate_by_name が有効であることを確認"""
-        # User モデルは populate_by_name=True なので、alias で値を設定可能
+    def test_user_validate_by_name(self, valid_user_data: _UserData) -> None:
+        """User モデルの validate_by_name が有効であることを確認"""
+        # User モデルは validate_by_name=True なので、alias で値を設定可能
         user = User(**valid_user_data)
         assert user.company.catch_phrase == "Multi-layered client-server neural-net"
 
@@ -944,6 +911,7 @@ class TestUserModel:
         """parsed.username/password アクセス時の OverflowError が ValidationError になること."""
 
         class _OverflowingParseResult:
+            scheme = "https"
             netloc = "example.com"
             path = ""
             params = ""
@@ -1250,7 +1218,9 @@ class TestPostModel:
 
     def test_post_alias_working(self) -> None:
         """Post モデルの alias (userId → user_id) が機能することを確認"""
-        post = Post(userId=5, id=1, title="Test", body="Test")
+        # mypy: pydantic.mypy plugin は alias kwarg を field として認識しないため抑制
+        # validate_by_name=True により runtime は正常 (alias 動作の意図的検証)
+        post = Post(userId=5, id=1, title="Test", body="Test")  # type: ignore[call-arg]
 
         assert post.user_id == 5
 
@@ -1655,6 +1625,23 @@ class TestPhotoModel:
         """Photo.validate_url_scheme がパーセントエンコードされたCRLFを拒否すること"""
         with pytest.raises(ValidationError, match=expected_match):
             Photo(album_id=1, id=1, title="Test", url=url, thumbnail_url=thumbnail_url)
+
+    @pytest.mark.parametrize(
+        ("field_key", "bad_url"),
+        [
+            pytest.param("url", "https://example.com/%GG/path.jpg", id="url_incomplete_pct_gg"),
+            pytest.param("url", "https://example.com/path%", id="url_incomplete_pct_bare"),
+            pytest.param(
+                "thumbnailUrl",
+                "https://example.com/thumb%GG.jpg",
+                id="thumbnail_incomplete_pct_gg",
+            ),
+        ],
+    )
+    def test_photo_rejects_incomplete_percent_encoding(self, field_key: str, bad_url: str) -> None:
+        """Photo url/thumbnail_url が不完全なパーセントエンコードを拒否すること."""
+        with pytest.raises(ValidationError, match="不完全なパーセントエンコード"):
+            Photo.model_validate({**_PHOTO_BASE, field_key: bad_url})
 
     @pytest.mark.parametrize(
         ("url", "thumbnail_url"),
@@ -2117,9 +2104,9 @@ class TestExtraFieldsForbidden:
     )
     def test_extra_fields_forbidden(
         self,
-        model_class: type,
-        valid_data: dict,
-        extra_field: dict,
+        model_class: type[BaseModel],
+        valid_data: dict[str, Any],
+        extra_field: dict[str, Any],
     ) -> None:
         """全モデルが extra フィールドを拒否することを確認"""
         invalid_data = {**valid_data, **extra_field}

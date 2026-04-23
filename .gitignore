@@ -139,5 +139,13 @@ gsd-local-patches/
 # CGC (CodeGraphContext)
 cgc_mcp_wrapper.sh
 cgc_watch_safe.sh
+
 # Added by code-review-graph
 .code-review-graph/
+
+# commit graph outputs, ignore the extraction cache
+graphify-out/
+
+# Compound Engineering local config
+.compound-engineering/*.local.yaml
+.context/compound-engineering/ce-code-review/
