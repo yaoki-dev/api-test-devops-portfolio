@@ -21,6 +21,8 @@ utils/logger.pyで示せるスキル:
 
 from __future__ import annotations
 
+import os
+import sys
 from typing import Any, cast
 
 import structlog
@@ -76,7 +78,7 @@ def _sentry_processor(
                 for k, v in event_dict.items()
                 if k not in ("event", "level", "timestamp", "exc_info", "logger")
             }
-            with sentry_sdk.push_scope() as scope:
+            with sentry_sdk.new_scope() as scope:
                 for key, value in extra.items():
                     scope.set_extra(key, value)
                 sentry_sdk.capture_message(
@@ -85,7 +87,13 @@ def _sentry_processor(
                 )
 
     except ImportError:
-        pass  # sentry-sdk未インストール（サイレントスキップ）
+        # sentry-sdk未インストール時はSENTRY_DEBUG有効時のみ警告出力
+        # sentry_init.pyのImportError→RuntimeError方針と整合（本番検知可能性確保）
+        if os.environ.get("SENTRY_DEBUG", "").lower() in ("true", "1", "yes"):
+            print(
+                "[SENTRY_WARN] sentry-sdk not installed, skipping Sentry capture",
+                file=sys.stderr,
+            )
     except KeyboardInterrupt, SystemExit, MemoryError:
         # システム例外は再発生（graceful shutdown/K8s OOMKilled検知対応）
         raise
@@ -93,8 +101,6 @@ def _sentry_processor(
         # Sentry送信失敗時はstderrへ出力（循環参照回避のためstructlog不使用）
         # 設計意図: Sentry障害時もアプリケーション継続を優先
         # ネットワークエラー、Sentry側の一時障害等を想定
-        import sys
-
         print(f"[SENTRY_ERROR] Failed to send to Sentry: {e}", file=sys.stderr)
 
     return event_dict
