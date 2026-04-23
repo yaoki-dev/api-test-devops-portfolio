@@ -7,7 +7,7 @@ which are module-level utility functions independent of AsyncAPIClient/SyncAPICl
 Consolidated from test_async_client_error_handling.py and
 test_sync_client_error_handling.py to eliminate duplication.
 
-テストケース一覧（29件）:
+テストケース一覧（31件）:
     - Exception (3件): hierarchy, http_error_status_preservation, retry_error_message
     - JSON Parsing (3件): invalid_json, json_error_init, json_error_without_response
     - Request Error Mapping (5件): too_many_redirects, invalid_url, timeout,
@@ -21,6 +21,8 @@ test_sync_client_error_handling.py to eliminate duplication.
       headers_merged_with_defaults,
       custom_headers_override_defaults, zero_timeout_not_overridden,
       zero_retry_count_not_overridden, zero_retry_delay_not_overridden
+    - Client Init (2件): sync_client_headers_empty_dict_preserves_defaults,
+      async_client_headers_empty_dict_preserves_defaults
 """
 
 import json
@@ -36,6 +38,8 @@ from utils.api_client import (
     APIJSONDecodeError,
     APIRetryError,
     APITimeoutError,
+    AsyncAPIClient,
+    SyncAPIClient,
     _classify_error,
     _map_request_error,
     _resolve_client_config,
@@ -422,3 +426,47 @@ def test_resolve_client_config_zero_retry_delay_not_overridden(mock_settings: Mo
             "https://example.com", None, None, 0.0, None
         )
     assert retry_delay == 0.0
+
+
+# =============================================================================
+# Client Init Tests（クライアント初期化の検証）
+# =============================================================================
+
+
+def test_sync_client_headers_empty_dict_preserves_defaults(mock_base_url: str) -> None:
+    """SyncAPIClient: headers={} でデフォルトヘッダーが保持される
+
+    `if headers is not None:` の設計を保証するテスト。
+    空辞書を渡しても update({}) は no-op なので、デフォルトヘッダーは変わらない。
+    """
+    with SyncAPIClient(base_url=mock_base_url, headers={}) as client:
+        # デフォルトヘッダーは3つ: User-Agent, Accept, Content-Type
+        assert set(client.default_headers.keys()) == {
+            "User-Agent",
+            "Accept",
+            "Content-Type",
+        }
+        # Noneではなく、正しく設定されている
+        assert client.default_headers["User-Agent"]
+        assert client.default_headers["Accept"] == "application/json"
+        assert client.default_headers["Content-Type"] == "application/json"
+
+
+@pytest.mark.asyncio
+async def test_async_client_headers_empty_dict_preserves_defaults(mock_base_url: str) -> None:
+    """AsyncAPIClient: headers={} でデフォルトヘッダーが保持される
+
+    `if headers is not None:` の設計を保証するテスト。
+    空辞書を渡しても update({}) は no-op なので、デフォルトヘッダーは変わらない。
+    """
+    async with AsyncAPIClient(base_url=mock_base_url, headers={}) as client:
+        # デフォルトヘッダーは3つ: User-Agent, Accept, Content-Type
+        assert set(client.default_headers.keys()) == {
+            "User-Agent",
+            "Accept",
+            "Content-Type",
+        }
+        # Noneではなく、正しく設定されている
+        assert client.default_headers["User-Agent"]
+        assert client.default_headers["Accept"] == "application/json"
+        assert client.default_headers["Content-Type"] == "application/json"

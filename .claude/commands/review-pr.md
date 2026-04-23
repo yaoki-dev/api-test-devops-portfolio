@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(gh api repos/*/issues/*/comments:*),Bash(gh api repos/*/pulls/*/comments:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh repo view:*),Bash(mgrep:*),mcp__ast-grep__find_code,mcp__ast-grep__find_code_by_rule,mcp__morph-mcp__warpgrep_codebase_search,mcp__CodeGraphContext__analyze_code_relationships,mcp__CodeGraphContext__find_dead_code,mcp__CodeGraphContext__find_most_complex_functions,mcp__CodeGraphContext__calculate_cyclomatic_complexity
+allowed-tools: Bash(gh api repos/*/issues/*/comments:*),Bash(gh api repos/*/pulls/*/comments:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh repo view:*),Bash(mgrep:*),mcp__ast-grep__find_code,mcp__ast-grep__find_code_by_rule,mcp__morph-mcp__warpgrep_codebase_search,mcp__CodeGraphContext__analyze_code_relationships,mcp__CodeGraphContext__find_dead_code,mcp__CodeGraphContext__find_most_complex_functions,mcp__CodeGraphContext__calculate_cyclomatic_complexity,mcp__plugin_semgrep_semgrep__*,mcp__morph-mcp__codebase_search__*,mcp__code-review-graph__*
 description: Review a pull request
 argument-hint: "[owner/repo] [pr-number]"
 ---

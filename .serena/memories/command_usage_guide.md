@@ -44,13 +44,10 @@ graph LR
 | **要件定義** | `sdd:brainstorm` | 対話型アイデア発想 | - |
 | | `sdd:create-ideas` | 単発アイデア生成（確率分布） | - |
 | | `Skill(superpowers:brainstorm)` | アイデア発想・要件整理 | - |
-| | `/sc:brainstorm` | 7種類Persona協働 | architect, product-manager |
 | | `spec-workflow MCP` | 仕様書作成（自然言語） | - |
 | **仕様作成** | `sdd:01-specify` | 機能仕様書作成（spec-checklist検証） | business-analyst |
 | | `Skill(superpowers:write-plan)` | 実装計画作成（TDD Iron Law） | - |
-| | `/sc:workflow` | PRD → 実装計画変換 | tech-lead, architect |
 | **設計** | `sdd:02-plan` | アーキテクチャ設計（3案比較） | software-architect, researcher |
-| | `/sc:implement` | マルチPersona協働実装 | architect, developer |
 | | `@tech-lead (agent)` | タスク分解・依存関係整理 | - |
 | **実装** | `sdd:04-implement` | Phase単位実装 | developer（Phase実行） |
 | | `/implement` | 仕様書ベース実装 | developer |
@@ -133,7 +130,6 @@ workflow:
 | 目的 | 推奨コマンド | フレームワーク | 固有価値 | 具体例 |
 |-----|------------|-------------|---------|--------|
 | コンテキスト検出テスト | `/test` | ccplugins | Cold Start検出、自動修正 | `/test`, `/test tests/unit/`, `/test --coverage` |
-| E2Eブラウザテスト | `/sc:test` | SuperClaude | Playwright MCP統合 | `/sc:test` |
 | Docker環境テスト | `/test` | ccplugins | docker-compose統合 | `/test "docker-compose up dev"` |
 | テストカバレッジ分析 | `/test-coverage` | 個別インストール | 4種類のカバレッジタイプ（line/branch/function/statement）分析 | `/test-coverage --line` |
 | テスト自動生成 | `/generate-tests` | 個別インストール | AIベースのunit/integration/edge caseテスト生成 | `/generate-tests src/auth.ts` |
@@ -143,7 +139,6 @@ workflow:
 | 目的 | 推奨コマンド | フレームワーク | 固有価値 | 具体例 |
 |-----|------------|-------------|---------|--------|
 | リポジトリ移植実装 | `/implement` | ccplugins | Deep Validation + auto-fix | `/implement "GitHub Actions test workflow実装"` |
-| マルチPersona協働実装 | `/sc:implement` | SuperClaude | 5種類のPersona協働 | `/sc:implement "feature"` |
 | チェックリストベース実装 | `/implement` | ccplugins | セッション継続、進捗追跡 | `/implement docs/プロジェクト再編/Week7_Docker実装完了チェックリスト.md` |
 | 仕様書ベース実装 | `/implement` | ccplugins | 自動計画生成（implement/plan.md） | `/implement docs/プロジェクト再編/Week8_Day44_CICD最適化強化仕様.md` |
 | プロジェクト雛形作成 | `/scaffold` | ccplugins | パターン検出型スキャフォールディング | `/scaffold UserProfile` |
@@ -160,13 +155,12 @@ workflow:
 
 | 目的 | 推奨コマンド | 規模・条件 | 設計特性 | 固有価値 | 具体例 |
 |-----|------------|----------|---------|---------|--------|
-| 新規コンポーネント作成 | `/sc:document` | コンポーネント/API | 作成特化（4形式対応） | inline/external/API ref/guides生成 | `/sc:document utils/auth.py --style detailed` |
 | 小規模・迅速更新 | `/docs` | 1-2ファイル | 単一AI自律型 | 高速（agent起動なし）、4モード | `/docs update` |
 | 大規模・品質重視更新 | `/docs:update-docs` | 3+ファイルOR API変更 | マルチagent+review | 並列処理、専用品質保証、index管理 | `/docs:update-docs` |
 | ドキュメント品質監査 | `/docs-maintenance` | 全体監査 | 監査特化 | リンク検証・スタイル一貫性・自動同期 | `/docs-maintenance --audit` |
 
 **使い分けルール**:
-- **作成フェーズ**: `/sc:document`（コンポーネント詳細） → `/docs`（プロジェクト統合）
+- **作成フェーズ**: `/docs`（プロジェクト統合）
 - **更新フェーズ**: 小規模（1-2ファイル）→ `/docs` | 大規模（3+ファイル）→ `/docs:update-docs`
 - **品質重視**: `/docs:update-docs`（review agent）| 速度重視: `/docs`（単一AI）
 
@@ -174,15 +168,11 @@ workflow:
 
 | 目的 | 推奨コマンド | フレームワーク | 固有価値 | 具体例 |
 |-----|------------|-------------|---------|--------|
-| 要件発見（ブレスト） | `/sc:brainstorm` | SuperClaude | 7種類のPersona協働、6種類のMCP統合 | `/sc:brainstorm` |
-| ワークフロー生成 | `/sc:workflow` | SuperClaude | PRD → 実装計画変換、7種類のPersona協働 | `/sc:workflow` |
 
 ### セッション管理
 
 | 目的 | 推奨コマンド | フレームワーク | 固有価値 | 具体例 |
 |-----|------------|-------------|---------|--------|
-| セッション復元 | `/sc:load` | SuperClaude | Serena MCP統合（cross-session persistence） | `/sc:load` |
-| セッション保存 | `/sc:save` | SuperClaude | Serena MCP統合（checkpoint creation） | `/sc:save` |
 
 ---
 
@@ -204,98 +194,10 @@ workflow:
 - `/test`: コンテキスト検出テスト、Docker環境テスト
 - `/implement`: リポジトリ移植、チェックリスト/仕様書ベース実装
 - `/review`: コードレビュー
-- `/docs`: ドキュメント一括更新、`/sc:document`（生成）、`/docs:update-docs`（更新）
+- `/docs`: ドキュメント一括更新、`/docs:update-docs`（更新）
 - `/refactor`: リファクタリング
 - `/scaffold`: プロジェクト雛形作成
 - `/security-scan`: セキュリティ脆弱性検出・自動修正
-
----
-
-### SuperClaude
-
-**特徴**:
-- MCP統合: Serena（記憶管理）、Playwright（E2Eテスト）、Sequential（複雑分析）
-- マルチPersona協働: 7種類のPersona（architect, developer, tester等）が協働
-- 複雑なワークフロー: 要件発見→設計→実装の全工程サポート
-
-**適用場面**:
-- 要件発見・ブレインストーミング
-- アーキテクチャ設計・ワークフロー生成
-- セッション管理（復元・保存）
-- E2Eブラウザテスト
-
-**主要コマンド**:
-- `/sc:brainstorm`: 要件発見（7種類のPersona協働、6種類のMCP統合）
-- `/sc:workflow`: PRD → 実装計画変換
-- `/sc:implement`: マルチPersona協働実装（5種類のPersona）
-- `/sc:test`: E2Eブラウザテスト（Playwright MCP統合）
-- `/sc:load`: セッション復元（Serena MCP統合）
-- `/sc:save`: セッション保存（Serena MCP統合）
-
----
-
-## 4. 重複排除の根拠と証拠ベース分析
-
-### コマンド重複の判定基準
-
-以下の基準で、機能的重複を排除し、各コマンドの固有価値を明示：
-
-### 重複コマンドの保持判定
-
-#### 1. `/sc:implement` vs `/implement`: **両者保持**
-
-**判定理由**:
-- `/sc:implement`: マルチPersona協働（architect / developer / tester / security / performanceの5種類）
-- `/implement`: Deep Validation（品質ゲート自動実行） + auto-fix（エラー自動修正）
-
-**使い分け**:
-- 複雑な機能実装（アーキテクチャ設計必要）: `/sc:implement`
-- 仕様書・チェックリストベース実装: `/implement`
-
----
-
-#### 2. `/sc:test` vs `/test`: **両者保持**
-
-**判定理由**:
-- `/sc:test`: E2Eブラウザテスト（Playwright MCP統合、UI自動操作）
-- `/test`: コンテキスト検出テスト（Cold Start検出、自動修正、docker-compose統合）
-
-**使い分け**:
-- ブラウザUI操作テスト: `/sc:test`
-- 単体・統合テスト、Docker環境テスト: `/test`
-
----
-
-#### 3. `/docs`: **ccplugins独自**
-
-**特徴**:
-- `/docs`: 全ドキュメント一括更新（README、API docs、Architecture docs）、バッジ自動生成（shields.io）
-
-**推奨**:
-- 新規ドキュメント生成: `/sc:document` （SuperClaude）
-- 実装後の更新: `/docs:update-docs` （CEK Plugin）
-- 品質監査: `/docs-maintenance` （ccplugins）
-- プロジェクト全体一括更新: `/docs` （ccplugins）
-
-> **Note**: ドキュメントスキルは目的別に分離（生成→更新→監査のライフサイクル）
-
----
-
-### 証拠ベース分析: 実装特徴量の機械可読化
-
-#### ccpluginsコマンド実装特徴量
-
-| ツール | 実装特徴 | 検証方法 |
-|--------|---------|---------|
-| `/test` | context_detection（Cold Start検出）<br>auto_fix（テスト失敗時の自動修正）<br>docker_integration（docker-compose統合） | `grep -E 'context_detection\|Cold Start' ~/.claude/commands/test.md` |
-| `/implement` | deep_validation（品質ゲート自動実行: pytest, ruff, mypy）<br>session_continuity（セッション継続型進捗追跡）<br>auto_planning（implement/plan.md自動生成） | `grep -E 'deep_validation\|quality gate' ~/.claude/commands/implement.md` |
-
-#### SuperClaudeコマンド実装特徴量
-
-| ツール | 実装特徴 | 検証方法 |
-|--------|---------|---------|
-| `/sc:test` | playwright（E2Eブラウザテスト自動化） | MCP接続確認: `grep 'playwright' ~/.claude/settings.json` |
-| `/sc:implement` | personas: architect（アーキテクチャ設計）<br>developer（実装）<br>tester（テスト設計）<br>security（セキュリティ検証）<br>performance（パフォーマンス最適化） | `grep -E 'personas\|architect' ~/.claude/commands/sc-implement.md` |
 
 ---
 
@@ -334,7 +236,6 @@ workflow:
 
 | ツール | 種別 | 発動トリガー | 用途 |
 |--------|------|------------|------|
-| `/sc:document` | Command | 新規ドキュメント作成時 | コンポーネント/API/ガイド生成 |
 | `/docs:update-docs` | Command | 実装後ドキュメント更新時 | Git連携+マルチエージェント品質レビュー |
 | `/docs-maintenance` | Command | ドキュメント品質監査時 | リンク検証・スタイル一貫性・自動同期 |
 | `/troubleshooting-guide` | Command | トラブルシューティング時 | 診断手順・共通問題・自動解決 |
@@ -397,8 +298,8 @@ workflow:
 
 #### Step 1: 削除コマンド名を変数化
 ```bash
-# 例: /sc:document を削除した場合
-DELETED_CMD="/sc:document"
+# 例: /docs を削除した場合
+DELETED_CMD="docs"
 ```
 
 #### Step 2: プロジェクトローカルチェック
