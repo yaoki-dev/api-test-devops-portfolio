@@ -33,8 +33,7 @@ api-test-devops-portfolio/
 ├── scripts/                # 自動化スクリプト
 │   ├── error_tracker.py   # エラー追跡
 │   ├── evaluate_4dimensions.py
-│   ├── update_readme_metrics.py
-│   └── week_improver.py
+│   └── update_readme_metrics.py
 ├── docs/                   # プロジェクトドキュメント
 ├── .github/                # CI/CD workflows
 ├── reports/                # テスト・カバレッジレポート

@@ -36,7 +36,9 @@ paths: ["**/*.py"]
 
 ## 3. 型ヒント
 
-全関数・メソッドに型ヒント必須（テストコード除外、mypy: `disallow_untyped_defs = true`）
+全関数・メソッドに型ヒント必須（mypy: `disallow_untyped_defs = true`）
+
+**適用範囲**: `utils/`, `config/`, `models/`, `tests/conftest.py`, `tests/**/__init__.py` は強制対象。`tests/unit/test_*.py` 等のテスト本体は推奨（CI mypy invocation 対象外、漸次型付与方針）
 
 ```python
 def __init__(self, base_url: str | None = None) -> None: ...  # Python 3.10+ Union
@@ -44,7 +46,7 @@ type JSONResponse = dict[str, Any]  # Python 3.12+ 型エイリアス
 async def __aenter__(self) -> Self: ...  # Python 3.11+ Self型
 ```
 
-自動検証: `uv run mypy utils/ config/ models/`
+自動検証: `uv run mypy utils/ config/ models/ tests/conftest.py`
 
 ---
 

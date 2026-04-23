@@ -244,6 +244,7 @@ jobs:
           claude_args: >-
             ${{ steps.build-mcp-config.outputs.has_mcp == 'true' && format('--mcp-config {0}', steps.build-mcp-config.outputs.mcp_config) || '' }}
             --allowedTools "${{ env.BASE_TOOLS }}${{ steps.build-mcp-config.outputs.extra_tools != '' && format(',{0}', steps.build-mcp-config.outputs.extra_tools) || '' }}"
+            --model "claude-sonnet-4-6"
           prompt: |
             /review-pr REPO: ${{ github.repository }} PR_NUMBER: ${{ github.event.pull_request.number }}
 
