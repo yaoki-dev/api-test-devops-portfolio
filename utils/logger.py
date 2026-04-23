@@ -39,7 +39,8 @@ def _sentry_processor(
     """Sentry連携プロセッサー
 
     ERROR以上のログをSentryに送信。
-    sentry-sdk未インストールまたは未初期化時はスキップ。
+    sentry-sdk未インストールまたは未初期化時はスキップ
+    （本番環境または SENTRY_DEBUG 有効時は stderr に警告出力）。
 
     Args:
         logger: structlogラッパー（未使用）
@@ -87,9 +88,17 @@ def _sentry_processor(
                 )
 
     except ImportError:
-        # sentry-sdk未インストール時はSENTRY_DEBUG有効時のみ警告出力
-        # sentry_init.pyのImportError→RuntimeError方針と整合（本番検知可能性確保）
-        if os.environ.get("SENTRY_DEBUG", "").lower() in ("true", "1", "yes"):
+        # sentry-sdk未インストール時は本番環境 or SENTRY_DEBUG有効時に警告出力
+        # 設計方針: sentry_init.pyはstartup時Fail-Fast (RuntimeError)、
+        # logger.pyはper-log-call coupling回避のため警告出力でgraceful degrade
+        # （本番デプロイ時の未インストール検知可能性を保証）
+        # defensive: get_settings()がreload_settings()後にValidationErrorを
+        # 発生させる可能性を遮断し、log processor内で例外伝播を防ぐ
+        try:
+            is_prod = get_settings().is_production()
+        except Exception:  # noqa: BLE001
+            is_prod = False
+        if is_prod or os.environ.get("SENTRY_DEBUG", "").lower() in ("true", "1", "yes"):
             print(
                 "[SENTRY_WARN] sentry-sdk not installed, skipping Sentry capture",
                 file=sys.stderr,

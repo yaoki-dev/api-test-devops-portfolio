@@ -346,30 +346,47 @@ class TestSentryProcessor:
         mock_sdk.capture_message.assert_called_once()
         mock_sdk.capture_exception.assert_not_called()
 
-    def test_silent_skip_on_import_error(self) -> None:
-        """分岐5a: sentry-sdk未インストール時はサイレントスキップ"""
-        event_dict = {"level": "error", "event": "error message"}
+    def test_silent_skip_on_import_error(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """分岐5a: sentry-sdk未インストール時は非本番・SENTRY_DEBUG未設定でサイレントスキップ
 
-        # sys.modulesからsentry_sdkを除去してImportErrorを発生させる
+        環境非依存のため get_settings を明示的に mock し ENVIRONMENT の影響を遮断する。
+        """
+        event_dict = {"level": "error", "event": "error message"}
+        monkeypatch.delenv("SENTRY_DEBUG", raising=False)
+
         import sys
 
+        from utils import logger as logger_module
+
+        mock_settings = MagicMock()
+        mock_settings.is_production.return_value = False
+
         original_modules = sys.modules.copy()
-        # sentry_sdkが既にインポートされている場合は除去
         if "sentry_sdk" in sys.modules:
             del sys.modules["sentry_sdk"]
 
         try:
             with patch.dict("sys.modules", {"sentry_sdk": None}):
-                with patch(
-                    "builtins.__import__",
-                    side_effect=ImportError("No module named 'sentry_sdk'"),
-                ):
-                    result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+                with patch.object(logger_module, "get_settings", return_value=mock_settings):
+                    with patch(
+                        "builtins.__import__",
+                        side_effect=ImportError("No module named 'sentry_sdk'"),
+                    ):
+                        result = _sentry_processor(
+                            self._dummy_logger, self._dummy_method, event_dict
+                        )
         finally:
             sys.modules.update(original_modules)
 
         # event_dictがそのまま返される（例外は発生しない）
         assert result is event_dict
+        # 警告が出力されないことを明示検証 (is_production=False AND SENTRY_DEBUG未設定)
+        captured = capsys.readouterr()
+        assert "[SENTRY_WARN]" not in captured.err
 
     def test_warn_on_import_error_when_sentry_debug_enabled(
         self,
@@ -400,6 +417,94 @@ class TestSentryProcessor:
         captured = capsys.readouterr()
         assert "[SENTRY_WARN]" in captured.err
         assert "sentry-sdk not installed" in captured.err
+
+    def test_warn_on_import_error_when_production_env(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """分岐5d: 本番環境ではSENTRY_DEBUG未設定でもstderr警告出力
+
+        sentry_init.pyのImportError→RuntimeError Fail-Fast方針と整合性を確保し、
+        本番デプロイ時のsentry-sdk未インストールを検知可能にする。
+        """
+        event_dict = {"level": "error", "event": "error message"}
+        monkeypatch.delenv("SENTRY_DEBUG", raising=False)
+
+        import sys as _sys
+
+        from utils import logger as logger_module
+
+        mock_settings = MagicMock()
+        mock_settings.is_production.return_value = True
+
+        original_modules = _sys.modules.copy()
+        if "sentry_sdk" in _sys.modules:
+            del _sys.modules["sentry_sdk"]
+
+        try:
+            with patch.dict("sys.modules", {"sentry_sdk": None}):
+                with patch.object(logger_module, "get_settings", return_value=mock_settings):
+                    with patch(
+                        "builtins.__import__",
+                        side_effect=ImportError("No module named 'sentry_sdk'"),
+                    ):
+                        result = _sentry_processor(
+                            self._dummy_logger, self._dummy_method, event_dict
+                        )
+        finally:
+            _sys.modules.update(original_modules)
+
+        assert result is event_dict
+        captured = capsys.readouterr()
+        assert "[SENTRY_WARN]" in captured.err
+        assert "sentry-sdk not installed" in captured.err
+        # is_production() 分岐が実際に評価されたことを検証 (causal path 保証)
+        mock_settings.is_production.assert_called_once()
+
+    def test_settings_failure_in_import_error_handler_is_contained(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """分岐5e: get_settings()がImportError handler内で失敗しても処理は継続
+
+        reload_settings()後のValidationError等で Settings() 再生成が失敗した場合、
+        defensive try/except が例外を遮断し log processor が例外を伝播しないことを保証する。
+        """
+        event_dict = {"level": "error", "event": "error message"}
+        monkeypatch.setenv("SENTRY_DEBUG", "true")
+
+        import sys
+
+        from utils import logger as logger_module
+
+        original_modules = sys.modules.copy()
+        if "sentry_sdk" in sys.modules:
+            del sys.modules["sentry_sdk"]
+
+        try:
+            with patch.dict("sys.modules", {"sentry_sdk": None}):
+                with patch.object(
+                    logger_module,
+                    "get_settings",
+                    side_effect=RuntimeError("Settings validation failed"),
+                ):
+                    with patch(
+                        "builtins.__import__",
+                        side_effect=ImportError("No module named 'sentry_sdk'"),
+                    ):
+                        # 例外伝播せず event_dict が返ることを検証
+                        result = _sentry_processor(
+                            self._dummy_logger, self._dummy_method, event_dict
+                        )
+        finally:
+            sys.modules.update(original_modules)
+
+        assert result is event_dict
+        # SENTRY_DEBUG 経路で警告出力 (is_prod=False fallback でも短絡評価で警告)
+        captured = capsys.readouterr()
+        assert "[SENTRY_WARN]" in captured.err
 
     def test_stderr_output_on_sentry_failure(self, capsys: pytest.CaptureFixture[str]) -> None:
         """分岐5b: Sentry送信失敗時はstderrへ出力"""
