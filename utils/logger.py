@@ -82,7 +82,7 @@ def _sentry_processor(
             with sentry_sdk.new_scope() as scope:
                 for key, value in extra.items():
                     scope.set_extra(key, value)
-                sentry_sdk.capture_message(
+                scope.capture_message(
                     message,
                     level=log_level.lower(),
                 )
@@ -96,8 +96,12 @@ def _sentry_processor(
         # 発生させる可能性を遮断し、log processor内で例外伝播を防ぐ
         try:
             is_prod = get_settings().is_production()
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             is_prod = False
+            print(
+                f"[SENTRY_WARN] settings load failed: {type(e).__name__}: {e}",
+                file=sys.stderr,
+            )
         if is_prod or os.environ.get("SENTRY_DEBUG", "").lower() in ("true", "1", "yes"):
             print(
                 "[SENTRY_WARN] sentry-sdk not installed, skipping Sentry capture",

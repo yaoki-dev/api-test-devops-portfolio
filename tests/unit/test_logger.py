@@ -246,7 +246,8 @@ class TestSentryProcessor:
         mock_client = MagicMock()
         mock_client.is_active.return_value = True
         mock_sdk.get_client.return_value = mock_client
-        mock_sdk.new_scope.return_value.__enter__ = MagicMock(return_value=MagicMock())
+        mock_scope = MagicMock()
+        mock_sdk.new_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
         mock_sdk.new_scope.return_value.__exit__ = MagicMock(return_value=False)
 
         with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
@@ -254,7 +255,7 @@ class TestSentryProcessor:
 
         assert result is event_dict
         # Sentryメソッドが呼ばれたことを確認
-        assert mock_sdk.capture_message.called or mock_sdk.capture_exception.called
+        assert mock_scope.capture_message.called or mock_sdk.capture_exception.called
 
     def test_skip_when_sentry_not_active(self) -> None:
         """分岐2: Sentry未初期化時はスキップ"""
@@ -316,7 +317,7 @@ class TestSentryProcessor:
             result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
 
         assert result is event_dict
-        mock_sdk.capture_message.assert_called_once_with(
+        mock_scope.capture_message.assert_called_once_with(
             "error without exception",
             level="error",
         )
@@ -343,7 +344,7 @@ class TestSentryProcessor:
             result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
 
         assert result is event_dict
-        mock_sdk.capture_message.assert_called_once()
+        mock_scope.capture_message.assert_called_once()
         mock_sdk.capture_exception.assert_not_called()
 
     def test_silent_skip_on_import_error(
@@ -358,29 +359,18 @@ class TestSentryProcessor:
         event_dict = {"level": "error", "event": "error message"}
         monkeypatch.delenv("SENTRY_DEBUG", raising=False)
 
-        import sys
-
         from utils import logger as logger_module
 
         mock_settings = MagicMock()
         mock_settings.is_production.return_value = False
 
-        original_modules = sys.modules.copy()
-        if "sentry_sdk" in sys.modules:
-            del sys.modules["sentry_sdk"]
-
-        try:
-            with patch.dict("sys.modules", {"sentry_sdk": None}):
-                with patch.object(logger_module, "get_settings", return_value=mock_settings):
-                    with patch(
-                        "builtins.__import__",
-                        side_effect=ImportError("No module named 'sentry_sdk'"),
-                    ):
-                        result = _sentry_processor(
-                            self._dummy_logger, self._dummy_method, event_dict
-                        )
-        finally:
-            sys.modules.update(original_modules)
+        with patch.dict("sys.modules", {"sentry_sdk": None}):
+            with patch.object(logger_module, "get_settings", return_value=mock_settings):
+                with patch(
+                    "builtins.__import__",
+                    side_effect=ImportError("No module named 'sentry_sdk'"),
+                ):
+                    result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
 
         # event_dictがそのまま返される（例外は発生しない）
         assert result is event_dict
@@ -397,21 +387,12 @@ class TestSentryProcessor:
         event_dict = {"level": "error", "event": "error message"}
         monkeypatch.setenv("SENTRY_DEBUG", "true")
 
-        import sys as _sys
-
-        original_modules = _sys.modules.copy()
-        if "sentry_sdk" in _sys.modules:
-            del _sys.modules["sentry_sdk"]
-
-        try:
-            with patch.dict("sys.modules", {"sentry_sdk": None}):
-                with patch(
-                    "builtins.__import__",
-                    side_effect=ImportError("No module named 'sentry_sdk'"),
-                ):
-                    result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
-        finally:
-            _sys.modules.update(original_modules)
+        with patch.dict("sys.modules", {"sentry_sdk": None}):
+            with patch(
+                "builtins.__import__",
+                side_effect=ImportError("No module named 'sentry_sdk'"),
+            ):
+                result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
 
         assert result is event_dict
         captured = capsys.readouterr()
@@ -431,29 +412,18 @@ class TestSentryProcessor:
         event_dict = {"level": "error", "event": "error message"}
         monkeypatch.delenv("SENTRY_DEBUG", raising=False)
 
-        import sys as _sys
-
         from utils import logger as logger_module
 
         mock_settings = MagicMock()
         mock_settings.is_production.return_value = True
 
-        original_modules = _sys.modules.copy()
-        if "sentry_sdk" in _sys.modules:
-            del _sys.modules["sentry_sdk"]
-
-        try:
-            with patch.dict("sys.modules", {"sentry_sdk": None}):
-                with patch.object(logger_module, "get_settings", return_value=mock_settings):
-                    with patch(
-                        "builtins.__import__",
-                        side_effect=ImportError("No module named 'sentry_sdk'"),
-                    ):
-                        result = _sentry_processor(
-                            self._dummy_logger, self._dummy_method, event_dict
-                        )
-        finally:
-            _sys.modules.update(original_modules)
+        with patch.dict("sys.modules", {"sentry_sdk": None}):
+            with patch.object(logger_module, "get_settings", return_value=mock_settings):
+                with patch(
+                    "builtins.__import__",
+                    side_effect=ImportError("No module named 'sentry_sdk'"),
+                ):
+                    result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
 
         assert result is event_dict
         captured = capsys.readouterr()
@@ -475,31 +445,20 @@ class TestSentryProcessor:
         event_dict = {"level": "error", "event": "error message"}
         monkeypatch.setenv("SENTRY_DEBUG", "true")
 
-        import sys
-
         from utils import logger as logger_module
 
-        original_modules = sys.modules.copy()
-        if "sentry_sdk" in sys.modules:
-            del sys.modules["sentry_sdk"]
-
-        try:
-            with patch.dict("sys.modules", {"sentry_sdk": None}):
-                with patch.object(
-                    logger_module,
-                    "get_settings",
-                    side_effect=RuntimeError("Settings validation failed"),
+        with patch.dict("sys.modules", {"sentry_sdk": None}):
+            with patch.object(
+                logger_module,
+                "get_settings",
+                side_effect=RuntimeError("Settings validation failed"),
+            ):
+                with patch(
+                    "builtins.__import__",
+                    side_effect=ImportError("No module named 'sentry_sdk'"),
                 ):
-                    with patch(
-                        "builtins.__import__",
-                        side_effect=ImportError("No module named 'sentry_sdk'"),
-                    ):
-                        # 例外伝播せず event_dict が返ることを検証
-                        result = _sentry_processor(
-                            self._dummy_logger, self._dummy_method, event_dict
-                        )
-        finally:
-            sys.modules.update(original_modules)
+                    # 例外伝播せず event_dict が返ることを検証
+                    result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
 
         assert result is event_dict
         # SENTRY_DEBUG 経路で警告出力 (is_prod=False fallback でも短絡評価で警告)
@@ -514,12 +473,12 @@ class TestSentryProcessor:
         mock_client = MagicMock()
         mock_client.is_active.return_value = True
         mock_sdk.get_client.return_value = mock_client
-        # capture_messageで例外を発生させる
-        mock_sdk.capture_message.side_effect = RuntimeError("Sentry connection failed")
 
         mock_scope = MagicMock()
         mock_sdk.new_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
         mock_sdk.new_scope.return_value.__exit__ = MagicMock(return_value=False)
+        # capture_messageで例外を発生させる
+        mock_scope.capture_message.side_effect = RuntimeError("Sentry connection failed")
 
         with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
             result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
@@ -577,7 +536,7 @@ class TestSentryProcessor:
             _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
 
         # デフォルトメッセージが使用される
-        mock_sdk.capture_message.assert_called_once_with(
+        mock_scope.capture_message.assert_called_once_with(
             "Unknown error",
             level="error",
         )
