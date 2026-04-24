@@ -79,7 +79,7 @@ api-test-devops-portfolio/
 
 ### Module: utils.logger
 - **Path**: `utils/logger.py`
-- **Exports**: `get_logger()`, `configure_logging()`
+- **Exports**: `get_logger()`
 - **Purpose**: structlogベースの構造化ログ。ERROR以上をSentryに自動送信（opt-in）。
 
 ### Module: utils.sentry_init

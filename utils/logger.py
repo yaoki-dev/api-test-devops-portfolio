@@ -31,6 +31,54 @@ from structlog.typing import FilteringBoundLogger, WrappedLogger
 from config.settings import LogFormat, get_settings
 
 
+class _SentryWarningState:
+    """_sentry_processor の stderr 警告を per-process 1 回に抑制する state
+
+    structlog processor は ERROR/CRITICAL/EXCEPTION ログ毎に呼ばれるため、
+    settings 失敗 × sentry-sdk 未インストール が持続する環境 (CI 破壊・.env 破損) では
+    ログ1件につき 2 行の警告が stderr に出力される。エラーストーム時の log flood を避けるため
+    同一警告を process 内で 1 回のみ出力する。
+
+    reset() は test 用: 各テストが fresh state で走ることを保証する。
+    """
+
+    settings_emitted: bool = False
+    sdk_not_installed_emitted: bool = False
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.settings_emitted = False
+        cls.sdk_not_installed_emitted = False
+
+
+def _emit_import_error_warnings() -> None:
+    """sentry-sdk 未インストール時の stderr 警告を throttle 付きで出力
+
+    設計方針: sentry_init.py は startup 時 Fail-Fast (RuntimeError)、
+    logger.py は per-log-call coupling 回避のため警告出力で graceful degrade
+    （本番デプロイ時の未インストール検知可能性を保証）。
+    defensive: get_settings() が reload_settings() 後に ValidationError を
+    発生させる可能性を遮断し log processor 内で例外伝播を防ぐ。
+    """
+    try:
+        is_prod = get_settings().is_production()
+    except Exception as e:  # noqa: BLE001
+        is_prod = True  # 本番可能性を排除できないため安全側フォールバック
+        if not _SentryWarningState.settings_emitted:
+            print(
+                f"[SENTRY_WARN] settings load failed: {type(e).__name__}: {e}",
+                file=sys.stderr,
+            )
+            _SentryWarningState.settings_emitted = True
+    if is_prod or os.environ.get("SENTRY_DEBUG", "").lower() in ("true", "1", "yes"):
+        if not _SentryWarningState.sdk_not_installed_emitted:
+            print(
+                "[SENTRY_WARN] sentry-sdk not installed, skipping Sentry capture",
+                file=sys.stderr,
+            )
+            _SentryWarningState.sdk_not_installed_emitted = True
+
+
 def _sentry_processor(
     logger: WrappedLogger,  # noqa: ARG001
     method_name: str,  # noqa: ARG001
@@ -88,25 +136,7 @@ def _sentry_processor(
                 )
 
     except ImportError:
-        # sentry-sdk未インストール時は本番環境 or SENTRY_DEBUG有効時に警告出力
-        # 設計方針: sentry_init.pyはstartup時Fail-Fast (RuntimeError)、
-        # logger.pyはper-log-call coupling回避のため警告出力でgraceful degrade
-        # （本番デプロイ時の未インストール検知可能性を保証）
-        # defensive: get_settings()がreload_settings()後にValidationErrorを
-        # 発生させる可能性を遮断し、log processor内で例外伝播を防ぐ
-        try:
-            is_prod = get_settings().is_production()
-        except Exception as e:  # noqa: BLE001
-            is_prod = False
-            print(
-                f"[SENTRY_WARN] settings load failed: {type(e).__name__}: {e}",
-                file=sys.stderr,
-            )
-        if is_prod or os.environ.get("SENTRY_DEBUG", "").lower() in ("true", "1", "yes"):
-            print(
-                "[SENTRY_WARN] sentry-sdk not installed, skipping Sentry capture",
-                file=sys.stderr,
-            )
+        _emit_import_error_warnings()
     except KeyboardInterrupt, SystemExit, MemoryError:
         # システム例外は再発生（graceful shutdown/K8s OOMKilled検知対応）
         raise

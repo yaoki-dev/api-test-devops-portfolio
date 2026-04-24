@@ -15,7 +15,7 @@ import structlog
 from structlog.testing import capture_logs
 
 from config.settings import LogFormat
-from utils.logger import _sentry_processor, get_logger
+from utils.logger import _sentry_processor, _SentryWarningState, get_logger
 
 # Module-level marker: All tests in this file are unit tests
 pytestmark = pytest.mark.unit
@@ -220,6 +220,15 @@ class TestSentryProcessor:
     _dummy_logger = None
     _dummy_method = "error"
 
+    @pytest.fixture(autouse=True)
+    def _reset_sentry_warning_state(self) -> None:
+        """_SentryWarningState を各テスト開始時にリセットし fresh state で実行
+
+        process-level throttle flag のため、前テストの state が残ると警告出力検証が
+        非決定的になる。autouse で class 内全 test の独立性を保証する。
+        """
+        _SentryWarningState.reset()
+
     @pytest.mark.parametrize(
         "level",
         ["info", "INFO", "warning", "WARNING", "debug", "DEBUG", ""],
@@ -255,6 +264,9 @@ class TestSentryProcessor:
 
         assert result is event_dict
         # Sentryメソッドが呼ばれたことを確認
+        # capture_message は new_scope 内 (logger.py:85)、
+        # capture_exception は scope 外で直接呼ばれる (logger.py:73) ため
+        # 異なるモックオブジェクト (mock_scope / mock_sdk) を参照している
         assert mock_scope.capture_message.called or mock_sdk.capture_exception.called
 
     def test_skip_when_sentry_not_active(self) -> None:
@@ -383,21 +395,34 @@ class TestSentryProcessor:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """分岐5c: SENTRY_DEBUG有効時はImportError時にstderr警告出力"""
+        """分岐5c: SENTRY_DEBUG有効時はImportError時にstderr警告出力
+
+        5dとの対称性のため get_settings をモックし、実行環境の ENVIRONMENT 変数に
+        依存しない形で SENTRY_DEBUG 経路（is_production=False + SENTRY_DEBUG=true）
+        のみを独立検証する。
+        """
         event_dict = {"level": "error", "event": "error message"}
         monkeypatch.setenv("SENTRY_DEBUG", "true")
 
+        from utils import logger as logger_module
+
+        mock_settings = MagicMock()
+        mock_settings.is_production.return_value = False  # SENTRY_DEBUG 経路のみ検証
+
         with patch.dict("sys.modules", {"sentry_sdk": None}):
-            with patch(
-                "builtins.__import__",
-                side_effect=ImportError("No module named 'sentry_sdk'"),
-            ):
-                result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+            with patch.object(logger_module, "get_settings", return_value=mock_settings):
+                with patch(
+                    "builtins.__import__",
+                    side_effect=ImportError("No module named 'sentry_sdk'"),
+                ):
+                    result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
 
         assert result is event_dict
         captured = capsys.readouterr()
         assert "[SENTRY_WARN]" in captured.err
         assert "sentry-sdk not installed" in captured.err
+        # is_production() 分岐が実際に評価されたことを検証 (5d と対称な causal path 保証)
+        mock_settings.is_production.assert_called_once()
 
     def test_warn_on_import_error_when_production_env(
         self,
@@ -461,9 +486,84 @@ class TestSentryProcessor:
                     result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
 
         assert result is event_dict
-        # SENTRY_DEBUG 経路で警告出力 (is_prod=False fallback でも短絡評価で警告)
+        # settings失敗時の固有メッセージを明示検証し、リグレッション検出力を保証
         captured = capsys.readouterr()
-        assert "[SENTRY_WARN]" in captured.err
+        assert "[SENTRY_WARN] settings load failed" in captured.err
+        assert "RuntimeError" in captured.err
+        assert "sentry-sdk not installed" in captured.err
+
+    def test_warn_on_settings_failure_when_sentry_debug_unset(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """分岐5f: settings失敗時は SENTRY_DEBUG 未設定でも警告出力 (is_prod=True fallback)
+
+        設計意図「本番デプロイ時の未インストール検知可能性を保証」の回帰テスト。
+        settings 失敗時は本番可能性を排除できないため is_prod=True にフォールバックし、
+        SENTRY_DEBUG 未設定でも sentry-sdk 未インストール警告が出力されることを保証する。
+
+        本テストは SENTRY_DEBUG を明示的に unset することで、is_prod fallback 経路のみを
+        活性化させ、5e (SENTRY_DEBUG=true) では短絡評価により検証不能だった
+        is_prod fallback の semantic を独立検証する。
+        """
+        event_dict = {"level": "error", "event": "error message"}
+        monkeypatch.delenv("SENTRY_DEBUG", raising=False)
+
+        from utils import logger as logger_module
+
+        with patch.dict("sys.modules", {"sentry_sdk": None}):
+            with patch.object(
+                logger_module,
+                "get_settings",
+                side_effect=RuntimeError("Settings validation failed"),
+            ):
+                with patch(
+                    "builtins.__import__",
+                    side_effect=ImportError("No module named 'sentry_sdk'"),
+                ):
+                    result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+        assert result is event_dict
+        captured = capsys.readouterr()
+        # settings 失敗時の固有メッセージと is_prod=True fallback 経由の警告を両方検証
+        assert "[SENTRY_WARN] settings load failed" in captured.err
+        assert "RuntimeError" in captured.err
+        assert "sentry-sdk not installed" in captured.err
+
+    def test_sentry_warnings_throttled_across_multiple_calls(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """_sentry_processor の stderr 警告は per-process 1 回のみ出力される
+
+        structlog processor は ERROR ログ毎に呼ばれるため、settings 失敗 × sentry-sdk
+        未インストールが持続する環境で log flood が発生する副作用を防ぐ。
+        3 回連続呼び出しで警告が計 2 行 (settings + sdk 各 1 回) のみ出力されることを検証。
+        """
+        event_dict = {"level": "error", "event": "error message"}
+        monkeypatch.setenv("SENTRY_DEBUG", "true")
+
+        from utils import logger as logger_module
+
+        with patch.dict("sys.modules", {"sentry_sdk": None}):
+            with patch.object(
+                logger_module,
+                "get_settings",
+                side_effect=RuntimeError("Settings validation failed"),
+            ):
+                with patch(
+                    "builtins.__import__",
+                    side_effect=ImportError("No module named 'sentry_sdk'"),
+                ):
+                    for _ in range(3):
+                        _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+        captured = capsys.readouterr()
+        # settings 失敗警告と sentry-sdk 未インストール警告はそれぞれ 1 回のみ
+        assert captured.err.count("[SENTRY_WARN] settings load failed") == 1
+        assert captured.err.count("sentry-sdk not installed") == 1
 
     def test_stderr_output_on_sentry_failure(self, capsys: pytest.CaptureFixture[str]) -> None:
         """分岐5b: Sentry送信失敗時はstderrへ出力"""
