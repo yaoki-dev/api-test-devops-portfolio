@@ -176,13 +176,13 @@ uv run pytest -m "not slow"      # 高速テストのみ
 - **pyyaml** (>=6.0): YAML設定ファイル読み込み
 
 ### Development
-- **pytest** (>=8.0.0): テストフレームワーク
+- **pytest** (>=9.0.3): テストフレームワーク
 - **pytest-asyncio** (>=1.1.0): 非同期テスト対応
 - **pytest-cov** (>=4.1.0): カバレッジ測定
 - **pytest-xdist** (>=3.5.0): 並列テスト実行
-- **respx** (>=0.22.0): httpx用モックライブラリ
-- **ruff** (>=0.8.0): Linter + Formatter
-- **mypy** (>=1.13.0): 型チェッカー
+- **respx** (>=0.23.1): httpx用モックライブラリ
+- **ruff** (>=0.15.11,<0.16): Linter + Formatter
+- **mypy** (>=1.20.1): 型チェッカー
 
 ---
 

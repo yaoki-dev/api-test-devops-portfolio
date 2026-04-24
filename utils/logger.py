@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 from typing import Any, cast
 
 import structlog
@@ -39,16 +40,21 @@ class _SentryWarningState:
     ログ1件につき 2 行の警告が stderr に出力される。エラーストーム時の log flood を避けるため
     同一警告を process 内で 1 回のみ出力する。
 
+    _lock: マルチスレッド環境 (uvicorn worker / ThreadPoolExecutor) で check-and-set の
+    race condition を防ぎ flag 昇格を atomic 化する。
+
     reset() は test 用: 各テストが fresh state で走ることを保証する。
     """
 
     settings_emitted: bool = False
     sdk_not_installed_emitted: bool = False
+    _lock: threading.Lock = threading.Lock()
 
     @classmethod
     def reset(cls) -> None:
-        cls.settings_emitted = False
-        cls.sdk_not_installed_emitted = False
+        with cls._lock:
+            cls.settings_emitted = False
+            cls.sdk_not_installed_emitted = False
 
 
 def _emit_import_error_warnings() -> None:
@@ -60,23 +66,33 @@ def _emit_import_error_warnings() -> None:
     defensive: get_settings() が reload_settings() 後に ValidationError を
     発生させる可能性を遮断し log processor 内で例外伝播を防ぐ。
     """
+    # 早期リターン: 両フラグ既昇格なら get_settings() 呼出し自体を skip し
+    # エラーストーム時の累積コストを削減
+    with _SentryWarningState._lock:
+        if _SentryWarningState.settings_emitted and _SentryWarningState.sdk_not_installed_emitted:
+            return
     try:
         is_prod = get_settings().is_production()
+    # 設計意図: get_settings() は reload_settings()/ValidationError/AttributeError 等
+    # 複数種の失敗モードを持ち、全て「本番環境不明」として安全側フォールバック扱いとする。
+    # BLE001 はプロセッサ内で例外を再送出しない (log processor の循環失敗回避) ため許容。
     except Exception as e:  # noqa: BLE001
         is_prod = True  # 本番可能性を排除できないため安全側フォールバック
-        if not _SentryWarningState.settings_emitted:
-            print(
-                f"[SENTRY_WARN] settings load failed: {type(e).__name__}: {e}",
-                file=sys.stderr,
-            )
-            _SentryWarningState.settings_emitted = True
+        with _SentryWarningState._lock:
+            if not _SentryWarningState.settings_emitted:
+                print(
+                    f"[SENTRY_WARN] settings load failed: {type(e).__name__}: {e}",
+                    file=sys.stderr,
+                )
+                _SentryWarningState.settings_emitted = True
     if is_prod or os.environ.get("SENTRY_DEBUG", "").lower() in ("true", "1", "yes"):
-        if not _SentryWarningState.sdk_not_installed_emitted:
-            print(
-                "[SENTRY_WARN] sentry-sdk not installed, skipping Sentry capture",
-                file=sys.stderr,
-            )
-            _SentryWarningState.sdk_not_installed_emitted = True
+        with _SentryWarningState._lock:
+            if not _SentryWarningState.sdk_not_installed_emitted:
+                print(
+                    "[SENTRY_WARN] sentry-sdk not installed, skipping Sentry capture",
+                    file=sys.stderr,
+                )
+                _SentryWarningState.sdk_not_installed_emitted = True
 
 
 def _sentry_processor(

@@ -8,6 +8,7 @@
 - _sentry_processor()のSentry連携（5分岐カバレッジ）
 """
 
+from collections.abc import Iterator
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -204,10 +205,6 @@ class TestLoggerIntegration:
 class TestSentryProcessor:
     """_sentry_processor関数のテスト（5分岐カバレッジ）
 
-    PR#130レビュー指摘対応:
-    - 64行・5分岐のSentry連携プロセッサーを網羅的にテスト
-    - Silent Failure防止のための監視系テスト
-
     テスト対象分岐:
     1. INFO/WARNログ → 即return（Sentry送信しない）
     2. Sentry未初期化 → 即return
@@ -221,12 +218,15 @@ class TestSentryProcessor:
     _dummy_method = "error"
 
     @pytest.fixture(autouse=True)
-    def _reset_sentry_warning_state(self) -> None:
-        """_SentryWarningState を各テスト開始時にリセットし fresh state で実行
+    def _reset_sentry_warning_state(self) -> Iterator[None]:
+        """_SentryWarningState を各テスト前後でリセットし fresh state で実行
 
         process-level throttle flag のため、前テストの state が残ると警告出力検証が
         非決定的になる。autouse で class 内全 test の独立性を保証する。
+        setup/teardown 両方で reset することで後続テスト (本 class 外) への漏洩も防止する。
         """
+        _SentryWarningState.reset()
+        yield
         _SentryWarningState.reset()
 
     @pytest.mark.parametrize(
@@ -264,8 +264,8 @@ class TestSentryProcessor:
 
         assert result is event_dict
         # Sentryメソッドが呼ばれたことを確認
-        # capture_message は new_scope 内 (logger.py:85)、
-        # capture_exception は scope 外で直接呼ばれる (logger.py:73) ため
+        # capture_message は new_scope 内 (logger.py:149)、
+        # capture_exception は scope 外で直接呼ばれる (logger.py:140) ため
         # 異なるモックオブジェクト (mock_scope / mock_sdk) を参照している
         assert mock_scope.capture_message.called or mock_sdk.capture_exception.called
 
@@ -306,6 +306,9 @@ class TestSentryProcessor:
         assert result is event_dict
         mock_sdk.capture_exception.assert_called_once_with(test_exception)
         mock_sdk.capture_message.assert_not_called()
+        # exc_info 経路は new_scope() を使わず直接 capture_exception を呼ぶため
+        # scope context manager が起動していないことを明示検証
+        mock_sdk.new_scope.assert_not_called()
 
     def test_capture_message_without_exc_info(self) -> None:
         """分岐4: 例外情報なしの場合capture_messageを呼ぶ"""
@@ -390,19 +393,21 @@ class TestSentryProcessor:
         captured = capsys.readouterr()
         assert "[SENTRY_WARN]" not in captured.err
 
+    @pytest.mark.parametrize("sentry_debug_value", ["true", "1", "yes"])
     def test_warn_on_import_error_when_sentry_debug_enabled(
         self,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
+        sentry_debug_value: str,
     ) -> None:
         """分岐5c: SENTRY_DEBUG有効時はImportError時にstderr警告出力
 
         5dとの対称性のため get_settings をモックし、実行環境の ENVIRONMENT 変数に
-        依存しない形で SENTRY_DEBUG 経路（is_production=False + SENTRY_DEBUG=true）
-        のみを独立検証する。
+        依存しない形で SENTRY_DEBUG 経路（is_production=False + SENTRY_DEBUG=有効値）
+        のみを独立検証する。logger.py 側で受理される "true"/"1"/"yes" 全てをテスト。
         """
         event_dict = {"level": "error", "event": "error message"}
-        monkeypatch.setenv("SENTRY_DEBUG", "true")
+        monkeypatch.setenv("SENTRY_DEBUG", sentry_debug_value)
 
         from utils import logger as logger_module
 
