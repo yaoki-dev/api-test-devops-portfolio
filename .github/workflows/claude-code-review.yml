@@ -9,8 +9,9 @@ jobs:
   claude-review:
     runs-on: ubuntu-latest
     timeout-minutes: 20  # Job-level timeout (backup defense: inner step limit 15min)
-                         # Rationale: MCP init (1-2min) + PR analysis (2-3min) + LLM response (2-4min) = 5-9min
-                         # Defense-in-depth: step-timeout (15min) triggers first per GitHub Actions spec
+                         # Rationale: Tool install steps (max 9min) + MCP init (1-2min) + PR analysis (2-3min) + LLM response (2-4min) = 5-18min
+                         # P1 new steps budget: install-uv(2) + semgrep(3) + crg(3) + serena(1) = 9min max
+                         # Defense-in-depth: step-timeout triggers first per GitHub Actions spec
     # Skip for Dependabot PRs (package updates don't need code review)
     if: github.actor != 'dependabot[bot]'
     env:
@@ -21,7 +22,10 @@ jobs:
       BASE_TOOLS: "Read,Glob,Grep,Task,WebFetch,WebSearch,TodoWrite,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
       MGREP_TOOLS: "Bash(mgrep:*)"
       AST_GREP_TOOLS: "mcp__ast-grep__find_code,mcp__ast-grep__find_code_by_rule"
-      MORPH_MCP_TOOLS: "mcp__morph-mcp__warpgrep_codebase_search"
+      MORPH_MCP_TOOLS: "mcp__morph-mcp__codebase_search"
+      SEMGREP_TOOLS: "mcp__plugin_semgrep_semgrep__semgrep_scan,mcp__plugin_semgrep_semgrep__semgrep_findings,mcp__plugin_semgrep_semgrep__semgrep_scan_with_custom_rule"
+      CODE_REVIEW_GRAPH_TOOLS: "mcp__code-review-graph__get_review_context_tool,mcp__code-review-graph__traverse_graph_tool,mcp__code-review-graph__semantic_search_nodes_tool,mcp__code-review-graph__get_impact_radius_tool"
+      SERENA_TOOLS: "mcp__serena__find_symbol,mcp__serena__find_referencing_symbols,mcp__serena__get_symbols_overview,mcp__serena__search_for_pattern"
       # Note: mgrep is a CLI tool (not MCP), configured separately via npm install
     permissions:
       contents: read
@@ -122,6 +126,87 @@ jobs:
             echo "morph_mcp_available=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # Install uv: shared Python package runner for code-review-graph and serena
+      - name: Install uv
+        id: install-uv
+        timeout-minutes: 2
+        continue-on-error: true
+        run: |
+          if command -v uv &> /dev/null; then
+            echo "✅ uv already available: $(uv --version)"
+            echo "uv_available=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          pip install uv --quiet && UV_STATUS=0 || UV_STATUS=$?
+          if [ "$UV_STATUS" -eq 0 ] && command -v uv &> /dev/null; then
+            echo "✅ uv installed: $(uv --version)"
+            echo "uv_available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::uv installation failed (exit: $UV_STATUS). code-review-graph and serena will be unavailable."
+            echo "uv_available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Verify semgrep MCP: static analysis tool (no API token required for local SAST)
+      - name: Verify semgrep MCP
+        id: verify-semgrep
+        timeout-minutes: 3
+        continue-on-error: true
+        run: |
+          pip install semgrep --quiet && SEMGREP_STATUS=0 || SEMGREP_STATUS=$?
+          if [ "$SEMGREP_STATUS" -eq 0 ] && semgrep --version &> /dev/null; then
+            echo "✅ semgrep installed: $(semgrep --version)"
+            echo "semgrep_available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::semgrep installation failed (exit: $SEMGREP_STATUS). Semgrep MCP will be unavailable."
+            echo "semgrep_available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Build code-review-graph index for structural code analysis
+      # --skip-flows: omit inter-procedure flow analysis for speed
+      - name: Build code-review-graph index
+        id: build-crg
+        timeout-minutes: 4
+        continue-on-error: true
+        env:
+          UV_AVAILABLE: ${{ steps.install-uv.outputs.uv_available }}
+        run: |
+          if [ "$UV_AVAILABLE" != "true" ]; then
+            echo "::warning::uv not available. Skipping code-review-graph build."
+            echo "crg_available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          uvx code-review-graph build --skip-flows && CRG_STATUS=0 || CRG_STATUS=$?
+          if [ "$CRG_STATUS" -eq 0 ]; then
+            echo "✅ code-review-graph index built successfully"
+            echo "crg_available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::code-review-graph build failed (exit: $CRG_STATUS). Graph-based analysis will be unavailable."
+            echo "crg_available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Verify serena MCP: limited_serena context restricts to read-only tools for CI safety
+      - name: Verify serena MCP
+        id: verify-serena
+        timeout-minutes: 1
+        continue-on-error: true
+        env:
+          UV_AVAILABLE: ${{ steps.install-uv.outputs.uv_available }}
+        run: |
+          if [ "$UV_AVAILABLE" != "true" ]; then
+            echo "::warning::uv not available. Skipping serena MCP."
+            echo "serena_available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          CONTEXT_PATH="${GITHUB_WORKSPACE}/.serena/contexts/limited_serena.yml"
+          if [ ! -f "$CONTEXT_PATH" ]; then
+            echo "::warning::limited_serena.yml not found at $CONTEXT_PATH. Serena MCP will be unavailable."
+            echo "serena_available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "✅ serena MCP verified: context=$CONTEXT_PATH"
+          echo "serena_context_path=${CONTEXT_PATH}" >> "$GITHUB_OUTPUT"
+          echo "serena_available=true" >> "$GITHUB_OUTPUT"
+
       # Build MCP config dynamically based on individual service availability
       # Each MCP server is independently verified and conditionally included
       # Security: Secrets are passed via env: block (not ${{ secrets.* }} in run:) and
@@ -130,10 +215,15 @@ jobs:
         id: build-mcp-config
         env:
           MORPH_API_KEY: ${{ secrets.MORPH_API_KEY }}
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+          SERENA_CONTEXT: ${{ steps.verify-serena.outputs.serena_context_path }}
         run: |
           AST_GREP='${{ steps.verify-ast-grep.outputs.ast_grep_available }}'
           MORPH_MCP='${{ steps.verify-morph-mcp.outputs.morph_mcp_available }}'
           MGREP='${{ steps.install-mgrep.outputs.mgrep_available }}'
+          SEMGREP='${{ steps.verify-semgrep.outputs.semgrep_available }}'
+          CRG='${{ steps.build-crg.outputs.crg_available }}'
+          SERENA='${{ steps.verify-serena.outputs.serena_available }}'
 
           EXTRA_TOOLS=""
 
@@ -164,18 +254,39 @@ jobs:
             echo "✅ morph-mcp included in MCP config"
           fi
 
+          # semgrep: static analysis (local SAST; Pro rules require SEMGREP_APP_TOKEN)
+          if [ "$SEMGREP" == "true" ]; then
+            if [ -n "$EXTRA_TOOLS" ]; then EXTRA_TOOLS="$EXTRA_TOOLS,"; fi
+            EXTRA_TOOLS="${EXTRA_TOOLS}${{ env.SEMGREP_TOOLS }}"
+            echo "✅ semgrep included in allowedTools"
+          fi
+
+          # code-review-graph: structural code analysis via pre-built index
+          if [ "$CRG" == "true" ]; then
+            if [ -n "$EXTRA_TOOLS" ]; then EXTRA_TOOLS="$EXTRA_TOOLS,"; fi
+            EXTRA_TOOLS="${EXTRA_TOOLS}${{ env.CODE_REVIEW_GRAPH_TOOLS }}"
+            echo "✅ code-review-graph included in allowedTools"
+          fi
+
+          # serena: semantic code navigation (read-only via limited_serena context)
+          if [ "$SERENA" == "true" ]; then
+            if [ -n "$EXTRA_TOOLS" ]; then EXTRA_TOOLS="$EXTRA_TOOLS,"; fi
+            EXTRA_TOOLS="${EXTRA_TOOLS}${{ env.SERENA_TOOLS }}"
+            echo "✅ serena included in allowedTools"
+          fi
+
           # Build final config using jq for safe JSON escaping of secret values
           # Note: Uses inline JSON (not file path) for --mcp-config to avoid
           # silent drop issue in claude-code-action (see: anthropics/claude-code-action#1004)
-          # Secret masking: ::add-mask:: + env: block ensure MORPH_API_KEY is masked in logs
+          # Secret masking: ::add-mask:: + env: block ensure secrets are masked in logs
           HAS_SERVERS=false
-          if [ -n "$AST_GREP_SERVER" ] || [ "$HAS_MORPH" == "true" ]; then
+          if [ -n "$AST_GREP_SERVER" ] || [ "$HAS_MORPH" == "true" ] || [ "$SEMGREP" == "true" ] || [ "$CRG" == "true" ] || [ "$SERENA" == "true" ]; then
             HAS_SERVERS=true
           fi
 
           if [ "$HAS_SERVERS" == "true" ]; then
             # Use jq to safely build the MCP config JSON
-            # This ensures proper escaping of all values (especially MORPH_API_KEY)
+            # This ensures proper escaping of all values (especially secrets)
             BASE_CONFIG='{"mcpServers":{}}'
 
             if [ -n "$AST_GREP_SERVER" ]; then
@@ -183,11 +294,27 @@ jobs:
             fi
 
             if [ "$HAS_MORPH" == "true" ]; then
-              BASE_CONFIG=$(echo "$BASE_CONFIG" | jq -c --arg key "$MORPH_API_KEY" '.mcpServers["morph-mcp"] = {"command":"npx","args":["-y","@morphllm/morphmcp@${{ env.MORPH_MCP_VERSION }}"],"env":{"MORPH_API_KEY":$key,"ENABLED_TOOLS":"warpgrep_codebase_search"}}')
+              BASE_CONFIG=$(echo "$BASE_CONFIG" | jq -c --arg key "$MORPH_API_KEY" '.mcpServers["morph-mcp"] = {"command":"npx","args":["-y","@morphllm/morphmcp@${{ env.MORPH_MCP_VERSION }}"],"env":{"MORPH_API_KEY":$key,"ENABLED_TOOLS":"codebase_search"}}')
+            fi
+
+            if [ "$SEMGREP" == "true" ]; then
+              if [ -n "$SEMGREP_APP_TOKEN" ]; then
+                echo "::add-mask::${SEMGREP_APP_TOKEN}"
+                BASE_CONFIG=$(echo "$BASE_CONFIG" | jq -c --arg token "$SEMGREP_APP_TOKEN" '.mcpServers["plugin_semgrep_semgrep"] = {"command":"semgrep","args":["mcp"],"env":{"SEMGREP_APP_TOKEN":$token}}')
+              else
+                BASE_CONFIG=$(echo "$BASE_CONFIG" | jq -c '.mcpServers["plugin_semgrep_semgrep"] = {"command":"semgrep","args":["mcp"]}')
+              fi
+            fi
+
+            if [ "$CRG" == "true" ]; then
+              BASE_CONFIG=$(echo "$BASE_CONFIG" | jq -c '.mcpServers["code-review-graph"] = {"command":"uvx","args":["code-review-graph","serve"]}')
+            fi
+
+            if [ "$SERENA" == "true" ]; then
+              BASE_CONFIG=$(echo "$BASE_CONFIG" | jq -c --arg ctx "$SERENA_CONTEXT" '.mcpServers["serena"] = {"command":"uvx","args":["--from","git+https://github.com/oraios/serena","serena","start-mcp-server","--context",$ctx,"--project","."]}')
             fi
 
             # Write inline JSON to GITHUB_OUTPUT (not file path)
-            # MORPH_API_KEY is masked by ::add-mask:: and GitHub's automatic secret masking
             echo "mcp_config=${BASE_CONFIG}" >> "$GITHUB_OUTPUT"
             echo "extra_tools=${EXTRA_TOOLS}" >> "$GITHUB_OUTPUT"
             echo "has_mcp=true" >> "$GITHUB_OUTPUT"
@@ -203,7 +330,7 @@ jobs:
             fi
           fi
 
-          echo "📋 Summary: ast-grep=$AST_GREP, morph-mcp=$MORPH_MCP, mgrep=$MGREP"
+          echo "📋 Summary: ast-grep=$AST_GREP, morph-mcp=$MORPH_MCP, mgrep=$MGREP, semgrep=$SEMGREP, crg=$CRG, serena=$SERENA"
 
       # Build settings JSON with jq for safe JSON escaping of secret values
       # Prevents JSON injection if API key contains special characters (e.g., double quotes)
