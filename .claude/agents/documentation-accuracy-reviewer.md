@@ -1,7 +1,7 @@
 ---
 name: documentation-accuracy-reviewer
 description: Use this agent when you need to verify that code documentation is accurate, complete, and up-to-date.
-tools: Read, Glob, Grep, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__*, mcp__morph-mcp__*, mcp__plugin_semgrep_semgrep__*, mcp__serena__*
+tools: Read, Glob, Grep, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__*, mcp__morph-mcp__codebase_search, mcp__plugin_semgrep_semgrep__*, mcp__serena__initial_instructions, mcp__serena__find_symbol, mcp__serena__find_referencing_symbols, mcp__serena__get_symbols_overview, mcp__serena__search_for_pattern, mcp__serena__list_dir, mcp__serena__find_file, mcp__serena__read_memory, mcp__serena__list_memories
 model: inherit
 ---
 

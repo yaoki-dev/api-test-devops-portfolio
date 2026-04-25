@@ -1,7 +1,7 @@
 ---
 name: test-coverage-reviewer
 description: Use this agent when you need to review testing implementation and coverage.
-tools: Read, Glob, Grep, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__*, mcp__morph-mcp__*, mcp__code-review-graph__*, mcp__serena__*
+tools: Read, Glob, Grep, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__*, mcp__morph-mcp__codebase_search, mcp__code-review-graph__*, mcp__serena__initial_instructions, mcp__serena__find_symbol, mcp__serena__find_referencing_symbols, mcp__serena__get_symbols_overview, mcp__serena__search_for_pattern, mcp__serena__list_dir, mcp__serena__find_file, mcp__serena__read_memory, mcp__serena__list_memories
 model: inherit
 ---
 

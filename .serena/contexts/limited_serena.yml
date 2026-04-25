@@ -8,10 +8,8 @@ allowed_tools:
   - get_symbols_overview
   - find_symbol
   - find_referencing_symbols
-  - write_memory
   - read_memory
   - list_memories
-  - delete_memory
   - think_about_collected_information
   - think_about_task_adherence
   - think_about_whether_you_are_done
@@ -21,6 +19,8 @@ excluded_tools:
   - insert_after_symbol
   - insert_before_symbol
   - rename_symbol
+  - write_memory
+  - delete_memory
   - edit_memory
   - check_onboarding_performed
   - onboarding

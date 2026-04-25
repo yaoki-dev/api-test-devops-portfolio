@@ -1,5 +1,5 @@
 ---
-allowed-tools:  Read, Bash(gh api repos/*/issues/*/comments:*),Bash(gh api repos/*/pulls/*/comments:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh repo view:*), Bash(jq:*), Bash(mgrep:*), mcp__ast-grep__*, mcp__morph-mcp__*, mcp__plugin_semgrep_semgrep__*, mcp__code-review-graph__*, mcp__serena__*
+allowed-tools:  Read, Bash(gh api repos/*/issues/*/comments:*),Bash(gh api repos/*/pulls/*/comments:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh repo view:*), Bash(jq:*), Bash(mgrep:*), mcp__ast-grep__*, mcp__morph-mcp__codebase_search, mcp__plugin_semgrep_semgrep__*, mcp__code-review-graph__*, mcp__serena__initial_instructions, mcp__serena__find_symbol, mcp__serena__find_referencing_symbols, mcp__serena__get_symbols_overview, mcp__serena__search_for_pattern, mcp__serena__list_dir, mcp__serena__find_file, mcp__serena__read_memory, mcp__serena__list_memories
 description: Review a pull request
 argument-hint: "[owner/repo] [pr-number]"
 ---
