@@ -969,3 +969,17 @@ class TestSentryProcessor:
             "Unknown error",
             level="error",
         )
+
+    def test_system_exception_reraises_not_swallowed(self) -> None:
+        """MemoryError は except Exception で飲み込まれずに再発生する（K8s OOMKilled検知対応）"""
+        mock_sdk = MagicMock()
+        mock_client = MagicMock()
+        mock_client.is_active.return_value = True
+        mock_sdk.get_client.return_value = mock_client
+        # new_scope 呼び出し時に MemoryError を発生させる（実際の OOM は発生しない）
+        mock_sdk.new_scope.side_effect = MemoryError("simulated OOM")
+
+        event_dict = {"event": "OOM test", "level": "error"}
+        with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
+            with pytest.raises(MemoryError):
+                _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
