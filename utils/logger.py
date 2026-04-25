@@ -158,7 +158,7 @@ def _sentry_processor(
             for key, value in extra.items():
                 scope.set_extra(key, value)
             if exc_info and exc_info is not True:
-                sentry_sdk.capture_exception(exc_info)
+                scope.capture_exception(exc_info)
             else:
                 scope.capture_message(
                     message,
@@ -174,8 +174,14 @@ def _sentry_processor(
         # Sentry送信失敗時はstderrへ出力（循環参照回避のためstructlog不使用）
         # 設計意図: Sentry障害時もアプリケーション継続を優先
         # ネットワークエラー、Sentry側の一時障害等を想定
+        debug_enabled = os.environ.get("SENTRY_DEBUG", "").lower() in (
+            "true",
+            "1",
+            "yes",
+        )
+        detail = f": {e}" if debug_enabled else ""
         print(
-            f"[SENTRY_ERROR] Failed to send to Sentry: {type(e).__name__}: {e}",
+            f"[SENTRY_ERROR] Failed to send to Sentry: {type(e).__name__}{detail}",
             file=sys.stderr,
         )
 
