@@ -48,9 +48,13 @@ _sentry_sdk_warning_emitted = False
 
 
 def _reset_sentry_warning_state() -> None:
-    """test 用: throttle flag を初期化し各テストを fresh state で実行
+    """test 用 — 本番コードからの呼び出し禁止。
 
+    throttle flag を初期化し各テストを fresh state で実行する。
     process-level flag のため前テストの state が残ると警告出力検証が非決定的になる。
+
+    本番呼び出し時の影響: 警告 throttle が解除され、エラーストーム時に同一警告が
+    log flood として stderr に大量出力される (per-process 1回抑制の設計意図に反する)。
     """
     global _sentry_settings_warning_emitted, _sentry_sdk_warning_emitted
     with _sentry_warning_lock:
@@ -68,7 +72,12 @@ def _emit_import_error_warnings() -> None:
     発生させる可能性を遮断し log processor 内で例外伝播を防ぐ。
 
     TOCTOU 防止: lock 内で get_settings() を含む全処理を atomic 化する。
-    （config/settings.py は lock を取得しないためデッドロックは発生しない）
+
+    ⚠️ コントラクト (将来変更時注意): config/settings.py は内部で lock を取得しない
+    前提を維持する必要がある。settings.py に lock が追加されると _sentry_warning_lock
+    との取得順序により循環待ちが発生し本関数でデッドロックが起こる。settings.py を
+    変更する際はこの依存関係を確認し、lock 追加時は本関数の lock スコープから
+    get_settings() を外に出すリファクタリングが必要となる。
     """
     global _sentry_settings_warning_emitted, _sentry_sdk_warning_emitted
     with _sentry_warning_lock:
@@ -94,6 +103,11 @@ def _emit_import_error_warnings() -> None:
                     try:
                         errs = list(errors_fn(include_input=False))
                         detail = f"{len(errs)} validation error(s)"
+                    except TypeError as te:
+                        # Pydantic API 互換性破壊 (例: 将来 v3 で include_input 削除) を
+                        # silent fallback と区別し診断容易化する。errors() 自体の signature
+                        # 不一致を明示報告し log aggregation で API 退化を即時検出可能にする。
+                        detail = f"errors() call failed: {type(te).__name__}"
                     except Exception:  # noqa: BLE001, S110
                         detail = "details omitted"
                 print(
@@ -101,12 +115,16 @@ def _emit_import_error_warnings() -> None:
                     file=sys.stderr,
                 )
                 _sentry_settings_warning_emitted = True
+        # 警告出力有無に関わらず処理済みマークを立てる。
+        # 早期リターン (line 78) を後続呼び出しで発火させ get_settings() 再評価を回避する。
+        # 非prod + SENTRY_DEBUG 未設定 path で flag 昇格漏れ → 毎回 lock取得 + get_settings()
+        # 呼び出しが発生する logic gap を解消する (設計コメント line 76-77 整合)。
+        _sentry_sdk_warning_emitted = True
         if is_prod or os.environ.get("SENTRY_DEBUG", "").lower() in ("true", "1", "yes"):
             print(
                 "[SENTRY_WARN] sentry-sdk not installed, skipping Sentry capture",
                 file=sys.stderr,
             )
-            _sentry_sdk_warning_emitted = True
 
 
 def _sentry_processor(
@@ -157,7 +175,18 @@ def _sentry_processor(
         with sentry_sdk.new_scope() as scope:
             for key, value in extra.items():
                 scope.set_extra(key, value)
-            if exc_info and exc_info is not True:
+            if exc_info is True:
+                # structlog.dev.set_exc_info は logger.exception() / exc_info=True 時に
+                # event_dict["exc_info"] = True をセットするのみ (Tuple化しない)。
+                # capture_exception(None) は sys.exc_info() を自動使用しスタックトレースを送信する。
+                # active な except ブロック外では sys.exc_info() が (None,None,None) を返すため
+                # capture_exception(None) は空イベントになる。その場合は capture_message へ
+                # フォールバックしログメッセージを Sentry に保持する。
+                if sys.exc_info()[1] is not None:
+                    scope.capture_exception(None)
+                else:
+                    scope.capture_message(message, level=log_level.lower())
+            elif exc_info:
                 scope.capture_exception(exc_info)
             else:
                 scope.capture_message(

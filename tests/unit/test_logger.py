@@ -389,12 +389,18 @@ class TestSentryProcessor:
         )
         mock_sdk.capture_exception.assert_not_called()
 
-    def test_capture_message_with_exc_info_true(self) -> None:
-        """exc_info=Trueの場合はcapture_messageを呼ぶ（例外オブジェクトではない）"""
+    def test_capture_exception_with_exc_info_true(self) -> None:
+        """exc_info=True かつ active な except ブロック内の場合は capture_exception(None)。
+
+        structlog.dev.set_exc_info processor は logger.exception() 呼び出し時に
+        event_dict["exc_info"] = True をセットするのみで Tuple 化しない。
+        sys.exc_info()[1] が None でない（active except ブロック内）場合に
+        capture_exception(None) を呼び sys.exc_info() 経由でスタックトレースを送信する。
+        """
         event_dict = {
             "level": "error",
             "event": "error with exc_info=True",
-            "exc_info": True,  # Trueは例外オブジェクトではない
+            "exc_info": True,
         }
 
         mock_sdk = MagicMock()
@@ -406,11 +412,49 @@ class TestSentryProcessor:
         mock_sdk.new_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
         mock_sdk.new_scope.return_value.__exit__ = MagicMock(return_value=False)
 
+        # active な except ブロック内で呼ぶことで sys.exc_info()[1] is not None を保証
+        with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
+            try:
+                raise ValueError("dummy for sys.exc_info context")
+            except ValueError:
+                result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+        assert result is event_dict
+        mock_scope.capture_exception.assert_called_once_with(None)
+        mock_scope.capture_message.assert_not_called()
+        mock_sdk.capture_exception.assert_not_called()
+
+    def test_capture_message_fallback_when_exc_info_true_outside_except(self) -> None:
+        """exc_info=True だが active な except ブロック外の場合は capture_message へ fallback。
+
+        logger.exception() を except ブロック外で誤用した場合、sys.exc_info()[1] が None
+        になるため capture_exception(None) は空イベントを送信してしまう。
+        このケースでは capture_message にフォールバックしログメッセージを Sentry に保持する。
+        """
+        event_dict = {
+            "level": "error",
+            "event": "error with exc_info=True outside except",
+            "exc_info": True,
+        }
+
+        mock_sdk = MagicMock()
+        mock_client = MagicMock()
+        mock_client.is_active.return_value = True
+        mock_sdk.get_client.return_value = mock_client
+
+        mock_scope = MagicMock()
+        mock_sdk.new_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
+        mock_sdk.new_scope.return_value.__exit__ = MagicMock(return_value=False)
+
+        # except ブロック外: sys.exc_info()[1] は None → capture_message へ fallback
         with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
             result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
 
         assert result is event_dict
-        mock_scope.capture_message.assert_called_once()
+        mock_scope.capture_message.assert_called_once_with(
+            "error with exc_info=True outside except", level="error"
+        )
+        mock_scope.capture_exception.assert_not_called()
         mock_sdk.capture_exception.assert_not_called()
 
     def test_silent_skip_on_import_error(
@@ -564,6 +608,42 @@ class TestSentryProcessor:
         assert "[SENTRY_WARN] settings load failed" in captured.err
         assert "RuntimeError" in captured.err
         assert "sentry-sdk not installed" in captured.err
+
+    def test_validation_error_uses_type_error_detail_when_errors_signature_mismatch(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """errors() が TypeError を raise した場合は「errors() call failed: TypeError」になる
+
+        Pydantic v3 で include_input 引数が削除された場合など、errors() の
+        シグネチャが変わると TypeError が発生する。このパスは「details omitted」
+        （汎用 except Exception 経路）と区別して明示的な診断メッセージを出力する。
+        """
+
+        class _FakeValidationError(Exception):
+            def errors(self, *, include_input: bool) -> list[dict[str, object]]:
+                raise TypeError("unexpected keyword argument 'include_input'")
+
+        event_dict = {"level": "error", "event": "error message"}
+        monkeypatch.setenv("SENTRY_DEBUG", "true")
+
+        from utils import logger as logger_module
+
+        with patch.dict("sys.modules", {"sentry_sdk": None}):
+            with patch.object(
+                logger_module,
+                "get_settings",
+                side_effect=_FakeValidationError("validation failed"),
+            ):
+                result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+        assert result is event_dict
+        captured = capsys.readouterr()
+        assert "[SENTRY_WARN] settings load failed" in captured.err
+        assert "errors() call failed: TypeError" in captured.err
+        # 汎用 except Exception 経路（details omitted）ではないことを明示検証
+        assert "details omitted" not in captured.err
 
     def test_validation_error_uses_details_omitted_when_errors_summary_fails(
         self,
