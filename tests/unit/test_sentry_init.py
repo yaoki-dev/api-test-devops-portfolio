@@ -263,7 +263,7 @@ class TestInitSentry:
         """無効なDSN形式の場合、非本番環境ではFalseを返す"""
         mock_settings.return_value.sentry.enabled = True
         mock_settings.return_value.sentry.dsn = SecretStr("invalid-dsn")
-        mock_settings.return_value.is_production.return_value = False  # 非本番環境
+        mock_settings.return_value.is_production_like.return_value = False  # 非本番環境 (#39)
         assert init_sentry() is False
 
     @patch("utils.sentry_init.get_settings")
@@ -387,7 +387,7 @@ class TestSentryDebugMode:
 
         mock_settings.return_value.sentry.enabled = True
         mock_settings.return_value.sentry.dsn = SecretStr("invalid-dsn")
-        mock_settings.return_value.is_production.return_value = False  # 非本番環境
+        mock_settings.return_value.is_production_like.return_value = False  # 非本番環境 (#39)
 
         import warnings
 
@@ -413,7 +413,7 @@ class TestSentryDebugMode:
 
         mock_settings.return_value.sentry.enabled = True
         mock_settings.return_value.sentry.dsn = SecretStr("invalid-dsn")
-        mock_settings.return_value.is_production.return_value = False  # 非本番環境
+        mock_settings.return_value.is_production_like.return_value = False  # 非本番環境 (#39)
 
         import warnings
 
@@ -453,7 +453,7 @@ class TestSdkExceptionHandling:
         mock_settings.return_value.sentry.profiles_sample_rate = 0.1
         mock_settings.return_value.sentry.send_default_pii = False
         mock_settings.return_value.environment.value = "testing"
-        mock_settings.return_value.is_production.return_value = False  # 非本番環境
+        mock_settings.return_value.is_production_like.return_value = False  # 非本番環境 (#39)
 
         result = init_sentry()
 
@@ -478,7 +478,7 @@ class TestSdkExceptionHandling:
         mock_settings.return_value.sentry.profiles_sample_rate = 0.1
         mock_settings.return_value.sentry.send_default_pii = False
         mock_settings.return_value.environment.value = "testing"
-        mock_settings.return_value.is_production.return_value = False  # 非本番環境
+        mock_settings.return_value.is_production_like.return_value = False  # 非本番環境 (#39)
 
         result = init_sentry()
 
@@ -507,7 +507,7 @@ class TestSdkExceptionHandling:
         mock_settings.return_value.sentry.profiles_sample_rate = 0.1
         mock_settings.return_value.sentry.send_default_pii = False
         mock_settings.return_value.environment.value = "testing"
-        mock_settings.return_value.is_production.return_value = False  # 非本番環境
+        mock_settings.return_value.is_production_like.return_value = False  # 非本番環境 (#39)
 
         import warnings
 
@@ -545,7 +545,7 @@ class TestSdkExceptionHandling:
         mock_settings.return_value.sentry.profiles_sample_rate = 0.1
         mock_settings.return_value.sentry.send_default_pii = False
         mock_settings.return_value.environment.value = "production"
-        mock_settings.return_value.is_production.return_value = True  # 本番環境
+        mock_settings.return_value.is_production_like.return_value = True  # 本番環境 (#39)
 
         with pytest.raises(RuntimeError) as exc_info:
             init_sentry()
@@ -568,7 +568,7 @@ class TestSdkExceptionHandling:
             "https://abc123@o456.ingest.us.sentry.io/789",
         )
         mock_settings.return_value.sentry.environment = "production"
-        mock_settings.return_value.is_production.return_value = True  # 本番環境
+        mock_settings.return_value.is_production_like.return_value = True  # 本番環境 (#39)
 
         # sentry_sdkのimportをモックしてImportErrorを発生させる
         import builtins
@@ -596,7 +596,7 @@ class TestSdkExceptionHandling:
             "https://abc123@o456.ingest.us.sentry.io/789",
         )
         mock_settings.return_value.sentry.environment = "development"
-        mock_settings.return_value.is_production.return_value = False  # 開発環境
+        mock_settings.return_value.is_production_like.return_value = False  # 開発環境 (#39)
 
         # sentry_sdkのimportをモックしてImportErrorを発生させる
         import builtins

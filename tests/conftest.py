@@ -351,6 +351,23 @@ def reset_settings() -> Iterator[None]:
         reload_settings()
 
 
+@pytest.fixture
+def reset_sentry_warning_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """utils.logger の sentry warning throttle flag をテスト前後でリセット
+
+    `_sentry_settings_warning_emitted` / `_sentry_sdk_warning_emitted` /
+    `_sentry_send_error_emitted` の 3 フラグを False にリセットする。
+    monkeypatch.setattr は test 終了時に自動復元されるため teardown 不要。
+
+    test_logger.py の TestSentryProcessor / TestSafeErrorSummary 等で使用する。
+    """
+    monkeypatch.setattr("utils.logger._sentry_settings_warning_emitted", False)
+    monkeypatch.setattr("utils.logger._sentry_sdk_warning_emitted", False)
+    monkeypatch.setattr("utils.logger._sentry_send_error_emitted", False)
+
+
 # =============================================================================
 # 学習ポイント:
 #

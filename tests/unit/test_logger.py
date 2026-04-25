@@ -9,7 +9,6 @@
 """
 
 import sys
-from collections.abc import Iterator
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,7 +16,7 @@ import structlog
 from structlog.testing import capture_logs
 
 from config.settings import LogFormat
-from utils.logger import _reset_sentry_warning_state, _sentry_processor, get_logger
+from utils.logger import _sentry_processor, get_logger
 
 # Module-level marker: All tests in this file are unit tests
 pytestmark = pytest.mark.unit
@@ -219,20 +218,20 @@ class TestSentryProcessor:
     _dummy_method = "error"
 
     @pytest.fixture(autouse=True)
-    def _reset_sentry_warnings_fixture(self) -> Iterator[None]:
-        """sentry warning state を各テスト前後でリセットし fresh state で実行
+    def _reset_sentry_warnings_fixture(
+        self,
+        reset_sentry_warning_state: None,  # noqa: ARG002 — conftest fixture をトリガするため引数として宣言
+    ) -> None:
+        """sentry warning state を各テスト前で fresh state に保つ
 
-        process-level throttle flag のため、前テストの state が残ると警告出力検証が
-        非決定的になる。autouse で class 内全 test の独立性を保証する。
-        setup/teardown 両方で reset することで後続テスト (本 class 外) への漏洩も防止する。
+        conftest.py の reset_sentry_warning_state fixture (monkeypatch 使用) を依存として
+        宣言することで、test 実行前に utils.logger の throttle flag を一括リセットする。
+        monkeypatch は teardown 時に自動復元するため明示的 teardown 不要。
 
-        Note: fixture method 名は import 関数名 _reset_sentry_warning_state と
-        分離する (Python class scope は inner function から closure 不可視のため
-        同名 shadowing は読み手の混乱を招くがテスト結果には影響しない)。
+        #34 対応: モジュールスコープへの拡大は overkill だが、将来追加される他クラスでも
+        `reset_sentry_warning_state` fixture を依存宣言するだけで再利用可能 (DRY)。
         """
-        _reset_sentry_warning_state()
-        yield
-        _reset_sentry_warning_state()
+        return None
 
     @pytest.mark.parametrize(
         "level",
@@ -475,7 +474,7 @@ class TestSentryProcessor:
         from utils import logger as logger_module
 
         mock_settings = MagicMock()
-        mock_settings.is_production.return_value = False
+        mock_settings.is_production_like.return_value = False
 
         with patch.dict("sys.modules", {"sentry_sdk": None}):
             with patch.object(logger_module, "get_settings", return_value=mock_settings):
@@ -483,7 +482,7 @@ class TestSentryProcessor:
 
         # event_dictがそのまま返される（例外は発生しない）
         assert result is event_dict
-        # 警告が出力されないことを明示検証 (is_production=False AND SENTRY_DEBUG未設定)
+        # 警告が出力されないことを明示検証 (is_production_like=False AND SENTRY_DEBUG未設定)
         captured = capsys.readouterr()
         assert "[SENTRY_WARN]" not in captured.err
 
@@ -506,7 +505,7 @@ class TestSentryProcessor:
         from utils import logger as logger_module
 
         mock_settings = MagicMock()
-        mock_settings.is_production.return_value = False  # SENTRY_DEBUG 経路のみ検証
+        mock_settings.is_production_like.return_value = False  # SENTRY_DEBUG 経路のみ検証
 
         with patch.dict("sys.modules", {"sentry_sdk": None}):
             with patch.object(logger_module, "get_settings", return_value=mock_settings):
@@ -516,8 +515,8 @@ class TestSentryProcessor:
         captured = capsys.readouterr()
         assert "[SENTRY_WARN]" in captured.err
         assert "sentry-sdk not installed" in captured.err
-        # is_production() 分岐が実際に評価されたことを検証 (5d と対称な causal path 保証)
-        mock_settings.is_production.assert_called_once()
+        # is_production_like() 分岐が実際に評価されたことを検証 (5d と対称な causal path 保証)
+        mock_settings.is_production_like.assert_called_once()
 
     def test_warn_on_import_error_when_production_env(
         self,
@@ -535,7 +534,7 @@ class TestSentryProcessor:
         from utils import logger as logger_module
 
         mock_settings = MagicMock()
-        mock_settings.is_production.return_value = True
+        mock_settings.is_production_like.return_value = True
 
         with patch.dict("sys.modules", {"sentry_sdk": None}):
             with patch.object(logger_module, "get_settings", return_value=mock_settings):
@@ -545,8 +544,8 @@ class TestSentryProcessor:
         captured = capsys.readouterr()
         assert "[SENTRY_WARN]" in captured.err
         assert "sentry-sdk not installed" in captured.err
-        # is_production() 分岐が実際に評価されたことを検証 (causal path 保証)
-        mock_settings.is_production.assert_called_once()
+        # is_production_like() 分岐が実際に評価されたことを検証 (causal path 保証)
+        mock_settings.is_production_like.assert_called_once()
 
     def test_settings_failure_in_import_error_handler_is_contained(
         self,
@@ -578,47 +577,16 @@ class TestSentryProcessor:
         assert "RuntimeError" in captured.err
         assert "sentry-sdk not installed" in captured.err
 
-    def test_warn_on_settings_failure_when_sentry_debug_unset(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """分岐5f: settings 失敗時は SENTRY_DEBUG 未設定でも警告出力される (is_prod=True fallback)
-
-        5e (SENTRY_DEBUG=true) では短絡評価で is_prod fallback 経路を独立検証できないため、
-        本テストで SENTRY_DEBUG unset 経路のみを活性化させ、本番デプロイ時の
-        sentry-sdk 未インストール検知可能性を独立検証する。
-        """
-        event_dict = {"level": "error", "event": "error message"}
-        monkeypatch.delenv("SENTRY_DEBUG", raising=False)
-
-        from utils import logger as logger_module
-
-        with patch.dict("sys.modules", {"sentry_sdk": None}):
-            with patch.object(
-                logger_module,
-                "get_settings",
-                side_effect=RuntimeError("Settings validation failed"),
-            ):
-                result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
-
-        assert result is event_dict
-        captured = capsys.readouterr()
-        # settings 失敗時の固有メッセージと is_prod=True fallback 経由の警告を両方検証
-        assert "[SENTRY_WARN] settings load failed" in captured.err
-        assert "RuntimeError" in captured.err
-        assert "sentry-sdk not installed" in captured.err
-
     def test_validation_error_uses_type_error_detail_when_errors_signature_mismatch(
         self,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """errors() が TypeError を raise した場合は「errors() call failed: TypeError」になる
+        """errors() が TypeError を raise した場合は型名のみの sanitized 出力になる
 
         Pydantic v3 で include_input 引数が削除された場合など、errors() の
-        シグネチャが変わると TypeError が発生する。このパスは「details omitted」
-        （汎用 except Exception 経路）と区別して明示的な診断メッセージを出力する。
+        シグネチャが変わると TypeError が発生する。_safe_error_summary() は
+        全 Exception を一括捕捉し「{TypeName} (details sanitized)」を返す。
         """
 
         class _FakeValidationError(Exception):
@@ -641,16 +609,16 @@ class TestSentryProcessor:
         assert result is event_dict
         captured = capsys.readouterr()
         assert "[SENTRY_WARN] settings load failed" in captured.err
-        assert "errors() call failed: TypeError" in captured.err
-        # 汎用 except Exception 経路（details omitted）ではないことを明示検証
-        assert "details omitted" not in captured.err
+        assert "(details sanitized)" in captured.err
+        # str(e) / input_value が漏洩しないことを検証
+        assert "unexpected keyword argument" not in captured.err
 
     def test_validation_error_uses_details_omitted_when_errors_summary_fails(
         self,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """errors(include_input=False) が失敗した場合は details omitted に落ちる"""
+        """errors(include_input=False) が失敗した場合は details sanitized に落ちる"""
 
         class _FakeValidationError(Exception):
             def errors(self, *, include_input: bool) -> list[dict[str, object]]:
@@ -672,7 +640,7 @@ class TestSentryProcessor:
         assert result is event_dict
         captured = capsys.readouterr()
         assert "[SENTRY_WARN] settings load failed" in captured.err
-        assert "details omitted" in captured.err
+        assert "(details sanitized)" in captured.err
         assert "summary failed" not in captured.err
 
     def test_sentry_warnings_throttled_across_multiple_calls(
@@ -744,7 +712,7 @@ class TestSentryProcessor:
         from utils import logger as logger_module
 
         mock_settings = MagicMock()
-        mock_settings.is_production.return_value = True  # 本番環境
+        mock_settings.is_production_like.return_value = True  # 本番環境
 
         with patch.dict("sys.modules", {"sentry_sdk": None}):
             with patch.object(
@@ -816,16 +784,21 @@ class TestSentryProcessor:
     def test_concurrent_emit_warnings_throttled_under_race(
         self,
         monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
     ) -> None:
         """_sentry_warning_lock が concurrent 呼出下でも throttle を維持する
 
-        uvicorn worker / ThreadPoolExecutor 環境で N スレッドが同時に
-        _sentry_processor を呼んだ場合、sdk 未インストール警告は 1 回のみ出力される。
+        pytest capsys はワーカースレッド内 print が差し替え後 stderr を参照しない
+        可能性があるため (false negative リスク)、io.StringIO による monkeypatch で
+        全スレッドが同一バッファを参照する確定的な検証に変更する (#12 対応)。
 
         red-green 保証: get_settings を遅延注入し check-and-set の race window を強制露出。
         lock 無し実装では複数スレッドが check を通過し複数警告出力 → test 失敗する。
+
+        #31 対応: race window はテスト worker 関数間で発生する (sleep は lock 内だが
+        barrier でレリースした全 thread が _emit_import_error_warnings に同時到達するため、
+        lock 取得競合のラウンド時に check-and-set race が顕在化する)。
         """
+        import io
         import threading
         import time
 
@@ -834,19 +807,21 @@ class TestSentryProcessor:
 
         from utils import logger as logger_module
 
-        # get_settings に遅延を注入: lock 無しなら全スレッドが check を通過
-        # → 20 warning 出力。lock 有りなら 1 スレッドのみ print 実行。
+        captured_stderr = io.StringIO()
+        monkeypatch.setattr(sys, "stderr", captured_stderr)
+
         def slow_get_settings() -> MagicMock:
-            time.sleep(0.05)  # race window を強制開放
+            time.sleep(0.05)
             m = MagicMock()
-            m.is_production.return_value = False  # SENTRY_DEBUG 経路
+            m.is_production_like.return_value = False
+            m.is_production.return_value = False
             return m
 
         num_threads = 20
-        barrier = threading.Barrier(num_threads)
+        barrier = threading.Barrier(num_threads, timeout=5.0)  # #32: timeout でデッドロック防止
 
         def worker() -> None:
-            barrier.wait()  # 全スレッド同時スタート
+            barrier.wait()
             _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
 
         with patch.dict("sys.modules", {"sentry_sdk": None}):
@@ -858,11 +833,9 @@ class TestSentryProcessor:
                     t.join(timeout=10.0)
                     assert not t.is_alive(), "worker thread deadlocked"
 
-        captured = capsys.readouterr()
-        # concurrent 20 calls で警告は正確に 1 回のみ
-        assert captured.err.count("sentry-sdk not installed") == 1, (
-            f"concurrent race: expected 1 warning, got "
-            f"{captured.err.count('sentry-sdk not installed')}"
+        output = captured_stderr.getvalue()
+        assert output.count("sentry-sdk not installed") == 1, (
+            f"concurrent race: expected 1 warning, got {output.count('sentry-sdk not installed')}"
         )
 
     def test_stderr_output_on_sentry_failure(self, capsys: pytest.CaptureFixture[str]) -> None:

@@ -220,7 +220,7 @@ def init_sentry() -> bool:
         # sentry-sdk未インストール
         # 本番環境では必須 → Fail-Fast（依存関係漏れを即座に検出）
         settings = get_settings()
-        if settings.is_production():
+        if settings.is_production_like():
             raise RuntimeError(
                 f"Sentry SDK not installed in production: {exc}. Add 'sentry-sdk' to dependencies.",
             ) from exc
@@ -237,7 +237,7 @@ def init_sentry() -> bool:
     except Exception as exc:
         # その他の初期化失敗 - 本番環境では例外を発生させる（Fail-Fast）
         settings = get_settings()
-        if settings.is_production():
+        if settings.is_production_like():
             raise RuntimeError(
                 f"Sentry initialization failed in production: {type(exc).__name__}: {exc}",
             ) from exc
