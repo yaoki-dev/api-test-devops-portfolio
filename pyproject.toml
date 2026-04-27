@@ -54,7 +54,7 @@ dev = [
     "bandit>=1.8.6",
     "safety>=3.6.0",
     # 開発サポート
-    "pre-commit>=4.3.0",
+    "pre-commit>=4.6.0",
 ]
 # pytest設定
 [tool.pytest.ini_options]
