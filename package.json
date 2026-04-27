@@ -12,11 +12,11 @@
     "lint:all:fix": "npm run lint:md:fix && npm run lint:text:fix"
   },
   "devDependencies": {
-    "@mixedbread/mgrep": "^0.1.12",
+    "@mixedbread/mgrep": "^0.1.13",
     "@notprolands/ast-grep-mcp": "^1.1.1",
     "markdown-link-check": "^3.14.0",
     "markdownlint-cli": "^0.48.0",
-    "textlint": "^15.5.4",
+    "textlint": "^15.6.0",
     "textlint-rule-preset-ja-technical-writing": "^12.0.2"
   }
 }
