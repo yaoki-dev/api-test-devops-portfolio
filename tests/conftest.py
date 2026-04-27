@@ -359,7 +359,7 @@ def reset_sentry_warning_state(
 
     4 つの permanent throttle マーカー ("settings"/"sdk"/"bug"/"outside_except") を
     保持する `_sentry_warnings_emitted: set[str]` を空集合に、
-    `_sentry_send_error_last_warned` timestamp を 0.0 にリセットする。
+    `_sentry_send_error_last_warned` timestamp を float("-inf") にリセットする。
     monkeypatch.setattr は test 終了時に自動復元されるため teardown 不要。
 
     autouse=True により全テストで自動適用し、TestSentryProcessor 以外のクラスでも
@@ -367,7 +367,7 @@ def reset_sentry_warning_state(
     フラグ汚染による偽陽性回避)。
     """
     monkeypatch.setattr("utils.logger._sentry_warnings_emitted", set())
-    monkeypatch.setattr("utils.logger._sentry_send_error_last_warned", 0.0)
+    monkeypatch.setattr("utils.logger._sentry_send_error_last_warned", float("-inf"))
 
 
 # =============================================================================

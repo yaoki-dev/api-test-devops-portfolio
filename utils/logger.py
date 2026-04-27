@@ -36,7 +36,7 @@ _sentry_warnings_emitted: set[str] = set()
 
 # _sentry_send_error は permanent flag ではなく timestamp ベースで再警告を許可する
 # (ネットワーク瞬断後の永続サイレント化を防止)。詳細は _emit_sentry_send_error 参照。
-_sentry_send_error_last_warned: float = 0.0
+_sentry_send_error_last_warned: float = float("-inf")
 _SENTRY_SEND_ERROR_WARN_INTERVAL: float = 300.0  # 5分
 
 # event_dict から Sentry extra へ渡す際に除外する予約キー (frozenset で O(1) lookup)
