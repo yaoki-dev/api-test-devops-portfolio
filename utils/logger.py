@@ -47,6 +47,7 @@ _sentry_warning_lock = threading.Lock()
 _sentry_settings_warning_emitted = False
 _sentry_sdk_warning_emitted = False
 _sentry_send_error_emitted = False
+_sentry_bug_emitted = False
 
 # structlog の "EXCEPTION" レベルを Sentry SDK が受理するレベルへ正規化するマップ。
 # Sentry SDK が受理するレベル: fatal / critical / error / warning / info / debug
@@ -89,6 +90,8 @@ def _safe_error_summary(e: Exception) -> str:
         try:
             errs = list(errors_fn(include_input=False))
             return f"{len(errs)} validation error(s)"
+        except MemoryError, RecursionError:
+            raise
         except Exception:  # noqa: BLE001, S110
             # errors() 呼出失敗 (Pydantic v3 互換性等) も無視し型名のみ返す
             pass
@@ -225,6 +228,9 @@ def _sentry_processor(  # noqa: C901
     except ImportError:
         try:
             _emit_import_error_warnings()
+        except MemoryError, RecursionError:
+            # システム例外は再発生させ OOMKilled / 無限再帰検知を妨げない
+            raise
         except Exception as warn_err:  # noqa: BLE001
             print(
                 f"[SENTRY_WARN] Failed to emit import warning: {type(warn_err).__name__}",
@@ -235,14 +241,19 @@ def _sentry_processor(  # noqa: C901
         raise
     except (AttributeError, TypeError) as e:  # noqa: BLE001
         # logger 内部または Sentry SDK API 不整合のバグ可能性 — 通常 [SENTRY_ERROR] とは区別。
-        # SENTRY_DEBUG ガード + str(e)[:100] 制限で内部状態 (接続URL/設定値) の log aggregation
-        # への漏洩を防止する (CWE-532 対策、_emit_sentry_send_error と同等の防御)。
-        debug_enabled = os.environ.get("SENTRY_DEBUG", "").lower() in ("true", "1", "yes")
-        detail = f": {str(e)[:100]}" if debug_enabled else ""
-        print(
-            f"[SENTRY_BUG] internal error in _sentry_processor: {type(e).__name__}{detail}",
-            file=sys.stderr,
-        )
+        # per-process 1 回に throttle し、SDK バージョン非互換が持続する環境での
+        # SENTRY_DEBUG ガード + str(e)[:100] 制限で内部状態の log aggregation への漏洩を防止する
+        # (CWE-532 対策、_emit_sentry_send_error と同等の防御)。
+        global _sentry_bug_emitted
+        with _sentry_warning_lock:
+            if not _sentry_bug_emitted:
+                debug_enabled = os.environ.get("SENTRY_DEBUG", "").lower() in ("true", "1", "yes")
+                detail = f": {str(e)[:100]}" if debug_enabled else ""
+                print(
+                    f"[SENTRY_BUG] internal error in _sentry_processor: {type(e).__name__}{detail}",
+                    file=sys.stderr,
+                )
+                _sentry_bug_emitted = True
     except Exception as e:  # noqa: BLE001
         # ネットワーク・SDK 一時障害等の運用エラー
         _emit_sentry_send_error(e)

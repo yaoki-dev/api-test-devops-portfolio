@@ -16,7 +16,7 @@ import structlog
 from structlog.testing import capture_logs
 
 from config.settings import LogFormat
-from utils.logger import _sentry_processor, get_logger
+from utils.logger import _safe_error_summary, _sentry_processor, get_logger
 
 # Module-level marker: All tests in this file are unit tests
 pytestmark = pytest.mark.unit
@@ -956,3 +956,197 @@ class TestSentryProcessor:
         with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
             with pytest.raises(MemoryError):
                 _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+    def test_sentry_bug_attribute_error_debug_disabled(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """分岐: AttributeError発生時は[SENTRY_BUG]をstderrへ出力 (SENTRY_DEBUG無効で詳細なし)"""
+        monkeypatch.delenv("SENTRY_DEBUG", raising=False)
+
+        mock_sdk = MagicMock()
+        mock_sdk.get_client.return_value.is_active.return_value = True
+        mock_sdk.new_scope.side_effect = AttributeError("mock SDK attribute mismatch")
+
+        with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
+            result = _sentry_processor(
+                self._dummy_logger, self._dummy_method, {"level": "error", "event": "test"}
+            )
+
+        assert result is not None
+        captured = capsys.readouterr()
+        assert "[SENTRY_BUG]" in captured.err
+        assert "AttributeError" in captured.err
+        assert "mock SDK attribute mismatch" not in captured.err
+
+    def test_sentry_bug_attribute_error_debug_enabled(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """分岐: SENTRY_DEBUG有効時は[SENTRY_BUG]に詳細を含める"""
+        monkeypatch.setenv("SENTRY_DEBUG", "true")
+
+        mock_sdk = MagicMock()
+        mock_sdk.get_client.return_value.is_active.return_value = True
+        mock_sdk.new_scope.side_effect = AttributeError("mock SDK attribute mismatch")
+
+        with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
+            result = _sentry_processor(
+                self._dummy_logger, self._dummy_method, {"level": "error", "event": "test"}
+            )
+
+        assert result is not None
+        captured = capsys.readouterr()
+        assert "[SENTRY_BUG]" in captured.err
+        assert "AttributeError" in captured.err
+        assert "mock SDK attribute mismatch" in captured.err
+
+    def test_sentry_bug_throttled_across_multiple_calls(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """[SENTRY_BUG] は複数回AttributeError発生でもper-process 1回のみ出力される"""
+        monkeypatch.delenv("SENTRY_DEBUG", raising=False)
+
+        mock_sdk = MagicMock()
+        mock_sdk.get_client.return_value.is_active.return_value = True
+        mock_sdk.new_scope.side_effect = AttributeError("repeated SDK error")
+
+        with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
+            for _ in range(3):
+                _sentry_processor(
+                    self._dummy_logger, self._dummy_method, {"level": "error", "event": "test"}
+                )
+
+        captured = capsys.readouterr()
+        assert captured.err.count("[SENTRY_BUG]") == 1
+
+    def test_sentry_bug_type_error_debug_disabled(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """分岐: TypeError発生時も[SENTRY_BUG]をstderrへ出力 (AttributeErrorと同ハンドラ)"""
+        monkeypatch.delenv("SENTRY_DEBUG", raising=False)
+
+        mock_sdk = MagicMock()
+        mock_sdk.get_client.return_value.is_active.return_value = True
+        mock_sdk.new_scope.side_effect = TypeError("SDK type mismatch")
+
+        with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
+            result = _sentry_processor(
+                self._dummy_logger, self._dummy_method, {"level": "error", "event": "test"}
+            )
+
+        assert result is not None
+        captured = capsys.readouterr()
+        assert "[SENTRY_BUG]" in captured.err
+        assert "TypeError" in captured.err
+        assert "SDK type mismatch" not in captured.err
+
+    def test_sentry_send_error_throttled_across_multiple_calls(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """[SENTRY_ERROR] は複数回Sentry送信失敗でも1回のみ出力される"""
+        monkeypatch.delenv("SENTRY_DEBUG", raising=False)
+
+        mock_sdk = MagicMock()
+        mock_sdk.get_client.return_value.is_active.return_value = True
+        mock_scope = MagicMock()
+        mock_sdk.new_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
+        mock_sdk.new_scope.return_value.__exit__ = MagicMock(return_value=False)
+        mock_scope.capture_message.side_effect = RuntimeError("Sentry connection failed")
+
+        event_dict = {"level": "error", "event": "error message"}
+        with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
+            for _ in range(3):
+                _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+        captured = capsys.readouterr()
+        assert captured.err.count("[SENTRY_ERROR]") == 1
+
+    def test_memory_error_from_emit_warnings_propagates(self) -> None:
+        """_emit_import_error_warnings内でMemoryErrorが発生した場合、_sentry_processorから伝播する"""
+
+        class _FakeValidationError(Exception):
+            def errors(self, *, include_input: bool) -> list[dict[str, object]]:
+                raise MemoryError("OOM during warning emission")
+
+        from utils import logger as logger_module
+
+        event_dict = {"level": "error", "event": "test"}
+        with patch.dict("sys.modules", {"sentry_sdk": None}):
+            with patch.object(
+                logger_module,
+                "get_settings",
+                side_effect=_FakeValidationError("settings failed"),
+            ):
+                with pytest.raises(MemoryError):
+                    _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+    def test_recursion_error_from_emit_warnings_propagates(self) -> None:
+        """_emit_import_error_warnings内でRecursionErrorが発生した場合、_sentry_processorから伝播する"""
+
+        class _FakeValidationError(Exception):
+            def errors(self, *, include_input: bool) -> list[dict[str, object]]:
+                raise RecursionError("infinite recursion in errors()")
+
+        from utils import logger as logger_module
+
+        event_dict = {"level": "error", "event": "test"}
+        with patch.dict("sys.modules", {"sentry_sdk": None}):
+            with patch.object(
+                logger_module,
+                "get_settings",
+                side_effect=_FakeValidationError("settings failed"),
+            ):
+                with pytest.raises(RecursionError):
+                    _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+    def test_generic_exception_from_emit_warnings_caught(
+        self, reset_sentry_warning_state: None, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """_emit_import_error_warnings自体がMemoryError/RecursionError以外の例外を投げた場合に握り潰してSENTRY_WARNを出力する"""
+        from utils import logger as logger_module
+
+        event_dict = {"level": "error", "event": "test"}
+        with patch.dict("sys.modules", {"sentry_sdk": None}):
+            with patch.object(
+                logger_module,
+                "_emit_import_error_warnings",
+                side_effect=ValueError("unexpected warning failure"),
+            ):
+                result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+        captured = capsys.readouterr()
+        assert "[SENTRY_WARN] Failed to emit import warning: ValueError" in captured.err
+        assert result == event_dict
+
+
+@pytest.mark.unit
+class TestSafeErrorSummary:
+    """_safe_error_summary の分岐カバレッジ"""
+
+    def test_memory_error_from_errors_method_reraises(self) -> None:
+        """errors() が MemoryError を発生させた場合は再発生する"""
+
+        class _FakeValidationError(Exception):
+            def errors(self, *, include_input: bool) -> list[dict[str, object]]:
+                raise MemoryError("OOM in errors()")
+
+        with pytest.raises(MemoryError):
+            _safe_error_summary(_FakeValidationError())
+
+    def test_recursion_error_from_errors_method_reraises(self) -> None:
+        """errors() が RecursionError を発生させた場合は再発生する"""
+
+        class _FakeValidationError(Exception):
+            def errors(self, *, include_input: bool) -> list[dict[str, object]]:
+                raise RecursionError("recursion in errors()")
+
+        with pytest.raises(RecursionError):
+            _safe_error_summary(_FakeValidationError())
