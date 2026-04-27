@@ -22,7 +22,7 @@ cleanup_on_signal() {
 trap cleanup_on_signal INT TERM
 
 # P1-1: タイムアウト関数（NFS/SMBハング対策）
-# macOSのgtimeout（coreutils）またはPOSIXフォールバック
+# macOSのgtimeout（coreutils）またはGNU timeout を使用
 run_with_timeout() {
   local timeout_sec=$1
   shift
@@ -31,15 +31,9 @@ run_with_timeout() {
   elif command -v timeout >/dev/null 2>&1; then
     timeout "$timeout_sec" "$@"
   else
-    # POSIXフォールバック（シグナルベース）
-    "$@" &
-    local pid=$!
-    (sleep "$timeout_sec"; kill -TERM "$pid" 2>/dev/null) &
-    local watchdog=$!
-    wait "$pid" 2>/dev/null
-    local ret=$?
-    kill "$watchdog" 2>/dev/null
-    return $ret
+    echo "Error: gtimeout (brew install coreutils) または timeout コマンドが必要です" >&2
+    notify_failure "timeout コマンド未インストール"
+    exit 1
   fi
 }
 
@@ -62,6 +56,12 @@ check_dependencies() {
     echo "❌ エラー: 必要なコマンドが見つかりません: ${missing[*]}" >&2
     echo "   インストール: brew install coreutils (macOS)" >&2
     exit 127  # Command not found
+  fi
+
+  if ! command -v gtimeout >/dev/null 2>&1 && ! command -v timeout >/dev/null 2>&1; then
+    echo "❌ エラー: gtimeout または timeout が必要です" >&2
+    echo "   インストール: brew install coreutils (macOS)" >&2
+    exit 127
   fi
 }
 check_dependencies
@@ -96,8 +96,6 @@ log_event() {
     echo "$json_log" >> "$LOG_FILE"
   fi
 
-  # 標準出力（人間可読形式も並行出力）
-  # 注: 既存のecho出力と重複しないよう、ログファイルへの記録のみ
 }
 
 # P1-1: 絶対パス変換（cron対応）
