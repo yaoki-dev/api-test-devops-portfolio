@@ -8,9 +8,10 @@ on:
 jobs:
   claude-review:
     runs-on: ubuntu-latest
-    timeout-minutes: 20  # Job-level timeout (backup defense: inner step limit 15min)
-                         # Rationale: Tool install steps (max 9min) + MCP init (1-2min) + PR analysis (2-3min) + LLM response (2-4min) = 5-18min
-                         # P1 new steps budget: install-uv(2) + semgrep(3) + crg(3) + serena(1) = 9min max
+    timeout-minutes: 25  # Job-level timeout (backup defense: inner step limit 15min)
+                         # Rationale: Tool install steps (max 14min) + MCP init (1-2min) + PR analysis (2-3min) + LLM response (2-4min) = 5-22min (job-cap 25min; 3min buffer over documented budget; job-cap fires if all steps hit max)
+                         # P1 new steps budget: install-uv(2) + semgrep(3) + crg(4) + serena(5) = 14min max
+                         # serena=5min reserves cold-cache p95 for `uvx --from git+...` (Git fetch + ref resolve + wheel install + module import)
                          # Defense-in-depth: step-timeout triggers first per GitHub Actions spec
     # Skip for Dependabot PRs (package updates don't need code review)
     if: github.actor != 'dependabot[bot]'
@@ -189,13 +190,16 @@ jobs:
           fi
 
       # Verify serena MCP: limited_serena context restricts to read-only tools for CI safety
+      # Live connectivity probe: validates SERENA_REF reachability + uvx fetch + start-mcp-server subcommand
+      # at verify-time instead of waiting for downstream claude-review step to hang on broken install.
       - name: Verify serena MCP
         id: verify-serena
-        timeout-minutes: 1
+        timeout-minutes: 5
         continue-on-error: true
         env:
           UV_AVAILABLE: ${{ steps.install-uv.outputs.uv_available }}
         run: |
+          set -euo pipefail
           if [ "$UV_AVAILABLE" != "true" ]; then
             echo "::warning::uv not available. Skipping serena MCP."
             echo "serena_available=false" >> "$GITHUB_OUTPUT"
@@ -207,7 +211,25 @@ jobs:
             echo "serena_available=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          echo "✅ serena MCP verified: context=$CONTEXT_PATH"
+          [[ -n "${SERENA_REF}" ]] || { echo "::error::SERENA_REF is empty"; exit 1; }
+          # Live connectivity probe: uvx fetches git ref, installs deps, dispatches `start-mcp-server` subcommand.
+          # Probe matches downstream invocation shape (--context, --project) so context-path mismatches
+          # and CLI option renames surface here, not after 15-min hang in claude-review step.
+          # `--help` prevents the actual server startup but `--context $CONTEXT_PATH --project .`
+          # still parses through click, validating both flags exist on the subcommand.
+          # Failure modes covered: ref-lost / PyPI outage / subcommand renamed / --context|--project removed.
+          # Note: limited_serena.yml schema validity is NOT verified here (would require server startup);
+          # schema errors still surface in downstream claude-review step.
+          SERENA_PROBE_OUTPUT=$(uvx --from "git+https://github.com/oraios/serena@${SERENA_REF}" \
+            serena start-mcp-server --context "$CONTEXT_PATH" --project . --help 2>&1) \
+            && SERENA_PROBE_STATUS=0 || SERENA_PROBE_STATUS=$?
+          if [ "$SERENA_PROBE_STATUS" -ne 0 ]; then
+            echo "::warning::serena connectivity probe failed (exit: $SERENA_PROBE_STATUS). Serena MCP will be unavailable."
+            echo "::warning::probe output: ${SERENA_PROBE_OUTPUT//$'\n'/%0A}"
+            echo "serena_available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "✅ serena MCP verified: context=${CONTEXT_PATH} (binary probe passed)"
           echo "serena_context_path=${CONTEXT_PATH}" >> "$GITHUB_OUTPUT"
           echo "serena_available=true" >> "$GITHUB_OUTPUT"
 
