@@ -953,6 +953,84 @@ class TestSentryProcessor:
         assert set_extra_calls.get("request_id") == "abc-123"
         assert set_extra_calls.get("endpoint") == "/api/users"
 
+    def test_set_extra_per_key_skip_on_serialization_failure(self) -> None:
+        """broken __repr__ を持つ user-data の per-key skip 検証
+
+        scope.set_extra() が AttributeError/TypeError を raise した場合に
+        該当キーのみスキップして他キーは正常送信される設計を保護する
+        (リグレッション検出: ループ内 except を全件 abort に変更してしまう改修への防御)。
+        """
+        event_dict = {
+            "level": "error",
+            "event": "broken __repr__ test",
+            "broken_obj": "broken_value_marker",
+            "user_id": 789,
+            "request_id": "req-xyz",
+        }
+
+        mock_sdk = MagicMock()
+        mock_client = MagicMock()
+        mock_client.is_active.return_value = True
+        mock_sdk.get_client.return_value = mock_client
+
+        mock_scope = MagicMock()
+        mock_sdk.new_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
+        mock_sdk.new_scope.return_value.__exit__ = MagicMock(return_value=False)
+
+        captured: dict[str, object] = {}
+
+        def fake_set_extra(key: str, value: object) -> None:
+            # broken_obj キーのみ TypeError を raise (Pydantic broken __repr__ 模擬)
+            if key == "broken_obj":
+                raise TypeError("simulated serialization failure on broken_obj")
+            captured[key] = value
+
+        mock_scope.set_extra.side_effect = fake_set_extra
+
+        with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
+            _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+        # broken_obj はスキップされ他キーは送信される
+        assert "broken_obj" not in captured
+        assert captured.get("user_id") == 789
+        assert captured.get("request_id") == "req-xyz"
+        # capture_message は正常に呼ばれている (per-key 失敗で abort されない)
+        mock_scope.capture_message.assert_called_once()
+
+    def test_capture_exception_invalid_type_falls_back_to_capture_message(self) -> None:
+        """exc_info に BaseException/tuple 以外の不正型が入った場合の fallback 検証
+
+        isinstance guard により capture_exception の TypeError 経路を回避し
+        capture_message へ降格して Sentry 通知を保証する設計を保護する
+        ([SENTRY_BUG] throttle 経由で永続silent化する failure mode を防止)。
+        """
+        event_dict = {
+            "level": "error",
+            "event": "invalid exc_info type",
+            # 不正型 (str: BaseException でも tuple でもない truthy 値)
+            "exc_info": "not_an_exception_instance",
+        }
+
+        mock_sdk = MagicMock()
+        mock_client = MagicMock()
+        mock_client.is_active.return_value = True
+        mock_sdk.get_client.return_value = mock_client
+
+        mock_scope = MagicMock()
+        mock_sdk.new_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
+        mock_sdk.new_scope.return_value.__exit__ = MagicMock(return_value=False)
+
+        with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
+            _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+        # capture_exception は呼ばれない (TypeError 経路を回避)
+        mock_scope.capture_exception.assert_not_called()
+        # capture_message へ降格される
+        mock_scope.capture_message.assert_called_once_with(
+            "invalid exc_info type",
+            level="error",
+        )
+
     def test_default_message_when_event_missing(self) -> None:
         """eventキーがない場合のデフォルトメッセージ"""
         event_dict = {"level": "error"}  # eventキーなし
@@ -1102,6 +1180,46 @@ class TestSentryProcessor:
 
         captured = capsys.readouterr()
         assert captured.err.count("[SENTRY_ERROR]") == 1
+
+    def test_sentry_send_error_warns_again_after_interval(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """[SENTRY_ERROR] は interval (5分) 経過後に再警告される
+
+        timestamp ベース throttle (`_SENTRY_SEND_ERROR_WARN_INTERVAL`) の core 振る舞い
+        — 「ネットワーク瞬断後の永続サイレント化を防止」を保護するリグレッションテスト。
+        bool flag への誤った退化を検出する (現状の throttle テストは初回1回のみ検証)。
+        """
+        from utils import logger as logger_module
+
+        monkeypatch.delenv("SENTRY_DEBUG", raising=False)
+
+        mock_sdk = MagicMock()
+        mock_sdk.get_client.return_value.is_active.return_value = True
+        mock_scope = MagicMock()
+        mock_sdk.new_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
+        mock_sdk.new_scope.return_value.__exit__ = MagicMock(return_value=False)
+        mock_scope.capture_message.side_effect = RuntimeError("Sentry connection failed")
+
+        # time.monotonic を制御: 1 回目=0.0, 2 回目=interval 未満, 3 回目=interval 超過
+        interval = logger_module._SENTRY_SEND_ERROR_WARN_INTERVAL
+        time_values = iter([0.0, interval - 1.0, interval + 1.0])
+        monkeypatch.setattr(logger_module.time, "monotonic", lambda: next(time_values))
+
+        event_dict = {"level": "error", "event": "error message"}
+        with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
+            for _ in range(3):
+                _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+        captured = capsys.readouterr()
+        # 1 回目 (t=0) と 3 回目 (t=interval+1) で警告 → 2 回出力されることを確認
+        # 2 回目 (t=interval-1) は throttle により抑制される
+        assert captured.err.count("[SENTRY_ERROR]") == 2, (
+            f"interval 後再警告失敗: 警告行数 = {captured.err.count('[SENTRY_ERROR]')}"
+            " (期待 = 2: 初回 + interval経過後)"
+        )
 
     def test_outside_except_warning_throttled_across_multiple_calls(
         self,

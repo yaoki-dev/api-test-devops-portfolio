@@ -181,8 +181,8 @@ uv run pytest -m "not slow"      # 高速テストのみ
 - **pytest-cov** (>=4.1.0): カバレッジ測定
 - **pytest-xdist** (>=3.5.0): 並列テスト実行
 - **respx** (>=0.23.1): httpx用モックライブラリ
-- **ruff** (>=0.15.11,<0.16): Linter + Formatter
-- **mypy** (>=1.20.1): 型チェッカー
+- **ruff** (>=0.15.12,<0.16): Linter + Formatter
+- **mypy** (>=1.20.2): 型チェッカー
 
 ---
 

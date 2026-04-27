@@ -183,6 +183,16 @@ def _emit_import_error_warnings() -> None:
         is_prod = True  # 本番可能性を排除できないため安全側フォールバック
         settings_error = e
 
+    # _safe_error_summary() は SENTRY_DEBUG 有効時に内部で print() を実行する可能性が
+    # あるため lock 外で評価する (他の _emit_* 関数の "lock 内はフラグ操作とメッセージ
+    # 生成のみ" 設計方針への整合)。
+    settings_detail: str | None = None
+    if settings_error is not None:
+        # Pydantic ValidationError は str(e) に input_value を平文含むため
+        # 非SecretStr 設定値 (例: API__BASE_URL) が log aggregation に漏洩する。
+        # _safe_error_summary() で input 除外した summary を生成する。
+        settings_detail = _safe_error_summary(settings_error)
+
     settings_msg: str | None = None
     sdk_msg: str | None = None
     with _sentry_warning_lock:
@@ -190,12 +200,9 @@ def _emit_import_error_warnings() -> None:
         if "sdk" in _sentry_warnings_emitted:
             return
         if settings_error is not None and "settings" not in _sentry_warnings_emitted:
-            # Pydantic ValidationError は str(e) に input_value を平文含むため
-            # 非SecretStr 設定値 (例: API__BASE_URL) が log aggregation に漏洩する。
-            # _safe_error_summary() で input 除外した summary を生成する。
-            detail = _safe_error_summary(settings_error)
             settings_msg = (
-                f"[SENTRY_WARN] settings load failed: {type(settings_error).__name__}: {detail}"
+                f"[SENTRY_WARN] settings load failed: "
+                f"{type(settings_error).__name__}: {settings_detail}"
             )
             _sentry_warnings_emitted.add("settings")
         # 警告出力有無に関わらず処理済みマークを立てる。
@@ -305,7 +312,17 @@ def _sentry_processor(  # noqa: C901
                         level=_SENTRY_LEVEL_MAP.get(log_level.lower(), "error"),
                     )
             elif exc_info:
-                scope.capture_exception(exc_info)
+                # 不正な型 (structlog 契約逸脱: BaseException/tuple/True 以外) で
+                # capture_exception が TypeError を raise → 外側 _emit_sentry_bug_error
+                # の throttle 経路で永続silent化する failure mode を回避するため
+                # type guard を入れて capture_message へフォールバックする。
+                if isinstance(exc_info, (BaseException, tuple)):
+                    scope.capture_exception(exc_info)
+                else:
+                    scope.capture_message(
+                        message,
+                        level=_SENTRY_LEVEL_MAP.get(log_level.lower(), "error"),
+                    )
             else:
                 scope.capture_message(
                     message,
