@@ -48,16 +48,18 @@ _sentry_settings_warning_emitted = False
 _sentry_sdk_warning_emitted = False
 _sentry_send_error_emitted = False
 _sentry_bug_emitted = False
+_sentry_outside_except_warning_emitted = False
 
 # structlog の "EXCEPTION" レベルを Sentry SDK が受理するレベルへ正規化するマップ。
-# Sentry SDK が受理するレベル: fatal / critical / error / warning / info / debug
 # structlog の "exception" は Sentry 側に存在しないため "error" へマップする。
-_SentryLevel = Literal["fatal", "critical", "error", "warning", "info", "debug"]
-_SENTRY_LEVEL_MAP: dict[str, _SentryLevel] = {
+_SENTRY_LEVEL_MAP: dict[str, Literal["error", "critical"]] = {
     "error": "error",
     "critical": "critical",
     "exception": "error",  # structlog "exception" → Sentry "error" へ正規化
 }
+
+# SENTRY_DEBUG 有効時に stderr へ出力する例外詳細の最大文字数 (CWE-532 対策)
+_SENTRY_DEBUG_DETAIL_MAX_LEN: int = 100
 
 
 def _emit_sentry_send_error(e: Exception) -> None:
@@ -71,12 +73,47 @@ def _emit_sentry_send_error(e: Exception) -> None:
         if _sentry_send_error_emitted:
             return
         debug_enabled = os.environ.get("SENTRY_DEBUG", "").lower() in ("true", "1", "yes")
-        detail = f": {str(e)[:100]}" if debug_enabled else ""
+        detail = f": {str(e)[:_SENTRY_DEBUG_DETAIL_MAX_LEN]}" if debug_enabled else ""
         print(
             f"[SENTRY_ERROR] Failed to send to Sentry: {type(e).__name__}{detail}",
             file=sys.stderr,
         )
         _sentry_send_error_emitted = True
+
+
+def _emit_sentry_bug_error(e: Exception) -> None:
+    """Sentry内部バグの stderr 警告を per-process 1 回に throttle 出力
+
+    SDK API 不整合等のバグを通常の Sentry 送信失敗 [SENTRY_ERROR] と区別し、
+    SENTRY_DEBUG ガード + str(e)[:100] 制限で内部状態の log aggregation への漏洩を防止する
+    (CWE-532 対策、_emit_sentry_send_error と同等の防御)。
+    """
+    global _sentry_bug_emitted
+    with _sentry_warning_lock:
+        if _sentry_bug_emitted:
+            return
+        debug_enabled = os.environ.get("SENTRY_DEBUG", "").lower() in ("true", "1", "yes")
+        detail = f": {str(e)[:_SENTRY_DEBUG_DETAIL_MAX_LEN]}" if debug_enabled else ""
+        print(
+            f"[SENTRY_BUG] internal error in _sentry_processor: {type(e).__name__}{detail}"
+            "; further [SENTRY_BUG] warnings suppressed until process restart",
+            file=sys.stderr,
+        )
+        _sentry_bug_emitted = True
+
+
+def _emit_outside_except_warning() -> None:
+    """logger.exception() を except ブロック外で呼んだ場合の per-process 1 回警告"""
+    global _sentry_outside_except_warning_emitted
+    with _sentry_warning_lock:
+        if _sentry_outside_except_warning_emitted:
+            return
+        print(
+            "[SENTRY_WARN] logger.exception() called outside except block,"
+            " falling back to capture_message",
+            file=sys.stderr,
+        )
+        _sentry_outside_except_warning_emitted = True
 
 
 def _safe_error_summary(e: Exception) -> str:
@@ -200,22 +237,15 @@ def _sentry_processor(  # noqa: C901
             for key, value in extra.items():
                 scope.set_extra(key, value)
             if exc_info is True:
-                # structlog.dev.set_exc_info は logger.exception() / exc_info=True 時に
-                # event_dict["exc_info"] = True をセットするのみ (Tuple化しない)。
-                # capture_exception(None) は sys.exc_info() を自動使用しスタックトレースを送信する。
-                # active な except ブロック外では sys.exc_info() が (None,None,None) を返すため
-                # capture_exception(None) は空イベントになる。その場合は capture_message へ
-                # フォールバックしログメッセージを Sentry に保持する。
+                # except ブロック外では sys.exc_info()[1] が None → capture_exception(None) は
+                # 空イベントになるため capture_message へフォールバックしメッセージを保持する。
                 if sys.exc_info()[1] is not None:
                     scope.capture_exception(None)
                 else:
-                    print(
-                        "[SENTRY_WARN] logger.exception() called outside except block,"
-                        " falling back to capture_message",
-                        file=sys.stderr,
-                    )
+                    _emit_outside_except_warning()
                     scope.capture_message(
-                        message, level=_SENTRY_LEVEL_MAP.get(log_level.lower(), "error")
+                        message,
+                        level=_SENTRY_LEVEL_MAP.get(log_level.lower(), "error"),
                     )
             elif exc_info:
                 scope.capture_exception(exc_info)
@@ -236,24 +266,12 @@ def _sentry_processor(  # noqa: C901
                 f"[SENTRY_WARN] Failed to emit import warning: {type(warn_err).__name__}",
                 file=sys.stderr,
             )
-    except KeyboardInterrupt, SystemExit, MemoryError:
+    except KeyboardInterrupt, SystemExit, MemoryError, RecursionError:
         # システム例外は再発生（graceful shutdown/K8s OOMKilled検知対応）
         raise
-    except (AttributeError, TypeError) as e:  # noqa: BLE001
-        # logger 内部または Sentry SDK API 不整合のバグ可能性 — 通常 [SENTRY_ERROR] とは区別。
-        # per-process 1 回に throttle し、SDK バージョン非互換が持続する環境での
-        # SENTRY_DEBUG ガード + str(e)[:100] 制限で内部状態の log aggregation への漏洩を防止する
-        # (CWE-532 対策、_emit_sentry_send_error と同等の防御)。
-        global _sentry_bug_emitted
-        with _sentry_warning_lock:
-            if not _sentry_bug_emitted:
-                debug_enabled = os.environ.get("SENTRY_DEBUG", "").lower() in ("true", "1", "yes")
-                detail = f": {str(e)[:100]}" if debug_enabled else ""
-                print(
-                    f"[SENTRY_BUG] internal error in _sentry_processor: {type(e).__name__}{detail}",
-                    file=sys.stderr,
-                )
-                _sentry_bug_emitted = True
+    except (AttributeError, TypeError) as e:
+        # logger 内部または Sentry SDK API 不整合のバグ可能性 — 通常 [SENTRY_ERROR] とは区別
+        _emit_sentry_bug_error(e)
     except Exception as e:  # noqa: BLE001
         # ネットワーク・SDK 一時障害等の運用エラー
         _emit_sentry_send_error(e)

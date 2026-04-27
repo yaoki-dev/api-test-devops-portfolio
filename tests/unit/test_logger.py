@@ -423,12 +423,16 @@ class TestSentryProcessor:
         mock_scope.capture_message.assert_not_called()
         mock_sdk.capture_exception.assert_not_called()
 
-    def test_capture_message_fallback_when_exc_info_true_outside_except(self) -> None:
+    def test_capture_message_fallback_when_exc_info_true_outside_except(
+        self,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
         """exc_info=True だが active な except ブロック外の場合は capture_message へ fallback。
 
         logger.exception() を except ブロック外で誤用した場合、sys.exc_info()[1] が None
         になるため capture_exception(None) は空イベントを送信してしまう。
         このケースでは capture_message にフォールバックしログメッセージを Sentry に保持する。
+        [SENTRY_WARN] が stderr に出力されることも検証する（throttle 保護あり）。
         """
         event_dict = {
             "level": "error",
@@ -455,6 +459,9 @@ class TestSentryProcessor:
         )
         mock_scope.capture_exception.assert_not_called()
         mock_sdk.capture_exception.assert_not_called()
+        captured = capsys.readouterr()
+        assert "[SENTRY_WARN] logger.exception() called outside except block" in captured.err
+        assert "falling back to capture_message" in captured.err
 
     def test_silent_skip_on_import_error(
         self,
@@ -1022,7 +1029,8 @@ class TestSentryProcessor:
                 )
 
         captured = capsys.readouterr()
-        assert captured.err.count("[SENTRY_BUG]") == 1
+        bug_lines = [line for line in captured.err.splitlines() if line.startswith("[SENTRY_BUG]")]
+        assert len(bug_lines) == 1
 
     def test_sentry_bug_type_error_debug_disabled(
         self,

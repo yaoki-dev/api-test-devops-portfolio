@@ -613,3 +613,75 @@ class TestSdkExceptionHandling:
 
         assert result is False
         assert is_sentry_initialized() is False
+
+
+class TestSentryProcessorBeforeSendChain:
+    """logger._sentry_processor → sentry_init._before_send PII フィルター連鎖テスト
+
+    _sentry_processor は scope.set_extra() で extra フィールドを設定し、
+    Sentry SDK は _before_send フックを介してイベントを送信する。
+    このクラスは extra 経由の PII が _before_send で正しく除去されることを検証する。
+    """
+
+    def test_sensitive_extra_keys_are_redacted(self) -> None:
+        """email/password 等の機密フィールドが [REDACTED] に置換される"""
+        event: Event = cast(
+            Event,
+            {
+                "level": "error",
+                "message": "DB error",
+                "extra": {
+                    "email": "user@example.com",
+                    "password": "secret123",
+                    "user_id": 42,
+                    "request_id": "req-001",
+                },
+            },
+        )
+        result = _before_send(event, {})
+        assert result is not None
+        extra = cast(dict[str, Any], result["extra"])
+        assert extra["email"] == "[REDACTED]"
+        assert extra["password"] == "[REDACTED]"  # noqa: S105
+        assert extra["user_id"] == 42
+        assert extra["request_id"] == "req-001"
+
+    def test_non_sensitive_extra_preserved(self) -> None:
+        """機密キー以外の extra フィールドはそのまま保持される"""
+        event: Event = cast(
+            Event,
+            {
+                "level": "error",
+                "message": "test",
+                "extra": {"user_id": 123, "action": "login", "status_code": 500},
+            },
+        )
+        result = _before_send(event, {})
+        assert result is not None
+        extra = cast(dict[str, Any], result["extra"])
+        assert extra["user_id"] == 123
+        assert extra["action"] == "login"
+        assert extra["status_code"] == 500
+
+    def test_multiple_sensitive_keys_all_redacted(self) -> None:
+        """複数の機密キーが同時に存在する場合、全て [REDACTED] になる"""
+        event: Event = cast(
+            Event,
+            {
+                "level": "error",
+                "message": "auth error",
+                "extra": {
+                    "token": "bearer-xyz",
+                    "api_key": "sk-secret",
+                    "secret": "my-secret",
+                    "passwd": "p@ss",
+                },
+            },
+        )
+        result = _before_send(event, {})
+        assert result is not None
+        extra = cast(dict[str, Any], result["extra"])
+        assert extra["token"] == "[REDACTED]"  # noqa: S105
+        assert extra["api_key"] == "[REDACTED]"
+        assert extra["secret"] == "[REDACTED]"  # noqa: S105
+        assert extra["passwd"] == "[REDACTED]"  # noqa: S105
