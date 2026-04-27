@@ -1,19 +1,19 @@
 
 name: limited_serena
 description: "Only allows selected tools for strict operation"
-allowed_tools:
-  - list_dir
-  - find_file
-  - search_for_pattern
-  - get_symbols_overview
-  - find_symbol
-  - find_referencing_symbols
-  - read_memory
-  - list_memories
-  - think_about_collected_information
-  - think_about_task_adherence
-  - think_about_whether_you_are_done
-  - initial_instructions
+# allowed_tools:
+#   - list_dir
+#   - find_file
+#   - search_for_pattern
+#   - get_symbols_overview
+#   - find_symbol
+#   - find_referencing_symbols
+#   - read_memory
+#   - list_memories
+#   - think_about_collected_information
+#   - think_about_task_adherence
+#   - think_about_whether_you_are_done
+#   - initial_instructions
 excluded_tools:
   - replace_symbol_body
   - insert_after_symbol

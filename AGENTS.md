@@ -54,7 +54,7 @@
 4. **NEVER** run `git commit` directly; follow the `commit` skill workflow when available (if not available: explain why and get explicit user confirmation before any manual git ops)
 5. **NEVER** run `gh pr create` directly; follow the `push-pr` skill workflow when available (if not available: explain why and get explicit user confirmation before any manual PR creation)
 6. **NEVER** run `gh issue create` directly; follow the `create-issue` skill workflow when available (if not available: explain why and get explicit user confirmation before any manual issue creation)
-7. **ALWAYS** pass quality gates before commit → memory `$HOME/projects/python/api-test-devops-portfolio/.claude/rules/testing/quality-gates.md`
+7. **ALWAYS** pass quality gates before commit → memory `~/projects/python/api-test-devops-portfolio/.claude/rules/testing/quality-gates.md`
 8. **NEVER** push to protected branches (main/develop) directly
 9. **ALWAYS** only reference skills/tools that are actually available in the current session; do not assume a name exists
 10. **ALWAYS** follow development workflow order → Section「🔄 開発ワークフロー」
@@ -205,11 +205,11 @@ npm run lint:md && npm run lint:text   # ローカル実行
 
 ## アーキテクチャ概要
 
-**詳細**: memory `$HOME/projects/python/api-test-devops-portfolio/.serena/memories/project_architecture.md`
+**詳細**: memory `~/projects/python/api-test-devops-portfolio/.serena/memories/project_architecture.md`
 
 ## 設定管理
 
-**詳細**: `$HOME/projects/python/api-test-devops-portfolio/.claude/rules/python/coding-standards.md`
+**詳細**: `~/projects/python/api-test-devops-portfolio/.claude/rules/python/coding-standards.md`
 
 Pydantic Settingsのネスト記法（`__`区切り）を使用:
 
@@ -223,13 +223,13 @@ SECURITY__API_KEY=your-secret-key
 
 ## Sentry統合（エラー監視）
 
-**詳細**: memory `$HOME/projects/python/api-test-devops-portfolio/.serena/memories/sentry_integration.md`
+**詳細**: memory `~/projects/python/api-test-devops-portfolio/.serena/memories/sentry_integration.md`
 **概要**: ERROR以上のログを自動でSentryに送信。29種類の機密キーを自動スクラブ。
 **開発時無効化推奨**: `SENTRY__ENABLED=false`（demo/prod環境のみ有効化）
 
 ## 開発時の注意事項
 
-**基本規約**: memory `$HOME/projects/python/api-test-devops-portfolio/.claude/rules/testing/quality-gates.md`, `$HOME/projects/python/api-test-devops-portfolio/.claude/rules/python/coding-standards.md`
+**基本規約**: memory `~/projects/python/api-test-devops-portfolio/.claude/rules/testing/quality-gates.md`, `~/projects/python/api-test-devops-portfolio/.claude/rules/python/coding-standards.md`
 
 <!-- preserve-on-compact: Git Flow -->
 **Git運用** (Git Flow):
@@ -291,16 +291,16 @@ git checkout -b feature/<次のタスク> origin/develop
 - [ ] 「簡潔」出力は 600-900字に収まるか
 - [ ] セッション初期化時に本基準を再読込
 
-**参考**: memory `$HOME/projects/python/api-test-devops-portfolio/.claude/rules/testing/quality-gates.md`
+**参考**: memory `~/projects/python/api-test-devops-portfolio/.claude/rules/testing/quality-gates.md`
 
 ## 🔌 コマンド/スキル/プラグイン自動発動ルール
 
-**詳細**: memory `$HOME/projects/python/api-test-devops-portfolio/.serena/memories/command_usage_guide.md`
+**詳細**: memory `~/projects/python/api-test-devops-portfolio/.serena/memories/command_usage_guide.md`
 
 **ast-grep vs mgrep選択**:
 - **コード変更時**: ast-grep必須（AST保証、リファクタリング◎）
 - **文書構造探索時**: mgrep推奨（Markdown構造◎、利用できない場合は `rg` で代替）
-- **詳細な機能差**: memory `$HOME/projects/python/api-test-devops-portfolio/.serena/memories/command_usage_guide.md` Section 9.3参照
+- **詳細な機能差**: memory `~/projects/python/api-test-devops-portfolio/.serena/memories/command_usage_guide.md` Section 9.3参照
 **種別の違い**:
 - **Plugin/Hook/Command**: ローカル環境に存在する補助資産（例: `~/.claude/...`）。Codex セッションで実行可能かは別途確認する
 - **Skill**: セッションに露出しているスキル（存在しない名前は使わない）
@@ -404,7 +404,7 @@ API契約変更対象: `models/responses.py`, `utils/api_client.py` public metho
 
 ## トラブルシューティング
 
-**詳細**: memory `$HOME/projects/python/api-test-devops-portfolio/.serena/memories/test_strategy_details.md` トラブルシューティングFAQ参照
+**詳細**: memory `~/projects/python/api-test-devops-portfolio/.serena/memories/test_strategy_details.md` トラブルシューティングFAQ参照
 
 ### テスト失敗時
 
@@ -437,7 +437,7 @@ uv run mypy --show-error-codes --pretty utils/ config/ models/
 ## Notes
 
 - `.claude/CLAUDE.md` と `.claude/rules/` は元資料として参照してよいが、Claude 固有のマクロやスラッシュコマンド等は Codex の運用に読み替える（本ファイルではそれらの表記に依存しない）。
-- Codex 環境でのトークン最適化ガイドは `$HOME/.codex/RTK.md` を参照する。
+- Codex 環境でのトークン最適化ガイドは `~/.codex/RTK.md` を参照する。
 
 <!-- code-review-graph MCP tools -->
 ## MCP Tools: code-review-graph

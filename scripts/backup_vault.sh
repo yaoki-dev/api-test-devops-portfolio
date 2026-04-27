@@ -219,9 +219,12 @@ if [ ! -w "$BACKUP_DIR" ]; then
   exit 1
 fi
 
-# P0-4: 事前ディスク容量チェック（vault size * 2 必要）
+# P0-4: 事前ディスク容量チェック + P1-8: 使用率チェック（df単一呼び出し）
 VAULT_SIZE_KB=$(du -sk "$VAULT_PATH" 2>/dev/null | awk '{print $1}' || echo "0")
-AVAILABLE_KB=$(df -k "$BACKUP_DIR" 2>/dev/null | tail -1 | awk '{print $4}' || echo "0")
+DF_OUT=$(df -k "$BACKUP_DIR" 2>/dev/null | tail -1 | awk '{gsub(/%/,"",$5); print $4, $5}')
+read -r AVAILABLE_KB DISK_USAGE <<< "$DF_OUT"
+AVAILABLE_KB=${AVAILABLE_KB:-0}
+DISK_USAGE=${DISK_USAGE:-0}
 REQUIRED_KB=$((VAULT_SIZE_KB * 2))  # 圧縮 + 安全マージン
 
 if [ "$VAULT_SIZE_KB" -gt 0 ] && [ "$AVAILABLE_KB" -gt 0 ]; then
@@ -233,9 +236,7 @@ if [ "$VAULT_SIZE_KB" -gt 0 ] && [ "$AVAILABLE_KB" -gt 0 ]; then
 fi
 
 # P1-8: ディスクフル事前検出（使用率95%以上で警告）
-# P0-2: Linux/BSD両対応のdf解析（明示的カラム指定）
-DISK_USAGE=$(df "$BACKUP_DIR" 2>/dev/null | awk 'NR==2 {gsub(/%/, "", $5); print $5}')
-if [ -n "$DISK_USAGE" ] && [ "$DISK_USAGE" -ge 95 ]; then
+if [ "$DISK_USAGE" -ge 95 ]; then
   echo "⚠️ 警告: ディスク使用率が高い（${DISK_USAGE}%）" >&2
 fi
 
@@ -289,8 +290,9 @@ BACKUP_IN_PROGRESS=false
 
 # 古いバックアップ削除（RETENTION_DAYS日以上）
 # P1-3: -maxdepth 1 -type fでサブディレクトリ誤削除防止
-find "$BACKUP_DIR" -maxdepth 1 -type f -name "vault_*.tar.gz" -mtime +"$RETENTION_DAYS" -delete 2>/dev/null || true
-find "$BACKUP_DIR" -maxdepth 1 -type f -name "vault_*.sha256" -mtime +"$RETENTION_DAYS" -delete 2>/dev/null || true
+find "$BACKUP_DIR" -maxdepth 1 -type f \
+  \( -name "vault_*.tar.gz" -o -name "vault_*.sha256" \) \
+  -mtime +"$RETENTION_DAYS" -delete 2>/dev/null || true
 
 # P1-4: バックアップ成功ログ（サイズ付き）
 BACKUP_SIZE=$(du -sh "$CURRENT_BACKUP" 2>/dev/null | cut -f1 || echo "unknown")
@@ -301,7 +303,17 @@ log_event "INFO" "backup_completed" "file=$CURRENT_BACKUP,size=$BACKUP_SIZE"
 verify_restore() {
   echo "🔄 リストア検証開始..."
 
-  LATEST=$(ls -t "$BACKUP_DIR"/vault_*.tar.gz 2>/dev/null | head -1)
+  # mtime降順で最新ファイル取得（ls -t はスペース/特殊文字ファイル名で誤動作の恐れあり）
+  # P0-1: Linux/BSD両対応のstat（既存パターン準拠）
+  if stat --version >/dev/null 2>&1; then
+    # GNU stat (Linux): -c "%Y %n" (既存 lock_mtime パターン準拠)
+    LATEST=$(find "$BACKUP_DIR" -maxdepth 1 -name "vault_*.tar.gz" 2>/dev/null \
+      -exec stat -c "%Y %n" {} \; | sort -n | tail -1 | cut -d' ' -f2-)
+  else
+    # BSD stat (macOS)
+    LATEST=$(find "$BACKUP_DIR" -maxdepth 1 -name "vault_*.tar.gz" 2>/dev/null \
+      -exec stat -f "%m %N" {} \; | sort -n | tail -1 | cut -d' ' -f2-)
+  fi
 
   if [ -z "$LATEST" ]; then
     echo "❌ バックアップファイルが見つかりません" >&2
