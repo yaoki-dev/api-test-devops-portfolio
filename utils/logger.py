@@ -10,13 +10,6 @@ Sentry統合によりERROR以上のログを自動送信。
     logger = get_logger(__name__)
     logger.info("処理開始", user_id=123, action="login")
 
-utils/logger.pyで示せるスキル:
-  1. ✅ 設定一元化パターン（DRY原則）
-  2. ✅ config.settingsとの統合（環境別設定）
-  3. ✅ シングルトンパターン（lazy initialization）
-  4. ✅ テスタビリティ設計
-  5. ✅ 型安全（FilteringBoundLogger）
-  6. ✅ Sentry統合（エラー監視）
 """
 
 from __future__ import annotations
@@ -24,6 +17,7 @@ from __future__ import annotations
 import os
 import sys
 import threading
+import time
 from typing import Any, Literal, cast
 
 import structlog
@@ -31,24 +25,24 @@ from structlog.typing import FilteringBoundLogger, WrappedLogger
 
 from config.settings import LogFormat, get_settings
 
-# _sentry_processor の stderr 警告を per-process 1 回に抑制する module-level state
-#
-# structlog processor は ERROR/CRITICAL/EXCEPTION ログ毎に呼ばれるため、
-# settings 失敗 × sentry-sdk 未インストール が持続する環境 (CI 破壊・.env 破損) では
-# ログ1件につき 2 行の警告が stderr に出力される。エラーストーム時の log flood を避けるため
-# 同一警告を process 内で 1 回のみ出力する。
-#
-# _sentry_warning_lock: マルチスレッド環境 (uvicorn worker / ThreadPoolExecutor) で
-# check-and-set の race condition を防ぎ flag 昇格を atomic 化する。
-# lock は _emit_import_error_warnings() および _emit_sentry_send_error() の
-# 全処理を単一 critical section で覆い、get_settings() 呼び出しと flag 更新の間に
-# TOCTOU が発生しないことを保証する。
+# _sentry_warning_lock: per-process 1 回抑制フラグ群の atomic check-and-set 用 lock。
+# 詳細仕様は各 _emit_* 関数の docstring を参照。
 _sentry_warning_lock = threading.Lock()
-_sentry_settings_warning_emitted = False
-_sentry_sdk_warning_emitted = False
-_sentry_send_error_emitted = False
-_sentry_bug_emitted = False
-_sentry_outside_except_warning_emitted = False
+
+# 4 つの permanent throttle 状態を 1 つの set に統合 (旧 4 bool flags の代替)。
+# キー: "settings" / "sdk" / "bug" / "outside_except"
+# 新フラグ追加時はキー文字列の追加のみで済む (`add` / `in` のみ)。
+_sentry_warnings_emitted: set[str] = set()
+
+# _sentry_send_error は permanent flag ではなく timestamp ベースで再警告を許可する
+# (ネットワーク瞬断後の永続サイレント化を防止)。詳細は _emit_sentry_send_error 参照。
+_sentry_send_error_last_warned: float = 0.0
+_SENTRY_SEND_ERROR_WARN_INTERVAL: float = 300.0  # 5分
+
+# event_dict から Sentry extra へ渡す際に除外する予約キー (frozenset で O(1) lookup)
+_SENTRY_EXCLUDED_KEYS: frozenset[str] = frozenset(
+    {"event", "level", "timestamp", "exc_info", "logger"}
+)
 
 # structlog の "EXCEPTION" レベルを Sentry SDK が受理するレベルへ正規化するマップ。
 # structlog の "exception" は Sentry 側に存在しないため "error" へマップする。
@@ -62,23 +56,35 @@ _SENTRY_LEVEL_MAP: dict[str, Literal["error", "critical"]] = {
 _SENTRY_DEBUG_DETAIL_MAX_LEN: int = 100
 
 
-def _emit_sentry_send_error(e: Exception) -> None:
-    """Sentry送信失敗の stderr 警告を per-process 1 回に throttle 出力
+def _is_sentry_debug_enabled() -> bool:
+    return os.environ.get("SENTRY_DEBUG", "").lower() in ("true", "1", "yes")
 
-    DSN/HTTP レスポンスボディ漏洩防止のため SENTRY_DEBUG 有効時でも
-    str(e) を 100 文字に切り詰める。
+
+def _sentry_debug_detail(e: Exception) -> str:
+    # CWE-532: str(e)[:100] でDSN/レスポンスボディ漏洩を防止
+    if _is_sentry_debug_enabled():
+        return f": {str(e)[:_SENTRY_DEBUG_DETAIL_MAX_LEN]}"
+    return ""
+
+
+def _emit_sentry_send_error(e: Exception) -> None:
+    """Sentry送信失敗の stderr 警告を timestamp ベースで throttle 出力
+
+    一時的なネットワーク瞬断 (デプロイ直後等) で永続的にサイレント化される問題を
+    回避するため bool flag ではなく `_SENTRY_SEND_ERROR_WARN_INTERVAL` (5分) 経過後に
+    再警告を許可する。DSN/HTTP レスポンスボディ漏洩防止のため SENTRY_DEBUG 有効時でも
+    str(e) を 100 文字に切り詰める (CWE-532)。
     """
-    global _sentry_send_error_emitted
+    global _sentry_send_error_last_warned
+    now = time.monotonic()
+    detail = _sentry_debug_detail(e)
+    message: str | None = None
     with _sentry_warning_lock:
-        if _sentry_send_error_emitted:
+        if now - _sentry_send_error_last_warned < _SENTRY_SEND_ERROR_WARN_INTERVAL:
             return
-        debug_enabled = os.environ.get("SENTRY_DEBUG", "").lower() in ("true", "1", "yes")
-        detail = f": {str(e)[:_SENTRY_DEBUG_DETAIL_MAX_LEN]}" if debug_enabled else ""
-        print(
-            f"[SENTRY_ERROR] Failed to send to Sentry: {type(e).__name__}{detail}",
-            file=sys.stderr,
-        )
-        _sentry_send_error_emitted = True
+        _sentry_send_error_last_warned = now
+        message = f"[SENTRY_ERROR] Failed to send to Sentry: {type(e).__name__}{detail}"
+    print(message, file=sys.stderr)
 
 
 def _emit_sentry_bug_error(e: Exception) -> None:
@@ -87,33 +93,38 @@ def _emit_sentry_bug_error(e: Exception) -> None:
     SDK API 不整合等のバグを通常の Sentry 送信失敗 [SENTRY_ERROR] と区別し、
     SENTRY_DEBUG ガード + str(e)[:100] 制限で内部状態の log aggregation への漏洩を防止する
     (CWE-532 対策、_emit_sentry_send_error と同等の防御)。
+
+    print() は lock 解放後に実行しスタベーションを軽減する (lock 内はフラグ操作と
+    メッセージ生成のみ)。
     """
-    global _sentry_bug_emitted
+    detail = _sentry_debug_detail(e)
+    message: str | None = None
     with _sentry_warning_lock:
-        if _sentry_bug_emitted:
+        if "bug" in _sentry_warnings_emitted:
             return
-        debug_enabled = os.environ.get("SENTRY_DEBUG", "").lower() in ("true", "1", "yes")
-        detail = f": {str(e)[:_SENTRY_DEBUG_DETAIL_MAX_LEN]}" if debug_enabled else ""
-        print(
+        _sentry_warnings_emitted.add("bug")
+        message = (
             f"[SENTRY_BUG] internal error in _sentry_processor: {type(e).__name__}{detail}"
-            "; further [SENTRY_BUG] warnings suppressed until process restart",
-            file=sys.stderr,
+            "; further [SENTRY_BUG] warnings suppressed until process restart"
         )
-        _sentry_bug_emitted = True
+    print(message, file=sys.stderr)
 
 
 def _emit_outside_except_warning() -> None:
-    """logger.exception() を except ブロック外で呼んだ場合の per-process 1 回警告"""
-    global _sentry_outside_except_warning_emitted
+    """logger.exception() を except ブロック外で呼んだ場合の per-process 1 回警告
+
+    print() は lock 解放後に実行しスタベーションを軽減する。
+    """
+    message: str | None = None
     with _sentry_warning_lock:
-        if _sentry_outside_except_warning_emitted:
+        if "outside_except" in _sentry_warnings_emitted:
             return
-        print(
+        _sentry_warnings_emitted.add("outside_except")
+        message = (
             "[SENTRY_WARN] logger.exception() called outside except block,"
-            " falling back to capture_message",
-            file=sys.stderr,
+            " falling back to capture_message"
         )
-        _sentry_outside_except_warning_emitted = True
+    print(message, file=sys.stderr)
 
 
 def _safe_error_summary(e: Exception) -> str:
@@ -121,6 +132,9 @@ def _safe_error_summary(e: Exception) -> str:
 
     Pydantic ValidationError の場合は errors(include_input=False) で input 値を除外し
     エラー件数のみ返す。それ以外は型名のみ返す (str(e) は呼び出さない)。
+
+    errors() 呼出失敗時は SENTRY_DEBUG 有効時のみ stderr に型名のみ出力 (運用時の
+    完全サイレント化を回避)。Pydantic v3 互換性デバッグの足がかりとして使用。
     """
     errors_fn = getattr(e, "errors", None)
     if callable(errors_fn):
@@ -129,9 +143,13 @@ def _safe_error_summary(e: Exception) -> str:
             return f"{len(errs)} validation error(s)"
         except MemoryError, RecursionError:
             raise
-        except Exception:  # noqa: BLE001, S110
-            # errors() 呼出失敗 (Pydantic v3 互換性等) も無視し型名のみ返す
-            pass
+        except Exception as summary_err:  # noqa: BLE001
+            # errors() 呼出失敗 (Pydantic v3 互換性等) — DEBUG 時のみ型名を出力
+            if _is_sentry_debug_enabled():
+                print(
+                    f"[SENTRY_WARN] _safe_error_summary failed: {type(summary_err).__name__}",
+                    file=sys.stderr,
+                )
     return f"{type(e).__name__} (details sanitized)"
 
 
@@ -144,48 +162,54 @@ def _emit_import_error_warnings() -> None:
     defensive: get_settings() が reload_settings() 後に ValidationError を
     発生させる可能性を遮断し log processor 内で例外伝播を防ぐ。
 
-    TOCTOU 防止: lock 内で get_settings() を含む全処理を atomic 化する。
-
-    ⚠️ コントラクト (将来変更時注意): config/settings.py は内部で lock を取得しない
-    前提を維持する必要がある。settings.py に lock が追加されると _sentry_warning_lock
-    との取得順序により循環待ちが発生し本関数でデッドロックが起こる。settings.py を
-    変更する際はこの依存関係を確認し、lock 追加時は本関数の lock スコープから
-    get_settings() を外に出すリファクタリングが必要となる。
+    実装方針 (deadlock-safe / starvation-safe):
+      1. "sdk" マーカーの早期リターンは lock 外で実施 (set への add は monotonic
+         なためダブル評価しても問題なし)
+      2. `get_settings()` は lock 取得前に評価。これにより config/settings.py が将来
+         独自 lock を導入しても循環待ちが発生しない構造を保証する
+      3. `print()` は lock 解放後に実行。lock 内はフラグ操作とメッセージ生成のみ
     """
-    global _sentry_settings_warning_emitted, _sentry_sdk_warning_emitted
+    # 早期リターン (lock 外): set への要素追加は monotonic で戻らないため race-free
+    if "sdk" in _sentry_warnings_emitted:
+        return
+
+    # get_settings() を lock 外で評価 — settings.py 内で lock が追加された場合の
+    # 循環デッドロックを構造的に排除する (TOCTOU は "sdk" マーカー昇格を per-process
+    # 1 回に限定する monotonic 性で吸収)。
+    settings_error: Exception | None = None
+    try:
+        is_prod = get_settings().is_production_like()
+    except Exception as e:  # noqa: BLE001 — log processor 内で例外を再送出しない
+        is_prod = True  # 本番可能性を排除できないため安全側フォールバック
+        settings_error = e
+
+    settings_msg: str | None = None
+    sdk_msg: str | None = None
     with _sentry_warning_lock:
-        # 早期リターン: sdk 警告が既出なら後続処理不要
-        # (settings 成功 × is_prod=True の正規ルートでは settings フラグは昇格しないため
-        #  旧実装の「両フラグ AND」条件は機能しなかった。sdk フラグのみで判定する)
-        if _sentry_sdk_warning_emitted:
+        # 二重チェック: lock 取得待機中に他スレッドが昇格させた可能性を吸収
+        if "sdk" in _sentry_warnings_emitted:
             return
-        try:
-            is_prod = get_settings().is_production_like()
-        # 設計意図: get_settings() は reload_settings()/ValidationError/AttributeError 等
-        # 複数種の失敗モードを持ち、全て「本番環境不明」として安全側フォールバック扱いとする。
-        # BLE001 はプロセッサ内で例外を再送出しない (log processor の循環失敗回避) ため許容。
-        except Exception as e:  # noqa: BLE001
-            is_prod = True  # 本番可能性を排除できないため安全側フォールバック
-            if not _sentry_settings_warning_emitted:
-                # Pydantic ValidationError は str(e) に input_value を平文含むため
-                # 非SecretStr 設定値 (例: API__BASE_URL) が log aggregation に漏洩する。
-                # _safe_error_summary() で input 除外した summary を生成する。
-                detail = _safe_error_summary(e)
-                print(
-                    f"[SENTRY_WARN] settings load failed: {type(e).__name__}: {detail}",
-                    file=sys.stderr,
-                )
-                _sentry_settings_warning_emitted = True
-        # 警告出力有無に関わらず処理済みマークを立てる。
-        # 早期リターン (line 78) を後続呼び出しで発火させ get_settings() 再評価を回避する。
-        # 非prod + SENTRY_DEBUG 未設定 path で flag 昇格漏れ → 毎回 lock取得 + get_settings()
-        # 呼び出しが発生する logic gap を解消する (設計コメント line 76-77 整合)。
-        _sentry_sdk_warning_emitted = True
-        if is_prod or os.environ.get("SENTRY_DEBUG", "").lower() in ("true", "1", "yes"):
-            print(
-                "[SENTRY_WARN] sentry-sdk not installed, skipping Sentry capture",
-                file=sys.stderr,
+        if settings_error is not None and "settings" not in _sentry_warnings_emitted:
+            # Pydantic ValidationError は str(e) に input_value を平文含むため
+            # 非SecretStr 設定値 (例: API__BASE_URL) が log aggregation に漏洩する。
+            # _safe_error_summary() で input 除外した summary を生成する。
+            detail = _safe_error_summary(settings_error)
+            settings_msg = (
+                f"[SENTRY_WARN] settings load failed: {type(settings_error).__name__}: {detail}"
             )
+            _sentry_warnings_emitted.add("settings")
+        # 警告出力有無に関わらず処理済みマークを立てる。
+        # 早期リターン経路を後続呼び出しで発火させ get_settings() 再評価を回避する
+        # (非prod + SENTRY_DEBUG 未設定 path で flag 昇格漏れ → 毎回 lock取得 +
+        # get_settings() 呼び出しが発生する logic gap を解消)。
+        _sentry_warnings_emitted.add("sdk")
+        if is_prod or _is_sentry_debug_enabled():
+            sdk_msg = "[SENTRY_WARN] sentry-sdk not installed, skipping Sentry capture"
+
+    if settings_msg is not None:
+        print(settings_msg, file=sys.stderr)
+    if sdk_msg is not None:
+        print(sdk_msg, file=sys.stderr)
 
 
 def _sentry_processor(  # noqa: C901
@@ -213,9 +237,25 @@ def _sentry_processor(  # noqa: C901
     if log_level not in ("ERROR", "CRITICAL", "EXCEPTION"):
         return event_dict
 
-    try:
-        import sentry_sdk
+    # sentry_sdk は sys.modules.get() で参照する (毎回の `import sentry_sdk` で
+    # 発生する CPython の `_ModuleLock` 取得を回避し、ERROR ストーム時の
+    # ロック競合を排除する)。テストの `patch.dict("sys.modules", {"sentry_sdk": ...})`
+    # との互換性も確保される。
+    sentry_sdk = sys.modules.get("sentry_sdk")
+    if sentry_sdk is None:
+        try:
+            _emit_import_error_warnings()
+        except MemoryError, RecursionError:
+            # システム例外は再発生させ OOMKilled / 無限再帰検知を妨げない
+            raise
+        except Exception as warn_err:  # noqa: BLE001
+            print(
+                f"[SENTRY_WARN] Failed to emit import warning: {type(warn_err).__name__}",
+                file=sys.stderr,
+            )
+        return event_dict
 
+    try:
         # Sentry初期化済みかチェック（SDK 2.x API）
         client = sentry_sdk.get_client()
         if not client.is_active():
@@ -225,22 +265,39 @@ def _sentry_processor(  # noqa: C901
         message = event_dict.get("event", "Unknown error")
         exc_info = event_dict.get("exc_info")
 
+        # exc_info=True の場合 sys.exc_info() を new_scope() 入場前に snapshot 取得し
+        # TOCTOU を排除する (sys.exc_info() はスレッドローカルだが scope.set_extra() ループや
+        # コンテキストスイッチで例外コンテキストがずれる可能性を防ぐ)。
+        exc_snapshot: tuple[type[BaseException], BaseException, Any] | None = None
+        if exc_info is True:
+            current_exc = sys.exc_info()
+            if current_exc[1] is not None:
+                exc_snapshot = cast(
+                    "tuple[type[BaseException], BaseException, Any]",
+                    current_exc,
+                )
+
         # 追加コンテキストをextraとして送信 (exc_info/message 両経路で付与)
-        extra = {
-            k: v
-            for k, v in event_dict.items()
-            if k not in ("event", "level", "timestamp", "exc_info", "logger")
-        }
+        # frozenset で O(1) lookup
+        extra = {k: v for k, v in event_dict.items() if k not in _SENTRY_EXCLUDED_KEYS}
         # new_scope() 内で capture_exception/capture_message 双方を実行し
         # structlog bind された追加コンテキスト (user_id, request_id 等) を Sentry event に付与
         with sentry_sdk.new_scope() as scope:
+            # set_extra() は user-data の serialization 失敗で AttributeError/TypeError を
+            # 投げる可能性があるため per-key で個別に try 保護し、SDK 内部バグと user-data
+            # エラーを分離する。失敗キーは個別にスキップし他キーの送信を妨げない。
             for key, value in extra.items():
-                scope.set_extra(key, value)
+                try:
+                    scope.set_extra(key, value)
+                except AttributeError, TypeError:  # noqa: PERF203
+                    # user-data serialization failure (e.g. broken __repr__ on Pydantic model)
+                    # → 該当キーのみスキップし [SENTRY_BUG] には昇格させない
+                    continue
             if exc_info is True:
-                # except ブロック外では sys.exc_info()[1] が None → capture_exception(None) は
-                # 空イベントになるため capture_message へフォールバックしメッセージを保持する。
-                if sys.exc_info()[1] is not None:
-                    scope.capture_exception(None)
+                # except ブロック外では sys.exc_info()[1] が None → capture_exception 不可
+                # snapshot 失敗時は capture_message へフォールバック。
+                if exc_snapshot is not None:
+                    scope.capture_exception(exc_snapshot)
                 else:
                     _emit_outside_except_warning()
                     scope.capture_message(
@@ -255,17 +312,6 @@ def _sentry_processor(  # noqa: C901
                     level=_SENTRY_LEVEL_MAP.get(log_level.lower(), "error"),
                 )
 
-    except ImportError:
-        try:
-            _emit_import_error_warnings()
-        except MemoryError, RecursionError:
-            # システム例外は再発生させ OOMKilled / 無限再帰検知を妨げない
-            raise
-        except Exception as warn_err:  # noqa: BLE001
-            print(
-                f"[SENTRY_WARN] Failed to emit import warning: {type(warn_err).__name__}",
-                file=sys.stderr,
-            )
     except KeyboardInterrupt, SystemExit, MemoryError, RecursionError:
         # システム例外は再発生（graceful shutdown/K8s OOMKilled検知対応）
         raise

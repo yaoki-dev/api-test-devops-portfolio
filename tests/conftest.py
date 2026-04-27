@@ -351,24 +351,23 @@ def reset_settings() -> Iterator[None]:
         reload_settings()
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def reset_sentry_warning_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """utils.logger の sentry warning throttle flag をテスト前後でリセット
+    """utils.logger の sentry warning throttle 状態をテスト前後でリセット
 
-    `_sentry_settings_warning_emitted` / `_sentry_sdk_warning_emitted` /
-    `_sentry_send_error_emitted` / `_sentry_bug_emitted` /
-    `_sentry_outside_except_warning_emitted` の 5 フラグを False にリセットする。
+    4 つの permanent throttle マーカー ("settings"/"sdk"/"bug"/"outside_except") を
+    保持する `_sentry_warnings_emitted: set[str]` を空集合に、
+    `_sentry_send_error_last_warned` timestamp を 0.0 にリセットする。
     monkeypatch.setattr は test 終了時に自動復元されるため teardown 不要。
 
-    test_logger.py の TestSentryProcessor 等で使用する。
+    autouse=True により全テストで自動適用し、TestSentryProcessor 以外のクラスでも
+    モジュールレベル throttle 状態の汚染を防止する (pytest-xdist 並列実行時の
+    フラグ汚染による偽陽性回避)。
     """
-    monkeypatch.setattr("utils.logger._sentry_settings_warning_emitted", False)
-    monkeypatch.setattr("utils.logger._sentry_sdk_warning_emitted", False)
-    monkeypatch.setattr("utils.logger._sentry_send_error_emitted", False)
-    monkeypatch.setattr("utils.logger._sentry_bug_emitted", False)
-    monkeypatch.setattr("utils.logger._sentry_outside_except_warning_emitted", False)
+    monkeypatch.setattr("utils.logger._sentry_warnings_emitted", set())
+    monkeypatch.setattr("utils.logger._sentry_send_error_last_warned", 0.0)
 
 
 # =============================================================================

@@ -22,6 +22,20 @@ from utils.logger import _safe_error_summary, _sentry_processor, get_logger
 pytestmark = pytest.mark.unit
 
 
+def _make_fake_validation_error(raise_exc: BaseException) -> type[Exception]:
+    """Pydantic ValidationError 互換のテスト用 Exception クラスを生成
+
+    `errors(include_input=False)` 呼出時に指定 exception を raise する。
+    test_logger.py 内で 6 箇所重複していたインライン定義を 1 つのファクトリに統合。
+    """
+
+    class _FakeValidationError(Exception):
+        def errors(self, *, include_input: bool) -> list[dict[str, object]]:  # noqa: ARG002
+            raise raise_exc
+
+    return _FakeValidationError
+
+
 class TestGetLogger:
     """get_logger関数のテスト"""
 
@@ -228,8 +242,6 @@ class TestSentryProcessor:
         宣言することで、test 実行前に utils.logger の throttle flag を一括リセットする。
         monkeypatch は teardown 時に自動復元するため明示的 teardown 不要。
 
-        #34 対応: モジュールスコープへの拡大は overkill だが、将来追加される他クラスでも
-        `reset_sentry_warning_state` fixture を依存宣言するだけで再利用可能 (DRY)。
         """
         return None
 
@@ -389,12 +401,12 @@ class TestSentryProcessor:
         mock_sdk.capture_exception.assert_not_called()
 
     def test_capture_exception_with_exc_info_true(self) -> None:
-        """exc_info=True かつ active な except ブロック内の場合は capture_exception(None)。
+        """exc_info=True かつ active な except ブロック内の場合は exc_info tuple を渡す。
 
         structlog.dev.set_exc_info processor は logger.exception() 呼び出し時に
         event_dict["exc_info"] = True をセットするのみで Tuple 化しない。
-        sys.exc_info()[1] が None でない（active except ブロック内）場合に
-        capture_exception(None) を呼び sys.exc_info() 経由でスタックトレースを送信する。
+        TOCTOU 排除のため sys.exc_info() を new_scope() 入場前に snapshot 取得し、
+        capture_exception に tuple として渡す。
         """
         event_dict = {
             "level": "error",
@@ -419,7 +431,15 @@ class TestSentryProcessor:
                 result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
 
         assert result is event_dict
-        mock_scope.capture_exception.assert_called_once_with(None)
+        # capture_exception には sys.exc_info() の snapshot tuple が渡される
+        mock_scope.capture_exception.assert_called_once()
+        call_args = mock_scope.capture_exception.call_args
+        passed_exc = call_args.args[0]
+        assert isinstance(passed_exc, tuple)
+        assert len(passed_exc) == 3
+        assert passed_exc[0] is ValueError
+        assert isinstance(passed_exc[1], ValueError)
+        assert passed_exc[2] is not None  # traceback object
         mock_scope.capture_message.assert_not_called()
         mock_sdk.capture_exception.assert_not_called()
 
@@ -596,10 +616,9 @@ class TestSentryProcessor:
         全 Exception を一括捕捉し「{TypeName} (details sanitized)」を返す。
         """
 
-        class _FakeValidationError(Exception):
-            def errors(self, *, include_input: bool) -> list[dict[str, object]]:
-                raise TypeError("unexpected keyword argument 'include_input'")
-
+        _FakeValidationError = _make_fake_validation_error(  # noqa: N806
+            TypeError("unexpected keyword argument 'include_input'")
+        )
         event_dict = {"level": "error", "event": "error message"}
         monkeypatch.setenv("SENTRY_DEBUG", "true")
 
@@ -625,12 +644,15 @@ class TestSentryProcessor:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """errors(include_input=False) が失敗した場合は details sanitized に落ちる"""
+        """errors(include_input=False) が失敗した場合は details sanitized に落ちる
 
-        class _FakeValidationError(Exception):
-            def errors(self, *, include_input: bool) -> list[dict[str, object]]:
-                raise RuntimeError("summary failed")
+        SENTRY_DEBUG 有効時は `_safe_error_summary` 失敗を [SENTRY_WARN] で型名のみ通知
+        (運用時の完全サイレント化を回避しつつ str(e) は出力しない)。
+        """
 
+        _FakeValidationError = _make_fake_validation_error(  # noqa: N806
+            RuntimeError("inner-runtime-leak-marker")
+        )
         event_dict = {"level": "error", "event": "error message"}
         monkeypatch.setenv("SENTRY_DEBUG", "true")
 
@@ -648,7 +670,10 @@ class TestSentryProcessor:
         captured = capsys.readouterr()
         assert "[SENTRY_WARN] settings load failed" in captured.err
         assert "(details sanitized)" in captured.err
-        assert "summary failed" not in captured.err
+        # 内側 RuntimeError の str(e) (= "inner-runtime-leak-marker") は漏洩しない
+        assert "inner-runtime-leak-marker" not in captured.err
+        # SENTRY_DEBUG 有効時は型名のみの診断メッセージが出力される
+        assert "[SENTRY_WARN] _safe_error_summary failed: RuntimeError" in captured.err
 
     def test_sentry_warnings_throttled_across_multiple_calls(
         self,
@@ -1078,15 +1103,46 @@ class TestSentryProcessor:
         captured = capsys.readouterr()
         assert captured.err.count("[SENTRY_ERROR]") == 1
 
+    def test_outside_except_warning_throttled_across_multiple_calls(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """[SENTRY_WARN] outside except block 警告は per-process 1 回のみ出力される
+
+        他の throttle テスト群と対称性を保つ。capsys で stderr 行数を検証。
+        """
+        monkeypatch.delenv("SENTRY_DEBUG", raising=False)
+
+        mock_sdk = MagicMock()
+        mock_sdk.get_client.return_value.is_active.return_value = True
+        mock_scope = MagicMock()
+        mock_sdk.new_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
+        mock_sdk.new_scope.return_value.__exit__ = MagicMock(return_value=False)
+
+        # exc_info=True だが except ブロック外で複数回呼び出す
+        event_dict = {"level": "error", "event": "msg", "exc_info": True}
+        with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
+            for _ in range(3):
+                _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+        captured = capsys.readouterr()
+        warn_count = captured.err.count(
+            "[SENTRY_WARN] logger.exception() called outside except block"
+        )
+        assert warn_count == 1, f"throttle 失敗: 警告行数 = {warn_count} (期待 = 1)"
+
     def test_memory_error_from_emit_warnings_propagates(self) -> None:
         """_emit_import_error_warnings内でMemoryErrorが発生した場合、_sentry_processorから伝播する"""
-
-        class _FakeValidationError(Exception):
-            def errors(self, *, include_input: bool) -> list[dict[str, object]]:
-                raise MemoryError("OOM during warning emission")
-
         from utils import logger as logger_module
 
+        # 前提条件の明示: throttle マーカーが未昇格であることを保証
+        # (autouse fixture の挙動が将来変わった場合のサイレント偽陽性を防ぐ)
+        assert "sdk" not in logger_module._sentry_warnings_emitted
+
+        _FakeValidationError = _make_fake_validation_error(  # noqa: N806
+            MemoryError("OOM during warning emission")
+        )
         event_dict = {"level": "error", "event": "test"}
         with patch.dict("sys.modules", {"sentry_sdk": None}):
             with patch.object(
@@ -1099,13 +1155,14 @@ class TestSentryProcessor:
 
     def test_recursion_error_from_emit_warnings_propagates(self) -> None:
         """_emit_import_error_warnings内でRecursionErrorが発生した場合、_sentry_processorから伝播する"""
-
-        class _FakeValidationError(Exception):
-            def errors(self, *, include_input: bool) -> list[dict[str, object]]:
-                raise RecursionError("infinite recursion in errors()")
-
         from utils import logger as logger_module
 
+        # 前提条件の明示: throttle マーカーが未昇格であることを保証
+        assert "sdk" not in logger_module._sentry_warnings_emitted
+
+        _FakeValidationError = _make_fake_validation_error(  # noqa: N806
+            RecursionError("infinite recursion in errors()")
+        )
         event_dict = {"level": "error", "event": "test"}
         with patch.dict("sys.modules", {"sentry_sdk": None}):
             with patch.object(
@@ -1141,20 +1198,73 @@ class TestSafeErrorSummary:
 
     def test_memory_error_from_errors_method_reraises(self) -> None:
         """errors() が MemoryError を発生させた場合は再発生する"""
-
-        class _FakeValidationError(Exception):
-            def errors(self, *, include_input: bool) -> list[dict[str, object]]:
-                raise MemoryError("OOM in errors()")
-
+        _FakeValidationError = _make_fake_validation_error(  # noqa: N806
+            MemoryError("OOM in errors()")
+        )
         with pytest.raises(MemoryError):
             _safe_error_summary(_FakeValidationError())
 
     def test_recursion_error_from_errors_method_reraises(self) -> None:
         """errors() が RecursionError を発生させた場合は再発生する"""
-
-        class _FakeValidationError(Exception):
-            def errors(self, *, include_input: bool) -> list[dict[str, object]]:
-                raise RecursionError("recursion in errors()")
-
+        _FakeValidationError = _make_fake_validation_error(  # noqa: N806
+            RecursionError("recursion in errors()")
+        )
         with pytest.raises(RecursionError):
             _safe_error_summary(_FakeValidationError())
+
+
+@pytest.mark.unit
+class TestSentryProcessorPIIIntegration:
+    """_sentry_processor → scope.set_extra → _before_send の PII 除去パイプライン統合テスト
+
+    structlog bind 由来の機密キー (password, api_key 等) が
+    `_sentry_processor` 経由で extra に積まれた後、`sentry_init._before_send` で
+    確実に [REDACTED] へ置換されるか検証する。
+    """
+
+    _dummy_logger = MagicMock()
+    _dummy_method = "error"
+
+    def test_sensitive_keys_in_event_dict_are_redacted_by_before_send(self) -> None:
+        """logger.error(password=X) → set_extra → _before_send で機密値が REDACTED されること"""
+        from utils.sentry_init import _before_send
+
+        # _sentry_processor が scope.set_extra に渡したキー/値を採取する
+        captured_extra: dict[str, object] = {}
+
+        mock_scope = MagicMock()
+        mock_scope.set_extra.side_effect = lambda k, v: captured_extra.update({k: v})
+        mock_sdk = MagicMock()
+        mock_sdk.get_client.return_value.is_active.return_value = True
+        mock_sdk.new_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
+        mock_sdk.new_scope.return_value.__exit__ = MagicMock(return_value=False)
+
+        # structlog の bind 経由で機密キーが event_dict に含まれるシナリオを再現
+        event_dict = {
+            "level": "error",
+            "event": "auth failed",
+            "password": "supersecret",
+            "api_key": "ak-12345",
+            "user_id": 42,  # 非機密キーは保持される
+        }
+
+        with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
+            _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+        # set_extra に機密キーが渡されている (この段階では未除去)
+        assert captured_extra["password"] == "supersecret"  # noqa: S105
+        assert captured_extra["api_key"] == "ak-12345"
+        assert captured_extra["user_id"] == 42
+
+        # 以下が _before_send 適用後の event 構造を模擬する
+        synthetic_event: dict[str, object] = {"extra": dict(captured_extra)}
+        scrubbed = _before_send(synthetic_event, {})  # type: ignore[arg-type]
+
+        # 機密キー (password / api_key) は [REDACTED] に置換される
+        assert scrubbed is not None
+        scrubbed_extra = scrubbed["extra"]
+        assert isinstance(scrubbed_extra, dict)
+        assert scrubbed_extra["password"] == "[REDACTED]"  # noqa: S105
+        assert scrubbed_extra["api_key"] == "[REDACTED]"
+        # 非機密キーは保持される (false-positive 抑止)
+        assert scrubbed_extra["user_id"] == 42
