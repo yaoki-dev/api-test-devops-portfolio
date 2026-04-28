@@ -140,21 +140,14 @@ SECURITY__API_KEY=your-secret-key
    自動ループ:
     - 信頼度90%未満: 改善して再実行（各反復で信頼度と改善理由を簡潔に示す）/ 90%以上 → 終了 - 最大3回まで
     - 4回連続失敗時（信頼度90%未満継続）はユーザーに報告して停止
-6. コミット前レビュー → `Skill(code-review:review-local-changes)` (80点閾値)
+6. コミット前レビュー → `Skill(review:review-local-changes)` (80点閾値)
 7. コミット   → `Skill(commit)`【git commit禁止】
 
-【レビューフェーズ】
-8. IF (≥200行 OR セキュリティ OR API OR hotfix):
-      → Skill(code-review:review-pr)（CEK）
-    ELSE(Include doc update):
-      → Skill(pr-review-toolkit:review-pr)
-
 【PUSH/PR/マージフェーズ】
-9. PR前レビュー → 規模判定ルール適用【※3参照】
-10. PR作成     → Skill(push-pr)【gh pr create禁止】
-11. レビュー対応 → 修正 → 品質ゲート → Skill(commit) → push
-12. マージ実行  → マージ戦略【※4参照】
-13. クリーンアップ → `git fetch --prune origin` + `/git:clean-gone`（worktree: 固定運用のため削除しない）
+8. PR作成     → Skill(push-pr)【gh pr create禁止】
+9. レビュー対応 → 修正 → 品質ゲート → Skill(commit) → push
+10. マージ実行  → マージ戦略【※3参照】
+11. クリーンアップ → `git fetch --prune origin` + `/git:clean-gone`（worktree: 固定運用のため削除しない）
 ```
 
 <!-- preserve-on-compact: Quality Gates -->
@@ -162,17 +155,7 @@ SECURITY__API_KEY=your-secret-key
 **※2 品質ゲート**: `uv run pytest -n auto -m "(unit or integration) and not external" --cov=utils --cov=config --cov=models --cov-report=term-missing &&
 uv run ruff check . && uv run mypy utils/ config/ models/`
 
-**※3 PR前レビュー規模判定**:
-
-| 条件 | レビューツール |
-|------|--------------|
-| セキュリティファイル変更 OR ≥200行 OR API契約変更 | `Skill(code-review:review-pr)` (CEK) |
-| <200行 AND 非セキュリティ | `Skill(pr-review-toolkit:review-pr)` |
-
-セキュリティ関連: `utils/sentry_init.py`, `utils/logger.py`, `config/settings.py`, `*.env*`
-API契約変更対象: `models/responses.py`, `utils/api_client.py` public methods
-
-**※4 マージ戦略**:
+**※3 マージ戦略**:
 
 | マージ種別 | コマンド |
 |-----------|---------|

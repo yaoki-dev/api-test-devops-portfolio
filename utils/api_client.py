@@ -20,6 +20,13 @@ from structlog.typing import FilteringBoundLogger
 from config.settings import settings
 from utils.logger import get_logger
 
+ASYNC_FATAL_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    KeyboardInterrupt,
+    SystemExit,
+    MemoryError,
+    asyncio.CancelledError,
+)
+
 
 def exponential_backoff_with_jitter(
     attempt: int,
@@ -1160,11 +1167,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         # システム例外はgather後に再発生させる（graceful shutdown保護）
         # asyncio.CancelledError（Python 3.8+ は BaseException サブクラス）を吸収しない
         # 複数タスクが同時キャンセルされる場合（K8s SIGTERM等）に全件収集してログ出力
-        fatal_exceptions = [
-            r
-            for r in results
-            if isinstance(r, (KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError))
-        ]
+        fatal_exceptions = [r for r in results if isinstance(r, ASYNC_FATAL_EXCEPTIONS)]
         if fatal_exceptions:
             if len(fatal_exceptions) > 1:
                 # Python convention: 複数同時例外はBaseExceptionGroupで伝播（TaskGroup同パターン）
@@ -1323,7 +1326,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         try:
             response = await self.get("/users", params={"_limit": 1})
             return response.status_code == 200
-        except KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError:
+        except ASYNC_FATAL_EXCEPTIONS:
             # システム例外・タスクキャンセルは再発生（K8s対応、graceful shutdown）
             raise
         except APIClientError as e:
@@ -1372,7 +1375,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             async with semaphore:
                 try:
                     return await self.get_user(user_id)
-                except KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError:
+                except ASYNC_FATAL_EXCEPTIONS:
                     # システム例外・タスクキャンセルは再発生（並行処理全体を停止）
                     raise
                 except APIClientError as e:

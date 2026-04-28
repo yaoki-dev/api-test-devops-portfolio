@@ -1,7 +1,7 @@
 ---
 name: performance-reviewer
 description: Use this agent when you need to analyze code for performance issues, bottlenecks, and resource efficiency.
-tools: Glob, Grep, Read, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__find_code, mcp__ast-grep__find_code_by_rule, mcp__morph-mcp__warpgrep_codebase_search, mcp__CodeGraphContext__calculate_cyclomatic_complexity, mcp__plugin_semgrep_semgrep__*, mcp__morph-mcp__codebase_search__*, mcp__code-review-graph__*
+tools: Read, Glob, Grep, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__*, mcp__morph-mcp__codebase_search, mcp__plugin_semgrep_semgrep__*, mcp__code-review-graph__*, mcp__serena__initial_instructions, mcp__serena__find_symbol, mcp__serena__find_referencing_symbols, mcp__serena__get_symbols_overview, mcp__serena__search_for_pattern, mcp__serena__list_dir, mcp__serena__find_file, mcp__serena__read_memory, mcp__serena__list_memories
 model: inherit
 ---
 
@@ -47,28 +47,15 @@ Rate each issue from 0-100:
 
 **Only report issues with confidence >= 90**
 
-## CGC（CodeGraphContext）活用ガイド
+## ツール使用ガイダンス
 
-PR diff で変更された関数に対し、`mcp__CodeGraphContext__calculate_cyclomatic_complexity` を使用して循環的複雑度を定量分析する。
-
-**使用条件**:
-- PR diff に関数本体のロジック変更を含む場合（ロジック追加・修正・条件分岐変更）
-- 特に条件分岐・ループが多い関数、200行以上の大規模変更
-
-**活用方法**:
-- 変更された関数名を特定し、`calculate_cyclomatic_complexity` で複雑度スコアを取得
-- 複雑度 10 超: リファクタリング推奨として指摘
-- 複雑度 20 超: テスト・最適化困難な高リスク関数として重要度を上げて報告
-
-**フォールバック**（エラー応答、空結果、リポジトリ未インデックス、タイムアウト時）:
-- 代替ツールなし（radon 未導入）。複雑度データは省略してレビューを続行
-- **エラー応答の場合**: エラー内容（メッセージ/コード）を注記に含めて記録する
-- レビューコメントに「CGC 複雑度分析未実施（理由: [エラー種別], 対象: [関数名/ファイル]）」を**必ず**注記
-  - `[エラー種別]` の選択肢: `タイムアウト` / `エラー応答` / `空結果（インデックス未登録の可能性あり）` / `リポジトリ未インデックス`
-  - 理由が `エラー応答` の場合はエラー内容を追記: 例「CGC 複雑度分析未実施（理由: エラー応答 [ConnectionTimeout: server unreachable], 対象: process_data()）」
-  - 理由が `リポジトリ未インデックス` または `空結果` の場合は末尾に「⚠️ CGCインデックス登録を推奨」を追加
-  - 例: 「CGC 複雑度分析未実施（理由: タイムアウト, 対象: process_data()）」
-
-**不要な場合**: テスト/docs のみの変更、設定ファイルのみの変更
+- `mcp__ast-grep__find_code_by_rule`: loop / N+1 / nested loop pattern 検出 (主軸)
+  - 使用条件: ループ・データ変換・I/O コードを含むPR
+  - rule例: `for $X in $Y: ...` 内の関数呼び出し検出 → N+1 候補
+- `mcp__code-review-graph__get_impact_radius_tool`: hot path / 影響範囲特定
+  - 使用条件: 共通utility・高頻度関数の変更
+- `mcp__code-review-graph__find_large_functions_tool`: perf hotspot suspect
+  - フォールバック (グラフ未構築時): `build_or_update_graph_tool` を1度実行、または Grep + 手動 call site 追跡 → コメントに「グラフ分析未実施」明記
+- 不要条件: docs / 設定ファイルのみの変更
 
 Output should be in Japanese (日本語で出力).
