@@ -201,6 +201,12 @@ def init_sentry() -> bool:
     # Note: DSN検証はsentry_sdk.init()に委任（SDK内部でバリデーション実施）
     environment = sentry_config.environment or settings.environment.value
 
+    # is_production_like() を関数先頭で一度だけ評価しローカル変数に保持。
+    # except 内で get_settings() を再呼び出しすると、環境変数変化や reload_settings()
+    # の race により ValidationError が発生し、元の例外（ImportError / 初期化失敗）を
+    # マスクしてデバッグを困難化するリスクがあるため (CWE-755 例外マスク防止)。
+    is_production_like = settings.is_production_like()
+
     try:
         import sentry_sdk
 
@@ -219,8 +225,7 @@ def init_sentry() -> bool:
     except ImportError as exc:
         # sentry-sdk未インストール
         # 本番環境では必須 → Fail-Fast（依存関係漏れを即座に検出）
-        settings = get_settings()
-        if settings.is_production_like():
+        if is_production_like:
             raise RuntimeError(
                 f"Sentry SDK not installed in production: {exc}. Add 'sentry-sdk' to dependencies.",
             ) from exc
@@ -236,8 +241,7 @@ def init_sentry() -> bool:
 
     except Exception as exc:
         # その他の初期化失敗 - 本番環境では例外を発生させる（Fail-Fast）
-        settings = get_settings()
-        if settings.is_production_like():
+        if is_production_like:
             raise RuntimeError(
                 f"Sentry initialization failed in production: {type(exc).__name__}: {exc}",
             ) from exc

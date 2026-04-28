@@ -900,9 +900,19 @@ class TestSentryProcessor:
         num_threads = 20
         barrier = threading.Barrier(num_threads, timeout=5.0)  # #32: timeout でデッドロック防止
 
+        # worker スレッドの例外を main thread に伝播させる収集機構。
+        # 単純な threading.Thread + join では worker 内例外 (BrokenBarrierError 等) が
+        # サイレントに握り潰され、デッドロック検知のみ機能する状態だった。
+        worker_exceptions: list[BaseException] = []
+        worker_exceptions_lock = threading.Lock()
+
         def worker() -> None:
-            barrier.wait()
-            _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+            try:
+                barrier.wait()
+                _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+            except BaseException as exc:  # noqa: BLE001 — 全例外を main thread へ伝播
+                with worker_exceptions_lock:
+                    worker_exceptions.append(exc)
 
         with patch.dict("sys.modules", {"sentry_sdk": None}):
             with patch.object(logger_module, "get_settings", side_effect=slow_get_settings):
@@ -912,6 +922,13 @@ class TestSentryProcessor:
                 for t in threads:
                     t.join(timeout=10.0)
                     assert not t.is_alive(), "worker thread deadlocked"
+
+        # worker 内で発生した例外を集約して main thread で再 raise。
+        # サイレント握り潰し防止: BrokenBarrierError や AssertionError 等を確実に検知。
+        assert not worker_exceptions, (
+            f"worker thread(s) raised unexpected exceptions: "
+            f"{[type(e).__name__ + ': ' + str(e) for e in worker_exceptions]}"
+        )
 
         output = captured_stderr.getvalue()
         assert output.count("sentry-sdk not installed") == 1, (

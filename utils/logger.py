@@ -111,6 +111,11 @@ def _emit_permanent_warning(key: str, message: str) -> None:
     に限定される。これにより `_sentry_debug_detail(e)` 等を含む文字列生成コードが
     lock 取得前に評価され、デッドロックリスクが型システムで構造的に排除される。
     """
+    # 早期リターン (lock 外): set への要素追加は monotonic で戻らないため race-free。
+    # ERROR ストーム時の lock 取得コスト積算を排除し、_emit_import_error_warnings の
+    # 同等パターンと設計整合性を確保する。
+    if key in _sentry_warnings_emitted:
+        return
     with _sentry_warning_lock:
         if key in _sentry_warnings_emitted:
             return
@@ -259,8 +264,8 @@ def _sentry_processor(  # noqa: C901
     （本番環境または SENTRY_DEBUG 有効時は stderr に警告出力）。
 
     Args:
-        logger: structlogラッパー（未使用）
-        method_name: ログメソッド名（info, error等）
+        logger: structlogラッパー（structlogプロセッサー規約による必須引数、本実装では未使用）
+        method_name: ログメソッド名（structlogプロセッサー規約による必須引数、本実装では未使用）
         event_dict: ログイベント辞書
 
     Returns:

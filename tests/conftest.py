@@ -354,7 +354,7 @@ def reset_settings() -> Iterator[None]:
 @pytest.fixture(autouse=True)
 def reset_sentry_warning_state(
     monkeypatch: pytest.MonkeyPatch,
-) -> None:
+) -> Iterator[None]:
     """utils.logger の sentry warning throttle 状態をテスト前後でリセット
 
     4 つの permanent throttle マーカー ("settings"/"sdk"/"bug"/"outside_except") を
@@ -368,7 +368,9 @@ def reset_sentry_warning_state(
     ロック状態は test 間で leak しない (各テスト内でロック取得・解放が完結する) ため
     リセット不要。
 
-    monkeypatch.setattr は test 終了時に自動復元されるため teardown 不要。
+    monkeypatch.setattr は test 終了時に自動復元されるが、`lru_cache` は monkeypatch
+    管轄外のため teardown でも明示的に cache_clear() を実行し、teardown フック介入
+    (pytest plugin 等) によるキャッシュ汚染残留リスクを排除する。
 
     autouse=True により全テストで自動適用し、TestSentryProcessor 以外のクラスでも
     モジュールレベル throttle 状態の汚染を防止する (同一プロセス内の逐次テスト間
@@ -385,6 +387,12 @@ def reset_sentry_warning_state(
     # SENTRY_DEBUG の lru_cache を test 開始前にクリア。
     # monkeypatch.setenv/delenv との整合性確保のため必須。
     _is_sentry_debug_enabled.cache_clear()
+    try:
+        yield
+    finally:
+        # teardown でも明示的にクリア。lru_cache は monkeypatch 管轄外のため、
+        # test 内でキャッシュが更新されると次テストの setUp 前まで残留する。
+        _is_sentry_debug_enabled.cache_clear()
 
 
 # =============================================================================
