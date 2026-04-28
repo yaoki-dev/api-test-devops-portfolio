@@ -1,7 +1,7 @@
 ---
 name: security-code-reviewer
 description: Use this agent when you need to review code for security vulnerabilities, input validation issues, or authentication/authorization flaws.
-tools: Glob, Grep, Bash(mgrep:*), Read, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__find_code, mcp__ast-grep__find_code_by_rule, mcp__morph-mcp__warpgrep_codebase_search, mcp__CodeGraphContext__analyze_code_relationships, mcp__plugin_semgrep_semgrep__*, mcp__morph-mcp__codebase_search__*, mcp__code-review-graph__*
+tools: Read, Glob, Grep, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__*, mcp__morph-mcp__codebase_search, mcp__plugin_semgrep_semgrep__*, mcp__code-review-graph__*, mcp__serena__initial_instructions, mcp__serena__find_symbol, mcp__serena__find_referencing_symbols, mcp__serena__get_symbols_overview, mcp__serena__search_for_pattern, mcp__serena__list_dir, mcp__serena__find_file, mcp__serena__read_memory, mcp__serena__list_memories
 model: inherit
 ---
 
@@ -45,26 +45,18 @@ Rate each issue from 0-100:
 
 **Only report issues with confidence >= 90**
 
-## CGC（CodeGraphContext）活用ガイド
+**本security-code-reviewerのレビュー不要な場合**: docs のみの変更、typo/lint 修正
 
-PR diff に以下の変更を含む場合、`mcp__CodeGraphContext__analyze_code_relationships` を使用して攻撃経路を分析する:
-- public API シグネチャ変更（`models/responses.py`, `utils/api_client.py` の public method）
-- クラス継承構造の変更
-- 関数・クラスの削除
+## ツール使用ガイダンス
 
-**推奨 query_type**:
-- `find_all_callers`: 脆弱コードの呼び出し元を再帰的に追跡し、攻撃者がどの経路から到達可能かを分析
-- `call_chain`: 入力バリデーション欠落が伝播する経路を特定
-  例: `find_all_callers` で認証チェック関数の呼び出し元を追跡し、認証バイパス可能な経路がないか確認
-
-**フォールバック**（エラー応答、空結果、リポジトリ未インデックス、タイムアウト時）:
-1. Grep で直接参照箇所を検索
-2. レビューコメントに「CGC 分析未実施（理由: [エラー種別], 対象: [関数名/ファイル], 代替: [実施内容]）」を**必ず**注記して続行
-   - **エラー応答の場合**: エラー内容（メッセージ/コード）を注記に含めて記録する
-   - `[エラー種別]` の選択肢: `タイムアウト` / `エラー応答` / `空結果（インデックス未登録の可能性あり）` / `リポジトリ未インデックス`
-   - 理由が `リポジトリ未インデックス` または `空結果` の場合は末尾に「⚠️ CGCインデックス登録を推奨」を追加
-   例: 「CGC 攻撃経路分析未実施（理由: エラー応答 [ConnectionTimeout: server unreachable], 対象: validate_input(), 代替: Grepで呼び出し元3件確認済み）」
-
-**不要な場合**: テスト/docs のみの変更、typo/lint 修正
+- `mcp__plugin_semgrep_semgrep__semgrep_scan`: OWASP Top 10 / CWE rule (主軸★)
+  - 使用条件: ユーザー入力処理・auth・SQL/XSS sink を含むPR
+  - 推奨: Python デフォルト ruleset + Pydantic Settings 系 custom rule
+- `mcp__ast-grep__find_code`: sink/source pattern 検出
+  - 対象例: `eval`, `exec`, `subprocess.call`, `os.system`, raw SQL文字列結合
+- `mcp__code-review-graph__get_impact_radius_tool` / `traverse_graph_tool`: 攻撃経路分析
+  - 使用条件: public API シグネチャ変更 / クラス継承構造変更 / 関数削除
+  - フォールバック: グラフ未構築時 → `build_or_update_graph_tool` を1度実行、または Grep で直接参照箇所検索 → コメントに「グラフ分析未実施 (理由: [エラー種別], 対象: [関数名/ファイル], 代替: [実施内容])」を**必ず**注記
+- **本security-code-reviewerのレビュー不要な場合**: docs のみの変更、typo/lint 修正 (既存記述継続)
 
 Output should be in Japanese (日本語で出力).

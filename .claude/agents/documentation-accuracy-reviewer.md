@@ -1,7 +1,7 @@
 ---
 name: documentation-accuracy-reviewer
 description: Use this agent when you need to verify that code documentation is accurate, complete, and up-to-date.
-tools: Glob, Grep, Read, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__find_code, mcp__ast-grep__find_code_by_rule, mcp__morph-mcp__warpgrep_codebase_search, mcp__plugin_semgrep_semgrep__*, mcp__morph-mcp__codebase_search__*, mcp__code-review-graph__*
+tools: Read, Glob, Grep, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__*, mcp__morph-mcp__codebase_search, mcp__plugin_semgrep_semgrep__*, mcp__serena__initial_instructions, mcp__serena__find_symbol, mcp__serena__find_referencing_symbols, mcp__serena__get_symbols_overview, mcp__serena__search_for_pattern, mcp__serena__list_dir, mcp__serena__find_file, mcp__serena__read_memory, mcp__serena__list_memories
 model: inherit
 ---
 
@@ -42,5 +42,16 @@ Rate each issue from 0-100:
 - **91-100**: Critical documentation error or missing docs
 
 **Only report issues with confidence >= 90**
+
+## ツール使用ガイダンス
+
+- `mcp__ast-grep__find_code`: docstring 有無 pattern (`def ... """`) 検出 (主軸)
+  - 使用条件: 公開関数追加 / シグネチャ変更を含むPR
+- `mcp__serena__find_symbol`: 公開API列挙 → README/docstring カバレッジ照合
+  - 使用条件: 公開API追加・削除
+  - 手順: 公開API一覧 vs README/docs記載API名 → 差分が未文書化API
+- `mcp__morph-mcp__codebase_search`: 自然言語でREADME/docs検索
+  - 使用条件: 説明文と実装の不一致を疑う場合
+- 不要条件: コードロジック変更のみ (docs / docstring非変更)
 
 Output should be in Japanese (日本語で出力).

@@ -1,4 +1,4 @@
-name: CI/CD Pipeline - 4-Tier Test Pyramid
+name: CI/CD Pipeline - 3-Tier Test Pyramid
 
 # Test Pyramid Strategy (Google Testing Blog):
 #   Unit 70% / Integration 25% / E2E 5%
@@ -385,6 +385,20 @@ jobs:
         env:
           ENVIRONMENT: testing
 
+      - name: Run e2e tests (post-merge validation)
+        if: always()
+        run: |
+          exit_code=0
+          uv run pytest -m "e2e" -v --tb=short --no-cov || exit_code=$?
+          # Exit code 5: no tests collected (e2e not yet implemented — critical path only, planned)
+          case "$exit_code" in
+            0) ;;
+            5) echo "::notice::E2Eテスト未実装（critical path実装後に自動実行されます）" ;;
+            *) exit "$exit_code" ;;
+          esac
+        env:
+          ENVIRONMENT: testing
+
       - name: Upload regression test results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -500,6 +514,8 @@ jobs:
             -not -path './.spec-workflow/*' \
             -not -path './obsidian-vault-local/*' \
             -type f > md_files.txt
+          # Null-terminated for safe xargs -0 in next step (handles special chars in filenames)
+          tr '\n' '\0' < md_files.txt > md_files.nul
           echo "Found $(wc -l < md_files.txt) Markdown files"
 
       - name: Run markdown-link-check
@@ -517,22 +533,8 @@ jobs:
           }
           export -f check_file
 
-          # -print0 + xargs -0: Null-terminated paths prevent command injection
-          find . -name '*.md' \
-            -not -path './node_modules/*' \
-            -not -path './.venv/*' \
-            -not -path './docs/archive/*' \
-            -not -path './docs/coverage/*' \
-            -not -path './docs/main/6週プラン/*' \
-            -not -path './docs/main/learning/*' \
-            -not -path './docs/main/Skills作成/*' \
-            -not -path './docs/ai_collaboration/*' \
-            -not -path './docs/tools/*' \
-            -not -path './reports/*' \
-            -not -path './.taskmaster/*' \
-            -not -path './.spec-workflow/*' \
-            -not -path './obsidian-vault-local/*' \
-            -type f -print0 | xargs -0 -I {} bash -c 'check_file "$@"' _ {}
+          # Reuse md_files.nul from previous step (null-terminated — avoids duplicate find traversal)
+          xargs -0 -I {} bash -c 'check_file "$@"' _ {} < md_files.nul
         continue-on-error: true
 
       - name: Upload link check results
@@ -565,7 +567,7 @@ jobs:
 
       - name: Generate status report
         run: |
-          echo "# CI/CD Pipeline Status Report (4-Tier Test Pyramid)" > status_report.md
+          echo "# CI/CD Pipeline Status Report (3-Tier Test Pyramid)" > status_report.md
           echo "" >> status_report.md
           echo "## Test Pyramid Strategy" >> status_report.md
           echo "- Unit 70% / Integration 25% / E2E 5%" >> status_report.md

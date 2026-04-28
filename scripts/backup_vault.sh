@@ -22,7 +22,7 @@ cleanup_on_signal() {
 trap cleanup_on_signal INT TERM
 
 # P1-1: タイムアウト関数（NFS/SMBハング対策）
-# macOSのgtimeout（coreutils）またはPOSIXフォールバック
+# macOSのgtimeout（coreutils）またはGNU timeout を使用
 run_with_timeout() {
   local timeout_sec=$1
   shift
@@ -31,15 +31,9 @@ run_with_timeout() {
   elif command -v timeout >/dev/null 2>&1; then
     timeout "$timeout_sec" "$@"
   else
-    # POSIXフォールバック（シグナルベース）
-    "$@" &
-    local pid=$!
-    (sleep "$timeout_sec"; kill -TERM "$pid" 2>/dev/null) &
-    local watchdog=$!
-    wait "$pid" 2>/dev/null
-    local ret=$?
-    kill "$watchdog" 2>/dev/null
-    return $ret
+    echo "Error: gtimeout (brew install coreutils) または timeout コマンドが必要です" >&2
+    notify_failure "timeout コマンド未インストール"
+    exit 1
   fi
 }
 
@@ -62,6 +56,12 @@ check_dependencies() {
     echo "❌ エラー: 必要なコマンドが見つかりません: ${missing[*]}" >&2
     echo "   インストール: brew install coreutils (macOS)" >&2
     exit 127  # Command not found
+  fi
+
+  if ! command -v gtimeout >/dev/null 2>&1 && ! command -v timeout >/dev/null 2>&1; then
+    echo "❌ エラー: gtimeout または timeout が必要です" >&2
+    echo "   インストール: brew install coreutils (macOS)" >&2
+    exit 127
   fi
 }
 check_dependencies
@@ -96,8 +96,6 @@ log_event() {
     echo "$json_log" >> "$LOG_FILE"
   fi
 
-  # 標準出力（人間可読形式も並行出力）
-  # 注: 既存のecho出力と重複しないよう、ログファイルへの記録のみ
 }
 
 # P1-1: 絶対パス変換（cron対応）
@@ -219,9 +217,12 @@ if [ ! -w "$BACKUP_DIR" ]; then
   exit 1
 fi
 
-# P0-4: 事前ディスク容量チェック（vault size * 2 必要）
+# P0-4: 事前ディスク容量チェック + P1-8: 使用率チェック（df単一呼び出し）
 VAULT_SIZE_KB=$(du -sk "$VAULT_PATH" 2>/dev/null | awk '{print $1}' || echo "0")
-AVAILABLE_KB=$(df -k "$BACKUP_DIR" 2>/dev/null | tail -1 | awk '{print $4}' || echo "0")
+DF_OUT=$(df -k "$BACKUP_DIR" 2>/dev/null | tail -1 | awk '{gsub(/%/,"",$5); print $4, $5}')
+read -r AVAILABLE_KB DISK_USAGE <<< "$DF_OUT"
+AVAILABLE_KB=${AVAILABLE_KB:-0}
+DISK_USAGE=${DISK_USAGE:-0}
 REQUIRED_KB=$((VAULT_SIZE_KB * 2))  # 圧縮 + 安全マージン
 
 if [ "$VAULT_SIZE_KB" -gt 0 ] && [ "$AVAILABLE_KB" -gt 0 ]; then
@@ -233,9 +234,7 @@ if [ "$VAULT_SIZE_KB" -gt 0 ] && [ "$AVAILABLE_KB" -gt 0 ]; then
 fi
 
 # P1-8: ディスクフル事前検出（使用率95%以上で警告）
-# P0-2: Linux/BSD両対応のdf解析（明示的カラム指定）
-DISK_USAGE=$(df "$BACKUP_DIR" 2>/dev/null | awk 'NR==2 {gsub(/%/, "", $5); print $5}')
-if [ -n "$DISK_USAGE" ] && [ "$DISK_USAGE" -ge 95 ]; then
+if [ "$DISK_USAGE" -ge 95 ]; then
   echo "⚠️ 警告: ディスク使用率が高い（${DISK_USAGE}%）" >&2
 fi
 
@@ -289,8 +288,9 @@ BACKUP_IN_PROGRESS=false
 
 # 古いバックアップ削除（RETENTION_DAYS日以上）
 # P1-3: -maxdepth 1 -type fでサブディレクトリ誤削除防止
-find "$BACKUP_DIR" -maxdepth 1 -type f -name "vault_*.tar.gz" -mtime +"$RETENTION_DAYS" -delete 2>/dev/null || true
-find "$BACKUP_DIR" -maxdepth 1 -type f -name "vault_*.sha256" -mtime +"$RETENTION_DAYS" -delete 2>/dev/null || true
+find "$BACKUP_DIR" -maxdepth 1 -type f \
+  \( -name "vault_*.tar.gz" -o -name "vault_*.sha256" \) \
+  -mtime +"$RETENTION_DAYS" -delete 2>/dev/null || true
 
 # P1-4: バックアップ成功ログ（サイズ付き）
 BACKUP_SIZE=$(du -sh "$CURRENT_BACKUP" 2>/dev/null | cut -f1 || echo "unknown")
@@ -301,7 +301,17 @@ log_event "INFO" "backup_completed" "file=$CURRENT_BACKUP,size=$BACKUP_SIZE"
 verify_restore() {
   echo "🔄 リストア検証開始..."
 
-  LATEST=$(ls -t "$BACKUP_DIR"/vault_*.tar.gz 2>/dev/null | head -1)
+  # mtime降順で最新ファイル取得（ls -t はスペース/特殊文字ファイル名で誤動作の恐れあり）
+  # P0-1: Linux/BSD両対応のstat（既存パターン準拠）
+  if stat --version >/dev/null 2>&1; then
+    # GNU stat (Linux): -c "%Y %n" (既存 lock_mtime パターン準拠)
+    LATEST=$(find "$BACKUP_DIR" -maxdepth 1 -name "vault_*.tar.gz" 2>/dev/null \
+      -exec stat -c "%Y %n" {} \; | sort -n | tail -1 | cut -d' ' -f2-)
+  else
+    # BSD stat (macOS)
+    LATEST=$(find "$BACKUP_DIR" -maxdepth 1 -name "vault_*.tar.gz" 2>/dev/null \
+      -exec stat -f "%m %N" {} \; | sort -n | tail -1 | cut -d' ' -f2-)
+  fi
 
   if [ -z "$LATEST" ]; then
     echo "❌ バックアップファイルが見つかりません" >&2
