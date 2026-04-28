@@ -119,7 +119,7 @@ You are thorough, skeptical, and uncompromising about error handling quality. Yo
   - 検出対象: bare except, 空except block, except でlogging無し
 - `mcp__plugin_semgrep_semgrep__semgrep_scan`: Python broad-exception lint rule
   - 使用条件: 上記ast-grep結果が0件の場合の補完
-- `mcp__code-review-graph__traverse_graph_tool`: call graph 経由 caller chain 追跡 + ast-grep `find_code_by_rule` で raise/except pattern 抽出 (注: code-review-graph はローカル `/review-pr` で動作可、CI 未登録のため CI では Grep + ast-grep + 手動分析にフォールバック)
+- `mcp__code-review-graph__traverse_graph_tool`: call graph 経由 caller chain 追跡 + ast-grep `find_code_by_rule` で raise/except pattern 抽出 (注: code-review-graph は`/review-pr` およびCI (`claude-code-review.yml`) 両方で動作可。CI でグラフ未構築時のフォールバックは Grep + ast-grep + 手動分析)
   - 使用条件: 上位呼び出し元への例外伝播確認、catch位置の妥当性判定
 - 不要条件: error handling コードを含まないPR
 
