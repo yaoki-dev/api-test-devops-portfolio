@@ -64,7 +64,7 @@ api-test-devops-portfolio/
 
 ### Module: config
 - **Path**: `config/settings.py`
-- **Exports**: `Settings`, `settings` (singleton)
+- **Exports**: `Settings`, `get_settings()`, `reload_settings()`
 - **Purpose**: Pydantic Settingsによる型安全な環境変数管理。ネスト構造（`__`区切り）対応。
 
 ### Module: utils.api_client

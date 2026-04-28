@@ -92,12 +92,11 @@ def _emit_sentry_send_error(e: Exception) -> None:
     # str(e) を lock 外で評価: カスタム例外の __str__ が logging 経由で再帰的に
     # _sentry_warning_lock (非再入) を取得しようとした場合のデッドロックを防止する。
     detail = _sentry_debug_detail(e)
-    message: str | None = None
     with _sentry_warning_lock:
         if now - _sentry_send_error_last_warned < _SENTRY_SEND_ERROR_WARN_INTERVAL:
             return
         _sentry_send_error_last_warned = now
-        message = f"[SENTRY_ERROR] Failed to send to Sentry: {type(e).__name__}{detail}"
+    message = f"[SENTRY_ERROR] Failed to send to Sentry: {type(e).__name__}{detail}"
     print(message, file=sys.stderr)
 
 
