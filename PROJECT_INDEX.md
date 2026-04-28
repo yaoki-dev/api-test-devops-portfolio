@@ -64,7 +64,7 @@ api-test-devops-portfolio/
 
 ### Module: config
 - **Path**: `config/settings.py`
-- **Exports**: `Settings`, `settings` (singleton)
+- **Exports**: `Settings`, `get_settings()`, `reload_settings()`
 - **Purpose**: Pydantic Settingsによる型安全な環境変数管理。ネスト構造（`__`区切り）対応。
 
 ### Module: utils.api_client
@@ -79,7 +79,7 @@ api-test-devops-portfolio/
 
 ### Module: utils.logger
 - **Path**: `utils/logger.py`
-- **Exports**: `get_logger()`, `configure_logging()`
+- **Exports**: `get_logger()`
 - **Purpose**: structlogベースの構造化ログ。ERROR以上をSentryに自動送信（opt-in）。
 
 ### Module: utils.sentry_init
@@ -171,18 +171,18 @@ uv run pytest -m "not slow"      # 高速テストのみ
 - **structlog** (>=23.1.0): 構造化ログ
 - **pydantic** (>=2.0.0): データバリデーション
 - **pydantic-settings** (>=2.0.0): 型安全な設定管理
-- **sentry-sdk[httpx]** (>=2.48.0): エラー監視（httpx統合）
+- **sentry-sdk[httpx]** (>=2.58.0,<3.0.0): エラー監視（httpx統合）
 - **psutil** (>=6.1.1): システムメトリクス
 - **pyyaml** (>=6.0): YAML設定ファイル読み込み
 
 ### Development
-- **pytest** (>=8.0.0): テストフレームワーク
+- **pytest** (>=9.0.3): テストフレームワーク
 - **pytest-asyncio** (>=1.1.0): 非同期テスト対応
 - **pytest-cov** (>=4.1.0): カバレッジ測定
 - **pytest-xdist** (>=3.5.0): 並列テスト実行
-- **respx** (>=0.22.0): httpx用モックライブラリ
-- **ruff** (>=0.8.0): Linter + Formatter
-- **mypy** (>=1.13.0): 型チェッカー
+- **respx** (>=0.23.1): httpx用モックライブラリ
+- **ruff** (>=0.15.12,<0.16): Linter + Formatter
+- **mypy** (>=1.20.2): 型チェッカー
 
 ---
 
