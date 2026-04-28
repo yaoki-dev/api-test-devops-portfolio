@@ -16,7 +16,7 @@ import structlog
 from structlog.testing import capture_logs
 
 from config.settings import LogFormat
-from utils.logger import _safe_error_summary, _sentry_processor, get_logger
+from utils.logger import _safe_error_summary, _sentry_debug_detail, _sentry_processor, get_logger
 
 # Module-level marker: All tests in this file are unit tests
 pytestmark = pytest.mark.unit
@@ -1105,6 +1105,91 @@ class TestSentryProcessor:
             level="error",
         )
 
+    def test_capture_exception_invalid_tuple_falls_back_to_capture_message(self) -> None:
+        """壊れた exc_info tuple は warning 後に capture_message へ降格される"""
+        event_dict = {
+            "level": "error",
+            "event": "invalid exc_info tuple",
+            "exc_info": (ValueError, ValueError("tuple error")),
+        }
+
+        mock_sdk = MagicMock()
+        mock_client = MagicMock()
+        mock_client.is_active.return_value = True
+        mock_sdk.get_client.return_value = mock_client
+
+        mock_scope = MagicMock()
+        mock_sdk.new_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
+        mock_sdk.new_scope.return_value.__exit__ = MagicMock(return_value=False)
+
+        with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
+            _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+        mock_scope.capture_exception.assert_not_called()
+        mock_scope.capture_message.assert_called_once_with(
+            "invalid exc_info tuple",
+            level="error",
+        )
+
+    def test_invalid_exc_info_warning_throttled_across_multiple_calls(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """invalid exc_info 警告は per-process 1 回のみ出力される"""
+        monkeypatch.delenv("SENTRY_DEBUG", raising=False)
+
+        mock_sdk = MagicMock()
+        mock_sdk.get_client.return_value.is_active.return_value = True
+        mock_scope = MagicMock()
+        mock_sdk.new_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
+        mock_sdk.new_scope.return_value.__exit__ = MagicMock(return_value=False)
+
+        event_dict = {
+            "level": "error",
+            "event": "invalid exc_info type",
+            "exc_info": "not_an_exception_instance",
+        }
+
+        with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
+            for _ in range(3):
+                _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+        captured = capsys.readouterr()
+        assert (
+            captured.err.count(
+                "[SENTRY_WARN] invalid exc_info type for capture_exception: str; "
+                "falling back to capture_message"
+            )
+            == 1
+        )
+        assert mock_scope.capture_message.call_count == 3
+
+    def test_invalid_exc_info_tuple_warning_emitted(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """壊れた tuple でも invalid exc_info warning が出る"""
+        mock_sdk = MagicMock()
+        mock_sdk.get_client.return_value.is_active.return_value = True
+        mock_scope = MagicMock()
+        mock_sdk.new_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
+        mock_sdk.new_scope.return_value.__exit__ = MagicMock(return_value=False)
+
+        event_dict = {
+            "level": "error",
+            "event": "invalid exc_info tuple",
+            "exc_info": (ValueError, ValueError("tuple error")),
+        }
+
+        with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
+            _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+        captured = capsys.readouterr()
+        assert (
+            captured.err == "[SENTRY_WARN] invalid exc_info type for capture_exception: tuple; "
+            "falling back to capture_message\n"
+        )
+
     def test_default_message_when_event_missing(self) -> None:
         """eventキーがない場合のデフォルトメッセージ"""
         event_dict = {"level": "error"}  # eventキーなし
@@ -1387,6 +1472,73 @@ class TestSentryProcessor:
 @pytest.mark.unit
 class TestSafeErrorSummary:
     """_safe_error_summary の分岐カバレッジ"""
+
+    def test_real_validation_error_returns_sanitized_count(self) -> None:
+        """real ValidationError は件数のみの summary を返す"""
+        from pydantic import BaseModel, ValidationError
+
+        class _Payload(BaseModel):
+            url: str
+
+        with pytest.raises(ValidationError) as exc_info:
+            _Payload(url=123)  # type: ignore[arg-type]
+
+        summary = _safe_error_summary(exc_info.value)
+
+        assert summary == "1 validation error(s)"
+        assert "123" not in summary
+
+    def test_safe_error_summary_failure_warns_without_sentry_debug(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """errors() 失敗 warning は SENTRY_DEBUG なしでも型名のみ出力される"""
+        monkeypatch.delenv("SENTRY_DEBUG", raising=False)
+
+        _FakeValidationError = _make_fake_validation_error(  # noqa: N806
+            RuntimeError("inner-runtime-leak-marker")
+        )
+
+        summary = _safe_error_summary(_FakeValidationError())
+
+        assert summary == "_FakeValidationError (details sanitized)"
+        captured = capsys.readouterr()
+        assert captured.err == "[SENTRY_WARN] _safe_error_summary failed: RuntimeError\n"
+        assert "inner-runtime-leak-marker" not in captured.err
+
+    def test_sentry_debug_detail_returns_empty_when_debug_disabled(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """SENTRY_DEBUG 無効時は詳細文字列を返さない"""
+        from utils import logger as logger_module
+
+        monkeypatch.delenv("SENTRY_DEBUG", raising=False)
+        logger_module._is_sentry_debug_enabled.cache_clear()
+
+        assert _sentry_debug_detail(RuntimeError("secret")) == ""
+
+    @pytest.mark.parametrize(
+        ("message", "expected"),
+        [
+            ("x" * 100, ": " + ("x" * 100)),
+            ("y" * 101, ": " + ("y" * 100)),
+        ],
+    )
+    def test_sentry_debug_detail_truncates_at_100_chars(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        message: str,
+        expected: str,
+    ) -> None:
+        """SENTRY_DEBUG 有効時は詳細を 100 文字まで返す"""
+        from utils import logger as logger_module
+
+        monkeypatch.setenv("SENTRY_DEBUG", "true")
+        logger_module._is_sentry_debug_enabled.cache_clear()
+
+        assert _sentry_debug_detail(RuntimeError(message)) == expected
 
     def test_memory_error_from_errors_method_reraises(self) -> None:
         """errors() が MemoryError を発生させた場合は再発生する"""

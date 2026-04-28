@@ -19,6 +19,7 @@ import sys
 import threading
 import time
 from functools import lru_cache
+from types import TracebackType
 from typing import Any, Literal, cast
 
 import structlog
@@ -34,8 +35,9 @@ from config.settings import LogFormat, get_settings
 # threading.Lock (非再入) のデッドロックが発生する。詳細: _emit_permanent_warning docstring。
 _sentry_warning_lock = threading.Lock()
 
-# 4 つの permanent throttle 状態を 1 つの set に統合 (旧 4 bool flags の代替)。
-# キー: "settings" / "sdk" / "bug" / "outside_except"
+# 6 つの permanent throttle 状態を 1 つの set に統合 (旧 bool flags 群の代替)。
+# キー: "settings" / "sdk" / "bug" / "outside_except" /
+#       "invalid_exc_info" / "safe_error_summary"
 # 新フラグ追加時はキー文字列の追加のみで済む (`add` / `in` のみ)。
 _sentry_warnings_emitted: set[str] = set()
 
@@ -88,11 +90,13 @@ def _emit_sentry_send_error(e: Exception) -> None:
     str(e) を 100 文字に切り詰める (CWE-532)。
     """
     global _sentry_send_error_last_warned
-    now = time.monotonic()
     # str(e) を lock 外で評価: カスタム例外の __str__ が logging 経由で再帰的に
     # _sentry_warning_lock (非再入) を取得しようとした場合のデッドロックを防止する。
     detail = _sentry_debug_detail(e)
     with _sentry_warning_lock:
+        # timestamp capture/update を lock 内で直列化し、別スレッドの古い `now` が
+        # 新しい書き込みを巻き戻す race を防ぐ。
+        now = time.monotonic()
         if now - _sentry_send_error_last_warned < _SENTRY_SEND_ERROR_WARN_INTERVAL:
             return
         _sentry_send_error_last_warned = now
@@ -146,14 +150,46 @@ def _emit_outside_except_warning() -> None:
     )
 
 
+def _emit_invalid_exc_info_warning(exc_info: object) -> None:
+    """不正な exc_info 型の throttled 警告を出力"""
+    _emit_permanent_warning(
+        "invalid_exc_info",
+        "[SENTRY_WARN] invalid exc_info type for capture_exception: "
+        f"{type(exc_info).__name__}; falling back to capture_message",
+    )
+
+
+def _is_valid_exc_info_tuple(exc_info: tuple[object, ...]) -> bool:
+    """sys.exc_info() 互換 tuple の最小妥当性を検証"""
+    if len(exc_info) != 3:
+        return False
+
+    exc_type, exc_value, exc_tb = exc_info
+    if not (isinstance(exc_type, type) and issubclass(exc_type, BaseException)):
+        return False
+    if not isinstance(exc_value, BaseException):
+        return False
+    if not isinstance(exc_value, exc_type):
+        return False
+    return exc_tb is None or isinstance(exc_tb, TracebackType)
+
+
+def _emit_safe_error_summary_warning(summary_err: Exception) -> None:
+    """_safe_error_summary 内部失敗の throttled 警告を出力"""
+    _emit_permanent_warning(
+        "safe_error_summary",
+        f"[SENTRY_WARN] _safe_error_summary failed: {type(summary_err).__name__}",
+    )
+
+
 def _safe_error_summary(e: BaseException) -> str:
     """例外を安全にサマリ化 (情報漏洩防止)
 
     Pydantic ValidationError の場合は errors(include_input=False) で input 値を除外し
     エラー件数のみ返す。それ以外は型名のみ返す (str(e) は呼び出さない)。
 
-    errors() 呼出失敗時は SENTRY_DEBUG 有効時のみ stderr に型名のみ出力 (運用時の
-    完全サイレント化を回避)。Pydantic v3 互換性デバッグの足がかりとして使用。
+    errors() 呼出失敗時は stderr に型名のみ 1 回出力し、運用時の完全サイレント化を
+    回避する。Pydantic v3 互換性デバッグの足がかりとして使用。
 
     引数型は `BaseException` を受理 (`Exception` のみならず `KeyboardInterrupt` 等
     システム例外も型システム上は安全に扱える設計とするため)。実際の呼び出し元では
@@ -167,12 +203,8 @@ def _safe_error_summary(e: BaseException) -> str:
         except MemoryError, RecursionError:
             raise
         except Exception as summary_err:  # noqa: BLE001
-            # errors() 呼出失敗 (Pydantic v3 互換性等) — DEBUG 時のみ型名を出力
-            if _is_sentry_debug_enabled():
-                print(
-                    f"[SENTRY_WARN] _safe_error_summary failed: {type(summary_err).__name__}",
-                    file=sys.stderr,
-                )
+            # errors() 呼出失敗 (Pydantic v3 互換性等) — 型名のみ 1 回通知
+            _emit_safe_error_summary_warning(summary_err)
     return f"{type(e).__name__} (details sanitized)"
 
 
@@ -352,9 +384,12 @@ def _sentry_processor(  # noqa: C901
                 # capture_exception が TypeError を raise → 外側 _emit_sentry_bug_error
                 # の throttle 経路で永続silent化する failure mode を回避するため
                 # type guard を入れて capture_message へフォールバックする。
-                if isinstance(exc_info, (BaseException, tuple)):
+                if isinstance(exc_info, BaseException):
+                    scope.capture_exception(exc_info)
+                elif isinstance(exc_info, tuple) and _is_valid_exc_info_tuple(exc_info):
                     scope.capture_exception(exc_info)
                 else:
+                    _emit_invalid_exc_info_warning(exc_info)
                     scope.capture_message(
                         message,
                         level=sentry_level,
