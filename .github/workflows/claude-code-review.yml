@@ -28,7 +28,8 @@ jobs:
       MORPH_MCP_TOOLS: "mcp__morph-mcp__codebase_search"
       SEMGREP_TOOLS: "mcp__plugin_semgrep_semgrep__semgrep_scan,mcp__plugin_semgrep_semgrep__semgrep_findings,mcp__plugin_semgrep_semgrep__semgrep_scan_with_custom_rule"
       CODE_REVIEW_GRAPH_TOOLS: "mcp__code-review-graph__get_review_context_tool,mcp__code-review-graph__traverse_graph_tool,mcp__code-review-graph__semantic_search_nodes_tool,mcp__code-review-graph__get_impact_radius_tool"
-      SERENA_TOOLS: "mcp__serena__find_symbol,mcp__serena__find_referencing_symbols,mcp__serena__get_symbols_overview,mcp__serena__search_for_pattern"
+      SERENA_TOOLS: "mcp__serena__find_symbol,mcp__serena__find_referencing_symbols,mcp__serena__get_symbols_overview"
+      # Note: search_for_pattern excluded — claude-code context removes it (Claude Code has native pattern search)
       # Note: mgrep is a CLI tool (not MCP), configured separately via npm install
     permissions:
       contents: read
@@ -189,7 +190,8 @@ jobs:
             echo "crg_available=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # Verify serena MCP: limited_serena context restricts to read-only tools for CI safety
+      # Verify serena MCP: SERENA_TOOLS allowlist (allowedTools) restricts Claude to read-only tools for CI safety.
+      # No context file needed — allowlist operates at Claude Code level (stronger than denylist).
       # Live connectivity probe: validates SERENA_REF reachability + uvx fetch + start-mcp-server subcommand
       # at verify-time instead of waiting for downstream claude-review step to hang on broken install.
       - name: Verify serena MCP
@@ -205,23 +207,14 @@ jobs:
             echo "serena_available=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          CONTEXT_PATH="${GITHUB_WORKSPACE}/.serena/contexts/limited_serena.yml"
-          if [ ! -f "$CONTEXT_PATH" ]; then
-            echo "::warning::limited_serena.yml not found at $CONTEXT_PATH. Serena MCP will be unavailable."
-            echo "serena_available=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
           [[ -n "${SERENA_REF}" ]] || { echo "::error::SERENA_REF is empty"; exit 1; }
           # Live connectivity probe: uvx fetches git ref, installs deps, dispatches `start-mcp-server` subcommand.
-          # Probe matches downstream invocation shape (--context, --project) so context-path mismatches
-          # and CLI option renames surface here, not after 15-min hang in claude-review step.
-          # `--help` prevents the actual server startup but `--context $CONTEXT_PATH --project .`
-          # still parses through click, validating both flags exist on the subcommand.
+          # Probe matches downstream invocation shape (--context, --project) so CLI option renames surface here,
+          # not after 15-min hang in claude-review step.
+          # `--help` prevents actual server startup while still parsing click options.
           # Failure modes covered: ref-lost / PyPI outage / subcommand renamed / --context|--project removed.
-          # Note: limited_serena.yml schema validity is NOT verified here (would require server startup);
-          # schema errors still surface in downstream claude-review step.
           SERENA_PROBE_OUTPUT=$(uvx --from "git+https://github.com/oraios/serena@${SERENA_REF}" \
-            serena start-mcp-server --context "$CONTEXT_PATH" --project . --help 2>&1) \
+            serena start-mcp-server --context claude-code --project . --help 2>&1) \
             && SERENA_PROBE_STATUS=0 || SERENA_PROBE_STATUS=$?
           if [ "$SERENA_PROBE_STATUS" -ne 0 ]; then
             echo "::warning::serena connectivity probe failed (exit: $SERENA_PROBE_STATUS). Serena MCP will be unavailable."
@@ -229,8 +222,7 @@ jobs:
             echo "serena_available=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          echo "✅ serena MCP verified: context=${CONTEXT_PATH} (binary probe passed)"
-          echo "serena_context_path=${CONTEXT_PATH}" >> "$GITHUB_OUTPUT"
+          echo "✅ serena MCP verified (binary probe passed)"
           echo "serena_available=true" >> "$GITHUB_OUTPUT"
 
       # Build MCP config dynamically based on individual service availability
@@ -242,7 +234,6 @@ jobs:
         env:
           MORPH_API_KEY: ${{ secrets.MORPH_API_KEY }}
           SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
-          SERENA_CONTEXT: ${{ steps.verify-serena.outputs.serena_context_path }}
         run: |
           set -euo pipefail
           AST_GREP='${{ steps.verify-ast-grep.outputs.ast_grep_available }}'
@@ -295,7 +286,7 @@ jobs:
             echo "✅ code-review-graph included in allowedTools"
           fi
 
-          # serena: semantic code navigation (read-only via limited_serena context)
+          # serena: semantic code navigation (read-only via SERENA_TOOLS allowlist)
           if [ "$SERENA" == "true" ]; then
             if [ -n "$EXTRA_TOOLS" ]; then EXTRA_TOOLS="$EXTRA_TOOLS,"; fi
             EXTRA_TOOLS="${EXTRA_TOOLS}${{ env.SERENA_TOOLS }}"
@@ -340,7 +331,7 @@ jobs:
 
             if [ "$SERENA" == "true" ]; then
               [[ -n "${SERENA_REF}" ]] || { echo "::error::SERENA_REF is empty"; exit 1; }
-              BASE_CONFIG=$(echo "$BASE_CONFIG" | jq -c --arg ctx "$SERENA_CONTEXT" --arg ref "${SERENA_REF}" '.mcpServers["serena"] = {"command":"uvx","args":["--from","git+https://github.com/oraios/serena@"+$ref,"serena","start-mcp-server","--context",$ctx,"--project","."]}')
+              BASE_CONFIG=$(echo "$BASE_CONFIG" | jq -c --arg ref "${SERENA_REF}" '.mcpServers["serena"] = {"command":"uvx","args":["--from","git+https://github.com/oraios/serena@"+$ref,"serena","start-mcp-server","--context","claude-code","--project","."]}')
             fi
 
             # Write inline JSON to GITHUB_OUTPUT (not file path)

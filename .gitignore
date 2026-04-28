@@ -77,7 +77,6 @@ reports/
 .mcp.json
 .serena/*
 !.serena/memories/
-!.serena/contexts/
 .memory_mcp/
 .hive-mind/
 memory/
@@ -150,3 +149,6 @@ graphify-out/
 # Compound Engineering local config
 .compound-engineering/*.local.yaml
 .context/compound-engineering/ce-code-review/
+
+# Understand Anything - knowledge graph artifacts (auto-generated, reproducible)
+.understand-anything/
