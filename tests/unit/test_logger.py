@@ -225,25 +225,18 @@ class TestSentryProcessor:
     3. 例外情報あり → capture_exception()
     4. 例外情報なし → capture_message()
     5. ImportError/Exception → エラー処理
+
+    **注意 (lru_cache)**: `_is_sentry_debug_enabled` は `@lru_cache(maxsize=1)` で
+    プロセスライフタイムキャッシュされる。conftest の `reset_sentry_warning_state`
+    autouse fixture が各テスト前に `cache_clear()` を実行するため、テスト間の汚染は
+    防止済み。テスト本体内で `monkeypatch.setenv("SENTRY_DEBUG", ...)` を呼んだ後に
+    `_is_sentry_debug_enabled` の戻り値を期待する場合は、setenv 直後に
+    `_is_sentry_debug_enabled.cache_clear()` を明示的に呼ぶこと。
     """
 
     # ダミーのWrappedLoggerとmethod_name（未使用だが引数として必要）
     _dummy_logger = None
     _dummy_method = "error"
-
-    @pytest.fixture(autouse=True)
-    def _reset_sentry_warnings_fixture(
-        self,
-        reset_sentry_warning_state: None,  # noqa: ARG002 — conftest fixture をトリガするため引数として宣言
-    ) -> None:
-        """sentry warning state を各テスト前で fresh state に保つ
-
-        conftest.py の reset_sentry_warning_state fixture (monkeypatch 使用) を依存として
-        宣言することで、test 実行前に utils.logger の throttle flag を一括リセットする。
-        monkeypatch は teardown 時に自動復元するため明示的 teardown 不要。
-
-        """
-        return None
 
     @pytest.mark.parametrize(
         "level",
@@ -260,10 +253,18 @@ class TestSentryProcessor:
         assert result["event"] == "test message"
 
     @pytest.mark.parametrize(
-        "level", ["error", "ERROR", "critical", "CRITICAL", "exception", "EXCEPTION"]
+        ("level", "expected_sentry_level"),
+        [
+            ("error", "error"),
+            ("ERROR", "error"),
+            ("critical", "critical"),
+            ("CRITICAL", "critical"),
+            ("exception", "error"),  # _SENTRY_LEVEL_MAP で "error" に正規化
+            ("EXCEPTION", "error"),
+        ],
     )
-    def test_process_error_levels(self, level: str) -> None:
-        """ERROR/CRITICAL/EXCEPTIONレベルは処理対象"""
+    def test_process_error_levels(self, level: str, expected_sentry_level: str) -> None:
+        """ERROR/CRITICAL/EXCEPTIONレベルは処理対象 (level 正規化を含む)"""
         event_dict = {"level": level, "event": "error message"}
 
         # 動的インポートをパッチするため sentry_sdk モジュール全体をモック
@@ -283,6 +284,14 @@ class TestSentryProcessor:
         # capture_message / capture_exception はいずれも scope 内で呼ばれる
         assert mock_scope.capture_message.called or mock_scope.capture_exception.called
 
+        # _SENTRY_LEVEL_MAP の正規化が capture_message(level=...) に反映されることを検証。
+        # exc_info なしのため capture_message ルートに入る (capture_exception は呼ばれない)。
+        # "exception" level も "error" に正規化されること、大文字小文字を吸収すること
+        # の両方をリグレッション検出対象に含める。
+        mock_scope.capture_message.assert_called_once()
+        _, kwargs = mock_scope.capture_message.call_args
+        assert kwargs.get("level") == expected_sentry_level
+
     def test_skip_when_sentry_not_active(self) -> None:
         """分岐2: Sentry未初期化時はスキップ"""
         event_dict = {"level": "error", "event": "error message"}
@@ -296,6 +305,9 @@ class TestSentryProcessor:
             result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
 
         assert result is event_dict
+        # is_active=False のため new_scope() への入場自体が発生しないことを検証
+        # (scope.set_extra/capture_* に到達する可能性そのものを排除)
+        mock_sdk.new_scope.assert_not_called()
         # capture_messageもcapture_exceptionも呼ばれない
         mock_sdk.capture_message.assert_not_called()
         mock_sdk.capture_exception.assert_not_called()
@@ -604,6 +616,42 @@ class TestSentryProcessor:
         assert "RuntimeError" in captured.err
         assert "sentry-sdk not installed" in captured.err
 
+    def test_settings_failure_emits_in_non_prod_due_to_safe_fallback(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """settings_error 発生時は is_prod=True 安全フォールバックにより警告出力
+
+        `_emit_import_error_warnings` 内で `get_settings()` が例外を発生させた場合、
+        `is_prod = True` にフォールバックする (本番可能性を排除できないため)。
+        この設計により非prod + SENTRY_DEBUG 未設定でも settings_error 経由で
+        `should_emit_warnings = True` となり、settings_msg / sdk_msg 両方が
+        stderr に emit される (settings_error 発生 path の不変条件)。
+        """
+        event_dict = {"level": "error", "event": "error message"}
+        monkeypatch.delenv("SENTRY_DEBUG", raising=False)
+
+        from utils import logger as logger_module
+
+        with patch.dict("sys.modules", {"sentry_sdk": None}):
+            with patch.object(
+                logger_module,
+                "get_settings",
+                side_effect=RuntimeError("Settings validation failed"),
+            ):
+                result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
+
+        assert result is event_dict
+        captured = capsys.readouterr()
+        # is_prod=True フォールバックで settings_msg / sdk_msg ともに出力
+        assert "[SENTRY_WARN] settings load failed" in captured.err
+        assert "sentry-sdk not installed" in captured.err
+        # settings_detail は _safe_error_summary 経由で input 値除外
+        assert "Settings validation failed" not in captured.err
+        # 対称テスト (settings 正常 + 非本番 + SENTRY_DEBUG 未設定 → サイレント):
+        # test_silent_skip_on_import_error が同シナリオをカバー済み
+
     def test_validation_error_uses_type_error_detail_when_errors_signature_mismatch(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -870,8 +918,17 @@ class TestSentryProcessor:
             f"concurrent race: expected 1 warning, got {output.count('sentry-sdk not installed')}"
         )
 
-    def test_stderr_output_on_sentry_failure(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """分岐5b: Sentry送信失敗時はstderrへ出力"""
+    def test_stderr_output_on_sentry_failure(
+        self,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """分岐5b: Sentry送信失敗時はstderrへ出力 (SENTRY_DEBUG 無効時、詳細非出力)"""
+        # SENTRY_DEBUG が外部環境に残っている場合「詳細が出力されない」検証が偽陰性化する。
+        # 対称テスト test_stderr_output_on_sentry_failure_in_debug 側は setenv 明示なので
+        # こちらも明示的に削除して環境非依存にする。
+        monkeypatch.delenv("SENTRY_DEBUG", raising=False)
+
         event_dict = {"level": "error", "event": "error message"}
 
         mock_sdk = MagicMock()
