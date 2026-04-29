@@ -10,6 +10,7 @@ import asyncio
 import json
 import re
 from datetime import UTC, datetime
+from types import TracebackType
 from typing import Any, NoReturn, Self, cast
 
 import httpx
@@ -155,7 +156,12 @@ class AsyncGitHubClient:
         )
         return self
 
-    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         """非同期コンテキストマネージャーの終了処理"""
         if self._client:
             await self._client.aclose()
@@ -173,7 +179,7 @@ class AsyncGitHubClient:
         Raises:
             ValueError: 無効なユーザー名
             NotFoundError: ユーザーが存在しない
-            RateLimitError: Rate Limit超過
+            RateLimitError: 403 Rate Limit超過 または 429 Too Many Requests
             GitHubServerError: 5xxエラー（リトライ上限後）
             GitHubAPIError: タイムアウト等の予期しないエラー、または不正なレスポンス型
 
@@ -346,9 +352,10 @@ class AsyncGitHubClient:
         except json.JSONDecodeError as parse_err:
             # JSONパース失敗は想定内（GitHub APIが非JSON形式で403を返す場合がある）
             self.logger.warning("failed_to_parse_403_message", error=str(parse_err))
+            raise GitHubAPIError("Access forbidden") from parse_err
         raise GitHubAPIError(
             f"Access forbidden: {error_message}" if error_message else "Access forbidden"
-        ) from None
+        )
 
     async def _handle_5xx_response(
         self,
@@ -563,7 +570,7 @@ class AsyncGitHubClient:
 
             except httpx.TimeoutException as e:
                 self.logger.warning("request_timeout", endpoint=endpoint, method=method)
-                raise GitHubAPIError(f"Request timeout: {e}") from e
+                raise GitHubAPIError(f"Request timeout: {type(e).__qualname__}") from e
 
             except ASYNC_FATAL_EXCEPTIONS:
                 # システム例外は再発生
@@ -577,7 +584,6 @@ class AsyncGitHubClient:
                     "unexpected_error",
                     endpoint=endpoint,
                     method=method,
-                    error=str(e),
                     error_type=type(e).__qualname__,
                 )
                 raise GitHubAPIError(f"Unexpected error: {e}") from e

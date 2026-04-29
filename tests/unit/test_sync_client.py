@@ -13,7 +13,7 @@ Note:
 
 import json
 import sys
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
@@ -21,6 +21,7 @@ import respx
 
 from tests.constants import BASE_URL, INVALID_BASE_URLS
 from tests.unit.helpers import mock_get_route
+from utils import api_client
 from utils.api_client import SyncAPIClient, SyncJSONPlaceholderClient
 
 pytestmark = pytest.mark.unit
@@ -1075,3 +1076,29 @@ def test_sync_health_check_system_exception_propagates(
         with patch.object(client, "get", side_effect=exception_class(*exception_args)):
             with pytest.raises(exception_class):
                 client.health_check()
+
+
+def test_main_non_api_client_error_propagates_without_http_or_print_side_effects() -> None:
+    """main() は APIClientError 以外を捕捉せず呼び出し元へ伝播する"""
+    client = MagicMock()
+    client.get_posts.side_effect = RuntimeError("unexpected failure")
+    client_context = MagicMock()
+    client_context.__enter__.return_value = client
+    client_context.__exit__.return_value = False
+
+    with (
+        patch.object(
+            api_client,
+            "create_client",
+            return_value=client_context,
+        ) as create_client_mock,
+        patch("builtins.print") as print_mock,
+        pytest.raises(RuntimeError, match="unexpected failure"),
+    ):
+        api_client.main()
+
+    create_client_mock.assert_called_once_with()
+    client.get_posts.assert_called_once_with(limit=5)
+    print_mock.assert_any_call("=== JSONPlaceholder API Client Demo ===")
+    print_mock.assert_any_call("\n1. 投稿一覧取得（5件）:")
+    assert not any(call.args == ("\n=== Demo completed ===",) for call in print_mock.call_args_list)

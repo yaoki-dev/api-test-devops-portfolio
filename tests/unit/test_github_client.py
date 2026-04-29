@@ -10,7 +10,7 @@ GitHub API非同期クライアントのUnit Tests
 import asyncio
 import json
 from datetime import UTC, datetime
-from unittest.mock import ANY, Mock, patch
+from unittest.mock import ANY, AsyncMock, Mock, patch
 
 import httpx
 import pytest
@@ -163,7 +163,8 @@ async def test_rate_limit_exceeded():
 
 @respx.mock
 @patch("utils.github_client.exponential_backoff_with_jitter", return_value=0.0)
-async def test_retry_on_server_error(mock_backoff: Mock) -> None:
+@patch("utils.github_client.asyncio.sleep", new_callable=AsyncMock)
+async def test_retry_on_server_error(mock_sleep: AsyncMock, mock_backoff: Mock) -> None:
     """5xxエラーで3回リトライ後、GitHubServerError発生
 
     検証項目:
@@ -186,6 +187,8 @@ async def test_retry_on_server_error(mock_backoff: Mock) -> None:
     assert "Server error: 500" in str(exc_info.value)
     assert f"after {MAX_RETRIES} attempts" in str(exc_info.value)
     assert mock_backoff.call_count == MAX_RETRIES - 1  # MAX_RETRIES試行 → 最終試行以外でバックオフ
+    assert mock_sleep.await_count == MAX_RETRIES - 1
+    mock_sleep.assert_awaited_with(0.0)
 
 
 @respx.mock
@@ -206,6 +209,7 @@ async def test_timeout_handling():
             await client.get_user("octocat")
 
     assert "timeout" in str(exc_info.value).lower()
+    assert str(exc_info.value) == "Request timeout: TimeoutException"
     # 例外チェーン確認
     assert exc_info.value.__cause__ is not None
     assert isinstance(exc_info.value.__cause__, httpx.TimeoutException)
@@ -335,6 +339,7 @@ async def test_httpx_timeout_exception():
             await client.get_user("octocat")
 
     assert "timeout" in str(exc_info.value).lower()
+    assert str(exc_info.value) == "Request timeout: TimeoutException"
     assert exc_info.value.__cause__ is not None
     assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
 
@@ -555,13 +560,18 @@ async def test_unexpected_exception():
         side_effect=ValueError("Unexpected error")
     )
 
-    async with AsyncGitHubClient() as client:
-        with pytest.raises(GitHubAPIError) as exc_info:
-            await client.get_user("octocat")
+    with capture_logs() as log_output:
+        async with AsyncGitHubClient() as client:
+            with pytest.raises(GitHubAPIError) as exc_info:
+                await client.get_user("octocat")
 
     assert "Unexpected error" in str(exc_info.value)
     assert isinstance(exc_info.value.__cause__, ValueError)
     assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
+    error_logs = [log for log in log_output if log.get("event") == "unexpected_error"]
+    assert len(error_logs) == 1
+    assert "error" not in error_logs[0]
+    assert error_logs[0]["error_type"] == "ValueError"
 
 
 # =============================================================================
@@ -745,6 +755,21 @@ async def test_invalid_rate_limit_header_remaining():
     assert warning_logs[0]["value"] == repr("N/A")
 
 
+def test_missing_rate_limit_header_returns_default_without_warning() -> None:
+    """Rate Limitヘッダー未設定時はwarningなしでdefaultを返す。"""
+    client = AsyncGitHubClient()
+
+    with capture_logs() as log_output:
+        result = client._parse_rate_limit_header(
+            httpx.Headers(),
+            "X-RateLimit-Remaining",
+            999,
+        )
+
+    assert result == 999
+    assert not [log for log in log_output if log.get("event") == "invalid_rate_limit_header"]
+
+
 @respx.mock
 async def test_invalid_rate_limit_header_403():
     """403応答時にX-RateLimit-Remainingが不正値の場合、warningログ後 GitHubAPIError 発生
@@ -881,6 +906,7 @@ async def test_invalid_rate_limit_reset_header_rate_limit_exceeded():
         pytest.param("a" * 100, id="max_length"),  # 上限（100文字）
         pytest.param("my_repo", id="underscore"),
         pytest.param("my.repo", id="dot"),
+        pytest.param(".github", id="github_special_repository"),
         pytest.param("123", id="digits_only"),
     ],
 )
@@ -1217,11 +1243,12 @@ def test_handle_403_response_no_json_log() -> None:
     )
     with capture_logs() as logs:
         # _handle_403_response は NoReturn のため pytest.raises は必須（ログ検証が目的）
-        with pytest.raises(GitHubAPIError, match="Access forbidden"):
+        with pytest.raises(GitHubAPIError, match="Access forbidden") as exc_info:
             client._handle_403_response(response)
         warning_logs = [log for log in logs if log.get("event") == "failed_to_parse_403_message"]
         assert len(warning_logs) == 1
         assert warning_logs[0]["log_level"] == "warning"
+        assert isinstance(exc_info.value.__cause__, json.JSONDecodeError)
 
 
 @pytest.mark.unit
