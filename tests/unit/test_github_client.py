@@ -191,28 +191,39 @@ async def test_retry_on_server_error(mock_sleep: AsyncMock, mock_backoff: Mock) 
     mock_sleep.assert_awaited_with(0.0)
 
 
+@pytest.mark.parametrize(
+    ("timeout_exception", "expected_message"),
+    [
+        (httpx.TimeoutException("Request timeout"), "Request timeout: TimeoutException"),
+        (httpx.ConnectTimeout("Connect timeout"), "Request timeout: ConnectTimeout"),
+        (httpx.ReadTimeout("Read timeout"), "Request timeout: ReadTimeout"),
+        (httpx.WriteTimeout("Write timeout"), "Request timeout: WriteTimeout"),
+        (httpx.PoolTimeout("Pool timeout"), "Request timeout: PoolTimeout"),
+    ],
+)
 @respx.mock
-async def test_timeout_handling():
+async def test_timeout_handling(
+    timeout_exception: httpx.TimeoutException,
+    expected_message: str,
+):
     """タイムアウト時にGitHubAPIError発生
 
     検証項目:
-    - httpx.TimeoutException → GitHubAPIError変換
+    - httpx.TimeoutException系 → GitHubAPIError変換
     - 例外チェーン維持（from e）
     - 警告ログ出力
     """
-    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(
-        side_effect=httpx.TimeoutException("Request timeout")
-    )
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=timeout_exception)
 
     async with AsyncGitHubClient() as client:
         with pytest.raises(GitHubAPIError) as exc_info:
             await client.get_user("octocat")
 
     assert "timeout" in str(exc_info.value).lower()
-    assert str(exc_info.value) == "Request timeout: TimeoutException"
+    assert str(exc_info.value) == expected_message
     # 例外チェーン確認
     assert exc_info.value.__cause__ is not None
-    assert isinstance(exc_info.value.__cause__, httpx.TimeoutException)
+    assert exc_info.value.__cause__ is timeout_exception
     assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
 
 
@@ -325,23 +336,6 @@ async def test_request_without_context_manager():
 
     assert "Client not initialized" in str(exc_info.value)
     assert "async with" in str(exc_info.value)
-
-
-@respx.mock
-async def test_httpx_timeout_exception():
-    """httpx.TimeoutException処理の検証"""
-    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(
-        side_effect=httpx.TimeoutException("Connection timeout")
-    )
-
-    async with AsyncGitHubClient() as client:
-        with pytest.raises(GitHubAPIError) as exc_info:
-            await client.get_user("octocat")
-
-    assert "timeout" in str(exc_info.value).lower()
-    assert str(exc_info.value) == "Request timeout: TimeoutException"
-    assert exc_info.value.__cause__ is not None
-    assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
 
 
 @respx.mock
@@ -556,8 +550,9 @@ async def test_httpx_status_error_403_auth_error_with_message() -> None:
 @respx.mock
 async def test_unexpected_exception():
     """予期しない例外処理の検証"""
+    sensitive_detail = "secret connection string"
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(
-        side_effect=ValueError("Unexpected error")
+        side_effect=ValueError(sensitive_detail)
     )
 
     with capture_logs() as log_output:
@@ -565,7 +560,8 @@ async def test_unexpected_exception():
             with pytest.raises(GitHubAPIError) as exc_info:
                 await client.get_user("octocat")
 
-    assert "Unexpected error" in str(exc_info.value)
+    assert str(exc_info.value) == "Unexpected error: ValueError"
+    assert sensitive_detail not in str(exc_info.value)
     assert isinstance(exc_info.value.__cause__, ValueError)
     assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
     error_logs = [log for log in log_output if log.get("event") == "unexpected_error"]
@@ -1248,7 +1244,10 @@ def test_handle_403_response_no_json_log() -> None:
         warning_logs = [log for log in logs if log.get("event") == "failed_to_parse_403_message"]
         assert len(warning_logs) == 1
         assert warning_logs[0]["log_level"] == "warning"
-        assert isinstance(exc_info.value.__cause__, json.JSONDecodeError)
+        assert "error" not in warning_logs[0]
+        assert warning_logs[0].get("error_type") == "JSONDecodeError"
+        # __cause__ なし（from None で保護）
+        assert exc_info.value.__cause__ is None
 
 
 @pytest.mark.unit

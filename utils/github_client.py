@@ -51,6 +51,9 @@ def validate_github_username(username: str) -> None:
 def validate_github_repo(repo: str) -> None:
     """GitHubリポジトリ名のバリデーション
 
+    "." と ".." は予約名として拒否する。
+    ".github" のようなドット始まりの名前はGitHub上で有効なため許可する。
+
     Args:
         repo: リポジトリ名
 
@@ -351,8 +354,11 @@ class AsyncGitHubClient:
                     error_message = raw_message[:_MAX_403_ERROR_MESSAGE_CHARS]
         except json.JSONDecodeError as parse_err:
             # JSONパース失敗は想定内（GitHub APIが非JSON形式で403を返す場合がある）
-            self.logger.warning("failed_to_parse_403_message", error=str(parse_err))
-            raise GitHubAPIError("Access forbidden") from parse_err
+            self.logger.warning(
+                "failed_to_parse_403_message",
+                error_type=type(parse_err).__qualname__,
+            )
+            raise GitHubAPIError("Access forbidden") from None
         raise GitHubAPIError(
             f"Access forbidden: {error_message}" if error_message else "Access forbidden"
         )
@@ -580,13 +586,14 @@ class AsyncGitHubClient:
                 raise
 
             except Exception as e:
+                error_type = type(e).__qualname__
                 self.logger.error(
                     "unexpected_error",
                     endpoint=endpoint,
                     method=method,
-                    error_type=type(e).__qualname__,
+                    error_type=error_type,
                 )
-                raise GitHubAPIError(f"Unexpected error: {e}") from e
+                raise GitHubAPIError(f"Unexpected error: {error_type}") from e
 
         # リトライ上限到達（ここに到達することはないはずだが、型チェッカー対策）
         raise GitHubServerError(f"Failed after {self.max_retries} attempts")
