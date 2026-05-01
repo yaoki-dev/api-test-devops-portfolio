@@ -15,12 +15,14 @@ from config.settings import (
     SecurityConfig,
     SentryConfig,
     Settings,
-    TestConfig,
     _resolve_hostname,
     _resolve_hostname_cached,
     get_settings,
     is_private_ip,
     reload_settings,
+)
+from config.settings import (
+    TestConfig as ConfigForTestingEnv,
 )
 
 # Module-level marker: All tests in this file are unit tests
@@ -569,7 +571,7 @@ class TestNestedConfigDefaults:
         [
             pytest.param("api", APIConfig, id="api_config"),
             pytest.param("log", LogConfig, id="log_config"),
-            pytest.param("test", TestConfig, id="test_config"),
+            pytest.param("test", ConfigForTestingEnv, id="test_config"),
             pytest.param("security", SecurityConfig, id="security_config"),
         ],
     )

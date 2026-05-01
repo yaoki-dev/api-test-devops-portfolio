@@ -407,8 +407,13 @@ class AsyncGitHubClient:
                 response.json(),
             )
         except json.JSONDecodeError as e:
-            self.logger.error("json_decode_error", endpoint=endpoint, error=str(e))
-            raise GitHubAPIError(f"Invalid JSON response: {e}") from e
+            self.logger.error(
+                "json_decode_error",
+                endpoint=endpoint,
+                error_type=type(e).__qualname__,
+                error_module=type(e).__module__,
+            )
+            raise GitHubAPIError("Invalid JSON response") from e
 
     def _handle_http_status_error(
         self,

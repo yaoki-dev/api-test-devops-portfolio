@@ -356,8 +356,8 @@ async def test_httpx_status_error_4xx():
 
     # GitHubAPIError であり、httpx.HTTPStatusError ではないことを明示検証
     assert not isinstance(exc_info.value, httpx.HTTPStatusError)
-    # 例外チェーンが保持されていることを確認（HTTPStatusError 情報を保持した cause に再ラップ）
-    assert exc_info.value.__cause__ is not None
+    # 例外チェーンが保持され、cause が例外オブジェクトであることを確認
+    assert isinstance(exc_info.value.__cause__, Exception)
     # __cause__がhttpx.HTTPStatusErrorそのものでないことを型レベルで確認
     assert not isinstance(exc_info.value.__cause__, httpx.HTTPStatusError)
     assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
@@ -367,7 +367,8 @@ async def test_httpx_status_error_4xx():
 
 @respx.mock
 @patch("utils.github_client.exponential_backoff_with_jitter", return_value=0.0)
-async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
+@patch("utils.github_client.asyncio.sleep", new_callable=AsyncMock)
+async def test_httpx_status_error_5xx(mock_sleep: AsyncMock, mock_backoff: Mock) -> None:
     """5xxステータスコード（response.status_code >= 500）リトライパスの検証
 
     リトライ動作に加え、retrying_server_error ログ出力を検証する（Issue #229）。
@@ -393,6 +394,7 @@ async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
     assert "Server error: 503" in str(exc_info.value)
     assert route.call_count == MAX_RETRIES
     assert mock_backoff.call_count == MAX_RETRIES - 1  # MAX_RETRIES試行 → 最終試行以外でバックオフ
+    assert mock_sleep.call_count == MAX_RETRIES - 1
 
     # リトライ中間試行のログ出力検証（Issue #229）
     retry_logs = [log for log in log_output if log.get("event") == "retrying_server_error"]
@@ -416,7 +418,11 @@ async def test_httpx_status_error_5xx(mock_backoff: Mock) -> None:
 
 @respx.mock
 @patch("utils.github_client.exponential_backoff_with_jitter", return_value=0.0)
-async def test_httpx_status_error_5xx_defensive_path(mock_backoff: Mock) -> None:
+@patch("utils.github_client.asyncio.sleep", new_callable=AsyncMock)
+async def test_httpx_status_error_5xx_defensive_path(
+    mock_sleep: AsyncMock,
+    mock_backoff: Mock,
+) -> None:
     """httpx.HTTPStatusError（5xx）防御的コードパスの検証
 
     C2修正後: httpx.HTTPStatusError として直接 5xx が発生した場合も
@@ -442,6 +448,7 @@ async def test_httpx_status_error_5xx_defensive_path(mock_backoff: Mock) -> None
     assert "Server error: 503" in str(exc_info.value)
     assert route.call_count == MAX_RETRIES
     assert mock_backoff.call_count == MAX_RETRIES - 1
+    assert mock_sleep.call_count == MAX_RETRIES - 1
 
     retry_logs = [log for log in log_output if log.get("event") == "retrying_server_error"]
     assert len(retry_logs) == MAX_RETRIES - 1, (
@@ -639,15 +646,21 @@ async def test_json_decode_error():
         },
     )
 
-    async with AsyncGitHubClient() as client:
-        with pytest.raises(GitHubAPIError, match="Invalid JSON"):
-            await client.get_user("octocat")
+    with capture_logs() as logs:
+        async with AsyncGitHubClient() as client:
+            with pytest.raises(GitHubAPIError, match="Invalid JSON"):
+                await client.get_user("octocat")
 
     assert route.call_count == 1  # GETリクエストが1回発行されたことを確認
+    decode_logs = [log for log in logs if log.get("event") == "json_decode_error"]
+    assert len(decode_logs) == 1
+    assert decode_logs[0]["endpoint"] == "/users/octocat"
+    assert "error" not in decode_logs[0]
+    assert decode_logs[0]["error_type"] == json.JSONDecodeError.__qualname__
+    assert decode_logs[0]["error_module"] == json.JSONDecodeError.__module__
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 @respx.mock
 async def test_get_user_type_guard_rejects_non_dict():
     """get_user: APIが非dictレスポンスを返した場合にGitHubAPIErrorを発生"""
@@ -662,7 +675,6 @@ async def test_get_user_type_guard_rejects_non_dict():
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 @respx.mock
 async def test_get_repos_type_guard_rejects_non_list():
     """get_repos: APIが非listレスポンスを返した場合にGitHubAPIErrorを発生"""
@@ -677,7 +689,6 @@ async def test_get_repos_type_guard_rejects_non_list():
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 @respx.mock
 async def test_get_repo_type_guard_rejects_non_dict():
     """get_repo: APIが非dictレスポンスを返した場合にGitHubAPIErrorを発生"""
@@ -1138,7 +1149,6 @@ def test_handle_304_response_cache_miss() -> None:
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("status_code", "attempt", "max_retries_val", "expected_exc"),
     [
@@ -1324,7 +1334,9 @@ def test_parse_json_response_invalid_json_raises() -> None:
     decode_logs = [log for log in log_output if log.get("event") == "json_decode_error"]
     assert len(decode_logs) == 1
     assert decode_logs[0]["endpoint"] == "/test-endpoint"
-    assert "error" in decode_logs[0]
+    assert "error" not in decode_logs[0]
+    assert decode_logs[0]["error_type"] == json.JSONDecodeError.__qualname__
+    assert decode_logs[0]["error_module"] == json.JSONDecodeError.__module__
 
 
 @pytest.mark.unit
