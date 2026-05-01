@@ -215,15 +215,19 @@ async def test_timeout_handling(
     """
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=timeout_exception)
 
-    async with AsyncGitHubClient() as client:
-        with pytest.raises(GitHubAPIError) as exc_info:
-            await client.get_user("octocat")
+    with capture_logs() as log_output:
+        async with AsyncGitHubClient() as client:
+            with pytest.raises(GitHubAPIError) as exc_info:
+                await client.get_user("octocat")
 
     assert str(exc_info.value) == expected_message
     # 例外チェーン確認
-    assert exc_info.value.__cause__ is not None
     assert exc_info.value.__cause__ is timeout_exception
     assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
+    timeout_logs = [log for log in log_output if log.get("event") == "request_timeout"]
+    assert len(timeout_logs) == 1
+    assert timeout_logs[0]["error_type"] == type(timeout_exception).__qualname__
+    assert timeout_logs[0]["error_module"] == type(timeout_exception).__module__
 
 
 # =============================================================================
@@ -567,6 +571,7 @@ async def test_unexpected_exception():
     assert len(error_logs) == 1
     assert "error" not in error_logs[0]
     assert error_logs[0]["error_type"] == "ValueError"
+    assert error_logs[0]["error_module"] == "builtins"
     # PII値レベル検証: 全 log フィールド値に sensitive_detail が漏洩していないこと
     for value in error_logs[0].values():
         assert sensitive_detail not in str(value), (
@@ -1250,6 +1255,7 @@ def test_handle_403_response_no_json_log() -> None:
         assert warning_logs[0]["log_level"] == "warning"
         assert "error" not in warning_logs[0]
         assert warning_logs[0].get("error_type") == "JSONDecodeError"
+        assert warning_logs[0].get("error_module") == "json.decoder"
         # __cause__ なし（from None で保護）
         assert exc_info.value.__cause__ is None
 

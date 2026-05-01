@@ -357,6 +357,7 @@ class AsyncGitHubClient:
             self.logger.warning(
                 "failed_to_parse_403_message",
                 error_type=type(parse_err).__qualname__,
+                error_module=type(parse_err).__module__,
             )
             raise GitHubAPIError("Access forbidden") from None
         raise GitHubAPIError(
@@ -575,8 +576,16 @@ class AsyncGitHubClient:
                     self._handle_http_status_error(e)
 
             except httpx.TimeoutException as e:
-                self.logger.warning("request_timeout", endpoint=endpoint, method=method)
-                raise GitHubAPIError(f"Request timeout: {type(e).__qualname__}") from e
+                error_type = type(e).__qualname__
+                error_module = type(e).__module__
+                self.logger.warning(
+                    "request_timeout",
+                    endpoint=endpoint,
+                    method=method,
+                    error_type=error_type,
+                    error_module=error_module,
+                )
+                raise GitHubAPIError(f"Request timeout: {error_type}") from e
 
             except ASYNC_FATAL_EXCEPTIONS:
                 # システム例外は再発生
@@ -587,11 +596,13 @@ class AsyncGitHubClient:
 
             except Exception as e:
                 error_type = type(e).__qualname__
+                error_module = type(e).__module__
                 self.logger.error(
                     "unexpected_error",
                     endpoint=endpoint,
                     method=method,
                     error_type=error_type,
+                    error_module=error_module,
                 )
                 raise GitHubAPIError(f"Unexpected error: {error_type}") from e
 
