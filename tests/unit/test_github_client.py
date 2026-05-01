@@ -219,7 +219,6 @@ async def test_timeout_handling(
         with pytest.raises(GitHubAPIError) as exc_info:
             await client.get_user("octocat")
 
-    assert "timeout" in str(exc_info.value).lower()
     assert str(exc_info.value) == expected_message
     # 例外チェーン確認
     assert exc_info.value.__cause__ is not None
@@ -568,6 +567,11 @@ async def test_unexpected_exception():
     assert len(error_logs) == 1
     assert "error" not in error_logs[0]
     assert error_logs[0]["error_type"] == "ValueError"
+    # PII値レベル検証: 全 log フィールド値に sensitive_detail が漏洩していないこと
+    for value in error_logs[0].values():
+        assert sensitive_detail not in str(value), (
+            f"sensitive_detail leaked in log field value: {value!r}"
+        )
 
 
 # =============================================================================

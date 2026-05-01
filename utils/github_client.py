@@ -361,7 +361,7 @@ class AsyncGitHubClient:
             raise GitHubAPIError("Access forbidden") from None
         raise GitHubAPIError(
             f"Access forbidden: {error_message}" if error_message else "Access forbidden"
-        )
+        ) from None
 
     async def _handle_5xx_response(
         self,

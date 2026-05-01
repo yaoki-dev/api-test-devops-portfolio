@@ -1099,6 +1099,7 @@ def test_main_non_api_client_error_propagates_without_http_or_print_side_effects
 
     create_client_mock.assert_called_once_with()
     client.get_posts.assert_called_once_with(limit=5)
-    print_mock.assert_any_call("=== JSONPlaceholder API Client Demo ===")
-    print_mock.assert_any_call("\n1. 投稿一覧取得（5件）:")
+    # context manager cleanup 検証 (例外伝播時も __exit__ が呼ばれる)
+    client_context.__exit__.assert_called_once()
+    # Demo completed が呼ばれていない (途中エラーで Demo 完了出力されないこと) 意味的検証のみ保持
     assert not any(call.args == ("\n=== Demo completed ===",) for call in print_mock.call_args_list)
