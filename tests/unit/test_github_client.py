@@ -427,7 +427,7 @@ async def test_httpx_status_error_5xx(mock_sleep: AsyncMock, mock_backoff: Mock)
     assert "Server error: 503" in str(exc_info.value)
     assert route.call_count == MAX_RETRIES
     assert mock_backoff.call_count == MAX_RETRIES - 1  # MAX_RETRIES試行 → 最終試行以外でバックオフ
-    assert mock_sleep.call_count == MAX_RETRIES - 1
+    assert mock_sleep.await_count == MAX_RETRIES - 1
 
     # リトライ中間試行のログ出力検証（Issue #229）
     retry_logs = [log for log in log_output if log.get("event") == "retrying_server_error"]
@@ -481,7 +481,7 @@ async def test_httpx_status_error_5xx_defensive_path(
     assert "Server error: 503" in str(exc_info.value)
     assert route.call_count == MAX_RETRIES
     assert mock_backoff.call_count == MAX_RETRIES - 1
-    assert mock_sleep.call_count == MAX_RETRIES - 1
+    assert mock_sleep.await_count == MAX_RETRIES - 1
 
     retry_logs = [log for log in log_output if log.get("event") == "retrying_server_error"]
     assert len(retry_logs) == MAX_RETRIES - 1, (
@@ -605,8 +605,9 @@ async def test_unexpected_exception():
 
     assert str(exc_info.value) == "Unexpected error: ValueError"
     assert sensitive_detail not in str(exc_info.value)
-    # 例外チェーン切断確認（from None による PII 漏洩防止）
-    assert exc_info.value.__cause__ is None
+    # 例外チェーンは sanitized cause のみ保持し、元例外メッセージは露出しない
+    assert str(exc_info.value.__cause__) == "builtins.ValueError"
+    assert sensitive_detail not in str(exc_info.value.__cause__)
     assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
     error_logs = [log for log in log_output if log.get("event") == "unexpected_error"]
     assert len(error_logs) == 1
@@ -696,7 +697,6 @@ async def test_json_decode_error():
     assert isinstance(decode_logs[0]["error_lineno"], int)
 
 
-@pytest.mark.unit
 @respx.mock
 async def test_get_user_type_guard_rejects_non_dict():
     """get_user: APIが非dictレスポンスを返した場合にGitHubAPIErrorを発生"""
@@ -710,7 +710,6 @@ async def test_get_user_type_guard_rejects_non_dict():
             await client.get_user("octocat")
 
 
-@pytest.mark.unit
 @respx.mock
 async def test_get_repos_type_guard_rejects_non_list():
     """get_repos: APIが非listレスポンスを返した場合にGitHubAPIErrorを発生"""
@@ -724,7 +723,6 @@ async def test_get_repos_type_guard_rejects_non_list():
             await client.get_repos("octocat")
 
 
-@pytest.mark.unit
 @respx.mock
 async def test_get_repo_type_guard_rejects_non_dict():
     """get_repo: APIが非dictレスポンスを返した場合にGitHubAPIErrorを発生"""
@@ -990,7 +988,6 @@ def test_repo_validation_invalid(repo: str) -> None:
 # =============================================================================
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     ("remaining_header", "reset_header", "json_body", "expected_exc", "match"),
     [
@@ -1078,7 +1075,6 @@ def test_handle_403_response(
         assert rate_limit_error.reset_time == int(reset_header)
 
 
-@pytest.mark.unit
 def test_handle_http_status_error_uses_debug_for_other_4xx() -> None:
     """_handle_http_status_error: 401以外の4xxでは debug ログを使う"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
@@ -1102,7 +1098,6 @@ def test_handle_http_status_error_uses_debug_for_other_4xx() -> None:
         mock_logger.warning.assert_not_called()
 
 
-@pytest.mark.unit
 def test_handle_http_status_error_uses_warning_for_401() -> None:
     """_handle_http_status_error: 401ステータスでは warning ログを使う"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
@@ -1127,7 +1122,6 @@ def test_handle_http_status_error_uses_warning_for_401() -> None:
         mock_logger.debug.assert_not_called()
 
 
-@pytest.mark.unit
 def test_handle_http_status_error_warning_truncates_body_preview_for_401() -> None:
     """_handle_http_status_error: 401レスポンスで body_preview が200バイトに切り詰められる"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
@@ -1152,7 +1146,6 @@ def test_handle_http_status_error_warning_truncates_body_preview_for_401() -> No
         mock_logger.debug.assert_not_called()
 
 
-@pytest.mark.unit
 def test_handle_http_status_error_with_5xx_raises_github_api_error() -> None:
     """_handle_http_status_error: 5xxでもGitHubAPIErrorをraiseする（防御的安全網）"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
@@ -1164,7 +1157,6 @@ def test_handle_http_status_error_with_5xx_raises_github_api_error() -> None:
         client._handle_http_status_error(error)
 
 
-@pytest.mark.unit
 def test_handle_304_response_cache_miss() -> None:
     """キャッシュミス時にGitHubAPIErrorを発生させる（防御的コードパス D-07）"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
@@ -1184,7 +1176,6 @@ def test_handle_304_response_cache_miss() -> None:
     assert "hint" in error_logs[0]
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     ("status_code", "attempt", "max_retries_val", "expected_exc"),
     [
@@ -1253,7 +1244,6 @@ async def test_handle_5xx_response(
 # ── D-07 追加: _prepare_headers / _handle_304 / _handle_403 / _update_etag_cache ──
 
 
-@pytest.mark.unit
 def test_prepare_headers_with_etag() -> None:
     """ETagキャッシュ存在時にIf-None-Matchヘッダーが設定される"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
@@ -1262,14 +1252,12 @@ def test_prepare_headers_with_etag() -> None:
     assert headers == {"If-None-Match": "etag-abc"}
 
 
-@pytest.mark.unit
 def test_prepare_headers_without_etag() -> None:
     """ETagキャッシュ不在時に空dictを返す"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
     assert client._prepare_headers("/repos/test") == {}
 
 
-@pytest.mark.unit
 def test_handle_304_response_cache_hit() -> None:
     """_data_cacheヒット時にキャッシュデータを返す（D-07正常系）"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
@@ -1279,7 +1267,6 @@ def test_handle_304_response_cache_hit() -> None:
     assert result == cached
 
 
-@pytest.mark.unit
 def test_handle_403_response_no_json_log() -> None:
     """非JSONボディ時にfailed_to_parse_403_messageログ（warning）が出力される"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
@@ -1306,7 +1293,6 @@ def test_handle_403_response_no_json_log() -> None:
         assert exc_info.value.__cause__ is None
 
 
-@pytest.mark.unit
 def test_handle_403_response_truncates_message_to_200_chars() -> None:
     """403 JSON message は 200 文字で切り詰められる"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
@@ -1325,7 +1311,6 @@ def test_handle_403_response_truncates_message_to_200_chars() -> None:
         client._handle_403_response(response)
 
 
-@pytest.mark.unit
 def test_handle_403_response_no_truncation_at_boundary() -> None:
     """403 JSON messageが200文字ちょうどの場合は切り詰めない"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
@@ -1344,7 +1329,6 @@ def test_handle_403_response_no_truncation_at_boundary() -> None:
         client._handle_403_response(response)
 
 
-@pytest.mark.unit
 def test_parse_json_response_valid_json() -> None:
     """_parse_json_response: 有効なJSONレスポンスをパースして返す"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
@@ -1353,7 +1337,6 @@ def test_parse_json_response_valid_json() -> None:
     assert result == {"id": 1, "login": "user"}
 
 
-@pytest.mark.unit
 def test_parse_json_response_invalid_json_raises() -> None:
     """_parse_json_response: 破損JSONでGitHubAPIError + json_decode_errorログ"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
@@ -1364,9 +1347,11 @@ def test_parse_json_response_invalid_json_raises() -> None:
         headers={"Content-Type": "application/json"},
     )
     with capture_logs() as log_output:
-        with pytest.raises(GitHubAPIError, match="Invalid JSON response"):
+        with pytest.raises(GitHubAPIError, match="Invalid JSON response") as exc_info:
             client._parse_json_response(response, "/test-endpoint")
 
+    assert exc_info.value.__cause__ is None
+    assert "not-valid-json" not in str(exc_info.value)
     decode_logs = [log for log in log_output if log.get("event") == "json_decode_error"]
     assert len(decode_logs) == 1
     assert decode_logs[0]["endpoint"] == "/test-endpoint"
@@ -1377,7 +1362,6 @@ def test_parse_json_response_invalid_json_raises() -> None:
     assert isinstance(decode_logs[0]["error_lineno"], int)
 
 
-@pytest.mark.unit
 def test_update_etag_cache_no_etag_header() -> None:
     """ETagヘッダー不在時にキャッシュを更新しない"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
@@ -1388,7 +1372,6 @@ def test_update_etag_cache_no_etag_header() -> None:
     assert "/test" not in client._data_cache
 
 
-@pytest.mark.unit
 def test_update_etag_cache_with_etag_header() -> None:
     """ETagヘッダー存在時に _etag_cache と _data_cache を同時更新する"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
@@ -1399,7 +1382,6 @@ def test_update_etag_cache_with_etag_header() -> None:
     assert client._data_cache["/repos/test"] == result
 
 
-@pytest.mark.unit
 def test_update_etag_cache_clears_stale_cache_when_etag_missing() -> None:
     """ETagが消失した場合は古いキャッシュを削除する"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
@@ -1416,7 +1398,6 @@ def test_update_etag_cache_clears_stale_cache_when_etag_missing() -> None:
     assert endpoint not in client._data_cache
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "remaining",
     [
@@ -1436,7 +1417,6 @@ def test_check_rate_limit_warning_triggers(remaining: int) -> None:
     assert warning_logs[0]["reset_time"] == datetime.fromtimestamp(1700000000, tz=UTC).isoformat()
 
 
-@pytest.mark.unit
 def test_check_rate_limit_warning_no_warning_at_boundary() -> None:
     """remaining=10 (== _RATE_LIMIT_WARNING_THRESHOLD) で警告ログを出力しない"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
@@ -1449,7 +1429,6 @@ def test_check_rate_limit_warning_no_warning_at_boundary() -> None:
         assert "remaining" not in log  # threshold以上では remaining フィールドを出力しない
 
 
-@pytest.mark.unit
 def test_handle_http_status_error_truncates_long_body() -> None:
     """レスポンスボディはエラーメッセージに含まれない（Sentryセキュリティ対応）"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
@@ -1467,7 +1446,6 @@ def test_handle_http_status_error_truncates_long_body() -> None:
     assert "x" not in str(exc_info.value)
 
 
-@pytest.mark.unit
 def test_handle_http_status_error_no_truncation_at_boundary() -> None:
     """境界値(200字)でもレスポンスボディはエラーメッセージに含まれない（Sentryセキュリティ対応）"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
@@ -1485,7 +1463,6 @@ def test_handle_http_status_error_no_truncation_at_boundary() -> None:
     assert exact_body not in str(exc_info.value)
 
 
-@pytest.mark.unit
 def test_handle_http_status_error_truncates_multibyte_body_to_200_bytes() -> None:
     """多バイト文字のbody_previewも200バイトで切り詰める（境界はerrors='replace'で補完）"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
@@ -1504,7 +1481,6 @@ def test_handle_http_status_error_truncates_multibyte_body_to_200_bytes() -> Non
     assert multibyte_body not in str(exc_info.value)
 
 
-@pytest.mark.unit
 def test_handle_http_status_error_with_invalid_bytes() -> None:
     """不正UTF-8バイト列でもUnicodeDecodeErrorが発生しない（errors='replace'検証）"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
@@ -1517,7 +1493,6 @@ def test_handle_http_status_error_with_invalid_bytes() -> None:
         client._handle_http_status_error(error)
 
 
-@pytest.mark.unit
 def test_429_handled_as_github_api_error_not_rate_limit_error() -> None:
     """_handle_http_status_error単体では429をGitHubAPIErrorとして扱う（メソッド直接呼び出し確認）
 
@@ -1536,7 +1511,6 @@ def test_429_handled_as_github_api_error_not_rate_limit_error() -> None:
 
 
 @respx.mock
-@pytest.mark.unit
 async def test_429_response_raises_rate_limit_error() -> None:
     """429 Too Many RequestsはRateLimitErrorに変換される（_requestレベル・通常パス）
 
@@ -1557,7 +1531,6 @@ async def test_429_response_raises_rate_limit_error() -> None:
 
 
 @respx.mock
-@pytest.mark.unit
 async def test_httpx_status_error_429_defensive_path() -> None:
     """httpx.HTTPStatusError（429）防御的コードパスの検証
 
@@ -1587,7 +1560,6 @@ async def test_httpx_status_error_429_defensive_path() -> None:
 
 
 @respx.mock
-@pytest.mark.unit
 async def test_429_response_missing_reset_header_falls_back_to_zero() -> None:
     """X-RateLimit-Resetヘッダー欠損時は reset_time=0 にフォールバックする（通常パス）"""
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(429)
@@ -1601,7 +1573,6 @@ async def test_429_response_missing_reset_header_falls_back_to_zero() -> None:
 
 
 @respx.mock
-@pytest.mark.unit
 async def test_httpx_status_error_429_missing_reset_header_falls_back_to_zero() -> None:
     """X-RateLimit-Resetヘッダー欠損時は reset_time=0 にフォールバックする（防御的パス）"""
     request = httpx.Request("GET", f"{GITHUB_API_BASE_URL}/users/octocat")
@@ -1621,7 +1592,6 @@ async def test_httpx_status_error_429_missing_reset_header_falls_back_to_zero() 
     assert route.call_count == 1
 
 
-@pytest.mark.unit
 def test_handle_http_status_error_cause_excludes_response_body() -> None:
     """__cause__およびGitHubAPIError本体の両方にセンシティブデータが含まれないことを確認
 

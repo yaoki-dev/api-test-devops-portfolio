@@ -360,6 +360,8 @@ class AsyncGitHubClient:
                 "failed_to_parse_403_message",
                 error_type=type(parse_err).__qualname__,
                 error_module=type(parse_err).__module__,
+                error_pos=parse_err.pos,
+                error_lineno=parse_err.lineno,
             )
             raise GitHubAPIError("Access forbidden") from None
 
@@ -410,7 +412,7 @@ class AsyncGitHubClient:
                 response.json(),
             )
         except json.JSONDecodeError as e:
-            self.logger.error(
+            self.logger.warning(
                 "json_decode_error",
                 endpoint=endpoint,
                 error_type=type(e).__qualname__,
@@ -418,11 +420,10 @@ class AsyncGitHubClient:
                 error_pos=e.pos,
                 error_lineno=e.lineno,
             )
-            # `from e` 維持: 200レスポンスのJSONパース失敗は診断に必要なため例外チェーン保持。
-            # JSONDecodeError.doc にbody全体が保持されるが、_handle_403_response (認証コンテキスト
-            # 秘匿) と異なり 200 success path のため `from None` ではなく `from e` を選択。
-            # PII含有可能性は API 応答仕様に依存（GitHub APIは通常 PII を返さない）。
-            raise GitHubAPIError("Invalid JSON response") from e
+
+        # JSONDecodeError.doc はレスポンスbody全体を保持するため、
+        # active exception context の外で再raiseして cause/context に残さない。
+        raise GitHubAPIError("Invalid JSON response") from None
 
     def _handle_http_status_error(
         self,
@@ -624,8 +625,10 @@ class AsyncGitHubClient:
                     error_module=error_module,
                 )
                 # PII漏洩防止 (__cause__): catch-all例外はURL/host:port等のPIIを含む可能性があるため
-                # `from None` で chain 切断 (timeout path L600 と同方針)
-                raise GitHubAPIError(f"Unexpected error: {error_type}") from None
+                # `from Exception(...)` で chain 切断し最小限の診断情報を保持 (L461-463 と同方針)
+                raise GitHubAPIError(f"Unexpected error: {error_type}") from Exception(
+                    f"{error_module}.{error_type}"
+                )
 
         # リトライ上限到達（ここに到達することはないはずだが、型チェッカー対策）
         raise GitHubServerError(f"Failed after {self.max_retries} attempts")
