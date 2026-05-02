@@ -10,7 +10,7 @@ GitHub API非同期クライアントのUnit Tests
 import asyncio
 import json
 from datetime import UTC, datetime
-from unittest.mock import ANY, AsyncMock, Mock, patch
+from unittest.mock import ANY, AsyncMock, Mock, call, patch
 
 import httpx
 import pytest
@@ -188,7 +188,7 @@ async def test_retry_on_server_error(mock_sleep: AsyncMock, mock_backoff: Mock) 
     assert f"after {MAX_RETRIES} attempts" in str(exc_info.value)
     assert mock_backoff.call_count == MAX_RETRIES - 1  # MAX_RETRIES試行 → 最終試行以外でバックオフ
     assert mock_sleep.await_count == MAX_RETRIES - 1
-    mock_sleep.assert_awaited_with(0.0)
+    mock_sleep.assert_has_awaits([call(0.0)] * (MAX_RETRIES - 1))
 
 
 @pytest.mark.parametrize(
@@ -210,7 +210,7 @@ async def test_timeout_handling(
 
     検証項目:
     - httpx.TimeoutException系 → GitHubAPIError変換
-    - 例外チェーン維持（from e）
+    - 例外チェーン切断（from None）: PII漏洩防止のため __cause__ を抑制
     - 警告ログ出力
     """
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=timeout_exception)
@@ -221,13 +221,46 @@ async def test_timeout_handling(
                 await client.get_user("octocat")
 
     assert str(exc_info.value) == expected_message
-    # 例外チェーン確認
-    assert exc_info.value.__cause__ is timeout_exception
+    # 例外チェーン切断確認（from None による PII 漏洩防止）
+    assert exc_info.value.__cause__ is None
     assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
     timeout_logs = [log for log in log_output if log.get("event") == "request_timeout"]
     assert len(timeout_logs) == 1
     assert timeout_logs[0]["error_type"] == type(timeout_exception).__qualname__
     assert timeout_logs[0]["error_module"] == type(timeout_exception).__module__
+    # PII漏洩防止: error_detailフィールド除去 (unexpected_errorパスと同方針)
+    assert "error_detail" not in timeout_logs[0]
+    assert "error" not in timeout_logs[0]
+
+
+@respx.mock
+async def test_timeout_logging_no_pii_leak():
+    """タイムアウト例外メッセージがログフィールド値・例外チェーンに漏洩しないこと検証
+
+    検証項目:
+    - httpx.TimeoutException msg内のsensitive文字列(token/URL等)がログ全フィールドに含まれない
+    - GitHubAPIError msgにもsensitive文字列が漏洩しない
+    - __cause__ chain切断（from None）で Sentry/traceback walker 経由の PII 漏洩を防止
+    """
+    sensitive_detail = "https://api.example.com/internal?token=SECRET_API_KEY_12345"
+    timeout_exception = httpx.ConnectTimeout(sensitive_detail)
+    respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=timeout_exception)
+
+    with capture_logs() as log_output:
+        async with AsyncGitHubClient() as client:
+            with pytest.raises(GitHubAPIError) as exc_info:
+                await client.get_user("octocat")
+
+    assert sensitive_detail not in str(exc_info.value)
+    # __cause__ 切断検証: from None により Sentry/traceback 経由の PII 漏洩を防止
+    assert exc_info.value.__cause__ is None
+    timeout_logs = [log for log in log_output if log.get("event") == "request_timeout"]
+    assert len(timeout_logs) == 1
+    # PII値レベル検証: 全logフィールド値にsensitive_detailが漏洩していないこと
+    for value in timeout_logs[0].values():
+        assert sensitive_detail not in str(value), (
+            f"sensitive_detail leaked in log field value: {value!r}"
+        )
 
 
 # =============================================================================
@@ -572,7 +605,8 @@ async def test_unexpected_exception():
 
     assert str(exc_info.value) == "Unexpected error: ValueError"
     assert sensitive_detail not in str(exc_info.value)
-    assert isinstance(exc_info.value.__cause__, ValueError)
+    # 例外チェーン切断確認（from None による PII 漏洩防止）
+    assert exc_info.value.__cause__ is None
     assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
     error_logs = [log for log in log_output if log.get("event") == "unexpected_error"]
     assert len(error_logs) == 1
@@ -658,6 +692,8 @@ async def test_json_decode_error():
     assert "error" not in decode_logs[0]
     assert decode_logs[0]["error_type"] == json.JSONDecodeError.__qualname__
     assert decode_logs[0]["error_module"] == json.JSONDecodeError.__module__
+    assert isinstance(decode_logs[0]["error_pos"], int)
+    assert isinstance(decode_logs[0]["error_lineno"], int)
 
 
 @pytest.mark.unit
@@ -1337,6 +1373,8 @@ def test_parse_json_response_invalid_json_raises() -> None:
     assert "error" not in decode_logs[0]
     assert decode_logs[0]["error_type"] == json.JSONDecodeError.__qualname__
     assert decode_logs[0]["error_module"] == json.JSONDecodeError.__module__
+    assert isinstance(decode_logs[0]["error_pos"], int)
+    assert isinstance(decode_logs[0]["error_lineno"], int)
 
 
 @pytest.mark.unit

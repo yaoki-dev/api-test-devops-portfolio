@@ -354,12 +354,15 @@ class AsyncGitHubClient:
                     error_message = raw_message[:_MAX_403_ERROR_MESSAGE_CHARS]
         except json.JSONDecodeError as parse_err:
             # JSONパース失敗は想定内（GitHub APIが非JSON形式で403を返す場合がある）
+            # PII漏洩防止: parse_err.docはレスポンスbody全体を保持するため
+            # 例外オブジェクトを例外メッセージ・ログから除外（"Access forbidden"のみで再raise）
             self.logger.warning(
                 "failed_to_parse_403_message",
                 error_type=type(parse_err).__qualname__,
                 error_module=type(parse_err).__module__,
             )
             raise GitHubAPIError("Access forbidden") from None
+
         raise GitHubAPIError(
             f"Access forbidden: {error_message}" if error_message else "Access forbidden"
         ) from None
@@ -412,7 +415,13 @@ class AsyncGitHubClient:
                 endpoint=endpoint,
                 error_type=type(e).__qualname__,
                 error_module=type(e).__module__,
+                error_pos=e.pos,
+                error_lineno=e.lineno,
             )
+            # `from e` 維持: 200レスポンスのJSONパース失敗は診断に必要なため例外チェーン保持。
+            # JSONDecodeError.doc にbody全体が保持されるが、_handle_403_response (認証コンテキスト
+            # 秘匿) と異なり 200 success path のため `from None` ではなく `from e` を選択。
+            # PII含有可能性は API 応答仕様に依存（GitHub APIは通常 PII を返さない）。
             raise GitHubAPIError("Invalid JSON response") from e
 
     def _handle_http_status_error(
@@ -581,6 +590,8 @@ class AsyncGitHubClient:
                     self._handle_http_status_error(e)
 
             except httpx.TimeoutException as e:
+                # PII漏洩防止: str(e)はURL/host:port等を含む可能性があるためログから除外
+                # (unexpected_errorパスと同じ方針: error_type + error_moduleのみで診断情報を提供)
                 error_type = type(e).__qualname__
                 error_module = type(e).__module__
                 self.logger.warning(
@@ -590,7 +601,10 @@ class AsyncGitHubClient:
                     error_type=error_type,
                     error_module=error_module,
                 )
-                raise GitHubAPIError(f"Request timeout: {error_type}") from e
+                # PII漏洩防止 (__cause__): `from e` では chain 経由で httpx.TimeoutException.args が
+                # Sentry/traceback walker に露出するため `from None` で chain 切断
+                # (_handle_http_status_error L427-438 と同方針)
+                raise GitHubAPIError(f"Request timeout: {error_type}") from None
 
             except ASYNC_FATAL_EXCEPTIONS:
                 # システム例外は再発生
@@ -609,7 +623,9 @@ class AsyncGitHubClient:
                     error_type=error_type,
                     error_module=error_module,
                 )
-                raise GitHubAPIError(f"Unexpected error: {error_type}") from e
+                # PII漏洩防止 (__cause__): catch-all例外はURL/host:port等のPIIを含む可能性があるため
+                # `from None` で chain 切断 (timeout path L600 と同方針)
+                raise GitHubAPIError(f"Unexpected error: {error_type}") from None
 
         # リトライ上限到達（ここに到達することはないはずだが、型チェッカー対策）
         raise GitHubServerError(f"Failed after {self.max_retries} attempts")

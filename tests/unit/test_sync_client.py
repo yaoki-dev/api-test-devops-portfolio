@@ -1084,7 +1084,6 @@ def test_main_non_api_client_error_propagates_without_http_or_print_side_effects
     client.get_posts.side_effect = RuntimeError("unexpected failure")
     client_context = MagicMock()
     client_context.__enter__.return_value = client
-    client_context.__exit__.return_value = False
 
     with (
         patch.object(
