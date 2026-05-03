@@ -194,11 +194,31 @@ async def test_retry_on_server_error(mock_sleep: AsyncMock, mock_backoff: Mock) 
 @pytest.mark.parametrize(
     ("timeout_exception", "expected_message"),
     [
-        (httpx.TimeoutException("Request timeout"), "Request timeout: TimeoutException"),
-        (httpx.ConnectTimeout("Connect timeout"), "Request timeout: ConnectTimeout"),
-        (httpx.ReadTimeout("Read timeout"), "Request timeout: ReadTimeout"),
-        (httpx.WriteTimeout("Write timeout"), "Request timeout: WriteTimeout"),
-        (httpx.PoolTimeout("Pool timeout"), "Request timeout: PoolTimeout"),
+        pytest.param(
+            httpx.TimeoutException("Request timeout"),
+            "Request timeout: TimeoutException",
+            id="timeout_exception",
+        ),
+        pytest.param(
+            httpx.ConnectTimeout("Connect timeout"),
+            "Request timeout: ConnectTimeout",
+            id="connect_timeout",
+        ),
+        pytest.param(
+            httpx.ReadTimeout("Read timeout"),
+            "Request timeout: ReadTimeout",
+            id="read_timeout",
+        ),
+        pytest.param(
+            httpx.WriteTimeout("Write timeout"),
+            "Request timeout: WriteTimeout",
+            id="write_timeout",
+        ),
+        pytest.param(
+            httpx.PoolTimeout("Pool timeout"),
+            "Request timeout: PoolTimeout",
+            id="pool_timeout",
+        ),
     ],
 )
 @respx.mock
@@ -228,6 +248,7 @@ async def test_timeout_handling(
     assert len(timeout_logs) == 1
     assert timeout_logs[0]["error_type"] == type(timeout_exception).__qualname__
     assert timeout_logs[0]["error_module"] == type(timeout_exception).__module__
+    assert timeout_logs[0]["error_context"] == "timeout"
     # PII漏洩防止: error_detailフィールド除去 (unexpected_errorパスと同方針)
     assert "error_detail" not in timeout_logs[0]
     assert "error" not in timeout_logs[0]
@@ -614,6 +635,7 @@ async def test_unexpected_exception():
     assert "error" not in error_logs[0]
     assert error_logs[0]["error_type"] == "ValueError"
     assert error_logs[0]["error_module"] == "builtins"
+    assert error_logs[0]["error_context"] == "unexpected"
     # PII値レベル検証: 全 log フィールド値に sensitive_detail が漏洩していないこと
     for value in error_logs[0].values():
         assert sensitive_detail not in str(value), (

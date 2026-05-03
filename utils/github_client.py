@@ -595,7 +595,8 @@ class AsyncGitHubClient:
 
             except httpx.TimeoutException as e:
                 # PII漏洩防止: str(e)はURL/host:port等を含む可能性があるためログから除外
-                # (unexpected_errorパスと同じ方針: error_type + error_moduleのみで診断情報を提供)
+                # (unexpected_errorパスと同じ方針:
+                #  error_type + error_module + error_context で診断情報を提供)
                 error_type = type(e).__qualname__
                 error_module = type(e).__module__
                 self.logger.warning(
@@ -604,6 +605,7 @@ class AsyncGitHubClient:
                     method=method,
                     error_type=error_type,
                     error_module=error_module,
+                    error_context="timeout",
                 )
                 # PII漏洩防止 (__cause__): `from e` では chain 経由で httpx.TimeoutException.args が
                 # Sentry/traceback walker に露出するため `from None` で chain 切断
@@ -626,6 +628,7 @@ class AsyncGitHubClient:
                     method=method,
                     error_type=error_type,
                     error_module=error_module,
+                    error_context="unexpected",
                 )
                 # PII漏洩防止 (__cause__): catch-all例外はURL/host:port等のPIIを含む可能性があるため
                 # 例外チェーンを切断し、診断情報は非PIIのログフィールドに限定する。

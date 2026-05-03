@@ -1078,7 +1078,7 @@ def test_sync_health_check_system_exception_propagates(
                 client.health_check()
 
 
-def test_main_non_api_client_error_propagates_without_http_or_print_side_effects() -> None:
+def test_main_propagates_non_api_client_error() -> None:
     """main() は APIClientError 以外を捕捉せず呼び出し元へ伝播する"""
     client = MagicMock()
     client.get_posts.side_effect = RuntimeError("unexpected failure")
