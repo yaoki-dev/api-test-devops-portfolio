@@ -1,7 +1,7 @@
 # 軽量版: コミット時の最小限チェック (実行時間 < 3秒)
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: d1b833175a5d08a925900115526febd8fe71c98e  # frozen: v0.15.11
+    rev: 6fec9b7edb08fd9989088709d864a7826dc74e80  # frozen: v0.15.12
     hooks:
       - id: ruff
         args: [--fix]         # 自動修正で即座に問題解決
