@@ -354,8 +354,8 @@ class AsyncGitHubClient:
                     error_message = raw_message[:_MAX_403_ERROR_MESSAGE_CHARS]
         except json.JSONDecodeError as parse_err:
             # JSONパース失敗は想定内（GitHub APIが非JSON形式で403を返す場合がある）
-            # PII漏洩防止: parse_err.docはレスポンスbody全体を保持するため
-            # 例外オブジェクトを例外メッセージ・ログから除外（"Access forbidden"のみで再raise）
+            # PII漏洩防止: parse_err.doc はレスポンスbody全体を保持するため、
+            # ログのみ記録し active exception context の外で raise して __context__ を None に保つ。
             self.logger.warning(
                 "failed_to_parse_403_message",
                 error_type=type(parse_err).__qualname__,
@@ -363,8 +363,10 @@ class AsyncGitHubClient:
                 error_pos=parse_err.pos,
                 error_lineno=parse_err.lineno,
             )
-            raise GitHubAPIError("Access forbidden") from None
 
+        # JSONDecodeError.doc はレスポンスbody全体を保持する。
+        # except 外で raise して __context__ を None に保つ（_parse_json_response と同方針）。
+        # JSONDecodeError パス（error_message=""）も正常パスも同一の raise で処理。
         raise GitHubAPIError(
             f"Access forbidden: {error_message}" if error_message else "Access forbidden"
         ) from None
@@ -412,7 +414,7 @@ class AsyncGitHubClient:
                 response.json(),
             )
         except json.JSONDecodeError as e:
-            self.logger.warning(
+            self.logger.error(
                 "json_decode_error",
                 endpoint=endpoint,
                 error_type=type(e).__qualname__,
@@ -421,8 +423,9 @@ class AsyncGitHubClient:
                 error_lineno=e.lineno,
             )
 
-        # JSONDecodeError.doc はレスポンスbody全体を保持するため、
-        # active exception context の外で再raiseして cause/context に残さない。
+        # JSONDecodeError.doc はレスポンスbody全体を保持する。
+        # except 内で raise すると __context__ に JSONDecodeError が残存し .doc 経由で露出するため、
+        # active exception context の外で raise して __context__ を None に保つ。
         raise GitHubAPIError("Invalid JSON response") from None
 
     def _handle_http_status_error(
@@ -625,10 +628,8 @@ class AsyncGitHubClient:
                     error_module=error_module,
                 )
                 # PII漏洩防止 (__cause__): catch-all例外はURL/host:port等のPIIを含む可能性があるため
-                # `from Exception(...)` で chain 切断し最小限の診断情報を保持 (L461-463 と同方針)
-                raise GitHubAPIError(f"Unexpected error: {error_type}") from Exception(
-                    f"{error_module}.{error_type}"
-                )
+                # 例外チェーンを切断し、診断情報は非PIIのログフィールドに限定する。
+                raise GitHubAPIError(f"Unexpected error: {error_type}") from None
 
         # リトライ上限到達（ここに到達することはないはずだが、型チェッカー対策）
         raise GitHubServerError(f"Failed after {self.max_retries} attempts")

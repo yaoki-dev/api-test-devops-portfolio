@@ -170,7 +170,7 @@ async def test_retry_on_server_error(mock_sleep: AsyncMock, mock_backoff: Mock) 
     検証項目:
     - 500エラー発生時に指数バックオフでリトライ
     - 3回失敗後にGitHubServerError例外
-    - 例外チェーン維持（from e）
+    - 最終試行後にサーバーエラー情報を保持
     """
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
     route.side_effect = [
@@ -244,7 +244,7 @@ async def test_timeout_logging_no_pii_leak():
     """
     sensitive_detail = "https://api.example.com/internal?token=SECRET_API_KEY_12345"
     timeout_exception = httpx.ConnectTimeout(sensitive_detail)
-    respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=timeout_exception)
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=timeout_exception)
 
     with capture_logs() as log_output:
         async with AsyncGitHubClient() as client:
@@ -261,6 +261,7 @@ async def test_timeout_logging_no_pii_leak():
         assert sensitive_detail not in str(value), (
             f"sensitive_detail leaked in log field value: {value!r}"
         )
+    assert route.call_count == 1
 
 
 # =============================================================================
@@ -605,9 +606,8 @@ async def test_unexpected_exception():
 
     assert str(exc_info.value) == "Unexpected error: ValueError"
     assert sensitive_detail not in str(exc_info.value)
-    # 例外チェーンは sanitized cause のみ保持し、元例外メッセージは露出しない
-    assert str(exc_info.value.__cause__) == "builtins.ValueError"
-    assert sensitive_detail not in str(exc_info.value.__cause__)
+    # 例外チェーンは切断し、元例外メッセージは露出しない
+    assert exc_info.value.__cause__ is None
     assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
     error_logs = [log for log in log_output if log.get("event") == "unexpected_error"]
     assert len(error_logs) == 1
@@ -1351,6 +1351,8 @@ def test_parse_json_response_invalid_json_raises() -> None:
             client._parse_json_response(response, "/test-endpoint")
 
     assert exc_info.value.__cause__ is None
+    # except外raiseパターンで__context__も完全切断されていること（PII隔離保証）
+    assert exc_info.value.__context__ is None
     assert "not-valid-json" not in str(exc_info.value)
     decode_logs = [log for log in log_output if log.get("event") == "json_decode_error"]
     assert len(decode_logs) == 1

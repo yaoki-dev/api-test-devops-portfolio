@@ -7,7 +7,6 @@ from typing import Any
 import pytest
 from pydantic import SecretStr, ValidationError
 
-# isort: off
 from config.settings import (
     APIConfig,
     Environment,
@@ -16,14 +15,15 @@ from config.settings import (
     SecurityConfig,
     SentryConfig,
     Settings,
-    TestConfig as ConfigForTestingEnv,
     _resolve_hostname,
     _resolve_hostname_cached,
     get_settings,
     is_private_ip,
     reload_settings,
 )
-# isort: on
+from config.settings import (
+    TestConfig as ConfigForTestingEnv,
+)
 
 # Module-level marker: All tests in this file are unit tests
 pytestmark = pytest.mark.unit
