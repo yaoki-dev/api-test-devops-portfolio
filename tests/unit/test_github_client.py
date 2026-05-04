@@ -255,6 +255,7 @@ async def test_timeout_handling(
     assert route.call_count == MAX_RETRIES  # timeout は max_retries 回まで再試行
     assert mock_backoff.call_count == MAX_RETRIES - 1
     assert mock_sleep.await_count == MAX_RETRIES - 1
+    mock_sleep.assert_has_awaits([call(0.0)] * (MAX_RETRIES - 1))
     timeout_logs = [log for log in log_output if log.get("event") == "request_timeout"]
     assert len(timeout_logs) == MAX_RETRIES
     for timeout_log in timeout_logs:
@@ -312,6 +313,70 @@ async def test_timeout_logging_no_pii_leak():
     assert route.call_count == MAX_RETRIES
     assert mock_backoff.call_count == MAX_RETRIES - 1
     assert mock_sleep.await_count == MAX_RETRIES - 1
+
+
+@pytest.mark.parametrize(
+    ("network_exception", "expected_message"),
+    [
+        pytest.param(
+            httpx.ConnectError("Connection refused"),
+            "Network error: ConnectError",
+            id="connect_error",
+        ),
+        pytest.param(
+            httpx.ReadError("Read failed"),
+            "Network error: ReadError",
+            id="read_error",
+        ),
+        pytest.param(
+            httpx.RemoteProtocolError("Server disconnected"),
+            "Network error: RemoteProtocolError",
+            id="remote_protocol_error",
+        ),
+    ],
+)
+@respx.mock
+async def test_network_error_retry_handling(
+    network_exception: httpx.NetworkError,
+    expected_message: str,
+) -> None:
+    """NetworkError系をretry後、GitHubAPIErrorへ安全に変換する。"""
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=network_exception)
+
+    with patch(
+        "utils.github_client.exponential_backoff_with_jitter",
+        return_value=0.0,
+    ) as mock_backoff:
+        with patch("utils.github_client.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            with capture_logs() as log_output:
+                async with AsyncGitHubClient() as client:
+                    with pytest.raises(GitHubAPIError) as exc_info:
+                        await client.get_user("octocat")
+
+    assert str(exc_info.value) == expected_message
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
+    assert route.call_count == MAX_RETRIES
+    assert mock_backoff.call_count == MAX_RETRIES - 1
+    assert mock_sleep.await_count == MAX_RETRIES - 1
+    mock_sleep.assert_has_awaits([call(0.0)] * (MAX_RETRIES - 1))
+    network_logs = [log for log in log_output if log.get("event") == "request_network_error"]
+    assert len(network_logs) == MAX_RETRIES
+    for network_log in network_logs:
+        assert network_log["error_type"] == type(network_exception).__qualname__
+        assert network_log["error_module"] == type(network_exception).__module__
+        assert network_log["error_context"] == "network"
+        assert set(network_log) == {
+            "endpoint",
+            "method",
+            "error_type",
+            "error_module",
+            "error_context",
+            "event",
+            "log_level",
+        }
+        assert "error_detail" not in network_log
+        assert "error" not in network_log
 
 
 # =============================================================================

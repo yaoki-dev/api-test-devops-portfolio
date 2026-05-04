@@ -559,6 +559,7 @@ class AsyncGitHubClient:
 
         for attempt in range(self.max_retries):
             timeout_error_type: str | None = None
+            network_error_type: str | None = None
             unexpected_error_type: str | None = None
             http_status_response: httpx.Response | None = None
             try:
@@ -631,6 +632,24 @@ class AsyncGitHubClient:
                     continue
                 # 最終試行は後続の `timeout_error_type` で GitHubAPIError に変換する
 
+            except httpx.TransportError as e:
+                # PII漏洩防止: str(e)はURL/host:port等を含む可能性があるためログから除外
+                network_error_type = type(e).__qualname__
+                error_module = type(e).__module__
+                self.logger.warning(
+                    "request_network_error",
+                    endpoint=endpoint,
+                    method=method,
+                    error_type=network_error_type,
+                    error_module=error_module,
+                    error_context="network",
+                )
+                if attempt < self.max_retries - 1:
+                    delay = exponential_backoff_with_jitter(attempt, base_delay=2.0)
+                    await asyncio.sleep(delay)
+                    continue
+                # 最終試行は後続の `network_error_type` で GitHubAPIError に変換する
+
             except ASYNC_FATAL_EXCEPTIONS:
                 # システム例外は再発生
                 # - KeyboardInterrupt/SystemExit: graceful shutdown対応
@@ -687,6 +706,11 @@ class AsyncGitHubClient:
                 # Sentry/traceback walker 経由で expose されるため、
                 # active exception context の外で raise して __context__ を None に保つ
                 raise GitHubAPIError(f"Request timeout: {timeout_error_type}") from None
+
+            if network_error_type is not None:
+                # PII漏洩防止 (__context__): active exception context の外で raise して
+                # httpx.NetworkError のURL/host:port等を例外チェーンに残さない
+                raise GitHubAPIError(f"Network error: {network_error_type}") from None
 
             if unexpected_error_type is not None:
                 # PII漏洩防止 (__cause__): catch-all例外はURL/host:port等のPIIを含む可能性があるため
