@@ -18,7 +18,6 @@ import os
 import sys
 import threading
 import time
-from functools import lru_cache
 from types import TracebackType
 from typing import Any, Literal, cast
 
@@ -63,13 +62,12 @@ _SENTRY_LEVEL_MAP: dict[str, Literal["error", "critical"]] = {
 _SENTRY_DEBUG_DETAIL_MAX_LEN: int = 100
 
 
-@lru_cache(maxsize=1)
 def _is_sentry_debug_enabled() -> bool:
     """SENTRY_DEBUG 環境変数が有効か判定
 
-    結果はプロセスライフタイムでキャッシュされる (lru_cache)。
-    SENTRY_DEBUG の変更を反映するにはプロセス再起動が必要。
-    テストで動的に変更する場合は `_is_sentry_debug_enabled.cache_clear()` を呼ぶこと。
+    環境変数の変更はリアルタイムに反映される（キャッシュなし）。
+    デプロイ後のSENTRY_DEBUG有効化に対応し、プロセス再起動不要。
+    os.environ.get() はO(1)で軽量なため、呼び出しごとのチェックにオーバーヘッドなし。
     """
     return os.environ.get("SENTRY_DEBUG", "").lower() in ("true", "1", "yes")
 

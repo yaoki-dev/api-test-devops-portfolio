@@ -360,17 +360,16 @@ def reset_sentry_warning_state(
     4 つの permanent throttle マーカー ("settings"/"sdk"/"bug"/"outside_except") を
     保持する `_sentry_warnings_emitted: set[str]` を空集合に、
     `_sentry_send_error_last_warned` timestamp を float("-inf") にリセットする。
-    `_is_sentry_debug_enabled` の lru_cache も合わせてクリアし monkeypatch.setenv/
-    delenv との整合性を保つ。
+    `_is_sentry_debug_enabled` は lru_cache 削除済みのためリアルタイム取得。
+    monkeypatch.setenv/delenv との整合性は自動的に保たれる。
 
     `_sentry_warning_lock` (threading.Lock) はリセット対象外:
     Lock インスタンス自体を差し替えるとモジュール内の他参照と整合しなくなり、また
     ロック状態は test 間で leak しない (各テスト内でロック取得・解放が完結する) ため
     リセット不要。
 
-    monkeypatch.setattr は test 終了時に自動復元されるが、`lru_cache` は monkeypatch
-    管轄外のため teardown でも明示的に cache_clear() を実行し、teardown フック介入
-    (pytest plugin 等) によるキャッシュ汚染残留リスクを排除する。
+    monkeypatch.setattr は test 終了時に自動復元され、環境変数変更も即時反映される。
+    lru_cache 削除済みのため teardown での cache_clear() は不要。
 
     autouse=True により全テストで自動適用し、TestSentryProcessor 以外のクラスでも
     モジュールレベル throttle 状態の汚染を防止する (同一プロセス内の逐次テスト間
@@ -380,19 +379,15 @@ def reset_sentry_warning_state(
     グローバル変数はプロセス間で共有されない。本 fixture の主目的は同一プロセス内
     の逐次テスト間の汚染防止であり、xdist による並列実行は副次的な恩恵。
     """
-    from utils.logger import _is_sentry_debug_enabled
 
     monkeypatch.setattr("utils.logger._sentry_warnings_emitted", set())
     monkeypatch.setattr("utils.logger._sentry_send_error_last_warned", float("-inf"))
-    # SENTRY_DEBUG の lru_cache を test 開始前にクリア。
-    # monkeypatch.setenv/delenv との整合性確保のため必須。
-    _is_sentry_debug_enabled.cache_clear()
+    # SENTRY_DEBUG は環境変数をリアルタイム取得するため cache_clear() 不要
+    # (lru_cache削除済みversion: logger.py _is_sentry_debug_enabled)
     try:
         yield
     finally:
-        # teardown でも明示的にクリア。lru_cache は monkeypatch 管轄外のため、
-        # test 内でキャッシュが更新されると次テストの setUp 前まで残留する。
-        _is_sentry_debug_enabled.cache_clear()
+        pass  # teardown: SENTRY_DEBUG クリア不要（環境変数リアルタイム取得）
 
 
 # =============================================================================
