@@ -94,10 +94,10 @@ def _redact_body_preview(body_preview: str) -> str:
         body_preview: デコード済みの response body (先頭 200バイト)
 
     Returns:
-        リダクション済み文字列 (形式: "[redacted:hash]")
+        リダクション済み文字列 (形式: "[redacted:SHA256_16chars]")
     """
 
-    body_hash = hashlib.sha256(body_preview.encode("utf-8", errors="replace")).hexdigest()[:12]
+    body_hash = hashlib.sha256(body_preview.encode("utf-8", errors="replace")).hexdigest()[:16]
     return f"[redacted:{body_hash}]"
 
 
@@ -153,7 +153,7 @@ class AsyncGitHubClient:
 
         Args:
             timeout: リクエストタイムアウト（秒）
-            max_retries: 最大試行回数（5xxエラーのみ、初回含む）
+            max_retries: 最大試行回数（5xx と timeout の再試行回数、初回含む）
             user_agent: User-Agentヘッダー（GitHub要求事項）
 
         """
@@ -538,9 +538,12 @@ class AsyncGitHubClient:
             NotFoundError: 404エラー
             RateLimitError: 403 Rate Limit超過 または 429 Too Many Requests
             GitHubServerError: 5xxエラー（リトライ上限後）
-            GitHubAPIError: タイムアウト等の予期しないエラー
+            GitHubAPIError: タイムアウトは再試行後の最終失敗、
+                予期しないエラーは即失敗
 
         Note:
+            max_retries は 5xx エラーと timeout の再試行回数を制御する。
+            unexpected エラーは再試行せず、1回目で GitHubAPIError へ変換する。
             X-RateLimit-Remaining ヘッダーが不正値の場合:
             - 監視パス: _RATE_LIMIT_FALLBACK_REMAINING（残量十分と見なし、rate_limit_low警告なし）
             - 403判定パス: _RATE_LIMIT_FORBIDDEN_FALLBACK（Rate Limit超過と判定せず、GitHubAPIError発生）
@@ -622,14 +625,22 @@ class AsyncGitHubClient:
                     error_module=error_module,
                     error_context="timeout",
                 )
-                # except外raiseパターン: HTTPStatusError.response等のPII含有オブジェクトが
-                # __context__に残存するのを防止（_parse_json_responseと同方針）
+                if attempt < self.max_retries - 1:
+                    delay = exponential_backoff_with_jitter(attempt, base_delay=2.0)
+                    await asyncio.sleep(delay)
+                    continue
+                # 最終試行は後続の `timeout_error_type` で GitHubAPIError に変換する
 
             except ASYNC_FATAL_EXCEPTIONS:
                 # システム例外は再発生
                 # - KeyboardInterrupt/SystemExit: graceful shutdown対応
                 # - MemoryError: K8s OOMKilled等のリソース枯渇検知
                 # - CancelledError: asyncioタスクキャンセル伝播
+                raise
+
+            except httpx.ResponseNotRead:
+                # ResponseNotRead は response body 未読の httpx 正常系制御例外。
+                # unexpected_error に包まず、そのまま伝播させる。
                 raise
 
             except Exception as e:

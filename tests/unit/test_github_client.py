@@ -228,42 +228,50 @@ async def test_timeout_handling(
     timeout_exception: httpx.TimeoutException,
     expected_message: str,
 ):
-    """タイムアウト時にGitHubAPIError発生
+    """タイムアウト時に再試行後、GitHubAPIError発生
 
     検証項目:
-    - httpx.TimeoutException系 → GitHubAPIError変換
+    - httpx.TimeoutException系 → retry 後に GitHubAPIError 変換
+    - retry 回数が max_retries に一致すること
     - 例外チェーン切断（from None）: PII漏洩防止のため __cause__ を抑制
     - 警告ログ出力
     """
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=timeout_exception)
 
-    with capture_logs() as log_output:
-        async with AsyncGitHubClient() as client:
-            with pytest.raises(GitHubAPIError) as exc_info:
-                await client.get_user("octocat")
+    with patch(
+        "utils.github_client.exponential_backoff_with_jitter",
+        return_value=0.0,
+    ) as mock_backoff:
+        with patch("utils.github_client.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            with capture_logs() as log_output:
+                async with AsyncGitHubClient() as client:
+                    with pytest.raises(GitHubAPIError) as exc_info:
+                        await client.get_user("octocat")
 
     assert str(exc_info.value) == expected_message
     # 例外チェーン切断確認（from None による PII 漏洩防止）
     assert exc_info.value.__cause__ is None
     assert exc_info.value.__context__ is None  # except外raiseパターン検証
-    assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
+    assert route.call_count == MAX_RETRIES  # timeout は max_retries 回まで再試行
+    assert mock_backoff.call_count == MAX_RETRIES - 1
+    assert mock_sleep.await_count == MAX_RETRIES - 1
     timeout_logs = [log for log in log_output if log.get("event") == "request_timeout"]
-    assert len(timeout_logs) == 1
-    timeout_log = timeout_logs[0]
-    assert timeout_log["error_type"] == type(timeout_exception).__qualname__
-    assert timeout_log["error_module"] == type(timeout_exception).__module__
-    assert timeout_log["error_context"] == "timeout"
-    assert set(timeout_log) == {
-        "endpoint",
-        "method",
-        "error_type",
-        "error_module",
-        "error_context",
-        "event",
-        "log_level",
-    }
-    assert "error_detail" not in timeout_log
-    assert "error" not in timeout_log
+    assert len(timeout_logs) == MAX_RETRIES
+    for timeout_log in timeout_logs:
+        assert timeout_log["error_type"] == type(timeout_exception).__qualname__
+        assert timeout_log["error_module"] == type(timeout_exception).__module__
+        assert timeout_log["error_context"] == "timeout"
+        assert set(timeout_log) == {
+            "endpoint",
+            "method",
+            "error_type",
+            "error_module",
+            "error_context",
+            "event",
+            "log_level",
+        }
+        assert "error_detail" not in timeout_log
+        assert "error" not in timeout_log
 
 
 @respx.mock
@@ -279,23 +287,31 @@ async def test_timeout_logging_no_pii_leak():
     timeout_exception = httpx.ConnectTimeout(sensitive_detail)
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=timeout_exception)
 
-    with capture_logs() as log_output:
-        async with AsyncGitHubClient() as client:
-            with pytest.raises(GitHubAPIError) as exc_info:
-                await client.get_user("octocat")
+    with patch(
+        "utils.github_client.exponential_backoff_with_jitter",
+        return_value=0.0,
+    ) as mock_backoff:
+        with patch("utils.github_client.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            with capture_logs() as log_output:
+                async with AsyncGitHubClient() as client:
+                    with pytest.raises(GitHubAPIError) as exc_info:
+                        await client.get_user("octocat")
 
     assert sensitive_detail not in str(exc_info.value)
     # __cause__ 切断検証: from None により Sentry/traceback 経由の PII 漏洩を防止
     assert exc_info.value.__cause__ is None
     assert exc_info.value.__context__ is None  # except外raiseパターン検証
     timeout_logs = [log for log in log_output if log.get("event") == "request_timeout"]
-    assert len(timeout_logs) == 1
+    assert len(timeout_logs) == MAX_RETRIES
     # PII値レベル検証: 全logフィールド値にsensitive_detailが漏洩していないこと
-    for value in timeout_logs[0].values():
-        assert sensitive_detail not in str(value), (
-            f"sensitive_detail leaked in log field value: {value!r}"
-        )
-    assert route.call_count == 1
+    for timeout_log in timeout_logs:
+        for value in timeout_log.values():
+            assert sensitive_detail not in str(value), (
+                f"sensitive_detail leaked in log field value: {value!r}"
+            )
+    assert route.call_count == MAX_RETRIES
+    assert mock_backoff.call_count == MAX_RETRIES - 1
+    assert mock_sleep.await_count == MAX_RETRIES - 1
 
 
 # =============================================================================
@@ -657,6 +673,15 @@ async def test_unexpected_exception():
         assert sensitive_detail not in str(value), (
             f"sensitive_detail leaked in log field value: {value!r}"
         )
+
+
+@respx.mock
+async def test_response_not_read_propagates_without_unexpected_wrapper():
+    """ResponseNotRead は unexpected_error に包まずそのまま伝播する"""
+    async with AsyncGitHubClient() as client:
+        with patch.object(client._client, "request", side_effect=httpx.ResponseNotRead()):
+            with pytest.raises(httpx.ResponseNotRead):
+                await client.get_user("octocat")
 
 
 # =============================================================================
@@ -1114,14 +1139,14 @@ def test_handle_403_response(
 
 
 def test_redact_body_preview_returns_fixed_format() -> None:
-    """_redact_body_preview: [redacted:SHA256_12chars]形式を返す"""
+    """_redact_body_preview: [redacted:SHA256_16chars]形式を返す"""
     result = _redact_body_preview("any content here")
-    assert re.fullmatch(r"\[redacted:[0-9a-f]{12}\]", result)
+    assert re.fullmatch(r"\[redacted:[0-9a-f]{16}\]", result)
 
 
 def test_redact_body_preview_empty_string() -> None:
     """_redact_body_preview: 空文字列→確定的ハッシュ"""
-    assert _redact_body_preview("") == "[redacted:e3b0c44298fc]"
+    assert _redact_body_preview("") == "[redacted:e3b0c44298fc1c14]"
 
 
 def test_redact_body_preview_deterministic() -> None:

@@ -67,7 +67,8 @@ def _is_sentry_debug_enabled() -> bool:
 
     環境変数の変更はリアルタイムに反映される（キャッシュなし）。
     デプロイ後のSENTRY_DEBUG有効化に対応し、プロセス再起動不要。
-    os.environ.get() はO(1)で軽量なため、呼び出しごとのチェックにオーバーヘッドなし。
+    os.environ.get() はO(1)で軽量なため、呼び出しごとのチェックでも
+    通常のホットパスへの影響は小さい。
     """
     return os.environ.get("SENTRY_DEBUG", "").lower() in ("true", "1", "yes")
 
