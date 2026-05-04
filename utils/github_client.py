@@ -7,6 +7,7 @@
 """
 
 import asyncio
+import hashlib
 import json
 import re
 from datetime import UTC, datetime
@@ -80,6 +81,24 @@ _MAX_HTTP_ERROR_BODY_PREVIEW_BYTES = 200
 # =============================================================================
 # 例外クラス
 # =============================================================================
+
+
+def _redact_body_preview(body_preview: str) -> str:
+    """HTTP error response body preview をリダクション
+
+    エラー応答がトークン、API キー、private repository 名を含む場合に
+    stdout/debug logs へ機密情報が漏れるのを防止する。
+    内容を完全にマスクし、ハッシュベースの指紋を保持して debug に利用。
+
+    Args:
+        body_preview: デコード済みの response body (先頭 200バイト)
+
+    Returns:
+        リダクション済み文字列 (形式: "[redacted:hash]")
+    """
+
+    body_hash = hashlib.sha256(body_preview.encode("utf-8", errors="replace")).hexdigest()[:12]
+    return f"[redacted:{body_hash}]"
 
 
 class GitHubAPIError(APIClientError):
@@ -430,7 +449,9 @@ class AsyncGitHubClient:
 
     def _handle_http_status_error(
         self,
-        e: httpx.HTTPStatusError,
+        response: httpx.Response,
+        endpoint: str,
+        method: str,
     ) -> NoReturn:
         """4xxエラーを GitHubAPIError に変換して raise する。
 
@@ -443,27 +464,30 @@ class AsyncGitHubClient:
         設計上の制約: `from e` でなく新規 Exception を __cause__ に使用する。
         理由: httpx.HTTPStatusError の response body が Sentry 経由で漏洩するリスクを回避。
         コーディング規約 Section 5「from e でチェーン維持」の意図的例外。
+
+        response/endpoint/method を直接受け取る理由: 呼び出し元が except 外で呼ぶことで
+        __context__ に PII含有オブジェクトが残存しないよう設計（PII漏洩防止）。
         """
         # ログレベル別出力先
         # warning(401) → LOG__LEVEL=ERROR未満の全設定でstdoutに出力（デフォルトINFO含む）
         # debug(404等) → LOG__LEVEL=DEBUGの場合のみstdoutに出力
         # いずれもSentry非送信: make_filtering_bound_logger によりDEBUG/WARNING は
         #   Sentry送信前にフィルタ済み（参照: utils/logger.py L160, _sentry_processor L52-54）
-        body_preview = e.response.content[:_MAX_HTTP_ERROR_BODY_PREVIEW_BYTES].decode(
-            e.response.encoding or "utf-8",
+        body_preview_raw = response.content[:_MAX_HTTP_ERROR_BODY_PREVIEW_BYTES].decode(
+            response.encoding or "utf-8",
             errors="replace",
         )
         # 401 (Unauthorized) は認証エラーのため warning、404/422 等の想定内4xx は debug に抑制
-        log_fn = self.logger.warning if e.response.status_code == 401 else self.logger.debug
+        log_fn = self.logger.warning if response.status_code == 401 else self.logger.debug
         log_fn(
             "http_status_error",
-            status_code=e.response.status_code,
-            endpoint=e.request.url.path,
-            method=e.request.method,
-            body_preview=body_preview,
+            status_code=response.status_code,
+            endpoint=endpoint,
+            method=method,
+            body_preview=_redact_body_preview(body_preview_raw),
         )
-        raise GitHubAPIError(f"HTTP {e.response.status_code} error") from Exception(
-            f"httpx.HTTPStatusError: HTTP {e.response.status_code} {e.request.url.path}"
+        raise GitHubAPIError(f"HTTP {response.status_code} error") from Exception(
+            f"httpx.HTTPStatusError: HTTP {response.status_code} {endpoint}"
         )
 
     def _update_etag_cache(
@@ -531,6 +555,9 @@ class AsyncGitHubClient:
         headers = self._prepare_headers(endpoint)
 
         for attempt in range(self.max_retries):
+            timeout_error_type: str | None = None
+            unexpected_error_type: str | None = None
+            http_status_response: httpx.Response | None = None
             try:
                 response = await self._client.request(
                     method,
@@ -577,40 +604,26 @@ class AsyncGitHubClient:
                 raise
 
             except httpx.HTTPStatusError as e:
-                if e.response.status_code >= 500:
-                    # 防御的パス: 5xxをhttpx.HTTPStatusErrorとして受信した場合、通常パスと同等に処理
-                    await self._handle_5xx_response(e.response, attempt, endpoint, method)
-                    continue
-                if e.response.status_code == 429:
-                    # 防御的パス: 429をhttpx.HTTPStatusErrorとして受信した場合もRateLimitErrorに変換
-                    reset_time = self._parse_rate_limit_header(
-                        e.response.headers, "X-RateLimit-Reset", _RATE_LIMIT_RESET_FALLBACK
-                    )
-                    raise RateLimitError(reset_time) from None
-                if e.response.status_code == 403:
-                    # 防御的パス: 403をhttpx.HTTPStatusErrorとして受信した場合も詳細分析を実施
-                    self._handle_403_response(e.response)
-                else:
-                    self._handle_http_status_error(e)
+                # except外raiseパターン: e.response（PII含有）が __context__ に残存するのを防止
+                # e.response を退避してから except を抜け、except 外で処理・raise する
+                http_status_response = e.response
 
             except httpx.TimeoutException as e:
                 # PII漏洩防止: str(e)はURL/host:port等を含む可能性があるためログから除外
                 # (unexpected_errorパスと同じ方針:
                 #  error_type + error_module + error_context で診断情報を提供)
-                error_type = type(e).__qualname__
+                timeout_error_type = type(e).__qualname__
                 error_module = type(e).__module__
                 self.logger.warning(
                     "request_timeout",
                     endpoint=endpoint,
                     method=method,
-                    error_type=error_type,
+                    error_type=timeout_error_type,
                     error_module=error_module,
                     error_context="timeout",
                 )
-                # PII漏洩防止 (__cause__): `from e` では chain 経由で httpx.TimeoutException.args が
-                # Sentry/traceback walker に露出するため `from None` で chain 切断
-                # (_handle_http_status_error L427-438 と同方針)
-                raise GitHubAPIError(f"Request timeout: {error_type}") from None
+                # except外raiseパターン: HTTPStatusError.response等のPII含有オブジェクトが
+                # __context__に残存するのを防止（_parse_json_responseと同方針）
 
             except ASYNC_FATAL_EXCEPTIONS:
                 # システム例外は再発生
@@ -620,19 +633,51 @@ class AsyncGitHubClient:
                 raise
 
             except Exception as e:
-                error_type = type(e).__qualname__
+                unexpected_error_type = type(e).__qualname__
                 error_module = type(e).__module__
                 self.logger.error(
                     "unexpected_error",
                     endpoint=endpoint,
                     method=method,
-                    error_type=error_type,
+                    error_type=unexpected_error_type,
                     error_module=error_module,
                     error_context="unexpected",
                 )
+                # except外raiseパターン: 予期しない例外が__context__に残存するのを防止
+
+            if http_status_response is not None:
+                # PII漏洩防止: __context__ を None に保つため except 外で処理・raise
+                # (httpx.HTTPStatusError.response は response body + request URL を保持するため)
+                status_code = http_status_response.status_code
+                if status_code >= 500:
+                    # 防御的パス: 5xxをhttpx.HTTPStatusErrorとして受信した場合、通常パスと同等に処理
+                    await self._handle_5xx_response(http_status_response, attempt, endpoint, method)
+                    continue
+                if status_code == 429:
+                    # 防御的パス: 429をhttpx.HTTPStatusErrorとして受信した場合もRateLimitErrorに変換
+                    reset_time = self._parse_rate_limit_header(
+                        http_status_response.headers,
+                        "X-RateLimit-Reset",
+                        _RATE_LIMIT_RESET_FALLBACK,
+                    )
+                    raise RateLimitError(reset_time) from None
+                if status_code == 403:
+                    # 防御的パス: 403をhttpx.HTTPStatusErrorとして受信した場合も詳細分析を実施
+                    self._handle_403_response(http_status_response)
+                else:
+                    self._handle_http_status_error(http_status_response, endpoint, method)
+
+            if timeout_error_type is not None:
+                # PII漏洩防止 (__context__): except 内で raise すると
+                # httpx.TimeoutException が __context__ に残り、
+                # Sentry/traceback walker 経由で expose されるため、
+                # active exception context の外で raise して __context__ を None に保つ
+                raise GitHubAPIError(f"Request timeout: {timeout_error_type}") from None
+
+            if unexpected_error_type is not None:
                 # PII漏洩防止 (__cause__): catch-all例外はURL/host:port等のPIIを含む可能性があるため
                 # 例外チェーンを切断し、診断情報は非PIIのログフィールドに限定する。
-                raise GitHubAPIError(f"Unexpected error: {error_type}") from None
+                raise GitHubAPIError(f"Unexpected error: {unexpected_error_type}") from None
 
         # リトライ上限到達（ここに到達することはないはずだが、型チェッカー対策）
         raise GitHubServerError(f"Failed after {self.max_retries} attempts")

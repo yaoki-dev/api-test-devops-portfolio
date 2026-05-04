@@ -9,6 +9,7 @@ GitHub API非同期クライアントのUnit Tests
 
 import asyncio
 import json
+import re
 from datetime import UTC, datetime
 from unittest.mock import ANY, AsyncMock, Mock, call, patch
 
@@ -23,6 +24,7 @@ from utils.github_client import (
     GitHubServerError,
     NotFoundError,
     RateLimitError,
+    _redact_body_preview,
     validate_github_repo,
 )
 
@@ -243,6 +245,7 @@ async def test_timeout_handling(
     assert str(exc_info.value) == expected_message
     # 例外チェーン切断確認（from None による PII 漏洩防止）
     assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None  # except外raiseパターン検証
     assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
     timeout_logs = [log for log in log_output if log.get("event") == "request_timeout"]
     assert len(timeout_logs) == 1
@@ -275,6 +278,7 @@ async def test_timeout_logging_no_pii_leak():
     assert sensitive_detail not in str(exc_info.value)
     # __cause__ 切断検証: from None により Sentry/traceback 経由の PII 漏洩を防止
     assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None  # except外raiseパターン検証
     timeout_logs = [log for log in log_output if log.get("event") == "request_timeout"]
     assert len(timeout_logs) == 1
     # PII値レベル検証: 全logフィールド値にsensitive_detailが漏洩していないこと
@@ -415,6 +419,8 @@ async def test_httpx_status_error_4xx():
     assert isinstance(exc_info.value.__cause__, Exception)
     # __cause__がhttpx.HTTPStatusErrorそのものでないことを型レベルで確認
     assert not isinstance(exc_info.value.__cause__, httpx.HTTPStatusError)
+    # except外raiseパターン: HTTPStatusErrorが__context__に残存しないこと（PII漏洩防止）
+    assert exc_info.value.__context__ is None
     assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
     # メッセージ形式検証: ボディ除去後の正確なフォーマット確認
     assert str(exc_info.value) == "HTTP 401 error"
@@ -551,6 +557,7 @@ async def test_httpx_status_error_403_defensive_path() -> None:
         with pytest.raises(RateLimitError) as exc_info:
             await client.get_user("octocat")
 
+    assert exc_info.value.__context__ is None  # sentinel pattern: except外raiseパターン検証
     assert exc_info.value.reset_time == 1640000000
     assert "Rate limit exceeded" in str(exc_info.value)
     assert route.call_count == 1
@@ -576,9 +583,10 @@ async def test_httpx_status_error_403_auth_error_defensive_path() -> None:
     route.side_effect = [error_403]
 
     async with AsyncGitHubClient() as client:
-        with pytest.raises(GitHubAPIError, match="Access forbidden"):
+        with pytest.raises(GitHubAPIError, match="Access forbidden") as exc_info:
             await client.get_user("octocat")
 
+    assert exc_info.value.__context__ is None  # sentinel pattern: except外raiseパターン検証
     assert route.call_count == 1
 
 
@@ -629,6 +637,7 @@ async def test_unexpected_exception():
     assert sensitive_detail not in str(exc_info.value)
     # 例外チェーンは切断し、元例外メッセージは露出しない
     assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
     assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
     error_logs = [log for log in log_output if log.get("event") == "unexpected_error"]
     assert len(error_logs) == 1
@@ -1097,25 +1106,38 @@ def test_handle_403_response(
         assert rate_limit_error.reset_time == int(reset_header)
 
 
+def test_redact_body_preview_returns_fixed_format() -> None:
+    """_redact_body_preview: [redacted:SHA256_12chars]形式を返す"""
+    result = _redact_body_preview("any content here")
+    assert re.fullmatch(r"\[redacted:[0-9a-f]{12}\]", result)
+
+
+def test_redact_body_preview_empty_string() -> None:
+    """_redact_body_preview: 空文字列→確定的ハッシュ"""
+    assert _redact_body_preview("") == "[redacted:e3b0c44298fc]"
+
+
+def test_redact_body_preview_deterministic() -> None:
+    """_redact_body_preview: 同一入力→同一ハッシュ（冪等性）"""
+    body = "A" * 200
+    assert _redact_body_preview(body) == _redact_body_preview(body)
+    assert _redact_body_preview(body) == "[redacted:70d3bf8b0b9d]"
+
+
 def test_handle_http_status_error_uses_debug_for_other_4xx() -> None:
     """_handle_http_status_error: 401以外の4xxでは debug ログを使う"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
     mock_request = httpx.Request("GET", "https://api.github.com/test")
     mock_response = httpx.Response(404, request=mock_request)
-    error = httpx.HTTPStatusError(
-        "HTTP 404",
-        request=mock_request,
-        response=mock_response,
-    )
     with patch.object(client, "logger") as mock_logger:
         with pytest.raises(GitHubAPIError, match=r"^HTTP 404 error$"):
-            client._handle_http_status_error(error)
+            client._handle_http_status_error(mock_response, "/test", "GET")
         mock_logger.debug.assert_called_once_with(
             "http_status_error",
             status_code=404,
             endpoint="/test",
             method="GET",
-            body_preview="",
+            body_preview="[redacted:e3b0c44298fc]",
         )
         mock_logger.warning.assert_not_called()
 
@@ -1125,21 +1147,16 @@ def test_handle_http_status_error_uses_warning_for_401() -> None:
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
     mock_request = httpx.Request("GET", "https://api.github.com/test")
     mock_response = httpx.Response(401, request=mock_request)
-    error = httpx.HTTPStatusError(
-        "HTTP 401",
-        request=mock_request,
-        response=mock_response,
-    )
 
     with patch.object(client, "logger") as mock_logger:
         with pytest.raises(GitHubAPIError, match=r"^HTTP 401 error$"):
-            client._handle_http_status_error(error)
+            client._handle_http_status_error(mock_response, "/test", "GET")
         mock_logger.warning.assert_called_once_with(
             "http_status_error",
             status_code=401,
             endpoint="/test",
             method="GET",
-            body_preview="",
+            body_preview="[redacted:e3b0c44298fc]",
         )
         mock_logger.debug.assert_not_called()
 
@@ -1149,21 +1166,16 @@ def test_handle_http_status_error_warning_truncates_body_preview_for_401() -> No
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
     mock_request = httpx.Request("GET", "https://api.github.com/test")
     mock_response = httpx.Response(401, content=b"A" * 201, request=mock_request)
-    error = httpx.HTTPStatusError(
-        "HTTP 401",
-        request=mock_request,
-        response=mock_response,
-    )
 
     with patch.object(client, "logger") as mock_logger:
         with pytest.raises(GitHubAPIError, match=r"^HTTP 401 error$"):
-            client._handle_http_status_error(error)
+            client._handle_http_status_error(mock_response, "/test", "GET")
         mock_logger.warning.assert_called_once_with(
             "http_status_error",
             status_code=401,
             endpoint="/test",
             method="GET",
-            body_preview="A" * 200,
+            body_preview="[redacted:70d3bf8b0b9d]",
         )
         mock_logger.debug.assert_not_called()
 
@@ -1173,10 +1185,9 @@ def test_handle_http_status_error_with_5xx_raises_github_api_error() -> None:
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
     request = httpx.Request("GET", "https://api.github.com/test")
     response = httpx.Response(503, request=request)
-    error = httpx.HTTPStatusError("HTTP 503", request=request, response=response)
 
     with pytest.raises(GitHubAPIError, match=r"^HTTP 503 error$"):
-        client._handle_http_status_error(error)
+        client._handle_http_status_error(response, "/test", "GET")
 
 
 def test_handle_304_response_cache_miss() -> None:
@@ -1459,12 +1470,11 @@ def test_handle_http_status_error_truncates_long_body() -> None:
     long_body = "x" * 201
     request = httpx.Request("GET", "https://api.github.com/test")
     response = httpx.Response(422, request=request, content=long_body.encode())
-    error = httpx.HTTPStatusError("422", request=request, response=response)
 
     with patch.object(client, "logger") as mock_logger:
         with pytest.raises(GitHubAPIError) as exc_info:
-            client._handle_http_status_error(error)
-        assert mock_logger.debug.call_args.kwargs["body_preview"] == "x" * 200
+            client._handle_http_status_error(response, "/test", "GET")
+        assert mock_logger.debug.call_args.kwargs["body_preview"] == "[redacted:aa20c23e3201]"
 
     # エラーメッセージにボディが含まれないこと
     assert "x" not in str(exc_info.value)
@@ -1476,12 +1486,11 @@ def test_handle_http_status_error_no_truncation_at_boundary() -> None:
     exact_body = "y" * 200  # ちょうど200文字（[:200]スライスで切り詰めが発生しない境界値）
     request = httpx.Request("GET", "https://api.github.com/test")
     response = httpx.Response(422, request=request, content=exact_body.encode())
-    error = httpx.HTTPStatusError("422", request=request, response=response)
 
     with patch.object(client, "logger") as mock_logger:
         with pytest.raises(GitHubAPIError) as exc_info:
-            client._handle_http_status_error(error)
-        assert mock_logger.debug.call_args.kwargs["body_preview"] == exact_body
+            client._handle_http_status_error(response, "/test", "GET")
+        assert mock_logger.debug.call_args.kwargs["body_preview"] == "[redacted:8ca9bfd43d61]"
 
     # エラーメッセージにボディが含まれないこと
     assert exact_body not in str(exc_info.value)
@@ -1495,12 +1504,11 @@ def test_handle_http_status_error_truncates_multibyte_body_to_200_bytes() -> Non
     multibyte_body = "あ" * 201
     request = httpx.Request("GET", "https://api.github.com/test")
     response = httpx.Response(422, request=request, content=multibyte_body.encode("utf-8"))
-    error = httpx.HTTPStatusError("422", request=request, response=response)
 
     with patch.object(client, "logger") as mock_logger:
         with pytest.raises(GitHubAPIError) as exc_info:
-            client._handle_http_status_error(error)
-        assert mock_logger.debug.call_args.kwargs["body_preview"] == "あ" * 66 + "\ufffd"
+            client._handle_http_status_error(response, "/test", "GET")
+        assert mock_logger.debug.call_args.kwargs["body_preview"] == "[redacted:5e93700d5564]"
 
     assert multibyte_body not in str(exc_info.value)
 
@@ -1511,10 +1519,9 @@ def test_handle_http_status_error_with_invalid_bytes() -> None:
     request = httpx.Request("GET", "https://api.github.com/test")
     # encoding=None をシミュレート: content に不正バイト列を設定
     response = httpx.Response(400, request=request, content=b"\xff\xfe invalid bytes \x80\x81")
-    error = httpx.HTTPStatusError("HTTP 400", request=request, response=response)
 
     with pytest.raises(GitHubAPIError, match=r"^HTTP 400 error$"):
-        client._handle_http_status_error(error)
+        client._handle_http_status_error(response, "/test", "GET")
 
 
 def test_429_handled_as_github_api_error_not_rate_limit_error() -> None:
@@ -1526,10 +1533,9 @@ def test_429_handled_as_github_api_error_not_rate_limit_error() -> None:
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
     request = httpx.Request("GET", "https://api.github.com/test")
     response = httpx.Response(429, request=request)
-    error = httpx.HTTPStatusError("HTTP 429", request=request, response=response)
 
     with pytest.raises(GitHubAPIError, match=r"^HTTP 429 error$") as exc_info:
-        client._handle_http_status_error(error)
+        client._handle_http_status_error(response, "/test", "GET")
 
     assert not isinstance(exc_info.value, RateLimitError)
 
@@ -1578,6 +1584,7 @@ async def test_httpx_status_error_429_defensive_path() -> None:
         with pytest.raises(RateLimitError) as exc_info:
             await client.get_user("octocat")
 
+    assert exc_info.value.__context__ is None  # sentinel pattern: except外raiseパターン検証
     assert exc_info.value.reset_time == 1640000000
     assert "Rate limit exceeded" in str(exc_info.value)
     assert route.call_count == 1
@@ -1626,13 +1633,17 @@ def test_handle_http_status_error_cause_excludes_response_body() -> None:
     sensitive_body = "token=SUPER_SECRET_API_KEY_12345"
     request = httpx.Request("GET", "https://api.github.com/repos/test")
     response = httpx.Response(422, request=request, text=sensitive_body)
-    error = httpx.HTTPStatusError("422", request=request, response=response)
 
     with patch.object(client, "logger") as mock_logger:
         with pytest.raises(GitHubAPIError) as exc_info:
-            client._handle_http_status_error(error)
+            client._handle_http_status_error(response, "/repos/test", "GET")
         # logger.debugでbody_previewにセンシティブデータが記録されること（デバッグ用途）
-        assert sensitive_body in mock_logger.debug.call_args.kwargs["body_preview"]
+        # logger.debugでbody_previewはリダクション済み（[redacted:hash]形式）であること
+        body_preview_logged = mock_logger.debug.call_args.kwargs["body_preview"]
+        assert body_preview_logged.startswith("[redacted:")
+        assert "]" in body_preview_logged
+        # センシティブデータはログに含まれないこと
+        assert sensitive_body not in body_preview_logged
 
     cause_str = str(exc_info.value.__cause__)
     # __cause__はURL+ステータスのみ保持し、response bodyを含まない
