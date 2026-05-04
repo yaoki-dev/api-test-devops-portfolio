@@ -22,7 +22,7 @@ from config.settings import (
     reload_settings,
 )
 from config.settings import (
-    TestConfig as ConfigForTestingEnv,
+    TestConfig as SettingsTestConfig,
 )
 
 # Module-level marker: All tests in this file are unit tests
@@ -571,7 +571,7 @@ class TestNestedConfigDefaults:
         [
             pytest.param("api", APIConfig, id="api_config"),
             pytest.param("log", LogConfig, id="log_config"),
-            pytest.param("test", ConfigForTestingEnv, id="test_config"),
+            pytest.param("test", SettingsTestConfig, id="test_config"),
             pytest.param("security", SecurityConfig, id="security_config"),
         ],
     )

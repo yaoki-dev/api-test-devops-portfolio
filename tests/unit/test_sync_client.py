@@ -13,7 +13,7 @@ Note:
 
 import json
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import httpx
 import pytest
@@ -1099,6 +1099,6 @@ def test_main_propagates_non_api_client_error() -> None:
     create_client_mock.assert_called_once_with()
     client.get_posts.assert_called_once_with(limit=5)
     # context manager cleanup 検証 (例外伝播時も __exit__ が呼ばれる)
-    client_context.__exit__.assert_called_once()
+    client_context.__exit__.assert_called_once_with(RuntimeError, ANY, ANY)
     # Demo completed が呼ばれていない (途中エラーで Demo 完了出力されないこと) 意味的検証のみ保持
     assert not any(call.args == ("\n=== Demo completed ===",) for call in print_mock.call_args_list)

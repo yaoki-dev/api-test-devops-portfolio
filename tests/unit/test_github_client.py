@@ -249,12 +249,21 @@ async def test_timeout_handling(
     assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
     timeout_logs = [log for log in log_output if log.get("event") == "request_timeout"]
     assert len(timeout_logs) == 1
-    assert timeout_logs[0]["error_type"] == type(timeout_exception).__qualname__
-    assert timeout_logs[0]["error_module"] == type(timeout_exception).__module__
-    assert timeout_logs[0]["error_context"] == "timeout"
-    # PII漏洩防止: error_detailフィールド除去 (unexpected_errorパスと同方針)
-    assert "error_detail" not in timeout_logs[0]
-    assert "error" not in timeout_logs[0]
+    timeout_log = timeout_logs[0]
+    assert timeout_log["error_type"] == type(timeout_exception).__qualname__
+    assert timeout_log["error_module"] == type(timeout_exception).__module__
+    assert timeout_log["error_context"] == "timeout"
+    assert set(timeout_log) == {
+        "endpoint",
+        "method",
+        "error_type",
+        "error_module",
+        "error_context",
+        "event",
+        "log_level",
+    }
+    assert "error_detail" not in timeout_log
+    assert "error" not in timeout_log
 
 
 @respx.mock
@@ -415,10 +424,8 @@ async def test_httpx_status_error_4xx():
 
     # GitHubAPIError であり、httpx.HTTPStatusError ではないことを明示検証
     assert not isinstance(exc_info.value, httpx.HTTPStatusError)
-    # 例外チェーンが保持され、cause が例外オブジェクトであることを確認
-    assert isinstance(exc_info.value.__cause__, Exception)
-    # __cause__がhttpx.HTTPStatusErrorそのものでないことを型レベルで確認
-    assert not isinstance(exc_info.value.__cause__, httpx.HTTPStatusError)
+    # from None による完全PII遮断: __cause__ は None
+    assert exc_info.value.__cause__ is None
     # except外raiseパターン: HTTPStatusErrorが__context__に残存しないこと（PII漏洩防止）
     assert exc_info.value.__context__ is None
     assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
@@ -1118,10 +1125,9 @@ def test_redact_body_preview_empty_string() -> None:
 
 
 def test_redact_body_preview_deterministic() -> None:
-    """_redact_body_preview: 同一入力→同一ハッシュ（冪等性）"""
+    """_redact_body_preview: 同一入力→同一出力（冪等性）"""
     body = "A" * 200
     assert _redact_body_preview(body) == _redact_body_preview(body)
-    assert _redact_body_preview(body) == "[redacted:70d3bf8b0b9d]"
 
 
 def test_handle_http_status_error_uses_debug_for_other_4xx() -> None:
@@ -1130,14 +1136,16 @@ def test_handle_http_status_error_uses_debug_for_other_4xx() -> None:
     mock_request = httpx.Request("GET", "https://api.github.com/test")
     mock_response = httpx.Response(404, request=mock_request)
     with patch.object(client, "logger") as mock_logger:
-        with pytest.raises(GitHubAPIError, match=r"^HTTP 404 error$"):
+        with pytest.raises(GitHubAPIError, match=r"^HTTP 404 error$") as exc_info:
             client._handle_http_status_error(mock_response, "/test", "GET")
+        assert exc_info.value.__cause__ is None
+        assert exc_info.value.__context__ is None
         mock_logger.debug.assert_called_once_with(
             "http_status_error",
             status_code=404,
             endpoint="/test",
             method="GET",
-            body_preview="[redacted:e3b0c44298fc]",
+            body_preview=_redact_body_preview(""),
         )
         mock_logger.warning.assert_not_called()
 
@@ -1149,14 +1157,16 @@ def test_handle_http_status_error_uses_warning_for_401() -> None:
     mock_response = httpx.Response(401, request=mock_request)
 
     with patch.object(client, "logger") as mock_logger:
-        with pytest.raises(GitHubAPIError, match=r"^HTTP 401 error$"):
+        with pytest.raises(GitHubAPIError, match=r"^HTTP 401 error$") as exc_info:
             client._handle_http_status_error(mock_response, "/test", "GET")
+        assert exc_info.value.__cause__ is None
+        assert exc_info.value.__context__ is None
         mock_logger.warning.assert_called_once_with(
             "http_status_error",
             status_code=401,
             endpoint="/test",
             method="GET",
-            body_preview="[redacted:e3b0c44298fc]",
+            body_preview=_redact_body_preview(""),
         )
         mock_logger.debug.assert_not_called()
 
@@ -1175,7 +1185,7 @@ def test_handle_http_status_error_warning_truncates_body_preview_for_401() -> No
             status_code=401,
             endpoint="/test",
             method="GET",
-            body_preview="[redacted:70d3bf8b0b9d]",
+            body_preview=_redact_body_preview("A" * 200),
         )
         mock_logger.debug.assert_not_called()
 
@@ -1474,7 +1484,7 @@ def test_handle_http_status_error_truncates_long_body() -> None:
     with patch.object(client, "logger") as mock_logger:
         with pytest.raises(GitHubAPIError) as exc_info:
             client._handle_http_status_error(response, "/test", "GET")
-        assert mock_logger.debug.call_args.kwargs["body_preview"] == "[redacted:aa20c23e3201]"
+        assert mock_logger.debug.call_args.kwargs["body_preview"] == _redact_body_preview("x" * 200)
 
     # エラーメッセージにボディが含まれないこと
     assert "x" not in str(exc_info.value)
@@ -1490,7 +1500,7 @@ def test_handle_http_status_error_no_truncation_at_boundary() -> None:
     with patch.object(client, "logger") as mock_logger:
         with pytest.raises(GitHubAPIError) as exc_info:
             client._handle_http_status_error(response, "/test", "GET")
-        assert mock_logger.debug.call_args.kwargs["body_preview"] == "[redacted:8ca9bfd43d61]"
+        assert mock_logger.debug.call_args.kwargs["body_preview"] == _redact_body_preview("y" * 200)
 
     # エラーメッセージにボディが含まれないこと
     assert exact_body not in str(exc_info.value)
@@ -1508,7 +1518,9 @@ def test_handle_http_status_error_truncates_multibyte_body_to_200_bytes() -> Non
     with patch.object(client, "logger") as mock_logger:
         with pytest.raises(GitHubAPIError) as exc_info:
             client._handle_http_status_error(response, "/test", "GET")
-        assert mock_logger.debug.call_args.kwargs["body_preview"] == "[redacted:5e93700d5564]"
+        assert mock_logger.debug.call_args.kwargs["body_preview"] == _redact_body_preview(
+            ("あ" * 201).encode("utf-8")[:200].decode("utf-8", errors="replace")
+        )
 
     assert multibyte_body not in str(exc_info.value)
 
@@ -1623,10 +1635,29 @@ async def test_httpx_status_error_429_missing_reset_header_falls_back_to_zero() 
     assert route.call_count == 1
 
 
-def test_handle_http_status_error_cause_excludes_response_body() -> None:
-    """__cause__およびGitHubAPIError本体の両方にセンシティブデータが含まれないことを確認
+@respx.mock
+async def test_httpx_status_error_404_defensive_path_raises_not_found_error() -> None:
+    """404の防御的パスでも NotFoundError に揃うことを確認する"""
+    request = httpx.Request("GET", f"{GITHUB_API_BASE_URL}/users/octocat")
+    response_404 = httpx.Response(404, request=request)
+    error_404 = httpx.HTTPStatusError("404 Not Found", request=request, response=response_404)
 
-    from e → from _cause 変更の核心プロパティ: センシティブなresponse bodyが
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
+    route.side_effect = [error_404]
+
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(NotFoundError) as exc_info:
+            await client.get_user("octocat")
+
+    assert "Resource not found" in str(exc_info.value)
+    assert "/users/octocat" in str(exc_info.value)
+    assert route.call_count == 1
+
+
+def test_handle_http_status_error_cause_excludes_response_body() -> None:
+    """from None による完全PII遮断を確認
+
+    __cause__ is None であるため、センシティブなresponse bodyが
     Sentry等の例外チェーン解析ツールに露出しないことを保証する。
     """
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
@@ -1637,7 +1668,6 @@ def test_handle_http_status_error_cause_excludes_response_body() -> None:
     with patch.object(client, "logger") as mock_logger:
         with pytest.raises(GitHubAPIError) as exc_info:
             client._handle_http_status_error(response, "/repos/test", "GET")
-        # logger.debugでbody_previewにセンシティブデータが記録されること（デバッグ用途）
         # logger.debugでbody_previewはリダクション済み（[redacted:hash]形式）であること
         body_preview_logged = mock_logger.debug.call_args.kwargs["body_preview"]
         assert body_preview_logged.startswith("[redacted:")
@@ -1645,10 +1675,7 @@ def test_handle_http_status_error_cause_excludes_response_body() -> None:
         # センシティブデータはログに含まれないこと
         assert sensitive_body not in body_preview_logged
 
-    cause_str = str(exc_info.value.__cause__)
-    # __cause__はURL+ステータスのみ保持し、response bodyを含まない
-    assert sensitive_body not in cause_str
-    # __cause__がhttpx.HTTPStatusErrorそのものではないことを確認
-    assert not isinstance(exc_info.value.__cause__, httpx.HTTPStatusError)
+    # from None により __cause__ は None（完全PII遮断）
+    assert exc_info.value.__cause__ is None
     # GitHubAPIError本体にもセンシティブデータが含まれないこと
     assert sensitive_body not in str(exc_info.value)

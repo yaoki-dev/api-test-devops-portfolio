@@ -461,9 +461,11 @@ class AsyncGitHubClient:
         通常はこのメソッドへ 5xx は到達しない。ただし実装は status_code に依存しないため、
         5xx が直接渡された場合も安全に GitHubAPIError へ変換する（防御的安全網）。
 
-        設計上の制約: `from e` でなく新規 Exception を __cause__ に使用する。
-        理由: httpx.HTTPStatusError の response body が Sentry 経由で漏洩するリスクを回避。
-        コーディング規約 Section 5「from e でチェーン維持」の意図的例外。
+        設計上の制約: `from None` を使用し __cause__ を None に設定する。
+        理由: 全 PII 回避パス（timeout/unexpected/NotFound/RateLimit/JSONDecode）と統一し、
+        呼び出し元が __cause__ を参照する際の分岐を不要とするため。
+        診断情報は構造化ログの endpoint フィールドで取得可能なため __cause__ への記録は不要。
+        コーディング規約 Section 5「from e でチェーン維持」の意図的例外（PII漏洩防止優先）。
 
         response/endpoint/method を直接受け取る理由: 呼び出し元が except 外で呼ぶことで
         __context__ に PII含有オブジェクトが残存しないよう設計（PII漏洩防止）。
@@ -486,9 +488,7 @@ class AsyncGitHubClient:
             method=method,
             body_preview=_redact_body_preview(body_preview_raw),
         )
-        raise GitHubAPIError(f"HTTP {response.status_code} error") from Exception(
-            f"httpx.HTTPStatusError: HTTP {response.status_code} {endpoint}"
-        )
+        raise GitHubAPIError(f"HTTP {response.status_code} error") from None
 
     def _update_etag_cache(
         self,
@@ -653,6 +653,9 @@ class AsyncGitHubClient:
                     # 防御的パス: 5xxをhttpx.HTTPStatusErrorとして受信した場合、通常パスと同等に処理
                     await self._handle_5xx_response(http_status_response, attempt, endpoint, method)
                     continue
+                if status_code == 404:
+                    # 防御的パス: 404も通常パスと同じ NotFoundError に揃える
+                    raise NotFoundError(f"Resource not found: {endpoint}") from None
                 if status_code == 429:
                     # 防御的パス: 429をhttpx.HTTPStatusErrorとして受信した場合もRateLimitErrorに変換
                     reset_time = self._parse_rate_limit_header(

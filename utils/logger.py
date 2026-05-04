@@ -322,6 +322,7 @@ def _sentry_processor(  # noqa: C901
             # システム例外は再発生させ OOMKilled / 無限再帰検知を妨げない
             raise
         except Exception as warn_err:  # noqa: BLE001
+            # import warning の失敗は診断補助に限定し、本体のログ処理は止めない
             print(
                 f"[SENTRY_WARN] Failed to emit import warning: {type(warn_err).__name__}",
                 file=sys.stderr,
@@ -364,7 +365,7 @@ def _sentry_processor(  # noqa: C901
                     scope.set_extra(key, value)
                 except AttributeError, TypeError:  # noqa: PERF203
                     # user-data serialization failure (e.g. broken __repr__ on Pydantic model)
-                    # → 該当キーのみスキップし [SENTRY_BUG] には昇格させない
+                    # → 該当キーのみスキップし、追加ログは出さない（PII再露出/再帰防止）
                     continue
             if exc_info is True:
                 # except ブロック外では sys.exc_info()[1] が None → capture_exception 不可

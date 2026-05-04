@@ -357,7 +357,8 @@ def reset_sentry_warning_state(
 ) -> Iterator[None]:
     """utils.logger の sentry warning throttle 状態をテスト前後でリセット
 
-    4 つの permanent throttle マーカー ("settings"/"sdk"/"bug"/"outside_except") を
+    6 つの permanent throttle マーカー
+    ("settings"/"sdk"/"bug"/"outside_except"/"invalid_exc_info"/"safe_error_summary") を
     保持する `_sentry_warnings_emitted: set[str]` を空集合に、
     `_sentry_send_error_last_warned` timestamp を float("-inf") にリセットする。
     `_is_sentry_debug_enabled` は lru_cache 削除済みのためリアルタイム取得。
@@ -384,10 +385,7 @@ def reset_sentry_warning_state(
     monkeypatch.setattr("utils.logger._sentry_send_error_last_warned", float("-inf"))
     # SENTRY_DEBUG は環境変数をリアルタイム取得するため cache_clear() 不要
     # (lru_cache削除済みversion: logger.py _is_sentry_debug_enabled)
-    try:
-        yield
-    finally:
-        pass  # teardown: SENTRY_DEBUG クリア不要（環境変数リアルタイム取得）
+    yield
 
 
 # =============================================================================
