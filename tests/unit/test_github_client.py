@@ -436,7 +436,8 @@ async def test_network_and_protocol_error_logging_no_pii_leak(
 @respx.mock
 async def test_local_protocol_error_is_not_retried() -> None:
     """LocalProtocolErrorはクライアント側protocol violationのためretry対象外。"""
-    local_protocol_error = httpx.LocalProtocolError("Local protocol failed")
+    sensitive_detail = "https://api.example.com/internal?token=SECRET_API_KEY_12345"
+    local_protocol_error = httpx.LocalProtocolError(sensitive_detail)
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=local_protocol_error)
 
     with capture_logs() as log_output:
@@ -452,6 +453,11 @@ async def test_local_protocol_error_is_not_retried() -> None:
     assert len(unexpected_logs) == 1
     assert unexpected_logs[0]["error_type"] == "LocalProtocolError"
     assert unexpected_logs[0]["error_context"] == "unexpected"
+    assert sensitive_detail not in str(exc_info.value)
+    for value in unexpected_logs[0].values():
+        assert sensitive_detail not in str(value), (
+            f"sensitive_detail leaked in log field value: {value!r}"
+        )
 
 
 # =============================================================================

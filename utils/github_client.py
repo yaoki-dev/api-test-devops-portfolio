@@ -91,7 +91,8 @@ def _redact_body_preview(body_preview: str) -> str:
     内容を完全にマスクし、ハッシュベースの指紋を保持して debug に利用。
 
     Args:
-        body_preview: _MAX_HTTP_ERROR_BODY_PREVIEW_BYTES 上限で切り詰めた response body
+        body_preview: デコード済みの response body
+            （先頭 _MAX_HTTP_ERROR_BODY_PREVIEW_BYTES バイトで切り詰め済み）
 
     Returns:
         リダクション済み文字列 (形式: "[redacted:SHA256_16chars]")
@@ -484,6 +485,7 @@ class AsyncGitHubClient:
                 endpoint=endpoint,
                 error_type=type(e).__qualname__,
                 error_module=type(e).__module__,
+                error_context="unexpected_parse",
             )
 
         # JSONDecodeError.doc やその他パース例外はレスポンスbody/URL等を保持しうる。
