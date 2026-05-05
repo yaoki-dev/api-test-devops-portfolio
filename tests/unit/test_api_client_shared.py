@@ -452,7 +452,6 @@ def test_sync_client_headers_empty_dict_preserves_defaults(mock_base_url: str) -
         assert client.default_headers["Content-Type"] == "application/json"
 
 
-@pytest.mark.asyncio
 async def test_async_client_headers_empty_dict_preserves_defaults(mock_base_url: str) -> None:
     """AsyncAPIClient: headers={} でデフォルトヘッダーが保持される
 

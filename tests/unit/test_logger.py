@@ -226,12 +226,9 @@ class TestSentryProcessor:
     4. 例外情報なし → capture_message()
     5. ImportError/Exception → エラー処理
 
-    **注意 (lru_cache)**: `_is_sentry_debug_enabled` は `@lru_cache(maxsize=1)` で
-    プロセスライフタイムキャッシュされる。conftest の `reset_sentry_warning_state`
-    autouse fixture が各テスト前に `cache_clear()` を実行するため、テスト間の汚染は
-    防止済み。テスト本体内で `monkeypatch.setenv("SENTRY_DEBUG", ...)` を呼んだ後に
-    `_is_sentry_debug_enabled` の戻り値を期待する場合は、setenv 直後に
-    `_is_sentry_debug_enabled.cache_clear()` を明示的に呼ぶこと。
+    **注意 (SENTRY_DEBUG)**: `_is_sentry_debug_enabled` は lru_cache 削除済みで
+    環境変数をリアルタイム取得する。`monkeypatch.setenv/delenv` の変更は
+    即時反映されるため、`cache_clear()` の呼び出しは不要。
     """
 
     # ダミーのWrappedLoggerとmethod_name（未使用だが引数として必要）
@@ -1512,10 +1509,8 @@ class TestSafeErrorSummary:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """SENTRY_DEBUG 無効時は詳細文字列を返さない"""
-        from utils import logger as logger_module
 
         monkeypatch.delenv("SENTRY_DEBUG", raising=False)
-        logger_module._is_sentry_debug_enabled.cache_clear()
 
         assert _sentry_debug_detail(RuntimeError("secret")) == ""
 
@@ -1533,10 +1528,8 @@ class TestSafeErrorSummary:
         expected: str,
     ) -> None:
         """SENTRY_DEBUG 有効時は詳細を 100 文字まで返す"""
-        from utils import logger as logger_module
 
         monkeypatch.setenv("SENTRY_DEBUG", "true")
-        logger_module._is_sentry_debug_enabled.cache_clear()
 
         assert _sentry_debug_detail(RuntimeError(message)) == expected
 

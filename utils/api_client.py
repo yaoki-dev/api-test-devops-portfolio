@@ -343,7 +343,7 @@ class SyncAPIClient:
         headers: 追加HTTPヘッダー
 
         Raises:
-            ValueError: base_urlが空文字列の場合
+            ValueError: base_urlが空文字列またはスペースのみの文字列の場合
 
         """
         # 設定解決・バリデーション（Sync/Async共通ロジック）
@@ -789,7 +789,7 @@ class AsyncAPIClient:
         headers: 追加HTTPヘッダー
 
         Raises:
-            ValueError: base_urlが空文字列の場合
+            ValueError: base_urlが空文字列またはスペースのみの文字列の場合
 
         """
         # 設定解決・バリデーション（Sync/Async共通ロジック）
