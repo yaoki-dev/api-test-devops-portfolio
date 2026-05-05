@@ -91,7 +91,7 @@ def _redact_body_preview(body_preview: str) -> str:
     内容を完全にマスクし、ハッシュベースの指紋を保持して debug に利用。
 
     Args:
-        body_preview: デコード済みの response body (先頭 200バイト)
+        body_preview: _MAX_HTTP_ERROR_BODY_PREVIEW_BYTES 上限で切り詰めた response body
 
     Returns:
         リダクション済み文字列 (形式: "[redacted:SHA256_16chars]")
@@ -132,7 +132,7 @@ class AsyncGitHubClient:
     特徴:
     - Rate Limit自動対応（X-RateLimit-Remaining監視）
     - Conditional Requests対応（ETag活用）
-    - リトライロジック（5xxエラーのみ、指数バックオフ+ジッター）
+    - リトライロジック（5xx・timeout・NetworkError・RemoteProtocolError、指数バックオフ+ジッター）
     - 例外チェーン（HTTPStatusError は URL+ステータスのみ保持した cause に再ラップ）
 
     使用例:
@@ -153,7 +153,8 @@ class AsyncGitHubClient:
 
         Args:
             timeout: リクエストタイムアウト（秒）
-            max_retries: 最大試行回数（5xx・timeout・NetworkError の再試行回数、初回含む）。
+            max_retries: 最大試行回数
+                （5xx・timeout・NetworkError・RemoteProtocolError の再試行回数、初回含む）。
                 デフォルト設定(timeout=30, max_retries=3)での最悪ケース: 約96秒。
             user_agent: User-Agentヘッダー（GitHub要求事項）
 
@@ -172,7 +173,7 @@ class AsyncGitHubClient:
         *,
         event: str,
         error_context: str,
-        error: httpx.TimeoutException | httpx.NetworkError,
+        error: httpx.TimeoutException | httpx.NetworkError | httpx.RemoteProtocolError,
         endpoint: str,
         method: str,
         attempt: int,
@@ -185,7 +186,7 @@ class AsyncGitHubClient:
         Args:
             event: structlog に渡すイベント名（例: "request_timeout"）
             error_context: ログの error_context フィールド値（例: "timeout"）
-            error: キャッチした例外（TimeoutException または NetworkError）
+            error: キャッチした例外（TimeoutException、NetworkError、RemoteProtocolError）
             endpoint: リクエスト先エンドポイント（ログ用）
             method: HTTP メソッド（ログ用）
             attempt: 現在の試行インデックス（0-based）
@@ -477,9 +478,16 @@ class AsyncGitHubClient:
                 error_pos=e.pos,
                 error_lineno=e.lineno,
             )
+        except Exception as e:
+            self.logger.error(
+                "json_parse_unexpected_error",
+                endpoint=endpoint,
+                error_type=type(e).__qualname__,
+                error_module=type(e).__module__,
+            )
 
-        # JSONDecodeError.doc はレスポンスbody全体を保持する。
-        # except 内で raise すると __context__ に JSONDecodeError が残存し .doc 経由で露出するため、
+        # JSONDecodeError.doc やその他パース例外はレスポンスbody/URL等を保持しうる。
+        # except 内で raise すると __context__ に元例外が残存して露出するため、
         # active exception context の外で raise して __context__ を None に保つ。
         raise GitHubAPIError("Invalid JSON response") from None
 
@@ -557,7 +565,7 @@ class AsyncGitHubClient:
         機能:
         - Rate Limit監視（X-RateLimit-Remaining < _RATE_LIMIT_WARNING_THRESHOLD で警告ログ）
         - Conditional Requests（ETag活用、304 Not Modified対応）
-        - 5xx・timeout・NetworkError リトライ（指数バックオフ+ジッター）
+        - 5xx・timeout・NetworkError・RemoteProtocolError リトライ（指数バックオフ+ジッター）
         - 4xxエラー即失敗（NotFoundError, RateLimitError例外）
         - 例外情報の安全な保持（HTTPStatusError は URL+ステータスのみ保持した cause に再ラップ、response body 非露出）
 
@@ -574,11 +582,11 @@ class AsyncGitHubClient:
             NotFoundError: 404エラー
             RateLimitError: 403 Rate Limit超過 または 429 Too Many Requests
             GitHubServerError: 5xxエラー（リトライ上限後）
-            GitHubAPIError: タイムアウト・NetworkError は再試行後の最終失敗、
+            GitHubAPIError: タイムアウト・NetworkError・RemoteProtocolError は再試行後の最終失敗、
                 予期しないエラーは即失敗
 
         Note:
-            max_retries は 5xx エラーと timeout / NetworkError の再試行回数を制御する。
+            max_retries は 5xx エラーと timeout / NetworkError / RemoteProtocolError の再試行回数を制御する。
             unexpected エラーは再試行せず、1回目で GitHubAPIError へ変換する。
             X-RateLimit-Remaining ヘッダーが不正値の場合:
             - 監視パス: _RATE_LIMIT_FALLBACK_REMAINING（残量十分と見なし、rate_limit_low警告なし）
@@ -663,7 +671,7 @@ class AsyncGitHubClient:
                 if attempt < self.max_retries - 1:
                     continue
 
-            except httpx.NetworkError as e:
+            except (httpx.NetworkError, httpx.RemoteProtocolError) as e:
                 # PII漏洩防止: str(e)はURL/host:port等を含む可能性があるためログから除外
                 retry_error_message = f"Network error: {type(e).__qualname__}"
                 await self._log_and_sleep_for_retry(
@@ -729,7 +737,7 @@ class AsyncGitHubClient:
 
             if retry_error_message is not None:
                 # PII漏洩防止 (__context__): active exception context の外で raise して
-                # httpx.TimeoutException / httpx.NetworkError の
+                # httpx.TimeoutException / httpx.NetworkError / httpx.RemoteProtocolError の
                 # URL/host:port等を例外チェーンに残さない
                 raise GitHubAPIError(retry_error_message) from None
 
@@ -739,29 +747,4 @@ class AsyncGitHubClient:
                 raise GitHubAPIError(f"Unexpected error: {unexpected_error_type}") from None
 
         # リトライ上限到達（ここに到達することはないはずだが、型チェッカー対策）
-        raise GitHubServerError(f"Failed after {self.max_retries} attempts")
-
-
-# =============================================================================
-# 学習ポイント:
-#
-# 1. GitHub API v3の実務的活用:
-#    - Rate Limit管理: X-RateLimit-Remaining監視、警告ログ出力
-#    - Conditional Requests: ETag活用で304 Not Modified時Rate Limit消費なし
-#    - 認証拡張性: Personal Access Tokenで60 req/h → 5000 req/h拡張可能
-#
-# 2. 非同期HTTP通信の最適化:
-#    - async/awaitパターンによる非ブロッキングI/O
-#    - ETagキャッシュによるネットワーク帯域削減
-#    - 指数バックオフ+ジッターによる過負荷防止
-#
-# 3. エラーハンドリング戦略:
-#    - 階層的な例外設計（GitHubAPIError基底 + 4派生例外）
-#    - HTTPステータスコード別処理（4xx即失敗、5xxリトライ）
-#    - 例外チェーン（HTTPStatusError は URL+ステータスのみ cause に再ラップ）
-#
-# 4. ロギング・監視:
-#    - structlog構造化ロギング（JSON形式、フィールド検索可能）
-#    - Rate Limit警告（残リクエスト数が _RATE_LIMIT_WARNING_THRESHOLD 未満で通知）
-#    - リトライログ（試行回数、遅延時間、ステータスコード記録）
-# =============================================================================
+        raise GitHubServerError(f"Failed after {self.max_retries} attempts") from None

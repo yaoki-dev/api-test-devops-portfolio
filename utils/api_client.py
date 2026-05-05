@@ -224,7 +224,8 @@ def _resolve_client_config(
         (base_url, timeout, retry_count, retry_delay, default_headers) のタプル
 
     Raises:
-        ValueError: base_urlが空文字列またはスペースのみの文字列の場合
+        ValueError: base_urlが空文字列またはホワイトスペース
+            （スペース・タブ・改行等）のみの文字列の場合
 
     """
     base_url = base_url if base_url is not None else settings.api.base_url
@@ -343,7 +344,8 @@ class SyncAPIClient:
         headers: 追加HTTPヘッダー
 
         Raises:
-            ValueError: base_urlが空文字列またはスペースのみの文字列の場合
+            ValueError: base_urlが空文字列またはホワイトスペース
+                （スペース・タブ・改行等）のみの文字列の場合
 
         """
         # 設定解決・バリデーション（Sync/Async共通ロジック）
@@ -789,7 +791,8 @@ class AsyncAPIClient:
         headers: 追加HTTPヘッダー
 
         Raises:
-            ValueError: base_urlが空文字列またはスペースのみの文字列の場合
+            ValueError: base_urlが空文字列またはホワイトスペース
+                （スペース・タブ・改行等）のみの文字列の場合
 
         """
         # 設定解決・バリデーション（Sync/Async共通ロジック）
