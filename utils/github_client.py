@@ -153,7 +153,8 @@ class AsyncGitHubClient:
 
         Args:
             timeout: リクエストタイムアウト（秒）
-            max_retries: 最大試行回数（5xx と timeout の再試行回数、初回含む）
+            max_retries: 最大試行回数（5xx・timeout・NetworkError の再試行回数、初回含む）。
+                デフォルト設定(timeout=30, max_retries=3)での最悪ケース: 約96秒。
             user_agent: User-Agentヘッダー（GitHub要求事項）
 
         """
@@ -165,6 +166,34 @@ class AsyncGitHubClient:
         # URL -> response data（304レスポンス時のキャッシュ返却用）
         self._data_cache: dict[str, dict[str, Any] | list[dict[str, Any]]] = {}
         self.logger = get_logger(__name__)
+
+    async def _handle_retryable_error(
+        self,
+        *,
+        event: str,
+        prefix: str,
+        error_context: str,
+        error: httpx.TimeoutException | httpx.NetworkError,
+        endpoint: str,
+        method: str,
+        attempt: int,
+    ) -> tuple[str, bool]:
+        """Retry対象例外をログし、必要なら sleep する。"""
+        error_type = type(error).__qualname__
+        self.logger.warning(
+            event,
+            endpoint=endpoint,
+            method=method,
+            error_type=error_type,
+            error_module=type(error).__module__,
+            error_context=error_context,
+        )
+        retry_error_message = f"{prefix}: {error_type}"
+        if attempt < self.max_retries - 1:
+            delay = exponential_backoff_with_jitter(attempt, base_delay=2.0)
+            await asyncio.sleep(delay)
+            return retry_error_message, True
+        return retry_error_message, False
 
     async def __aenter__(self) -> Self:
         """非同期コンテキストマネージャーのエントリー"""
@@ -419,7 +448,7 @@ class AsyncGitHubClient:
             return
         raise GitHubServerError(
             f"Server error: {response.status_code} after {self.max_retries} attempts",
-        )
+        ) from None
 
     def _parse_json_response(
         self,
@@ -521,7 +550,7 @@ class AsyncGitHubClient:
         機能:
         - Rate Limit監視（X-RateLimit-Remaining < _RATE_LIMIT_WARNING_THRESHOLD で警告ログ）
         - Conditional Requests（ETag活用、304 Not Modified対応）
-        - 5xxエラーリトライ（指数バックオフ+ジッター）
+        - 5xx・timeout・NetworkError リトライ（指数バックオフ+ジッター）
         - 4xxエラー即失敗（NotFoundError, RateLimitError例外）
         - 例外情報の安全な保持（HTTPStatusError は URL+ステータスのみ保持した cause に再ラップ、response body 非露出）
 
@@ -538,11 +567,11 @@ class AsyncGitHubClient:
             NotFoundError: 404エラー
             RateLimitError: 403 Rate Limit超過 または 429 Too Many Requests
             GitHubServerError: 5xxエラー（リトライ上限後）
-            GitHubAPIError: タイムアウトは再試行後の最終失敗、
+            GitHubAPIError: タイムアウト・NetworkError は再試行後の最終失敗、
                 予期しないエラーは即失敗
 
         Note:
-            max_retries は 5xx エラーと timeout の再試行回数を制御する。
+            max_retries は 5xx エラーと timeout / NetworkError の再試行回数を制御する。
             unexpected エラーは再試行せず、1回目で GitHubAPIError へ変換する。
             X-RateLimit-Remaining ヘッダーが不正値の場合:
             - 監視パス: _RATE_LIMIT_FALLBACK_REMAINING（残量十分と見なし、rate_limit_low警告なし）
@@ -558,8 +587,7 @@ class AsyncGitHubClient:
         headers = self._prepare_headers(endpoint)
 
         for attempt in range(self.max_retries):
-            timeout_error_type: str | None = None
-            network_error_type: str | None = None
+            retry_error_message: str | None = None
             unexpected_error_type: str | None = None
             http_status_response: httpx.Response | None = None
             try:
@@ -616,39 +644,31 @@ class AsyncGitHubClient:
                 # PII漏洩防止: str(e)はURL/host:port等を含む可能性があるためログから除外
                 # (unexpected_errorパスと同じ方針:
                 #  error_type + error_module + error_context で診断情報を提供)
-                timeout_error_type = type(e).__qualname__
-                error_module = type(e).__module__
-                self.logger.warning(
-                    "request_timeout",
-                    endpoint=endpoint,
-                    method=method,
-                    error_type=timeout_error_type,
-                    error_module=error_module,
+                retry_error_message, should_continue = await self._handle_retryable_error(
+                    event="request_timeout",
+                    prefix="Request timeout",
                     error_context="timeout",
-                )
-                if attempt < self.max_retries - 1:
-                    delay = exponential_backoff_with_jitter(attempt, base_delay=2.0)
-                    await asyncio.sleep(delay)
-                    continue
-                # 最終試行は後続の `timeout_error_type` で GitHubAPIError に変換する
-
-            except httpx.TransportError as e:
-                # PII漏洩防止: str(e)はURL/host:port等を含む可能性があるためログから除外
-                network_error_type = type(e).__qualname__
-                error_module = type(e).__module__
-                self.logger.warning(
-                    "request_network_error",
+                    error=e,
                     endpoint=endpoint,
                     method=method,
-                    error_type=network_error_type,
-                    error_module=error_module,
-                    error_context="network",
+                    attempt=attempt,
                 )
-                if attempt < self.max_retries - 1:
-                    delay = exponential_backoff_with_jitter(attempt, base_delay=2.0)
-                    await asyncio.sleep(delay)
+                if should_continue:
                     continue
-                # 最終試行は後続の `network_error_type` で GitHubAPIError に変換する
+
+            except httpx.NetworkError as e:
+                # PII漏洩防止: str(e)はURL/host:port等を含む可能性があるためログから除外
+                retry_error_message, should_continue = await self._handle_retryable_error(
+                    event="request_network_error",
+                    prefix="Network error",
+                    error_context="network",
+                    error=e,
+                    endpoint=endpoint,
+                    method=method,
+                    attempt=attempt,
+                )
+                if should_continue:
+                    continue
 
             except ASYNC_FATAL_EXCEPTIONS:
                 # システム例外は再発生
@@ -700,17 +720,11 @@ class AsyncGitHubClient:
                 else:
                     self._handle_http_status_error(http_status_response, endpoint, method)
 
-            if timeout_error_type is not None:
-                # PII漏洩防止 (__context__): except 内で raise すると
-                # httpx.TimeoutException が __context__ に残り、
-                # Sentry/traceback walker 経由で expose されるため、
-                # active exception context の外で raise して __context__ を None に保つ
-                raise GitHubAPIError(f"Request timeout: {timeout_error_type}") from None
-
-            if network_error_type is not None:
+            if retry_error_message is not None:
                 # PII漏洩防止 (__context__): active exception context の外で raise して
-                # httpx.NetworkError のURL/host:port等を例外チェーンに残さない
-                raise GitHubAPIError(f"Network error: {network_error_type}") from None
+                # httpx.TimeoutException / httpx.NetworkError の
+                # URL/host:port等を例外チェーンに残さない
+                raise GitHubAPIError(retry_error_message) from None
 
             if unexpected_error_type is not None:
                 # PII漏洩防止 (__cause__): catch-all例外はURL/host:port等のPIIを含む可能性があるため

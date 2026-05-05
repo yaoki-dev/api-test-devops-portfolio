@@ -329,9 +329,14 @@ async def test_timeout_logging_no_pii_leak():
             id="read_error",
         ),
         pytest.param(
-            httpx.RemoteProtocolError("Server disconnected"),
-            "Network error: RemoteProtocolError",
-            id="remote_protocol_error",
+            httpx.WriteError("Write failed"),
+            "Network error: WriteError",
+            id="write_error",
+        ),
+        pytest.param(
+            httpx.CloseError("Close failed"),
+            "Network error: CloseError",
+            id="close_error",
         ),
     ],
 )
@@ -743,10 +748,12 @@ async def test_unexpected_exception():
 @respx.mock
 async def test_response_not_read_propagates_without_unexpected_wrapper():
     """ResponseNotRead は unexpected_error に包まずそのまま伝播する"""
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
+    route.side_effect = [httpx.ResponseNotRead()]
     async with AsyncGitHubClient() as client:
-        with patch.object(client._client, "request", side_effect=httpx.ResponseNotRead()):
-            with pytest.raises(httpx.ResponseNotRead):
-                await client.get_user("octocat")
+        with pytest.raises(httpx.ResponseNotRead):
+            await client.get_user("octocat")
+    assert route.call_count == 1
 
 
 # =============================================================================
@@ -1741,6 +1748,7 @@ async def test_httpx_status_error_404_defensive_path_raises_not_found_error() ->
 
     assert "Resource not found" in str(exc_info.value)
     assert "/users/octocat" in str(exc_info.value)
+    assert exc_info.value.__context__ is None  # from None による PII 遮断の確認
     assert route.call_count == 1
 
 
