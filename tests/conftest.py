@@ -383,8 +383,7 @@ def reset_sentry_warning_state(
 
     monkeypatch.setattr("utils.logger._sentry_warnings_emitted", set())
     monkeypatch.setattr("utils.logger._sentry_send_error_last_warned", float("-inf"))
-    # SENTRY_DEBUG は環境変数をリアルタイム取得するため cache_clear() 不要
-    # (lru_cache削除済みversion: logger.py _is_sentry_debug_enabled)
+    # SENTRY_DEBUG は環境変数をリアルタイム取得するため、キャッシュリセット不要
     yield
 
 
