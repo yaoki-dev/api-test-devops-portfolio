@@ -167,33 +167,40 @@ class AsyncGitHubClient:
         self._data_cache: dict[str, dict[str, Any] | list[dict[str, Any]]] = {}
         self.logger = get_logger(__name__)
 
-    async def _handle_retryable_error(
+    async def _log_and_sleep_for_retry(
         self,
         *,
         event: str,
-        prefix: str,
         error_context: str,
         error: httpx.TimeoutException | httpx.NetworkError,
         endpoint: str,
         method: str,
         attempt: int,
-    ) -> tuple[str, bool]:
-        """Retry対象例外をログし、必要なら sleep する。"""
-        error_type = type(error).__qualname__
+    ) -> None:
+        """Retry対象例外をログし、次の試行前に sleep する。
+
+        最終試行（attempt == max_retries - 1）では sleep しない。
+        ループの continue 判断は呼び出し元が担う。
+
+        Args:
+            event: structlog に渡すイベント名（例: "request_timeout"）
+            error_context: ログの error_context フィールド値（例: "timeout"）
+            error: キャッチした例外（TimeoutException または NetworkError）
+            endpoint: リクエスト先エンドポイント（ログ用）
+            method: HTTP メソッド（ログ用）
+            attempt: 現在の試行インデックス（0-based）
+        """
         self.logger.warning(
             event,
             endpoint=endpoint,
             method=method,
-            error_type=error_type,
+            error_type=type(error).__qualname__,
             error_module=type(error).__module__,
             error_context=error_context,
         )
-        retry_error_message = f"{prefix}: {error_type}"
         if attempt < self.max_retries - 1:
             delay = exponential_backoff_with_jitter(attempt, base_delay=2.0)
             await asyncio.sleep(delay)
-            return retry_error_message, True
-        return retry_error_message, False
 
     async def __aenter__(self) -> Self:
         """非同期コンテキストマネージャーのエントリー"""
@@ -644,30 +651,30 @@ class AsyncGitHubClient:
                 # PII漏洩防止: str(e)はURL/host:port等を含む可能性があるためログから除外
                 # (unexpected_errorパスと同じ方針:
                 #  error_type + error_module + error_context で診断情報を提供)
-                retry_error_message, should_continue = await self._handle_retryable_error(
+                retry_error_message = f"Request timeout: {type(e).__qualname__}"
+                await self._log_and_sleep_for_retry(
                     event="request_timeout",
-                    prefix="Request timeout",
                     error_context="timeout",
                     error=e,
                     endpoint=endpoint,
                     method=method,
                     attempt=attempt,
                 )
-                if should_continue:
+                if attempt < self.max_retries - 1:
                     continue
 
             except httpx.NetworkError as e:
                 # PII漏洩防止: str(e)はURL/host:port等を含む可能性があるためログから除外
-                retry_error_message, should_continue = await self._handle_retryable_error(
+                retry_error_message = f"Network error: {type(e).__qualname__}"
+                await self._log_and_sleep_for_retry(
                     event="request_network_error",
-                    prefix="Network error",
                     error_context="network",
                     error=e,
                     endpoint=endpoint,
                     method=method,
                     attempt=attempt,
                 )
-                if should_continue:
+                if attempt < self.max_retries - 1:
                     continue
 
             except ASYNC_FATAL_EXCEPTIONS:
