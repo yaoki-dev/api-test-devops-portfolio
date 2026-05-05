@@ -20,6 +20,9 @@ from structlog.typing import FilteringBoundLogger
 from config.settings import settings
 from utils.logger import get_logger
 
+# httpx 例外（NetworkError, RemoteProtocolError 等）をここに追加してはならない。
+# github_client.py の _request では except 句の順序で先行キャッチしており、
+# この定数に httpx 例外を追加すると NetworkError のリトライが壊れる。
 ASYNC_FATAL_EXCEPTIONS: tuple[type[BaseException], ...] = (
     KeyboardInterrupt,
     SystemExit,
@@ -225,7 +228,7 @@ def _resolve_client_config(
 
     Raises:
         ValueError: base_urlが空文字列またはホワイトスペース
-            （スペース・タブ・改行等）のみの文字列の場合
+            （str.strip() で除去される文字）のみの文字列の場合
 
     """
     base_url = base_url if base_url is not None else settings.api.base_url

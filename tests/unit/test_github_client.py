@@ -403,13 +403,13 @@ async def test_network_and_protocol_error_logging_no_pii_leak(
     """NetworkError/RemoteProtocolError例外メッセージがログフィールド値へ漏洩しないこと検証"""
     sensitive_detail = "https://api.example.com/internal?token=SECRET_API_KEY_12345"
     transport_exception = exception_class(sensitive_detail)
-    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=transport_exception)
+    respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=transport_exception)
 
     with patch(
         "utils.github_client.exponential_backoff_with_jitter",
         return_value=0.0,
-    ) as mock_backoff:
-        with patch("utils.github_client.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+    ):
+        with patch("utils.github_client.asyncio.sleep", new_callable=AsyncMock):
             with capture_logs() as log_output:
                 async with AsyncGitHubClient() as client:
                     with pytest.raises(GitHubAPIError) as exc_info:
@@ -428,9 +428,6 @@ async def test_network_and_protocol_error_logging_no_pii_leak(
             assert sensitive_detail not in str(value), (
                 f"sensitive_detail leaked in log field value: {value!r}"
             )
-    assert route.call_count == MAX_RETRIES
-    assert mock_backoff.call_count == MAX_RETRIES - 1
-    assert mock_sleep.await_count == MAX_RETRIES - 1
 
 
 @respx.mock

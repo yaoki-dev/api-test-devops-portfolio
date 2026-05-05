@@ -187,7 +187,8 @@ class AsyncGitHubClient:
         Args:
             event: structlog に渡すイベント名（例: "request_timeout"）
             error_context: ログの error_context フィールド値（例: "timeout"）
-            error: キャッチした例外（TimeoutException、NetworkError、RemoteProtocolError）
+            error: キャッチした例外（TimeoutException、NetworkError、RemoteProtocolError）。
+                   LocalProtocolError はクライアント側 protocol violation のため retry 対象外。
             endpoint: リクエスト先エンドポイント（ログ用）
             method: HTTP メソッド（ログ用）
             attempt: 現在の試行インデックス（0-based）
@@ -241,7 +242,8 @@ class AsyncGitHubClient:
             NotFoundError: ユーザーが存在しない
             RateLimitError: 403 Rate Limit超過 または 429 Too Many Requests
             GitHubServerError: 5xxエラー（リトライ上限後）
-            GitHubAPIError: タイムアウト等の予期しないエラー、または不正なレスポンス型
+            GitHubAPIError: タイムアウト・NetworkError・RemoteProtocolError
+                            リトライ上限後の最終失敗、または不正なレスポンス型
 
         Example:
             >>> async with AsyncGitHubClient() as client:
@@ -276,7 +278,8 @@ class AsyncGitHubClient:
             RateLimitError: 403 Rate Limit超過 または 429 Too Many Requests
             NotFoundError: リソースが見つからない場合
             GitHubServerError: 5xxエラー（リトライ上限後）
-            GitHubAPIError: タイムアウト等の予期しないエラー
+            GitHubAPIError: タイムアウト・NetworkError・RemoteProtocolError
+                            リトライ上限後の最終失敗、または不正なレスポンス型
 
         Example:
             >>> repos = await client.get_repos("octocat", sort="updated")
@@ -305,7 +308,8 @@ class AsyncGitHubClient:
             RateLimitError: 403 Rate Limit超過 または 429 Too Many Requests
             NotFoundError: リソースが見つからない場合
             GitHubServerError: 5xxエラー（リトライ上限後）
-            GitHubAPIError: タイムアウト等の予期しないエラー
+            GitHubAPIError: タイムアウト・NetworkError・RemoteProtocolError
+                            リトライ上限後の最終失敗、または不正なレスポンス型
 
         Example:
             >>> repo = await client.get_repo("octocat", "Hello-World")
