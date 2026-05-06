@@ -44,11 +44,7 @@ class PerformanceMetrics:
         self.start_time = time.time()
         self.memory_usage.append(psutil.Process().memory_info().rss / 1024 / 1024)  # MB
         psutil.cpu_percent()
-<<<<<<< feature/pr340-review-fixes
         self.cpu_usage.append(psutil.cpu_percent())
-=======
-        self.cpu_usage.append(psutil.cpu_percent(interval=0.1))
->>>>>>> develop
 
     def record_response_time(self, response_time: float) -> None:
         """レスポンス時間記録"""
