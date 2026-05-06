@@ -75,6 +75,7 @@ SENSITIVE_KEYS: frozenset[str] = frozenset(
         "totp",
         # 個人情報
         "email",  # GDPR/個人情報保護法: メールアドレスは個人識別情報
+        "ip_address",  # Sentry user.ip_address は個人識別情報として扱う
         "database_url",
         "ssn",
         "credit_card",
@@ -156,6 +157,14 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001
     # 追加データのスクラブ
     if "extra" in event:
         event["extra"] = _scrub_sensitive_data(event["extra"])
+
+    # ユーザー情報のスクラブ
+    if "user" in event:
+        event["user"] = _scrub_sensitive_data(event["user"])
+
+    # コンテキスト情報のスクラブ
+    if "contexts" in event:
+        event["contexts"] = _scrub_sensitive_data(event["contexts"])
 
     # タグのスクラブ
     if "tags" in event:

@@ -86,15 +86,17 @@ class TestStructlogConfiguration:
         """structlog設定が1回のみ実行されることを確認"""
         structlog.reset_defaults()
 
-        # 複数回get_loggerを呼び出し
-        logger1 = get_logger("module1")
-        logger2 = get_logger("module2")
-        logger3 = get_logger("module3")
+        with patch("structlog.configure", wraps=structlog.configure) as mock_configure:
+            # 複数回get_loggerを呼び出し
+            logger1 = get_logger("module1")
+            logger2 = get_logger("module2")
+            logger3 = get_logger("module3")
 
         # すべてロガーが取得できること（例外なし）
         assert logger1 is not None
         assert logger2 is not None
         assert logger3 is not None
+        mock_configure.assert_called_once()
 
 
 class TestLogOutput:
@@ -120,12 +122,11 @@ class TestLogOutput:
             logger.warning("warning_message")
             logger.error("error_message")
 
-        # 少なくとも1つ以上のログがキャプチャされること
-        assert len(captured) >= 1
-
-        # イベント名が含まれていること
         events = [log["event"] for log in captured]
-        assert any("message" in event for event in events)
+        assert "info_message" in events
+        assert "warning_message" in events
+        assert "error_message" in events
+        assert "debug_message" not in events
 
 
 class TestLogFormat:

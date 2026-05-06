@@ -35,7 +35,7 @@ class PerformanceMetrics:
     def __init__(self):
         self.response_times: list[float] = []
         self.start_time: float = 0
-        self.end_time: float = 0
+        self.end_time: float | None = None
         self.memory_usage: list[float] = []
         self.cpu_usage: list[float] = []
 
@@ -43,7 +43,8 @@ class PerformanceMetrics:
         """パフォーマンス監視開始"""
         self.start_time = time.time()
         self.memory_usage.append(psutil.Process().memory_info().rss / 1024 / 1024)  # MB
-        self.cpu_usage.append(psutil.cpu_percent())
+        psutil.cpu_percent()
+        self.cpu_usage.append(psutil.cpu_percent(interval=0.1))
 
     def record_response_time(self, response_time: float) -> None:
         """レスポンス時間記録"""
@@ -53,14 +54,14 @@ class PerformanceMetrics:
         """パフォーマンス監視終了"""
         self.end_time = time.time()
         self.memory_usage.append(psutil.Process().memory_info().rss / 1024 / 1024)
-        self.cpu_usage.append(psutil.cpu_percent())
+        self.cpu_usage.append(psutil.cpu_percent(interval=0.1))
 
     def get_summary(self) -> dict[str, Any]:
         """パフォーマンスサマリー取得"""
         if not self.response_times:
             return {"error": "No response times recorded"}
 
-        if self.end_time == 0:
+        if self.end_time is None:
             raise RuntimeError(
                 "get_summary() called before stop_monitoring(). Call stop_monitoring() first."
             )

@@ -89,6 +89,34 @@ async def test_get_repos_success():
     assert route.call_count == 1  # GETリクエストが1回発行されたことを確認
 
 
+@pytest.mark.parametrize(
+    "sort",
+    [
+        pytest.param("stars", id="unsupported_sort"),
+        pytest.param("", id="empty_sort"),
+    ],
+)
+async def test_get_repos_rejects_invalid_sort(sort: str) -> None:
+    """get_repos() は GitHub API に渡す前に sort 許容値を検証する"""
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(ValueError, match="sort must be one of"):
+            await client.get_repos("octocat", sort=sort)
+
+
+@pytest.mark.parametrize(
+    "per_page",
+    [
+        pytest.param(0, id="below_min"),
+        pytest.param(101, id="above_max"),
+    ],
+)
+async def test_get_repos_rejects_invalid_per_page(per_page: int) -> None:
+    """get_repos() は GitHub API に渡す前に per_page 範囲を検証する"""
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(ValueError, match="per_page must be between 1 and 100"):
+            await client.get_repos("octocat", per_page=per_page)
+
+
 @respx.mock
 async def test_get_repo_success():
     """リポジトリ詳細取得成功"""
@@ -315,6 +343,30 @@ async def test_timeout_logging_no_pii_leak():
     assert route.call_count == MAX_RETRIES
     assert mock_backoff.call_count == MAX_RETRIES - 1
     assert mock_sleep.await_count == MAX_RETRIES - 1
+
+
+@respx.mock
+async def test_timeout_final_retry_logs_error() -> None:
+    """最終タイムアウト失敗時に非PIIのERRORサマリログを出力する"""
+    timeout_exception = httpx.ConnectTimeout("https://example.com?token=secret")
+    respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=timeout_exception)
+
+    with patch(
+        "utils.github_client.exponential_backoff_with_jitter",
+        return_value=0.0,
+    ):
+        with patch("utils.github_client.asyncio.sleep", new_callable=AsyncMock):
+            with capture_logs() as log_output:
+                async with AsyncGitHubClient(max_retries=MAX_RETRIES) as client:
+                    with pytest.raises(GitHubAPIError):
+                        await client.get_user("octocat")
+
+    error_logs = [log for log in log_output if log.get("event") == "github_retry_failed"]
+    assert len(error_logs) == 1
+    assert error_logs[0]["error_type"] == "ConnectTimeout"
+    assert error_logs[0]["error_context"] == "timeout"
+    assert error_logs[0]["max_retries"] == MAX_RETRIES
+    assert "secret" not in str(error_logs[0])
 
 
 @pytest.mark.parametrize(
@@ -1486,6 +1538,23 @@ def test_handle_304_response_cache_hit() -> None:
     client._data_cache["/user"] = cached
     result = client._handle_304_response("/user")
     assert result == cached
+
+
+def test_update_etag_cache_evicts_oldest_entry_when_limit_exceeded() -> None:
+    """ETag/dataキャッシュは max_cache_entries を超えたら古いendpointから削除する"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES, max_cache_entries=2)
+    first_response = httpx.Response(200, headers={"ETag": "etag-1"})
+    second_response = httpx.Response(200, headers={"ETag": "etag-2"})
+    third_response = httpx.Response(200, headers={"ETag": "etag-3"})
+
+    client._update_etag_cache("/first", first_response, {"id": 1})
+    client._update_etag_cache("/second", second_response, {"id": 2})
+    client._update_etag_cache("/third", third_response, {"id": 3})
+
+    assert "/first" not in client._etag_cache
+    assert "/first" not in client._data_cache
+    assert list(client._etag_cache) == ["/second", "/third"]
+    assert list(client._data_cache) == ["/second", "/third"]
 
 
 def test_handle_403_response_no_json_log() -> None:
