@@ -13,6 +13,7 @@ import re
 from datetime import UTC, datetime
 from types import TracebackType
 from typing import Any, NoReturn, Self, cast
+from urllib.parse import urlencode
 
 import httpx
 
@@ -169,8 +170,8 @@ class AsyncGitHubClient:
         self.user_agent = user_agent
         self.max_cache_entries = max_cache_entries
         self._client: httpx.AsyncClient | None = None
-        self._etag_cache: dict[str, str] = {}  # URL -> ETag
-        # URL -> response data（304レスポンス時のキャッシュ返却用）
+        self._etag_cache: dict[str, str] = {}  # cache_key (endpoint+sorted query) -> ETag
+        # cache_key -> response data（304レスポンス時のキャッシュ返却用）
         self._data_cache: dict[str, dict[str, Any] | list[dict[str, Any]]] = {}
         self.logger = get_logger(__name__)
 
@@ -184,14 +185,14 @@ class AsyncGitHubClient:
         method: str,
         attempt: int,
     ) -> None:
-        """Retry対象例外をログし、次の試行前に sleep する。
+        """Retry 対象例外をログし、次の試行前に sleep する。
 
-        最終試行（attempt == max_retries - 1）では sleep しない。
-        ループの continue 判断は呼び出し元が担う。
+        最終試行（attempt == max_retries - 1）では sleep を行わず error ログを出力して返る。
+        例外の raise は呼び出し元の責務。
 
         Args:
-            event: structlog に渡すイベント名（例: "request_timeout"）
-            error_context: ログの error_context フィールド値（例: "timeout"）
+            event: structlog に渡すイベント名（例："request_timeout"）
+            error_context: ログの error_context フィールド値（例："timeout"）
             error: キャッチした例外（TimeoutException、NetworkError、RemoteProtocolError）。
                    LocalProtocolError はクライアント側 protocol violation のため retry 対象外。
             endpoint: リクエスト先エンドポイント（ログ用）
@@ -218,6 +219,7 @@ class AsyncGitHubClient:
             error_module=type(error).__module__,
             error_context=error_context,
             max_retries=self.max_retries,
+            status_code=None,  # timeout/network error はステータスコードなし
         )
 
     async def __aenter__(self) -> Self:
@@ -369,14 +371,14 @@ class AsyncGitHubClient:
             )
             return default
 
-    def _prepare_headers(self, endpoint: str) -> dict[str, str]:
+    def _prepare_headers(self, cache_key: str) -> dict[str, str]:
         """ETagキャッシュが存在する場合に If-None-Match ヘッダーを含む dict を返す。
 
         Conditional Requests対応。
         """
         headers: dict[str, str] = {}
-        if endpoint in self._etag_cache:
-            headers["If-None-Match"] = self._etag_cache[endpoint]
+        if cache_key in self._etag_cache:
+            headers["If-None-Match"] = self._etag_cache[cache_key]
         return headers
 
     def _check_rate_limit_warning(
@@ -396,20 +398,20 @@ class AsyncGitHubClient:
                 reset_time=reset_dt.isoformat(),
             )
 
-    def _handle_304_response(self, endpoint: str) -> dict[str, Any] | list[dict[str, Any]]:
+    def _handle_304_response(self, cache_key: str) -> dict[str, Any] | list[dict[str, Any]]:
         """304 Not Modified: キャッシュデータを返却する。キャッシュミス時はエラー。"""
-        if endpoint in self._data_cache:
-            return self._data_cache[endpoint]
+        if cache_key in self._data_cache:
+            return self._data_cache[cache_key]
         # キャッシュミス時（理論上発生しない: ETagあり=キャッシュあり）
         # Fail-fast: キャッシュ不整合は実装バグの証拠
         self.logger.error(
             "cache_miss_on_304",
-            endpoint=endpoint,
+            endpoint=cache_key,
             hint="ETag存在時のキャッシュミスは実装バグ",
-            etag=self._etag_cache.get(endpoint),
+            etag=self._etag_cache.get(cache_key),
         )
         raise GitHubAPIError(
-            f"Cache inconsistency: 304 response without cached data for {endpoint}"
+            f"Cache inconsistency: 304 response without cached data for {cache_key}"
         )
 
     def _handle_403_response(self, response: httpx.Response) -> NoReturn:
@@ -482,9 +484,11 @@ class AsyncGitHubClient:
             "github_retry_failed",
             endpoint=endpoint,
             method=method,
-            status_code=response.status_code,
+            error_type="server_error",
+            error_module="httpx",
             error_context="server_error",
             max_retries=self.max_retries,
+            status_code=response.status_code,
         )
         raise GitHubServerError(
             f"Server error: {response.status_code} after {self.max_retries} attempts",
@@ -560,7 +564,7 @@ class AsyncGitHubClient:
 
     def _update_etag_cache(
         self,
-        endpoint: str,
+        cache_key: str,
         response: httpx.Response,
         result_json: dict[str, Any] | list[dict[str, Any]],
     ) -> None:
@@ -570,23 +574,47 @@ class AsyncGitHubClient:
         （障害時のロールバック機構はないためキャッシュ不整合が生じうる）
         """
         if "ETag" in response.headers:
-            self._etag_cache.pop(endpoint, None)
-            self._data_cache.pop(endpoint, None)
-            self._etag_cache[endpoint] = response.headers["ETag"]
-            self._data_cache[endpoint] = result_json
+            self._etag_cache.pop(cache_key, None)
+            self._data_cache.pop(cache_key, None)
+            self._etag_cache[cache_key] = response.headers["ETag"]
+            self._data_cache[cache_key] = result_json
             self._enforce_cache_limit()
         else:
-            if endpoint in self._etag_cache or endpoint in self._data_cache:
-                self.logger.debug("etag_removed", endpoint=endpoint)
-            self._etag_cache.pop(endpoint, None)
-            self._data_cache.pop(endpoint, None)
+            if cache_key in self._etag_cache or cache_key in self._data_cache:
+                self.logger.debug("etag_removed", endpoint=cache_key)
+            self._etag_cache.pop(cache_key, None)
+            self._data_cache.pop(cache_key, None)
 
     def _enforce_cache_limit(self) -> None:
-        """ETag/dataキャッシュを max_cache_entries 以下に保つ。"""
-        while len(self._etag_cache) > self.max_cache_entries:
+        """ETag/dataキャッシュを max_cache_entries 以下に保つ。
+
+        caller は 1 エントリずつ追加するため、最大 1 回の削除で十分。
+        """
+        if len(self._etag_cache) > self.max_cache_entries:
             oldest_endpoint = next(iter(self._etag_cache))
-            self._etag_cache.pop(oldest_endpoint, None)
+            self._etag_cache.pop(oldest_endpoint)
             self._data_cache.pop(oldest_endpoint, None)
+
+    @staticmethod
+    def _cache_key(endpoint: str, params: dict[str, Any] | None = None) -> str:
+        """エンドポイントとクエリパラメータからキャッシュキーを生成する。
+
+        params が None または空の場合は endpoint をそのまま返す。
+        params がある場合は ``endpoint?key1=val1&key2=val2`` 形式で返す。
+        パラメータはキーでソートされ決定論的なキーを生成する。
+
+        Args:
+            endpoint: APIエンドポイントパス（例: ``/users/octocat/repos``）
+            params: クエリパラメータ辞書（None可）
+
+        Returns:
+            キャッシュキー文字列
+
+        """
+        if not params:
+            return endpoint
+        sorted_params = sorted(params.items())
+        return f"{endpoint}?{urlencode(sorted_params)}"
 
     async def _request(  # noqa: C901 - HTTPプロトコル処理の最小必要分岐（4xxステータス, 5xxリトライ, タイムアウト, キャンセル等）のため許容 CC≈12
         self,
@@ -633,7 +661,8 @@ class AsyncGitHubClient:
         if not self._client:
             raise RuntimeError("Client not initialized. Use 'async with' context.")
 
-        headers = self._prepare_headers(endpoint)
+        cache_key = self._cache_key(endpoint, params)
+        headers = self._prepare_headers(cache_key)
 
         for attempt in range(self.max_retries):
             retry_error_message: str | None = None
@@ -655,7 +684,7 @@ class AsyncGitHubClient:
 
                 # ステータスコード処理
                 if response.status_code == 304:
-                    return self._handle_304_response(endpoint)
+                    return self._handle_304_response(cache_key)
 
                 if response.status_code == 404:
                     raise NotFoundError(f"Resource not found: {endpoint}")
@@ -677,7 +706,7 @@ class AsyncGitHubClient:
                     response.raise_for_status()
 
                 result_json = self._parse_json_response(response, endpoint)
-                self._update_etag_cache(endpoint, response, result_json)
+                self._update_etag_cache(cache_key, response, result_json)
 
                 return result_json
 

@@ -344,7 +344,11 @@ def reset_settings() -> Iterator[None]:
     """
     _resolve_hostname_cached.cache_clear()
     reload_settings()
-    yield
+    try:
+        yield
+    finally:
+        _resolve_hostname_cached.cache_clear()
+        reload_settings()
 
 
 @pytest.fixture(autouse=True)

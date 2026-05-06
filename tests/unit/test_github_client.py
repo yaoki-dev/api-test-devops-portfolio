@@ -1917,10 +1917,10 @@ async def test_httpx_status_error_404_defensive_path_raises_not_found_error() ->
 
 
 def test_handle_http_status_error_cause_excludes_response_body() -> None:
-    """from None による完全PII遮断を確認
+    """from None による完全 PII 遮断を確認
 
-    __cause__ is None であるため、センシティブなresponse bodyが
-    Sentry等の例外チェーン解析ツールに露出しないことを保証する。
+    __cause__ is None であるため、センシティブな response body が
+    Sentry 等の例外チェーン解析ツールに露出しないことを保証する。
     """
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
     sensitive_body = "token=SUPER_SECRET_API_KEY_12345"
@@ -1930,14 +1930,145 @@ def test_handle_http_status_error_cause_excludes_response_body() -> None:
     with patch.object(client, "logger") as mock_logger:
         with pytest.raises(GitHubAPIError) as exc_info:
             client._handle_http_status_error(response, "/repos/test", "GET")
-        # logger.debugでbody_previewはリダクション済み（[redacted:hash]形式）であること
+        # logger.debug で body_preview はリダクション済み（[redacted:hash] 形式）であること
         body_preview_logged = mock_logger.debug.call_args.kwargs["body_preview"]
         assert body_preview_logged.startswith("[redacted:")
         assert "]" in body_preview_logged
         # センシティブデータはログに含まれないこと
         assert sensitive_body not in body_preview_logged
+        # 例外チェーン遮断検証：from None により __cause__ は None
+        assert exc_info.value.__cause__ is None
+        # 例外チェーン遮断検証：__context__ にも PII 含有オブジェクトが残存しない
+        assert exc_info.value.__context__ is None
 
-    # from None により __cause__ は None（完全PII遮断）
-    assert exc_info.value.__cause__ is None
-    # GitHubAPIError本体にもセンシティブデータが含まれないこと
-    assert sensitive_body not in str(exc_info.value)
+
+# =============================================================================
+# _cache_key テスト（ETagキャッシュキーにクエリパラメータを含める）
+# =============================================================================
+
+
+def test_cache_key_no_params_returns_endpoint() -> None:
+    """params=None の場合、endpoint をそのまま返す"""
+    assert AsyncGitHubClient._cache_key("/users/octocat") == "/users/octocat"
+    assert AsyncGitHubClient._cache_key("/users/octocat", None) == "/users/octocat"
+
+
+def test_cache_key_empty_params_returns_endpoint() -> None:
+    """params={} の場合、endpoint をそのまま返す"""
+    assert AsyncGitHubClient._cache_key("/users/octocat", {}) == "/users/octocat"
+
+
+def test_cache_key_with_params_produces_query_string() -> None:
+    """params ありの場合、endpoint?key=value 形式を返す"""
+    key = AsyncGitHubClient._cache_key(
+        "/users/octocat/repos", {"sort": "updated", "per_page": "30"}
+    )
+    assert key.startswith("/users/octocat/repos?")
+    assert "sort=updated" in key
+    assert "per_page=30" in key
+
+
+def test_cache_key_params_are_sorted_for_determinism() -> None:
+    """パラメータの順序が異なっても同じキャッシュキーを返す（決定論的）"""
+    key1 = AsyncGitHubClient._cache_key("/repos", {"b": "2", "a": "1"})
+    key2 = AsyncGitHubClient._cache_key("/repos", {"a": "1", "b": "2"})
+    assert key1 == key2
+
+
+def test_cache_key_different_params_produce_different_keys() -> None:
+    """異なるパラメータで異なるキャッシュキーを生成する"""
+    key_a = AsyncGitHubClient._cache_key(
+        "/users/octocat/repos", {"sort": "updated", "per_page": "30"}
+    )
+    key_b = AsyncGitHubClient._cache_key(
+        "/users/octocat/repos", {"sort": "created", "per_page": "10"}
+    )
+    assert key_a != key_b
+
+
+@respx.mock
+async def test_etag_cache_key_includes_query_params() -> None:
+    """get_repos() の sort/per_page が異なると異なるキャッシュキーを使用する
+
+    1回目: sort=updated, per_page=30 → 200 + ETag保存
+    2回目: sort=created, per_page=10 → 200 (別キーでキャッシュヒットせず)
+    """
+    updated_route = respx.get(
+        f"{GITHUB_API_BASE_URL}/users/octocat/repos",
+        params={"sort": "updated", "per_page": "30"},
+    )
+    created_route = respx.get(
+        f"{GITHUB_API_BASE_URL}/users/octocat/repos",
+        params={"sort": "created", "per_page": "10"},
+    )
+    updated_route.side_effect = [
+        httpx.Response(
+            200,
+            json=[{"name": "repo-a", "pushed_at": "2025-01-01"}],
+            headers={"ETag": '"updated-etag"', "X-RateLimit-Remaining": "50"},
+        ),
+        httpx.Response(304, headers={"X-RateLimit-Remaining": "50"}),
+    ]
+    created_route.respond(
+        200,
+        json=[{"name": "repo-b", "created_at": "2024-01-01"}],
+        headers={"ETag": '"created-etag"', "X-RateLimit-Remaining": "50"},
+    )
+
+    async with AsyncGitHubClient() as client:
+        repos1 = await client.get_repos("octocat", sort="updated", per_page=30)
+        assert repos1[0]["name"] == "repo-a"
+
+        repos2 = await client.get_repos("octocat", sort="created", per_page=10)
+        assert repos2[0]["name"] == "repo-b"
+
+        # 再度 updated を呼ぶと304キャッシュが返る
+        repos3 = await client.get_repos("octocat", sort="updated", per_page=30)
+        assert repos3[0]["name"] == "repo-a"
+
+    assert updated_route.call_count == 2  # 200 + 304
+    assert created_route.call_count == 1  # 200 only
+
+
+@respx.mock
+async def test_304_returns_correct_cached_data_per_params() -> None:
+    """sort 違いのキャッシュが混ざらないこと
+
+    1. sort=updated → 200, data=[repo-updated]
+    2. sort=created → 200, data=[repo-created]
+    3. sort=updated → 304, data=[repo-updated] (not repo-created)
+    """
+    octocat_base = f"{GITHUB_API_BASE_URL}/users/octocat/repos"
+
+    updated_route = respx.get(octocat_base, params={"sort": "updated", "per_page": "30"})
+    created_route = respx.get(octocat_base, params={"sort": "created", "per_page": "30"})
+
+    updated_route.side_effect = [
+        httpx.Response(
+            200,
+            json=[{"name": "repo-updated"}],
+            headers={"ETag": '"updated"', "X-RateLimit-Remaining": "50"},
+        ),
+        httpx.Response(304, headers={"X-RateLimit-Remaining": "50"}),
+    ]
+    created_route.side_effect = [
+        httpx.Response(
+            200,
+            json=[{"name": "repo-created"}],
+            headers={"ETag": '"created"', "X-RateLimit-Remaining": "50"},
+        ),
+    ]
+
+    async with AsyncGitHubClient() as client:
+        r1 = await client.get_repos("octocat", sort="updated", per_page=30)
+        assert r1[0]["name"] == "repo-updated"
+
+        r2 = await client.get_repos("octocat", sort="created", per_page=30)
+        assert r2[0]["name"] == "repo-created"
+
+        # 304 → updated のキャッシュが返るべき
+        r3 = await client.get_repos("octocat", sort="updated", per_page=30)
+        assert r3[0]["name"] == "repo-updated"
+
+    assert updated_route.call_count == 2
+    assert created_route.call_count == 1

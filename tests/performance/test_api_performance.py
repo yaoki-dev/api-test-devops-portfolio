@@ -44,7 +44,7 @@ class PerformanceMetrics:
         self.start_time = time.time()
         self.memory_usage.append(psutil.Process().memory_info().rss / 1024 / 1024)  # MB
         psutil.cpu_percent()
-        self.cpu_usage.append(psutil.cpu_percent(interval=0.1))
+        self.cpu_usage.append(psutil.cpu_percent())
 
     def record_response_time(self, response_time: float) -> None:
         """レスポンス時間記録"""
@@ -54,7 +54,7 @@ class PerformanceMetrics:
         """パフォーマンス監視終了"""
         self.end_time = time.time()
         self.memory_usage.append(psutil.Process().memory_info().rss / 1024 / 1024)
-        self.cpu_usage.append(psutil.cpu_percent(interval=0.1))
+        self.cpu_usage.append(psutil.cpu_percent())
 
     def get_summary(self) -> dict[str, Any]:
         """パフォーマンスサマリー取得"""

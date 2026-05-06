@@ -134,7 +134,7 @@ def _scrub_sensitive_data(data: Any, _depth: int = 0) -> Any:
     return result
 
 
-def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001
+def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C901
     """Sentry送信前フック（機密データ除外）
 
     Args:
@@ -160,11 +160,15 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001
 
     # ユーザー情報のスクラブ
     if "user" in event:
-        event["user"] = _scrub_sensitive_data(event["user"])
+        user = event["user"]
+        if isinstance(user, dict):
+            event["user"] = _scrub_sensitive_data(user)
 
     # コンテキスト情報のスクラブ
     if "contexts" in event:
-        event["contexts"] = _scrub_sensitive_data(event["contexts"])
+        contexts = event["contexts"]
+        if isinstance(contexts, dict):
+            event["contexts"] = _scrub_sensitive_data(contexts)
 
     # タグのスクラブ
     if "tags" in event:
