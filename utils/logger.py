@@ -26,7 +26,7 @@ from structlog.typing import FilteringBoundLogger, WrappedLogger
 
 from config.settings import LogFormat, get_settings
 
-# _sentry_warning_lock: per-process 1 回抑制フラグ群の atomic check-and-set 用 lock。
+# _sentry_warning_lock: per-process 1 回抑制フラグ群を同一critical sectionで確認・更新するlock。
 # **重要制約**: lock 内はフラグ操作 (_sentry_warnings_emitted への add/in) と
 # 純粋な文字列生成 (事前計算済み値の結合のみ) に限定すること。
 # str(e) / _sentry_debug_detail(e) 等のユーザーコード呼び出しを lock 内に置くと、

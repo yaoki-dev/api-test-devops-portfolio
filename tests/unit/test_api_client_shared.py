@@ -31,6 +31,7 @@ from unittest.mock import Mock, patch
 import httpx
 import pytest
 
+from tests.constants import INVALID_BASE_URLS
 from utils.api_client import (
     APIClientError,
     APIConnectionError,
@@ -313,18 +314,15 @@ def test_resolve_client_config_base_url_none_uses_settings(mock_settings: MockSe
     assert base_url == "https://settings.example.com"
 
 
-def test_resolve_client_config_empty_base_url_raises(mock_settings: MockSettings) -> None:
-    """空文字列の base_url で ValueError が発生"""
+@pytest.mark.parametrize("invalid_base_url", INVALID_BASE_URLS)
+def test_resolve_client_config_invalid_base_url_raises(
+    mock_settings: MockSettings,
+    invalid_base_url: str,
+) -> None:
+    """空白のみの base_url で ValueError が発生"""
     with patch("utils.api_client.settings", mock_settings):
         with pytest.raises(ValueError, match="base_url が空です"):
-            _resolve_client_config("", None, None, None, None)
-
-
-def test_resolve_client_config_whitespace_base_url_raises(mock_settings: MockSettings) -> None:
-    """スペースのみの base_url で ValueError が発生"""
-    with patch("utils.api_client.settings", mock_settings):
-        with pytest.raises(ValueError, match="base_url が空です"):
-            _resolve_client_config("   ", None, None, None, None)
+            _resolve_client_config(invalid_base_url, None, None, None, None)
 
 
 def test_resolve_client_config_none_timeout_uses_settings(mock_settings: MockSettings) -> None:

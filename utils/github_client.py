@@ -149,6 +149,7 @@ class AsyncGitHubClient:
         timeout: int = 30,
         max_retries: int = 3,
         user_agent: str = "AsyncGitHubClient/1.0",
+        max_cache_entries: int = 256,
     ):
         """AsyncGitHubClientの初期化
 
@@ -158,11 +159,15 @@ class AsyncGitHubClient:
                 （5xx・timeout・NetworkError・RemoteProtocolError の再試行回数、初回含む）。
                 デフォルト設定(timeout=30, max_retries=3)での最悪ケース: 約96秒。
             user_agent: User-Agentヘッダー（GitHub要求事項）
+            max_cache_entries: ETag/dataキャッシュの最大エントリ数（デフォルト256）
 
         """
+        if max_cache_entries < 1:
+            raise ValueError("max_cache_entries must be >= 1")
         self.timeout = timeout
         self.max_retries = max_retries
         self.user_agent = user_agent
+        self.max_cache_entries = max_cache_entries
         self._client: httpx.AsyncClient | None = None
         self._etag_cache: dict[str, str] = {}  # URL -> ETag
         # URL -> response data（304レスポンス時のキャッシュ返却用）
@@ -204,6 +209,16 @@ class AsyncGitHubClient:
         if attempt < self.max_retries - 1:
             delay = exponential_backoff_with_jitter(attempt, base_delay=2.0)
             await asyncio.sleep(delay)
+            return
+        self.logger.error(
+            "github_retry_failed",
+            endpoint=endpoint,
+            method=method,
+            error_type=type(error).__qualname__,
+            error_module=type(error).__module__,
+            error_context=error_context,
+            max_retries=self.max_retries,
+        )
 
     async def __aenter__(self) -> Self:
         """非同期コンテキストマネージャーのエントリー"""
@@ -287,6 +302,10 @@ class AsyncGitHubClient:
 
         """
         validate_github_username(username)
+        if sort not in {"created", "updated", "pushed", "full_name"}:
+            raise ValueError("sort must be one of: created, updated, pushed, full_name")
+        if not 1 <= per_page <= 100:
+            raise ValueError("per_page must be between 1 and 100")
         params = {"sort": sort, "per_page": per_page}
         result = await self._request("GET", f"/users/{username}/repos", params=params)
         if not isinstance(result, list):
@@ -459,6 +478,14 @@ class AsyncGitHubClient:
             )
             await asyncio.sleep(delay)
             return
+        self.logger.error(
+            "github_retry_failed",
+            endpoint=endpoint,
+            method=method,
+            status_code=response.status_code,
+            error_context="server_error",
+            max_retries=self.max_retries,
+        )
         raise GitHubServerError(
             f"Server error: {response.status_code} after {self.max_retries} attempts",
         ) from None
@@ -543,13 +570,23 @@ class AsyncGitHubClient:
         （障害時のロールバック機構はないためキャッシュ不整合が生じうる）
         """
         if "ETag" in response.headers:
+            self._etag_cache.pop(endpoint, None)
+            self._data_cache.pop(endpoint, None)
             self._etag_cache[endpoint] = response.headers["ETag"]
             self._data_cache[endpoint] = result_json
+            self._enforce_cache_limit()
         else:
             if endpoint in self._etag_cache or endpoint in self._data_cache:
                 self.logger.debug("etag_removed", endpoint=endpoint)
             self._etag_cache.pop(endpoint, None)
             self._data_cache.pop(endpoint, None)
+
+    def _enforce_cache_limit(self) -> None:
+        """ETag/dataキャッシュを max_cache_entries 以下に保つ。"""
+        while len(self._etag_cache) > self.max_cache_entries:
+            oldest_endpoint = next(iter(self._etag_cache))
+            self._etag_cache.pop(oldest_endpoint, None)
+            self._data_cache.pop(oldest_endpoint, None)
 
     async def _request(  # noqa: C901 - HTTPプロトコル処理の最小必要分岐（4xxステータス, 5xxリトライ, タイムアウト, キャンセル等）のため許容 CC≈12
         self,
