@@ -188,6 +188,8 @@ async def test_retry_on_server_error(mock_sleep: AsyncMock, mock_backoff: Mock) 
     assert route.call_count == MAX_RETRIES
     assert "Server error: 500" in str(exc_info.value)
     assert f"after {MAX_RETRIES} attempts" in str(exc_info.value)
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
     assert mock_backoff.call_count == MAX_RETRIES - 1  # MAX_RETRIES試行 → 最終試行以外でバックオフ
     assert mock_sleep.await_count == MAX_RETRIES - 1
     mock_sleep.assert_has_awaits([call(0.0)] * (MAX_RETRIES - 1))
@@ -403,13 +405,13 @@ async def test_network_and_protocol_error_logging_no_pii_leak(
     """NetworkError/RemoteProtocolError例外メッセージがログフィールド値へ漏洩しないこと検証"""
     sensitive_detail = "https://api.example.com/internal?token=SECRET_API_KEY_12345"
     transport_exception = exception_class(sensitive_detail)
-    respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=transport_exception)
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=transport_exception)
 
     with patch(
         "utils.github_client.exponential_backoff_with_jitter",
         return_value=0.0,
-    ):
-        with patch("utils.github_client.asyncio.sleep", new_callable=AsyncMock):
+    ) as mock_backoff:
+        with patch("utils.github_client.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             with capture_logs() as log_output:
                 async with AsyncGitHubClient() as client:
                     with pytest.raises(GitHubAPIError) as exc_info:
@@ -418,6 +420,10 @@ async def test_network_and_protocol_error_logging_no_pii_leak(
     assert sensitive_detail not in str(exc_info.value)
     assert exc_info.value.__cause__ is None
     assert exc_info.value.__context__ is None
+    assert route.call_count == MAX_RETRIES
+    assert mock_backoff.call_count == MAX_RETRIES - 1
+    assert mock_sleep.await_count == MAX_RETRIES - 1
+    mock_sleep.assert_has_awaits([call(0.0)] * (MAX_RETRIES - 1))
     network_logs = [log for log in log_output if log.get("event") == "request_network_error"]
     assert len(network_logs) == MAX_RETRIES
     for network_log in network_logs:
@@ -619,6 +625,8 @@ async def test_httpx_status_error_5xx(mock_sleep: AsyncMock, mock_backoff: Mock)
                 await client.get_user("octocat")
 
     assert "Server error: 503" in str(exc_info.value)
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
     assert route.call_count == MAX_RETRIES
     assert mock_backoff.call_count == MAX_RETRIES - 1  # MAX_RETRIES試行 → 最終試行以外でバックオフ
     assert mock_sleep.await_count == MAX_RETRIES - 1
@@ -1577,30 +1585,18 @@ def test_parse_json_response_invalid_json_raises() -> None:
     assert isinstance(decode_logs[0]["error_lineno"], int)
 
 
-def test_parse_json_response_unexpected_parse_error_raises_invalid_json_without_pii() -> None:
-    """_parse_json_response: JSONDecodeError以外のパース例外もPII-safeにInvalid JSONへ変換"""
+def test_parse_json_response_unexpected_parse_error_propagates() -> None:
+    """_parse_json_response: JSONDecodeError以外のパース例外は呼び出し元へ伝播"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
     sensitive_detail = "https://api.example.com/internal?token=SECRET_API_KEY_12345"
     response = Mock(spec=httpx.Response)
     response.json.side_effect = RuntimeError(sensitive_detail)
 
     with capture_logs() as log_output:
-        with pytest.raises(GitHubAPIError, match="Invalid JSON response") as exc_info:
+        with pytest.raises(RuntimeError, match=re.escape(sensitive_detail)):
             client._parse_json_response(response, "/test-endpoint")
 
-    assert exc_info.value.__cause__ is None
-    assert exc_info.value.__context__ is None
-    assert sensitive_detail not in str(exc_info.value)
-    parse_logs = [log for log in log_output if log.get("event") == "json_parse_unexpected_error"]
-    assert len(parse_logs) == 1
-    assert parse_logs[0]["endpoint"] == "/test-endpoint"
-    assert parse_logs[0]["error_type"] == "RuntimeError"
-    assert parse_logs[0]["error_module"] == "builtins"
-    assert "error" not in parse_logs[0]
-    for value in parse_logs[0].values():
-        assert sensitive_detail not in str(value), (
-            f"sensitive_detail leaked in log field value: {value!r}"
-        )
+    assert not [log for log in log_output if log.get("event") == "json_parse_unexpected_error"]
 
 
 def test_update_etag_cache_no_etag_header() -> None:

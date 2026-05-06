@@ -483,16 +483,7 @@ class AsyncGitHubClient:
                 error_pos=e.pos,
                 error_lineno=e.lineno,
             )
-        except Exception as e:
-            self.logger.error(
-                "json_parse_unexpected_error",
-                endpoint=endpoint,
-                error_type=type(e).__qualname__,
-                error_module=type(e).__module__,
-                error_context="unexpected_parse",
-            )
-
-        # JSONDecodeError.doc やその他パース例外はレスポンスbody/URL等を保持しうる。
+        # JSONDecodeError.doc はレスポンスbody全体を保持する。
         # except 内で raise すると __context__ に元例外が残存して露出するため、
         # active exception context の外で raise して __context__ を None に保つ。
         raise GitHubAPIError("Invalid JSON response") from None
