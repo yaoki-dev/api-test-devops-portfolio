@@ -160,6 +160,7 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
 
     # ユーザー情報のスクラブ
     if "user" in event:
+<<<<<<< feature/pr340-review-fixes
         user = event["user"]
         if isinstance(user, dict):
             event["user"] = _scrub_sensitive_data(user)
@@ -169,6 +170,13 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
         contexts = event["contexts"]
         if isinstance(contexts, dict):
             event["contexts"] = _scrub_sensitive_data(contexts)
+=======
+        event["user"] = _scrub_sensitive_data(event["user"])
+
+    # コンテキスト情報のスクラブ
+    if "contexts" in event:
+        event["contexts"] = _scrub_sensitive_data(event["contexts"])
+>>>>>>> develop
 
     # タグのスクラブ
     if "tags" in event:

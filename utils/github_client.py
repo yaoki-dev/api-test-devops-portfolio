@@ -616,6 +616,13 @@ class AsyncGitHubClient:
         sorted_params = sorted(params.items())
         return f"{endpoint}?{urlencode(sorted_params)}"
 
+    def _enforce_cache_limit(self) -> None:
+        """ETag/dataキャッシュを max_cache_entries 以下に保つ。"""
+        while len(self._etag_cache) > self.max_cache_entries:
+            oldest_endpoint = next(iter(self._etag_cache))
+            self._etag_cache.pop(oldest_endpoint, None)
+            self._data_cache.pop(oldest_endpoint, None)
+
     async def _request(  # noqa: C901 - HTTPプロトコル処理の最小必要分岐（4xxステータス, 5xxリトライ, タイムアウト, キャンセル等）のため許容 CC≈12
         self,
         method: str,
