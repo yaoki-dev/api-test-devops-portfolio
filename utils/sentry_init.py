@@ -94,6 +94,9 @@ _sentry_initialized: bool = False
 # 再帰制限のデフォルト値
 MAX_SCRUB_DEPTH: int = 10
 
+# before_send でスクラブ対象とするイベントフィールド（PII漏洩防止の対象集合）
+_SCRUBBED_EVENT_FIELDS: tuple[str, ...] = ("extra", "user", "contexts", "tags")
+
 
 def _scrub_sensitive_data(data: Any, _depth: int = 0) -> Any:
     """機密データを再帰的にスクラブ
@@ -137,7 +140,8 @@ def _scrub_sensitive_data(data: Any, _depth: int = 0) -> Any:
 def _scrub_sentry_field(event: Event, field: str) -> None:
     """Sentryイベントの単一フィールドをスクラブする。
 
-    非dict型の場合はスクラブをスキップし、SENTRY_DEBUG時のみ警告を出力する。
+    dict型の場合は _scrub_sensitive_data() で再帰的にスクラブする。
+    非dict型の場合は空dictに置換し（安全サイド）、SENTRY_DEBUG時のみ警告を出力する。
     _scrub_sensitive_data の内部 non-dict ガードと二重防御を構成する。
 
     Args:
@@ -151,17 +155,20 @@ def _scrub_sentry_field(event: Event, field: str) -> None:
         value = event_dict[field]
         if isinstance(value, dict):
             event_dict[field] = _scrub_sensitive_data(value)
-        elif SENTRY_DEBUG:
-            warnings.warn(
-                f"Sentry '{field}' field is not a dict (type={type(value).__name__}), "
-                "scrubbing skipped — PII may leak if this field ever receives non-dict data."
-                "See: utils/sentry_init.py _scrub_sentry_field",
-                UserWarning,
-                stacklevel=2,
-            )
+        else:
+            # 非dict型はスクラブ不可能。空dictに置換して安全サイドに倒す。
+            event_dict[field] = {}
+            if SENTRY_DEBUG:
+                warnings.warn(
+                    f"Sentry '{field}' field is not a dict (type={type(value).__name__}), "
+                    "field replaced with empty dict to prevent PII leakage. "
+                    "See: utils/sentry_init.py _scrub_sentry_field",
+                    UserWarning,
+                    stacklevel=2,
+                )
 
 
-def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C901
+def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001
     """Sentry送信前フック（機密データ除外）
 
     Args:
@@ -181,21 +188,11 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
             if "data" in request:
                 request["data"] = _scrub_sensitive_data(request["data"])
 
-    # 追加データのスクラブ
-    # Note: _scrub_sensitive_data 内部に non-dict ガードあり (line 113) のため
-    # 外側ガードは機能的に冗長だが、5フィールド (request/extra/user/contexts/tags) の
-    # パターン一貫性のため敢えて isinstance(dict) チェックを揃える。
-    # 非dict型は _scrub_sentry_field 内で SENTRY_DEBUG 時に警告される。
-    _scrub_sentry_field(event, "extra")
-
-    # ユーザー情報のスクラブ
-    _scrub_sentry_field(event, "user")
-
-    # コンテキスト情報のスクラブ
-    _scrub_sentry_field(event, "contexts")
-
-    # タグのスクラブ
-    _scrub_sentry_field(event, "tags")
+    # 追加データのスクラブ（2層防御）
+    # _scrub_sentry_field: 非dict型フィールドを空dictに置換（型安全化・PII漏洩防止）
+    # _scrub_sensitive_data: dict内の機密キーを [REDACTED] に置換（PII除外）
+    for field in _SCRUBBED_EVENT_FIELDS:
+        _scrub_sentry_field(event, field)
 
     return event
 

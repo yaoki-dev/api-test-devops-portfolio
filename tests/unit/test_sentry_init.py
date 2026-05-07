@@ -12,6 +12,7 @@ utils/sentry_init.py の単体テスト。
 
 from __future__ import annotations
 
+import warnings
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
@@ -19,6 +20,7 @@ import pytest
 from pydantic import SecretStr
 from sentry_sdk.types import Event
 
+import utils.sentry_init as sentry_module
 from utils.sentry_init import (
     MAX_SCRUB_DEPTH,
     SENSITIVE_KEYS,
@@ -234,26 +236,61 @@ class TestBeforeSend:
         result_dict = self._call_before_send(event)
         assert result_dict["message"] == "test"
 
-    def test_before_send_user_non_dict_is_not_modified(self) -> None:
-        """user が非 dict (str等) の場合、スクラブせずそのまま保持する."""
+    def test_before_send_user_non_dict_replaced_with_empty_dict(self) -> None:
+        """user が非 dict (str等) の場合、空dictに置換される."""
         event = cast(Event, {"user": "anonymous"})
         result = _before_send(event, {})
         assert result is not None
-        assert result["user"] == "anonymous"
+        assert result["user"] == {}
 
     @pytest.mark.parametrize("field", ["extra", "contexts", "tags"])
-    def test_before_send_non_dict_field_is_not_modified(self, field: str) -> None:
-        """非dict型のextra/contexts/tagsはスクラブされず元の値が保持される。
+    def test_before_send_non_dict_field_replaced_with_empty_dict(self, field: str) -> None:
+        """非dict型のextra/contexts/tagsは空dictに置換される（PII保護の安全サイド防御）。
 
         _scrub_sentry_field は isinstance(value, dict) が False の場合に
-        スクラブをスキップし、元の値をそのまま保持する。
-        user フィールドのテストは別途 test_before_send_user_non_dict_is_not_modified で実施。
+        event_dict[field] = {} で空dictに置換する。
+        user の非dictテストは test_before_send_user_non_dict_replaced_with_empty_dict。
         """
         non_dict_value: Any = ["item1", "item2"]
         event = cast(Event, {field: non_dict_value})
         result = _before_send(event, {})
         assert result is not None
-        assert result[field] == non_dict_value
+        assert result[field] == {}
+
+    def test_scrub_sentry_field_non_dict_warns_when_debug_enabled(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """SENTRY_DEBUG=True時、非dict型フィールドは空dict置換 + UserWarning発行."""
+        # SENTRY_DEBUG はモジュールロード時に os.environ から評価済みのため、
+        # monkeypatch.setattr でモジュール変数を直接設定する。
+        monkeypatch.setattr(sentry_module, "SENTRY_DEBUG", True)
+        event = cast(Event, {"extra": "not-a-dict"})
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = _before_send(event, {})
+
+        assert result is not None
+        assert result["extra"] == {}
+        assert len(w) == 1
+        assert issubclass(w[0].category, UserWarning)
+        assert "extra" in str(w[0].message)
+        assert "empty dict" in str(w[0].message)
+
+    def test_scrub_sentry_field_non_dict_no_warning_without_debug(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """SENTRY_DEBUG=False時、非dict型フィールドは空dict置換されるが警告なし."""
+        monkeypatch.setattr(sentry_module, "SENTRY_DEBUG", False)
+        event = cast(Event, {"contexts": 123})
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = _before_send(event, {})
+
+        assert result is not None
+        assert result["contexts"] == {}
+        assert len(w) == 0
 
 
 class TestInitSentry:

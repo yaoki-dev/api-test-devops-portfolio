@@ -1689,20 +1689,32 @@ def test_update_etag_cache_with_etag_header() -> None:
     assert client._data_cache["/repos/test"] == result
 
 
-def test_update_etag_cache_clears_stale_cache_when_etag_missing() -> None:
-    """ETagが消失した場合は古いキャッシュを削除する"""
+@pytest.mark.parametrize(
+    ("cache_key", "expected_logged_endpoint"),
+    [
+        pytest.param("/repos/test", "/repos/test", id="no_query_params"),
+        pytest.param(
+            "/repos/test?per_page=30&sort=updated",
+            "/repos/test",
+            id="query_params_stripped_from_log",
+        ),
+    ],
+)
+def test_update_etag_cache_clears_stale_cache_and_logs_endpoint(
+    cache_key: str, expected_logged_endpoint: str
+) -> None:
+    """ETag消失時、キャッシュを削除しログはクエリ無しendpointを出力する."""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
-    endpoint = "/repos/test"
-    client._etag_cache[endpoint] = '"stale"'
-    client._data_cache[endpoint] = {"id": 1}
+    client._etag_cache[cache_key] = '"stale"'
+    client._data_cache[cache_key] = {"id": 1}
     response = httpx.Response(200, content=b'{"id": 2}')
 
     with patch.object(client, "logger") as mock_logger:
-        client._update_etag_cache(endpoint, response, {"id": 2})
-        mock_logger.debug.assert_called_once_with("etag_removed", endpoint=endpoint)
+        client._update_etag_cache(cache_key, response, {"id": 2})
+        mock_logger.debug.assert_called_once_with("etag_removed", endpoint=expected_logged_endpoint)
 
-    assert endpoint not in client._etag_cache
-    assert endpoint not in client._data_cache
+    assert cache_key not in client._etag_cache
+    assert cache_key not in client._data_cache
 
 
 @pytest.mark.parametrize(
