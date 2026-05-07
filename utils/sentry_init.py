@@ -34,9 +34,12 @@ import warnings
 from typing import TYPE_CHECKING, Any
 
 from config.settings import get_settings
+from utils.logger import get_logger
 
 # デバッグモード（環境変数で有効化）
 SENTRY_DEBUG: bool = os.environ.get("SENTRY_DEBUG", "").lower() in ("true", "1", "yes")
+
+_logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from sentry_sdk.types import Event, Hint
@@ -158,14 +161,12 @@ def _scrub_sentry_field(event: Event, field: str) -> None:
         else:
             # 非dict型はスクラブ不可能。空dictに置換して安全サイドに倒す。
             event_dict[field] = {}
-            if SENTRY_DEBUG:
-                warnings.warn(
-                    f"Sentry '{field}' field is not a dict (type={type(value).__name__}), "
-                    "field replaced with empty dict to prevent PII leakage. "
-                    "See: utils/sentry_init.py _scrub_sentry_field",
-                    UserWarning,
-                    stacklevel=2,
-                )
+            _logger.warning(
+                "sentry_field_type_unexpected",
+                field=field,
+                actual_type=type(value).__name__,
+                action="replaced_with_empty_dict",
+            )
 
 
 def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001

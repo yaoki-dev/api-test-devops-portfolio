@@ -13,7 +13,7 @@ import re
 from datetime import UTC, datetime
 from types import TracebackType
 from typing import Any, NoReturn, Self, cast
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import httpx
 
@@ -594,29 +594,35 @@ class AsyncGitHubClient:
 
         params が None または空の場合は endpoint をそのまま返す。
         params がある場合は ``endpoint?key1=val1&key2=val2`` 形式で返す。
-        値に URL 非安全文字が含まれる場合、``urlencode``（``quote_plus`` 方式）により
-        エンコードされる（空白は ``+``、``&``・``=`` 等は ``%XX`` 形式）。
+        URLエンコードには ``quote_via=quote`` を使用し、httpx のエンコード方式
+        （スペースは ``%20``）と一致させる。
         パラメータはキーでソートされ決定論的なキーを生成する。
 
         Args:
-            endpoint: APIエンドポイントパス（例: ``/users/octocat/repos``）
+            endpoint: APIエンドポイントパス（例: ``/users/octocat/repos``）。
+                ``?`` を含んではならない。
             params: クエリパラメータ辞書（None可）
 
         Returns:
             キャッシュキー文字列
 
+        Raises:
+            ValueError: endpoint に ``?`` が含まれる場合
+
         """
+        if "?" in endpoint:
+            raise ValueError(f"endpoint must not contain '?': {endpoint!r}")
         if not params:
             return endpoint
         sorted_params = sorted(params.items())
-        return f"{endpoint}?{urlencode(sorted_params)}"
+        return f"{endpoint}?{urlencode(sorted_params, quote_via=quote)}"
 
     def _enforce_cache_limit(self) -> None:
         """ETag/dataキャッシュを max_cache_entries 以下に保つ。"""
         while len(self._etag_cache) > self.max_cache_entries:
-            oldest_endpoint = next(iter(self._etag_cache))
-            self._etag_cache.pop(oldest_endpoint, None)
-            self._data_cache.pop(oldest_endpoint, None)
+            oldest_key = next(iter(self._etag_cache))
+            self._etag_cache.pop(oldest_key, None)
+            self._data_cache.pop(oldest_key, None)
 
     async def _request(  # noqa: C901 - HTTPプロトコル処理の最小必要分岐（4xxステータス, 5xxリトライ, タイムアウト, キャンセル等）のため許容 CC≈12
         self,

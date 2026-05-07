@@ -1978,9 +1978,7 @@ def test_cache_key_with_params_produces_query_string() -> None:
     key = AsyncGitHubClient._cache_key(
         "/users/octocat/repos", {"sort": "updated", "per_page": "30"}
     )
-    assert key.startswith("/users/octocat/repos?")
-    assert "sort=updated" in key
-    assert "per_page=30" in key
+    assert key == "/users/octocat/repos?per_page=30&sort=updated"
 
 
 def test_cache_key_params_are_sorted_for_determinism() -> None:
@@ -2010,6 +2008,18 @@ def test_cache_key_int_and_str_params_are_equivalent() -> None:
     key_int = AsyncGitHubClient._cache_key("/repos", {"per_page": 30})
     key_str = AsyncGitHubClient._cache_key("/repos", {"per_page": "30"})
     assert key_int == key_str
+
+
+def test_cache_key_rejects_question_mark_in_endpoint() -> None:
+    """endpoint に ? を含む場合は ValueError を発生."""
+    with pytest.raises(ValueError, match="endpoint must not contain '\\?'"):
+        AsyncGitHubClient._cache_key("/repos?foo=bar")
+
+
+def test_cache_key_accepts_valid_endpoint() -> None:
+    """通常の endpoint（? なし）は正常にキャッシュキーを生成する."""
+    key = AsyncGitHubClient._cache_key("/users/octocat")
+    assert key == "/users/octocat"
 
 
 @pytest.mark.asyncio

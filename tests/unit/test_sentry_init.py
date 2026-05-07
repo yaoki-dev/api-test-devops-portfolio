@@ -257,40 +257,42 @@ class TestBeforeSend:
         assert result is not None
         assert result[field] == {}
 
-    def test_scrub_sentry_field_non_dict_warns_when_debug_enabled(
+    def test_scrub_sentry_field_non_dict_logs_warning(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """SENTRY_DEBUG=True時、非dict型フィールドは空dict置換 + UserWarning発行."""
-        # SENTRY_DEBUG はモジュールロード時に os.environ から評価済みのため、
-        # monkeypatch.setattr でモジュール変数を直接設定する。
+        """非dict型フィールドは空dict置換 + logger.warning を常時出力."""
+        # _scrub_sentry_field は SENTRY_DEBUG に関わらず logger.warning を出力する
         monkeypatch.setattr(sentry_module, "SENTRY_DEBUG", True)
         event = cast(Event, {"extra": "not-a-dict"})
 
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
+        with patch.object(sentry_module._logger, "warning") as mock_warning:
             result = _before_send(event, {})
 
         assert result is not None
         assert result["extra"] == {}
-        assert len(w) == 1
-        assert issubclass(w[0].category, UserWarning)
-        assert "extra" in str(w[0].message)
-        assert "empty dict" in str(w[0].message)
+        mock_warning.assert_called_once()
+        call_kwargs = mock_warning.call_args[1]
+        assert call_kwargs["field"] == "extra"
+        assert call_kwargs["actual_type"] == "str"
+        assert call_kwargs["action"] == "replaced_with_empty_dict"
 
-    def test_scrub_sentry_field_non_dict_no_warning_without_debug(
+    def test_scrub_sentry_field_non_dict_logs_warning_regardless_of_debug(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """SENTRY_DEBUG=False時、非dict型フィールドは空dict置換されるが警告なし."""
+        """SENTRY_DEBUG=False時も logger.warning は常時出力（本番監視対応）."""
         monkeypatch.setattr(sentry_module, "SENTRY_DEBUG", False)
         event = cast(Event, {"contexts": 123})
 
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
+        with patch.object(sentry_module._logger, "warning") as mock_warning:
             result = _before_send(event, {})
 
         assert result is not None
         assert result["contexts"] == {}
-        assert len(w) == 0
+        mock_warning.assert_called_once()
+        call_kwargs = mock_warning.call_args[1]
+        assert call_kwargs["field"] == "contexts"
+        assert call_kwargs["actual_type"] == "int"
+        assert call_kwargs["action"] == "replaced_with_empty_dict"
 
 
 class TestInitSentry:
@@ -448,8 +450,6 @@ class TestSentryDebugMode:
         mock_settings.return_value.sentry.dsn = SecretStr("invalid-dsn")
         mock_settings.return_value.is_production_like.return_value = False  # 非本番環境 (#39)
 
-        import warnings
-
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             result = init_sentry()
@@ -473,8 +473,6 @@ class TestSentryDebugMode:
         mock_settings.return_value.sentry.enabled = True
         mock_settings.return_value.sentry.dsn = SecretStr("invalid-dsn")
         mock_settings.return_value.is_production_like.return_value = False  # 非本番環境 (#39)
-
-        import warnings
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
@@ -567,8 +565,6 @@ class TestSdkExceptionHandling:
         mock_settings.return_value.sentry.send_default_pii = False
         mock_settings.return_value.environment.value = "testing"
         mock_settings.return_value.is_production_like.return_value = False  # 非本番環境 (#39)
-
-        import warnings
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
