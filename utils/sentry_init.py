@@ -155,8 +155,13 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
                 request["data"] = _scrub_sensitive_data(request["data"])
 
     # 追加データのスクラブ
+    # Note: _scrub_sensitive_data 内部に non-dict ガードあり (line 113) のため
+    # 外側ガードは機能的に冗長だが、5フィールド (request/extra/user/contexts/tags) の
+    # パターン一貫性のため敢えて isinstance(dict) チェックを揃える。
     if "extra" in event:
-        event["extra"] = _scrub_sensitive_data(event["extra"])
+        extra = event["extra"]
+        if isinstance(extra, dict):
+            event["extra"] = _scrub_sensitive_data(extra)
 
     # ユーザー情報のスクラブ
     if "user" in event:
@@ -172,7 +177,9 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
 
     # タグのスクラブ
     if "tags" in event:
-        event["tags"] = _scrub_sensitive_data(event["tags"])
+        tags = event["tags"]
+        if isinstance(tags, dict):
+            event["tags"] = _scrub_sensitive_data(tags)
 
     return event
 

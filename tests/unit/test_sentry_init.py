@@ -234,6 +234,13 @@ class TestBeforeSend:
         result_dict = self._call_before_send(event)
         assert result_dict["message"] == "test"
 
+    def test_before_send_user_non_dict_is_not_modified(self) -> None:
+        """user が非 dict (str等) の場合、スクラブせずそのまま保持する."""
+        event = cast(Event, {"user": "anonymous"})
+        result = _before_send(event, {})
+        assert result is not None
+        assert result["user"] == "anonymous"
+
 
 class TestInitSentry:
     """Sentry初期化のテスト"""

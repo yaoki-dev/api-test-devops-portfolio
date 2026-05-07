@@ -1936,6 +1936,8 @@ def test_handle_http_status_error_cause_excludes_response_body() -> None:
         assert "]" in body_preview_logged
         # センシティブデータはログに含まれないこと
         assert sensitive_body not in body_preview_logged
+        # 例外オブジェクト本体への PII 混入リグレッション検出
+        assert sensitive_body not in str(exc_info.value)
         # 例外チェーン遮断検証：from None により __cause__ は None
         assert exc_info.value.__cause__ is None
         # 例外チェーン遮断検証：__context__ にも PII 含有オブジェクトが残存しない

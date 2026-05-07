@@ -40,21 +40,32 @@ class PerformanceMetrics:
         self.cpu_usage: list[float] = []
 
     def start_monitoring(self):
-        """パフォーマンス監視開始"""
+        """パフォーマンス監視開始
+
+        psutil.cpu_percent(interval=None) を warmup として呼び出す。
+        戻り値は破棄する（初回呼び出しは仕様上 0.0 で意味なし）。
+        次回 cpu_percent(interval=None) 呼び出し時に、ここからの delta を取得する。
+        blocking なしのため start_time の精度に影響しない。
+        cpu_usage はこの時点では append しない（stop_monitoring の delta 取得後に追記）。
+        """
+        psutil.cpu_percent(interval=None)  # warmup（内部カウンターリセット、戻り値破棄）
         self.start_time = time.time()
         self.memory_usage.append(psutil.Process().memory_info().rss / 1024 / 1024)  # MB
-        psutil.cpu_percent()
-        self.cpu_usage.append(psutil.cpu_percent())
+        self.cpu_usage.append(0.0)  # 測定開始時点のベースライン: non-blocking 設計のため未計測
 
     def record_response_time(self, response_time: float) -> None:
         """レスポンス時間記録"""
         self.response_times.append(response_time)
 
     def stop_monitoring(self):
-        """パフォーマンス監視終了"""
+        """パフォーマンス監視終了
+
+        psutil.cpu_percent(interval=None) で start_monitoring からの
+        delta-based 平均 CPU% を取得する（blocking なし、end_time 精度を毀損しない）。
+        """
         self.end_time = time.time()
         self.memory_usage.append(psutil.Process().memory_info().rss / 1024 / 1024)
-        self.cpu_usage.append(psutil.cpu_percent(interval=0.1))
+        self.cpu_usage.append(psutil.cpu_percent(interval=None))
 
     def get_summary(self) -> dict[str, Any]:
         """パフォーマンスサマリー取得"""
@@ -92,6 +103,8 @@ class PerformanceMetrics:
                 else 0,
             },
             "cpu_usage": {
+                # start_percent: non-blocking 設計のため常時 0.0 (baseline-only)
+                # 測定開始時点のCPU%は記録しない仕様。end_percent は start からの delta 平均。
                 "start_percent": self.cpu_usage[0] if self.cpu_usage else 0,
                 "end_percent": self.cpu_usage[-1] if self.cpu_usage else 0,
             },

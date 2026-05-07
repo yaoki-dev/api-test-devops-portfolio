@@ -69,13 +69,13 @@ api-test-devops-portfolio/
 
 ### Module: utils.api_client
 - **Path**: `utils/api_client.py`
-- **Exports**: `APIClient` (同期), `AsyncAPIClient` (非同期)
+- **Exports**: `SyncAPIClient` (同期), `AsyncAPIClient` (非同期)
 - **Purpose**: HTTP API クライアント。リトライロジック・エラーハンドリング・コネクションプール実装。
 
 ### Module: utils.github_client
 - **Path**: `utils/github_client.py`
-- **Exports**: `GitHubClient` (同期), `AsyncGitHubClient` (非同期)
-- **Purpose**: GitHub API 専用クライアント。認証ヘッダー自動付与。
+- **Exports**: `AsyncGitHubClient` (非同期)
+- **Purpose**: GitHub API 専用の非同期クライアント。認証ヘッダー自動付与。
 
 ### Module: utils.logger
 - **Path**: `utils/logger.py`
@@ -89,7 +89,7 @@ api-test-devops-portfolio/
 
 ### Module: models.responses
 - **Path**: `models/responses.py`
-- **Exports**: `TodoResponse`, `PostResponse`, `UserResponse`
+- **Exports**: `Post`, `Comment`, `User`, `Todo`, `Album`, `Photo`
 - **Purpose**: Pydantic モデルによるAPIレスポンス型定義・バリデーション。
 
 ---
@@ -205,8 +205,8 @@ cp .env.example .env
 ```bash
 # APIクライアント使用例（対話モード）
 uv run python
->>> from utils.api_client import APIClient
->>> client = APIClient()
+>>> from utils.api_client import SyncAPIClient
+>>> client = SyncAPIClient()
 >>> response = client.get("/todos/1")
 >>> print(response)
 ```
@@ -254,7 +254,7 @@ uv run pytest && uv run ruff check . && uv run mypy utils/ config/ models/
 ## 🔍 Key Features
 
 ### 1. API クライアント設計パターン
-- **同期/非同期の統一インターフェース**: `APIClient` / `AsyncAPIClient`
+- **同期/非同期の統一インターフェース**: `SyncAPIClient` / `AsyncAPIClient`
 - **リトライロジック**: 指数バックオフ + 30%ジッター
 - **エラーハンドリング階層**: 4xx即失敗、5xxリトライ
 - **コネクションプール**: 最大10接続（設定可能）

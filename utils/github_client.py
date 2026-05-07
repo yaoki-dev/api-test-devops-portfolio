@@ -308,7 +308,7 @@ class AsyncGitHubClient:
             raise ValueError("sort must be one of: created, updated, pushed, full_name")
         if not 1 <= per_page <= 100:
             raise ValueError("per_page must be between 1 and 100")
-        params = {"sort": sort, "per_page": per_page}
+        params: dict[str, str | int] = {"sort": sort, "per_page": per_page}
         result = await self._request("GET", f"/users/{username}/repos", params=params)
         if not isinstance(result, list):
             raise GitHubAPIError(f"Expected list response, got {type(result).__name__}")
@@ -410,8 +410,9 @@ class AsyncGitHubClient:
             hint="ETag存在時のキャッシュミスは実装バグ",
             etag=self._etag_cache.get(cache_key),
         )
+        endpoint_only = cache_key.split("?")[0]
         raise GitHubAPIError(
-            f"Cache inconsistency: 304 response without cached data for {cache_key}"
+            f"Cache inconsistency: 304 response without cached data for {endpoint_only}"
         )
 
     def _handle_403_response(self, response: httpx.Response) -> NoReturn:
@@ -571,13 +572,13 @@ class AsyncGitHubClient:
         """ETagとデータキャッシュを同時更新する。
 
         asyncio シングルスレッド環境のため競合は発生しない。
-        （障害時のロールバック機構はないためキャッシュ不整合が生じうる）
+        （dataを先に書き込みETagを後に書き込むため、書き込み中の例外発生時もETagあり/dataなしの不整合は発生しない）
         """
         if "ETag" in response.headers:
             self._etag_cache.pop(cache_key, None)
             self._data_cache.pop(cache_key, None)
-            self._etag_cache[cache_key] = response.headers["ETag"]
             self._data_cache[cache_key] = result_json
+            self._etag_cache[cache_key] = response.headers["ETag"]
             self._enforce_cache_limit()
         else:
             if cache_key in self._etag_cache or cache_key in self._data_cache:
@@ -585,22 +586,14 @@ class AsyncGitHubClient:
             self._etag_cache.pop(cache_key, None)
             self._data_cache.pop(cache_key, None)
 
-    def _enforce_cache_limit(self) -> None:
-        """ETag/dataキャッシュを max_cache_entries 以下に保つ。
-
-        caller は 1 エントリずつ追加するため、最大 1 回の削除で十分。
-        """
-        if len(self._etag_cache) > self.max_cache_entries:
-            oldest_endpoint = next(iter(self._etag_cache))
-            self._etag_cache.pop(oldest_endpoint)
-            self._data_cache.pop(oldest_endpoint, None)
-
     @staticmethod
-    def _cache_key(endpoint: str, params: dict[str, Any] | None = None) -> str:
+    def _cache_key(endpoint: str, params: dict[str, str | int] | None = None) -> str:
         """エンドポイントとクエリパラメータからキャッシュキーを生成する。
 
         params が None または空の場合は endpoint をそのまま返す。
         params がある場合は ``endpoint?key1=val1&key2=val2`` 形式で返す。
+        値に URL 非安全文字 (空白・``&``・``=`` 等) が含まれる場合、``urlencode`` により
+        パーセントエンコードされる。
         パラメータはキーでソートされ決定論的なキーを生成する。
 
         Args:
@@ -627,7 +620,7 @@ class AsyncGitHubClient:
         self,
         method: str,
         endpoint: str,
-        params: dict[str, Any] | None = None,
+        params: dict[str, str | int] | None = None,
     ) -> dict[str, Any] | list[dict[str, Any]]:
         """内部リクエストメソッド
 
