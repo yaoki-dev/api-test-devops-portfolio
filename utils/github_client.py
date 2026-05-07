@@ -404,13 +404,13 @@ class AsyncGitHubClient:
             return self._data_cache[cache_key]
         # キャッシュミス時（理論上発生しない: ETagあり=キャッシュあり）
         # Fail-fast: キャッシュ不整合は実装バグの証拠
+        endpoint_only = cache_key.split("?")[0]
         self.logger.error(
             "cache_miss_on_304",
-            endpoint=cache_key,
+            endpoint=endpoint_only,
             hint="ETag存在時のキャッシュミスは実装バグ",
             etag=self._etag_cache.get(cache_key),
         )
-        endpoint_only = cache_key.split("?")[0]
         raise GitHubAPIError(
             f"Cache inconsistency: 304 response without cached data for {endpoint_only}"
         )
@@ -572,7 +572,9 @@ class AsyncGitHubClient:
         """ETagとデータキャッシュを同時更新する。
 
         asyncio シングルスレッド環境のため競合は発生しない。
-        （dataを先に書き込みETagを後に書き込むため、書き込み中の例外発生時もETagあり/dataなしの不整合は発生しない）
+        dataを先に書き込みETagを後に書き込む。例外発生時は「dataあり/ETagなし」の
+        一時状態になりうるが、ETagなしなら次回は通常リクエスト（304非使用）となり
+        安全に回復する。「ETagあり/dataなし」はETagが最後に書き込まれるため物理的に発生しない。
         """
         if "ETag" in response.headers:
             self._etag_cache.pop(cache_key, None)
@@ -582,7 +584,7 @@ class AsyncGitHubClient:
             self._enforce_cache_limit()
         else:
             if cache_key in self._etag_cache or cache_key in self._data_cache:
-                self.logger.debug("etag_removed", endpoint=cache_key)
+                self.logger.debug("etag_removed", endpoint=cache_key.split("?")[0])
             self._etag_cache.pop(cache_key, None)
             self._data_cache.pop(cache_key, None)
 
@@ -592,8 +594,8 @@ class AsyncGitHubClient:
 
         params が None または空の場合は endpoint をそのまま返す。
         params がある場合は ``endpoint?key1=val1&key2=val2`` 形式で返す。
-        値に URL 非安全文字 (空白・``&``・``=`` 等) が含まれる場合、``urlencode`` により
-        パーセントエンコードされる。
+        値に URL 非安全文字が含まれる場合、``urlencode``（``quote_plus`` 方式）により
+        エンコードされる（空白は ``+``、``&``・``=`` 等は ``%XX`` 形式）。
         パラメータはキーでソートされ決定論的なキーを生成する。
 
         Args:

@@ -22,7 +22,7 @@ structlogと連携し、ERROR以上のログをSentryに送信。
     環境変数 SENTRY_DEBUG=true で初期化失敗の警告を有効化。
 
 セキュリティ:
-    - before_sendフックで機密データを自動除外（31種類のキーパターン）
+    - before_sendフックで機密データを自動除外（32種類のキーパターン）
     - DSNはSecretStrで管理（config/settings.py）
     - enabled=Falseで完全無効化可能
 """
@@ -134,6 +134,33 @@ def _scrub_sensitive_data(data: Any, _depth: int = 0) -> Any:
     return result
 
 
+def _scrub_sentry_field(event: Event, field: str) -> None:
+    """Sentryイベントの単一フィールドをスクラブする。
+
+    非dict型の場合はスクラブをスキップし、SENTRY_DEBUG時のみ警告を出力する。
+    _scrub_sensitive_data の内部 non-dict ガードと二重防御を構成する。
+
+    Args:
+        event: Sentryイベント（破壊的更新）
+        field: スクラブ対象フィールド名
+
+    """
+    # Event は TypedDict のため変数キーアクセス不可。dict にキャストして操作する。
+    event_dict: dict[str, Any] = event  # type: ignore[assignment]
+    if field in event_dict:
+        value = event_dict[field]
+        if isinstance(value, dict):
+            event_dict[field] = _scrub_sensitive_data(value)
+        elif SENTRY_DEBUG:
+            warnings.warn(
+                f"Sentry '{field}' field is not a dict (type={type(value).__name__}), "
+                "scrubbing skipped — PII may leak if this field ever receives non-dict data."
+                "See: utils/sentry_init.py _scrub_sentry_field",
+                UserWarning,
+                stacklevel=2,
+            )
+
+
 def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C901
     """Sentry送信前フック（機密データ除外）
 
@@ -158,28 +185,17 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
     # Note: _scrub_sensitive_data 内部に non-dict ガードあり (line 113) のため
     # 外側ガードは機能的に冗長だが、5フィールド (request/extra/user/contexts/tags) の
     # パターン一貫性のため敢えて isinstance(dict) チェックを揃える。
-    if "extra" in event:
-        extra = event["extra"]
-        if isinstance(extra, dict):
-            event["extra"] = _scrub_sensitive_data(extra)
+    # 非dict型は _scrub_sentry_field 内で SENTRY_DEBUG 時に警告される。
+    _scrub_sentry_field(event, "extra")
 
     # ユーザー情報のスクラブ
-    if "user" in event:
-        user = event["user"]
-        if isinstance(user, dict):
-            event["user"] = _scrub_sensitive_data(user)
+    _scrub_sentry_field(event, "user")
 
     # コンテキスト情報のスクラブ
-    if "contexts" in event:
-        contexts = event["contexts"]
-        if isinstance(contexts, dict):
-            event["contexts"] = _scrub_sensitive_data(contexts)
+    _scrub_sentry_field(event, "contexts")
 
     # タグのスクラブ
-    if "tags" in event:
-        tags = event["tags"]
-        if isinstance(tags, dict):
-            event["tags"] = _scrub_sensitive_data(tags)
+    _scrub_sentry_field(event, "tags")
 
     return event
 

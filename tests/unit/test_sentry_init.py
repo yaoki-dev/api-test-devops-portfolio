@@ -241,6 +241,20 @@ class TestBeforeSend:
         assert result is not None
         assert result["user"] == "anonymous"
 
+    @pytest.mark.parametrize("field", ["extra", "contexts", "tags"])
+    def test_before_send_non_dict_field_is_not_modified(self, field: str) -> None:
+        """非dict型のextra/contexts/tagsはスクラブされず元の値が保持される。
+
+        _scrub_sentry_field は isinstance(value, dict) が False の場合に
+        スクラブをスキップし、元の値をそのまま保持する。
+        user フィールドのテストは別途 test_before_send_user_non_dict_is_not_modified で実施。
+        """
+        non_dict_value: Any = ["item1", "item2"]
+        event = cast(Event, {field: non_dict_value})
+        result = _before_send(event, {})
+        assert result is not None
+        assert result[field] == non_dict_value
+
 
 class TestInitSentry:
     """Sentry初期化のテスト"""

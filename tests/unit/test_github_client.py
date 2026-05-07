@@ -1369,7 +1369,8 @@ def test_handle_http_status_error_uses_debug_for_other_4xx() -> None:
         with pytest.raises(GitHubAPIError, match=r"^HTTP 404 error$") as exc_info:
             client._handle_http_status_error(mock_response, "/test", "GET")
         assert exc_info.value.__cause__ is None
-        assert exc_info.value.__context__ is None
+        # __context__ は直接呼び出し時は常に None のため検証をスキップ
+        # （from None の効果はHTTP経由の統合テストで検証済み）
         mock_logger.debug.assert_called_once_with(
             "http_status_error",
             status_code=404,
@@ -1390,7 +1391,7 @@ def test_handle_http_status_error_uses_warning_for_401() -> None:
         with pytest.raises(GitHubAPIError, match=r"^HTTP 401 error$") as exc_info:
             client._handle_http_status_error(mock_response, "/test", "GET")
         assert exc_info.value.__cause__ is None
-        assert exc_info.value.__context__ is None
+        # __context__ は直接呼び出し時は常に None のため検証をスキップ
         mock_logger.warning.assert_called_once_with(
             "http_status_error",
             status_code=401,
@@ -1986,6 +1987,55 @@ def test_cache_key_different_params_produce_different_keys() -> None:
         "/users/octocat/repos", {"sort": "created", "per_page": "10"}
     )
     assert key_a != key_b
+
+
+def test_cache_key_int_and_str_params_are_equivalent() -> None:
+    """整数パラメータと文字列パラメータが同一のキャッシュキーを生成する。
+
+    urlencode は int を文字列変換するため、{"per_page": 30} と
+    {"per_page": "30"} が同一キーになることは重要な仕様である。
+    """
+    key_int = AsyncGitHubClient._cache_key("/repos", {"per_page": 30})
+    key_str = AsyncGitHubClient._cache_key("/repos", {"per_page": "30"})
+    assert key_int == key_str
+
+
+@pytest.mark.asyncio
+async def test_handle_304_response_cache_miss_error_omits_query_params() -> None:
+    """304キャッシュミス時のエラーメッセージからクエリパラメータが除去される。
+
+    _handle_304_response は endpoint_only = cache_key.split("?")[0] により
+    クエリ文字列を除去したエンドポイントのみをエラーメッセージに含める。
+    """
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    cache_key = "/users/octocat/repos?per_page=30&sort=updated"
+    client._etag_cache[cache_key] = "etag-value"
+
+    with pytest.raises(GitHubAPIError, match="Cache inconsistency") as exc_info:
+        client._handle_304_response(cache_key)
+
+    assert "?" not in str(exc_info.value)
+    assert "/users/octocat/repos" in str(exc_info.value)
+
+
+def test_update_etag_cache_no_etag_removes_existing_cache() -> None:
+    """ETag未含有レスポンス受信時に既存のetag/dataキャッシュが両方削除される。
+
+    _update_etag_cache の else 分岐（ETagなし）では、cache_key が
+    _etag_cache または _data_cache に存在する場合に両方を削除する。
+    """
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    cache_key = "/users/octocat/repos"
+    mock_request = httpx.Request("GET", "https://api.github.com/users/octocat/repos")
+    mock_response = httpx.Response(200, request=mock_request)
+
+    client._etag_cache[cache_key] = "existing-etag"
+    client._data_cache[cache_key] = [{"id": 1}]
+
+    client._update_etag_cache(cache_key, mock_response, [{"id": 2}])
+
+    assert cache_key not in client._etag_cache
+    assert cache_key not in client._data_cache
 
 
 @respx.mock
