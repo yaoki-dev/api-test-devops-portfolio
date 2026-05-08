@@ -144,7 +144,8 @@ def _scrub_sentry_field(event: Event, field: str) -> None:
     """Sentryイベントの単一フィールドをスクラブする。
 
     dict型の場合は _scrub_sensitive_data() で再帰的にスクラブする。
-    非dict型の場合は空dictに置換し（安全サイド）、SENTRY_DEBUG時のみ警告を出力する。
+    非dict型の場合は空dictに置換し（安全サイド）、SENTRY_DEBUG の値に関わらず
+    logger.warning を常時出力する（本番監視対応）。
     _scrub_sensitive_data の内部 non-dict ガードと二重防御を構成する。
 
     Args:

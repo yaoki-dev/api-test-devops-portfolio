@@ -198,8 +198,8 @@ api-test-devops-portfolio/
 ```mermaid
 graph TB
     subgraph "APIクライアント設計"
-        BC[BaseAPIClient<br/>同期クライアント]
-        BC --> JP[JSONPlaceholderClient]
+        BC[SyncAPIClient<br/>同期クライアント]
+        BC --> JP[SyncJSONPlaceholderClient]
         AC[AsyncAPIClient<br/>非同期クライアント]
         AC --> AJP[AsyncJSONPlaceholderClient]
         AGH[AsyncGitHubClient<br/>GitHub API統合]
@@ -215,6 +215,19 @@ graph TB
         SEC --> PERF[Performance Tests]
     end
 ```
+
+### 設計判断（Design Decisions）
+
+API特性駆動でクライアントごとに実装範囲を最適化しています。
+
+| 判断 | 選択 | 技術的根拠 |
+|------|------|----------|
+| **JSONPlaceholderClient: Sync/Async両実装** | 両パラダイム対応 | 認証なし・Rate Limit無のシンプルAPI。Django/Flask/CLI (Sync) から FastAPI/並行fetch (Async) まで広範なユースケースに対応。共通設定解決ロジックは `_resolve_client_config` / `_classify_error` で重複削減 |
+| **GitHubClient: Async特化** | 非同期のみ | 認証 + Rate Limit (5000/h) + ETag対応のAPI特性により、並行fetch (`asyncio.gather`) と条件付きリクエスト (304 Not Modified) の恩恵が大きい。Sync caller は `asyncio.run()` で代替可 |
+| **JSONPlaceholderClient → APIClient 継承** | クラス継承 | LSP遵守 (HTTP動詞契約維持) + boilerplate削減。汎用HTTP層とドメインメソッドの責務分離 (SRP) |
+| **GitHubClient: 独立実装** | 継承せず | 戻り値型契約差異 (`httpx.Response` vs parsed JSON) と ETag/RateLimit/PII redaction の固有要件により、継承すると LSP違反。共通化は例外階層 (`GitHubAPIError(APIClientError)`) と utility 関数レベルに限定 |
+
+詳細な決定背景・トレードオフ分析は ADR (Architecture Decision Records) 参照: [`claudedocs/adr/`](claudedocs/adr/)
 
 ### 将来の拡張ポイント（本番運用時）
 

@@ -69,12 +69,12 @@ api-test-devops-portfolio/
 
 ### Module: utils.api_client
 - **Path**: `utils/api_client.py`
-- **Exports**: `SyncAPIClient` (同期), `AsyncAPIClient` (非同期)
+- **Exports**: `SyncAPIClient` (同期), `AsyncAPIClient` (非同期), `APIClientError`, `APIConnectionError`, `APITimeoutError`, `APIHTTPError`, `APIRetryError`, `APIJSONDecodeError`
 - **Purpose**: HTTP API クライアント。リトライロジック・エラーハンドリング・コネクションプール実装。
 
 ### Module: utils.github_client
 - **Path**: `utils/github_client.py`
-- **Exports**: `AsyncGitHubClient` (非同期)
+- **Exports**: `AsyncGitHubClient` (非同期), `GitHubAPIError`, `RateLimitError`, `NotFoundError`, `GitHubServerError`
 - **Purpose**: GitHub API 専用の非同期クライアント。認証ヘッダー自動付与。
 
 ### Module: utils.logger
@@ -89,7 +89,8 @@ api-test-devops-portfolio/
 
 ### Module: models.responses
 - **Path**: `models/responses.py`
-- **Exports**: `Post`, `Comment`, `User`, `Todo`, `Album`, `Photo`
+- **Exports**: `Post`, `Comment`, `User`, `Geo`, `Address`,
+               `Company`, `Todo`, `Album`, `Photo`
 - **Purpose**: Pydantic モデルによるAPIレスポンス型定義・バリデーション。
 
 ---

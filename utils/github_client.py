@@ -649,6 +649,7 @@ class AsyncGitHubClient:
 
         Raises:
             RuntimeError: クライアント未初期化（`async with` 未使用）
+            ValueError: endpoint に '?' が含まれる場合（_cache_key() のバリデーション由来）
             NotFoundError: 404エラー
             RateLimitError: 403 Rate Limit超過 または 429 Too Many Requests
             GitHubServerError: 5xxエラー（リトライ上限後）
