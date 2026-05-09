@@ -485,9 +485,9 @@ class AsyncGitHubClient:
             "github_retry_failed",
             endpoint=endpoint,
             method=method,
-            error_type="server_error",
+            error_type=f"HTTP_{response.status_code}",
             error_module="httpx",
-            error_context="server_error",
+            error_context=f"{method} {endpoint}",
             max_retries=self.max_retries,
             status_code=response.status_code,
         )
@@ -600,18 +600,12 @@ class AsyncGitHubClient:
 
         Args:
             endpoint: APIエンドポイントパス（例: ``/users/octocat/repos``）。
-                ``?`` を含んではならない。
             params: クエリパラメータ辞書（None可）
 
         Returns:
             キャッシュキー文字列
 
-        Raises:
-            ValueError: endpoint に ``?`` が含まれる場合
-
         """
-        if "?" in endpoint:
-            raise ValueError(f"endpoint must not contain '?': {endpoint!r}")
         if not params:
             return endpoint
         sorted_params = sorted(params.items())
@@ -649,7 +643,6 @@ class AsyncGitHubClient:
 
         Raises:
             RuntimeError: クライアント未初期化（`async with` 未使用）
-            ValueError: endpoint に '?' が含まれる場合（_cache_key() のバリデーション由来）
             NotFoundError: 404エラー
             RateLimitError: 403 Rate Limit超過 または 429 Too Many Requests
             GitHubServerError: 5xxエラー（リトライ上限後）

@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import os
 import warnings
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from config.settings import get_settings
 from utils.logger import get_logger
@@ -98,7 +98,7 @@ _sentry_initialized: bool = False
 MAX_SCRUB_DEPTH: int = 10
 
 # before_send でスクラブ対象とするイベントフィールド（PII漏洩防止の対象集合）
-_SCRUBBED_EVENT_FIELDS: tuple[str, ...] = ("extra", "user", "contexts", "tags")
+_SCRUBBED_EVENT_FIELDS: frozenset[str] = frozenset({"extra", "user", "contexts", "tags"})
 
 
 def _scrub_sensitive_data(data: Any, _depth: int = 0) -> Any:
@@ -140,7 +140,7 @@ def _scrub_sensitive_data(data: Any, _depth: int = 0) -> Any:
     return result
 
 
-def _scrub_sentry_field(event: Event, field: str) -> None:
+def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
     """Sentryイベントの単一フィールドをスクラブする。
 
     dict型の場合は _scrub_sensitive_data() で再帰的にスクラブする。
@@ -149,12 +149,10 @@ def _scrub_sentry_field(event: Event, field: str) -> None:
     _scrub_sensitive_data の内部 non-dict ガードと二重防御を構成する。
 
     Args:
-        event: Sentryイベント（破壊的更新）
+        event_dict: Sentryイベント辞書（破壊的更新）
         field: スクラブ対象フィールド名
 
     """
-    # Event は TypedDict のため変数キーアクセス不可。dict にキャストして操作する。
-    event_dict: dict[str, Any] = event  # type: ignore[assignment]
     if field in event_dict:
         value = event_dict[field]
         if isinstance(value, dict):
@@ -193,8 +191,9 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001
     # 追加データのスクラブ（2層防御）
     # _scrub_sentry_field: 非dict型フィールドを空dictに置換（型安全化・PII漏洩防止）
     # _scrub_sensitive_data: dict内の機密キーを [REDACTED] に置換（PII除外）
+    event_dict = cast(dict[str, Any], event)
     for field in _SCRUBBED_EVENT_FIELDS:
-        _scrub_sentry_field(event, field)
+        _scrub_sentry_field(event_dict, field)
 
     return event
 

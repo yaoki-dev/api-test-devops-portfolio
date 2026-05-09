@@ -2010,12 +2010,6 @@ def test_cache_key_int_and_str_params_are_equivalent() -> None:
     assert key_int == key_str
 
 
-def test_cache_key_rejects_question_mark_in_endpoint() -> None:
-    """endpoint に ? を含む場合は ValueError を発生."""
-    with pytest.raises(ValueError, match="endpoint must not contain '\\?'"):
-        AsyncGitHubClient._cache_key("/repos?foo=bar")
-
-
 def test_cache_key_accepts_valid_endpoint() -> None:
     """通常の endpoint（? なし）は正常にキャッシュキーを生成する."""
     key = AsyncGitHubClient._cache_key("/users/octocat")
