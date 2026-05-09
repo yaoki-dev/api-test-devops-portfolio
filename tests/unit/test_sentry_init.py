@@ -22,6 +22,7 @@ from sentry_sdk.types import Event
 
 import utils.sentry_init as sentry_module
 from utils.sentry_init import (
+    _SCRUBBED_EVENT_FIELDS,
     MAX_SCRUB_DEPTH,
     SENSITIVE_KEYS,
     _before_send,
@@ -184,6 +185,30 @@ class TestSensitiveKeysCompleteness:
     def test_expected_keys_present(self, key: str) -> None:
         """期待される機密キーが含まれている"""
         assert key in SENSITIVE_KEYS
+
+
+class TestScrubbedEventFieldsCompleteness:
+    """_SCRUBBED_EVENT_FIELDSの網羅性テスト"""
+
+    def test_scrubbed_event_fields_is_frozenset(self) -> None:
+        """_SCRUBBED_EVENT_FIELDSはfrozenset（不変）"""
+        assert isinstance(_SCRUBBED_EVENT_FIELDS, frozenset)
+
+    def test_scrubbed_event_fields_count(self) -> None:
+        """4種類のフィールドが定義されている"""
+        assert len(_SCRUBBED_EVENT_FIELDS) == 4
+
+    @pytest.mark.parametrize(
+        "field",
+        ["extra", "user", "contexts", "tags"],
+    )
+    def test_expected_fields_present(self, field: str) -> None:
+        """期待されるフィールドが含まれている"""
+        assert field in _SCRUBBED_EVENT_FIELDS
+
+    def test_request_field_excluded(self) -> None:
+        """requestフィールドは意図的に除外されている（_before_send内で個別スクラブ）"""
+        assert "request" not in _SCRUBBED_EVENT_FIELDS
 
 
 class TestBeforeSend:

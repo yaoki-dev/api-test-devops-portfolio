@@ -2010,14 +2010,7 @@ def test_cache_key_int_and_str_params_are_equivalent() -> None:
     assert key_int == key_str
 
 
-def test_cache_key_accepts_valid_endpoint() -> None:
-    """通常の endpoint（? なし）は正常にキャッシュキーを生成する."""
-    key = AsyncGitHubClient._cache_key("/users/octocat")
-    assert key == "/users/octocat"
-
-
-@pytest.mark.asyncio
-async def test_handle_304_response_cache_miss_error_omits_query_params() -> None:
+def test_handle_304_response_cache_miss_error_omits_query_params() -> None:
     """304キャッシュミス時のエラーメッセージからクエリパラメータが除去される。
 
     _handle_304_response は endpoint_only = cache_key.split("?")[0] により

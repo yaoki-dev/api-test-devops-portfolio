@@ -37,7 +37,7 @@ class PerformanceMetrics:
         self.start_time: float = 0
         self.end_time: float | None = None
         self.memory_usage: list[float] = []
-        self.cpu_usage: list[float] = []
+        self.cpu_usage: list[float | None] = []
 
     def start_monitoring(self):
         """パフォーマンス監視開始
@@ -51,7 +51,9 @@ class PerformanceMetrics:
         psutil.cpu_percent(interval=None)  # warmup（内部カウンターリセット、戻り値破棄）
         self.start_time = time.time()
         self.memory_usage.append(psutil.Process().memory_info().rss / 1024 / 1024)  # MB
-        self.cpu_usage.append(0.0)  # 測定開始時点のベースライン: non-blocking 設計のため未計測
+        self.cpu_usage.append(
+            None
+        )  # 測定開始時点のベースライン: non-blocking 設計のため意図的に未計測
 
     def record_response_time(self, response_time: float) -> None:
         """レスポンス時間記録"""
@@ -103,9 +105,9 @@ class PerformanceMetrics:
                 else 0,
             },
             "cpu_usage": {
-                # start_percent: non-blocking 設計のため常時 0.0 (baseline-only)
+                # start_percent: non-blocking 設計のため意図的に未計測（None）
                 # 測定開始時点のCPU%は記録しない仕様。end_percent は start からの delta 平均。
-                "start_percent": self.cpu_usage[0] if self.cpu_usage else 0,
+                "start_percent": None,  # non-blocking設計のため未計測（warmupのみ実施）
                 "end_percent": self.cpu_usage[-1] if self.cpu_usage else 0,
             },
         }
@@ -168,7 +170,11 @@ class TestAPIPerformance:
                 "single_request_performance",
                 response_time=round(response_time, 3),
                 memory_mb=round(summary["memory_usage"]["start_mb"], 1),
-                cpu_start_percent=round(summary["cpu_usage"]["start_percent"], 1),
+                cpu_start_percent=(
+                    round(summary["cpu_usage"]["start_percent"], 1)
+                    if summary["cpu_usage"]["start_percent"] is not None
+                    else None
+                ),
             )
 
     @pytest.mark.asyncio
@@ -227,7 +233,11 @@ class TestAPIPerformance:
                 p95=round(summary["response_times"]["p95"], 3),
                 throughput=round(summary["throughput"], 1),
                 memory_increase_mb=round(summary["memory_usage"]["increase_mb"], 1),
-                cpu_start_percent=round(summary["cpu_usage"]["start_percent"], 1),
+                cpu_start_percent=(
+                    round(summary["cpu_usage"]["start_percent"], 1)
+                    if summary["cpu_usage"]["start_percent"] is not None
+                    else None
+                ),
                 cpu_end_percent=round(summary["cpu_usage"]["end_percent"], 1),
             )
 
@@ -288,7 +298,11 @@ class TestAPIPerformance:
                 p95=round(summary["response_times"]["p95"], 3),
                 throughput=round(summary["throughput"], 1),
                 memory_increase_mb=round(summary["memory_usage"]["increase_mb"], 1),
-                cpu_start_percent=round(summary["cpu_usage"]["start_percent"], 1),
+                cpu_start_percent=(
+                    round(summary["cpu_usage"]["start_percent"], 1)
+                    if summary["cpu_usage"]["start_percent"] is not None
+                    else None
+                ),
                 cpu_end_percent=round(summary["cpu_usage"]["end_percent"], 1),
             )
 
@@ -359,7 +373,11 @@ class TestPerformanceRegression:
                 baseline=round(self.BASELINE_RESPONSE_TIME, 3),
                 current=round(current_performance, 3),
                 ratio=round(performance_ratio, 2),
-                cpu_start_percent=round(summary["cpu_usage"]["start_percent"], 1),
+                cpu_start_percent=(
+                    round(summary["cpu_usage"]["start_percent"], 1)
+                    if summary["cpu_usage"]["start_percent"] is not None
+                    else None
+                ),
             )
 
             assert performance_ratio <= self.REGRESSION_THRESHOLD, (

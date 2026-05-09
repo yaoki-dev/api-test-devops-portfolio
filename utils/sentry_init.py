@@ -32,6 +32,7 @@ from __future__ import annotations
 import os
 import warnings
 from typing import TYPE_CHECKING, Any, cast
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from config.settings import get_settings
 from utils.logger import get_logger
@@ -141,7 +142,7 @@ def _scrub_sensitive_data(data: Any, _depth: int = 0) -> Any:
 
 
 def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
-    """Sentryイベントの単一フィールドをスクラブする。
+    """Sentryイベントの単一フィールドをスクラブする（_before_send 専用）。
 
     dict型の場合は _scrub_sensitive_data() で再帰的にスクラブする。
     非dict型の場合は空dictに置換し（安全サイド）、SENTRY_DEBUG の値に関わらず
@@ -187,6 +188,16 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001
                 request["headers"] = _scrub_sensitive_data(request["headers"])
             if "data" in request:
                 request["data"] = _scrub_sensitive_data(request["data"])
+            if "query_string" in request and isinstance(request["query_string"], str):
+                qs_dict = dict(parse_qsl(request["query_string"]))
+                scrubbed_qs = _scrub_sensitive_data(qs_dict)
+                request["query_string"] = urlencode(scrubbed_qs)
+            if "url" in request and isinstance(request["url"], str):
+                parsed = urlparse(request["url"])
+                if parsed.query:
+                    qs_dict = dict(parse_qsl(parsed.query))
+                    scrubbed_url_qs = _scrub_sensitive_data(qs_dict)
+                    request["url"] = urlunparse(parsed._replace(query=urlencode(scrubbed_url_qs)))
 
     # 追加データのスクラブ（2層防御）
     # _scrub_sentry_field: 非dict型フィールドを空dictに置換（型安全化・PII漏洩防止）

@@ -404,6 +404,7 @@ class AsyncGitHubClient:
             return self._data_cache[cache_key]
         # キャッシュミス時（理論上発生しない: ETagあり=キャッシュあり）
         # Fail-fast: キャッシュ不整合は実装バグの証拠
+        # endpoint_only: クエリパラメータを除去してデバッグ可能性を確保しつつ機密パラメータを非露出
         endpoint_only = cache_key.split("?")[0]
         self.logger.error(
             "cache_miss_on_304",
@@ -617,6 +618,11 @@ class AsyncGitHubClient:
             oldest_key = next(iter(self._etag_cache))
             self._etag_cache.pop(oldest_key, None)
             self._data_cache.pop(oldest_key, None)
+        # _data_cache が独立してオーバーした場合の安全網
+        while len(self._data_cache) > self.max_cache_entries:
+            oldest_key = next(iter(self._data_cache))
+            self._data_cache.pop(oldest_key, None)
+            self._etag_cache.pop(oldest_key, None)
 
     async def _request(  # noqa: C901 - HTTPプロトコル処理の最小必要分岐（4xxステータス, 5xxリトライ, タイムアウト, キャンセル等）のため許容 CC≈12
         self,

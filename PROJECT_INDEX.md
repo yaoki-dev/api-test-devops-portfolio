@@ -74,7 +74,7 @@ api-test-devops-portfolio/
 
 ### Module: utils.github_client
 - **Path**: `utils/github_client.py`
-- **Exports**: `AsyncGitHubClient` (非同期), `GitHubAPIError`, `RateLimitError`, `NotFoundError`, `GitHubServerError`
+- **Exports**: `AsyncGitHubClient` (非同期), `GitHubAPIError`, `RateLimitError`, `NotFoundError`, `GitHubServerError`, `validate_github_username`, `validate_github_repo`
 - **Purpose**: GitHub API 専用の非同期クライアント。認証ヘッダー自動付与。
 
 ### Module: utils.logger
