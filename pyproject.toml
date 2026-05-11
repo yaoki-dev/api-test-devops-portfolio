@@ -50,7 +50,7 @@ dev = [
     "socksio>=1.0.0",           # SOCKS5 proxy support for httpx
     # 品質管理
     "ruff>=0.15.12,<0.16",       # pre-commit frozen: v0.15.11（.pre-commit-config.yaml参照）
-    "mypy>=1.20.2",
+    "mypy>=2.0.0",
     "bandit>=1.8.6",
     "safety>=3.6.0",
     # 開発サポート
