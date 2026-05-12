@@ -79,6 +79,38 @@ jobs:
           if-no-files-found: warn
 
   # ============================================================
+  # Stage 1.0.1: Type Check (mypy)
+  # Triggers: pull_request
+  # Scope: utils/ config/ models/
+  # Rationale: pr-validation と並列実行で型エラーとテスト結果を同時取得
+  # ============================================================
+  type-check:
+    name: Type Check (mypy)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.14'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run mypy type check
+        run: uv run mypy utils/ config/ models/
+
+  # ============================================================
   # Stage 1.1: Markdown Quality Check
   # Triggers: pull_request
   # Checks: markdownlint, textlint (日本語対応)
@@ -283,7 +315,7 @@ jobs:
     name: Post-Merge Validation (Trivy + Smoke + e2e)
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 8  # Docker Build + Trivy追加のため5→8分に変更
+    timeout-minutes: 10  # Docker Build + Trivy + mypy 実行余裕分
     # Explicit permissions for Trivy SARIF upload (security hardening)
     permissions:
       contents: read
@@ -373,6 +405,13 @@ jobs:
             echo "::notice::対処法: 脆弱性レポートを確認し、ベースイメージを更新してください"
           fi
           exit 1
+
+      - name: Run mypy type check
+        if: always()
+        # 多層防御 (Defense-in-depth):
+        # PR時に型チェック済みだが、複数のPR合流による型矛盾（Semantic Merge Conflict）や、
+        # 依存ライブラリの更新に伴うメインブランチの破損を確実に検知するために再実行する。
+        run: uv run mypy utils/ config/ models/
 
       - name: Run smoke tests (post-merge validation)
         if: always()
