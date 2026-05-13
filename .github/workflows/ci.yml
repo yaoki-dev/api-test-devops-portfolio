@@ -45,6 +45,8 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
 
       - name: Install dependencies
         run: uv sync --dev
@@ -79,7 +81,7 @@ jobs:
           if-no-files-found: warn
 
   # ============================================================
-  # Stage 1.0.1: Type Check (mypy)
+  # Stage 1.1: Type Check (mypy)
   # Triggers: pull_request
   # Scope: utils/ config/ models/
   # Rationale: pr-validation と並列実行で型エラーとテスト結果を同時取得
@@ -111,7 +113,7 @@ jobs:
         run: uv run mypy utils/ config/ models/
 
   # ============================================================
-  # Stage 1.1: Markdown Quality Check
+  # Stage 1.2: Markdown Quality Check
   # Triggers: pull_request
   # Checks: markdownlint, textlint (日本語対応)
   # ============================================================
@@ -332,6 +334,8 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
 
       - name: Install dependencies
         run: uv sync --dev
@@ -467,6 +471,8 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
 
       - name: Install dependencies
         run: uv sync --dev
@@ -587,7 +593,7 @@ jobs:
     runs-on: ubuntu-latest
     # Note: Skipped jobs are treated as 'success' by GitHub Actions
     # !cancelled() overrides implicit success() check, allowing execution after success/failure/skipped
-    needs: [pr-validation, pr-security-scan, md-quality, post-merge-validation, weekly-comprehensive, weekly-link-check]
+    needs: [pr-validation, type-check, pr-security-scan, md-quality, post-merge-validation, weekly-comprehensive, weekly-link-check]
     if: "!cancelled()"
     timeout-minutes: 5
 
@@ -608,6 +614,7 @@ jobs:
           echo "" >> status_report.md
           echo "## Stage Results" >> status_report.md
           echo "- PR Validation: ${{ needs.pr-validation.result || 'skipped' }}" >> status_report.md
+          echo "- Type Check (mypy): ${{ needs.type-check.result || 'skipped' }}" >> status_report.md
           echo "- PR Security Scan: ${{ needs.pr-security-scan.result || 'skipped' }}" >> status_report.md
           echo "- MD Quality: ${{ needs.md-quality.result || 'skipped' }}" >> status_report.md
           echo "- Post-Merge: ${{ needs.post-merge-validation.result || 'skipped' }}" >> status_report.md
