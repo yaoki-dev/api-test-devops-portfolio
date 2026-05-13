@@ -23,7 +23,7 @@ jobs:
   # Stage 1: PR Validation
   # Triggers: pull_request
   # Tests: Unit + Integration (with coverage) → Smoke (no coverage)
-  # Scope: develop/main PRs use identical strategy (PR #116)
+  # Scope: develop/main PRs use identical strategy
   # ============================================================
   pr-validation:
     name: PR Validation
@@ -86,8 +86,8 @@ jobs:
   # Scope: utils/ config/ models/
   # Rationale: pr-validation と並列実行で型エラーとテスト結果を同時取得
   # ============================================================
-  type-check:
-    name: Type Check (mypy)
+  pr-mypy-check:
+    name: mypy Check (PR Validation)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -117,8 +117,8 @@ jobs:
   # Triggers: pull_request
   # Checks: markdownlint, textlint (日本語対応)
   # ============================================================
-  md-quality:
-    name: Markdown Quality Check
+  pr-md-quality-check:
+    name: Markdown Quality Check (PR Validation)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -165,8 +165,8 @@ jobs:
   # Format: SARIF (error differentiation + GitHub Security tab integration)
   # Error Handling: Differentiates security findings vs infrastructure errors
   # ============================================================
-  pr-security-scan:
-    name: PR Security Scan
+  pr-trivy-scan:
+    name: PR Trivy scan
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -176,11 +176,11 @@ jobs:
       security-events: write
 
     steps:
-      - name: Checkout code
+      - name: Checkout code (PR Trivy scan)
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       # Step 1: Filesystem scan (both develop and main)
-      - name: Trivy filesystem scan (dependencies)
+      - name: Trivy filesystem scan (dependencies) (PR Trivy scan)
         id: fs-scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         env:
@@ -198,7 +198,7 @@ jobs:
           cache: ${{ github.event_name != 'schedule' }}
         continue-on-error: true
 
-      - name: Verify filesystem scan execution
+      - name: Verify filesystem scan execution (PR Trivy scan)
         id: verify-fs-scan
         if: always()
         uses: ./.github/actions/trivy-sarif-verify
@@ -206,14 +206,14 @@ jobs:
           sarif-file: 'trivy-fs-scan.sarif'
           scan-type: 'filesystem'
 
-      - name: Upload filesystem scan results to Security tab
+      - name: Upload filesystem scan results to Security tab (PR Trivy scan)
         uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7 # v4.35.3
         if: always() && steps.verify-fs-scan.outcome == 'success' && steps.fs-scan.outcome != 'cancelled' && steps.fs-scan.outcome != 'skipped'
         with:
           sarif_file: 'trivy-fs-scan.sarif'
           category: 'trivy-pr-fs-scan'
 
-      - name: Fail job if vulnerabilities found or verification failed
+      - name: Fail job if vulnerabilities found or verification failed (PR Trivy scan)
         if: |
           steps.fs-scan.outcome == 'failure' ||
           steps.fs-scan.outcome == 'cancelled' ||
@@ -310,18 +310,16 @@ jobs:
         run: docker rmi security-scan:${{ github.sha }} || true
   # ============================================================
   # Stage 2: Post-Merge Validation
-  # Triggers: push to main
+  # Triggers: push to main or develop
   # Tests: Smoke + e2e
   # ============================================================
   post-merge-validation:
-    name: Post-Merge Validation (Trivy + Smoke + e2e)
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    name: Post-Merge Validation (Smoke + e2e)
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     runs-on: ubuntu-latest
-    timeout-minutes: 10  # Docker Build + Trivy + mypy 実行余裕分
-    # Explicit permissions for Trivy SARIF upload (security hardening)
+    timeout-minutes: 3  # Smoke + e2e
     permissions:
       contents: read
-      security-events: write
 
     steps:
       - name: Checkout code
@@ -339,83 +337,6 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --dev
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
-
-      - name: Set image tag
-        id: image-tag
-        run: echo "tag=myapp:${{ github.sha }}" >> $GITHUB_OUTPUT
-
-      - name: Build production Docker image (with cache)
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
-        with:
-          context: .
-          target: runtime
-          tags: ${{ steps.image-tag.outputs.tag }}
-          load: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Trivy image scan (CRITICAL + HIGH)
-        id: trivy-scan
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
-        env:
-          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
-        with:
-          image-ref: ${{ steps.image-tag.outputs.tag }}
-          severity: 'CRITICAL,HIGH'
-          exit-code: '1'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          ignore-unfixed: true
-          trivyignores: '.trivyignore'
-          # Trivyキャッシュ戦略: 週次スケジュール実行時のみDB再ダウンロード、通常PRではキャッシュ利用
-          cache: ${{ github.event_name != 'schedule' }}
-        continue-on-error: true
-
-      - name: Verify Trivy scan execution
-        id: verify-trivy-scan
-        if: always()
-        uses: ./.github/actions/trivy-sarif-verify
-        with:
-          sarif-file: 'trivy-results.sarif'
-          scan-type: 'image'
-
-      - name: Upload Trivy results to Security tab
-        uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7 # v4.35.3
-        if: always() && steps.verify-trivy-scan.outcome == 'success'
-        with:
-          sarif_file: 'trivy-results.sarif'
-          category: 'trivy-post-merge'
-
-      - name: Fail job if vulnerabilities found or verification failed
-        if: |
-          steps.trivy-scan.outcome == 'failure' ||
-          steps.trivy-scan.outcome == 'cancelled' ||
-          steps.verify-trivy-scan.outcome == 'failure' ||
-          steps.verify-trivy-scan.outcome == 'cancelled'
-        run: |
-          # 優先度1: SARIF検証失敗（インフラ問題の可能性）
-          if [ "${{ steps.verify-trivy-scan.outcome }}" == "failure" ]; then
-            echo "::error::SARIF検証が失敗しました - Trivyがクラッシュした可能性があります"
-            echo "::warning::考えられる原因: DB取得失敗、タイムアウト、ディスク容量不足"
-            echo "::notice::対処法: Trivyログを確認し、インフラ問題を調査してください"
-          fi
-
-          # 優先度2: 脆弱性検出（正常な失敗）
-          if [ "${{ steps.trivy-scan.outcome }}" == "failure" ]; then
-            echo "::error::脆弱性（CRITICAL/HIGH）が Docker image で検出されました"
-            echo "::notice::対処法: 脆弱性レポートを確認し、ベースイメージを更新してください"
-          fi
-          exit 1
-
-      - name: Run mypy type check
-        if: always()
-        # 多層防御 (Defense-in-depth):
-        # PR時に型チェック済みだが、複数のPR合流による型矛盾（Semantic Merge Conflict）や、
-        # 依存ライブラリの更新に伴うメインブランチの破損を確実に検知するために再実行する。
-        run: uv run mypy utils/ config/ models/
 
       - name: Run smoke tests (post-merge validation)
         if: always()
@@ -444,21 +365,161 @@ jobs:
         with:
           name: post-merge-results
           path: reports/
+  # ============================================================
+  # Stage 2.1: Post Trivy Security Scan
+  # Triggers: push to main or develop
+  # Strategy: fs scan (dependencies) + image scan (Docker image)
+  #   following pr-trivy-scan pattern for consistency
+  # Format: SARIF (error differentiation + GitHub Security tab integration)
+  # ============================================================
+  post-trivy-scan:
+    name: Post Trivy Scan
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout code (Post Trivy Scan)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # ===== Stage 1: Filesystem Scan (dependencies) =====
+      - name: Trivy filesystem scan (dependencies) (Post Trivy Scan)
+        id: fs-scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
+        env:
+          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-post-merge-fs-scan.sarif'
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+          trivyignores: '.trivyignore'
+          cache: ${{ github.event_name != 'schedule' }}
+        continue-on-error: true
+
+      - name: Verify filesystem scan execution (Post Trivy Scan)
+        id: verify-fs-scan
+        if: always()
+        uses: ./.github/actions/trivy-sarif-verify
+        with:
+          sarif-file: 'trivy-post-merge-fs-scan.sarif'
+          scan-type: 'filesystem'
+
+      - name: Upload filesystem scan results to Security tab (Post Trivy Scan)
+        uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7 # v4.35.3
+        if: always() && steps.verify-fs-scan.outcome == 'success' && steps.fs-scan.outcome != 'cancelled' && steps.fs-scan.outcome != 'skipped'
+        with:
+          sarif_file: 'trivy-post-merge-fs-scan.sarif'
+          category: 'trivy-post-merge-fs-scan'
+
+      - name: Fail job if fs vulnerabilities found or verification failed (Post Trivy Scan)
+        if: |
+          steps.fs-scan.outcome == 'failure' ||
+          steps.fs-scan.outcome == 'cancelled' ||
+          steps.verify-fs-scan.outcome == 'failure' ||
+          steps.verify-fs-scan.outcome == 'cancelled'
+        run: |
+          if [ "${{ steps.verify-fs-scan.outcome }}" == "failure" ]; then
+            echo "::error::SARIF検証が失敗しました - Trivyがクラッシュした可能性があります"
+            echo "::warning::考えられる原因: DB取得失敗、タイムアウト、ディスク容量不足"
+          fi
+          if [ "${{ steps.fs-scan.outcome }}" == "failure" ]; then
+            echo "::error::脆弱性（CRITICAL/HIGH）が dependencies で検出されました"
+            echo "::notice::対処法: 脆弱性レポートを確認し、依存関係を更新してください"
+          fi
+          exit 1
+
+      # ===== Stage 2: Docker Image Build =====
+      - name: Set up Docker Buildx (Post Trivy Scan)
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
+      - name: Set image tag
+        id: image-tag
+        run: echo "tag=myapp:${{ github.sha }}" >> $GITHUB_OUTPUT
+
+      - name: Build production Docker image
+        id: docker-build
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: .
+          target: runtime
+          tags: ${{ steps.image-tag.outputs.tag }}
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ===== Stage 3: Docker Image Scan =====
+      - name: Trivy image scan (CRITICAL + HIGH) (Post Trivy Scan)
+        id: image-scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
+        env:
+          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
+        with:
+          image-ref: ${{ steps.image-tag.outputs.tag }}
+          format: 'sarif'
+          output: 'trivy-post-merge-image-scan.sarif'
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+          trivyignores: '.trivyignore'
+          cache: ${{ github.event_name != 'schedule' }}
+        continue-on-error: true
+
+      - name: Verify image scan execution (Post Trivy Scan)
+        id: verify-image-scan
+        if: always() && steps.image-scan.outcome != 'skipped'
+        uses: ./.github/actions/trivy-sarif-verify
+        with:
+          sarif-file: 'trivy-post-merge-image-scan.sarif'
+          scan-type: 'image'
+
+      - name: Upload image scan results to Security tab (Post Trivy Scan)
+        uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7 # v4.35.3
+        if: always() && steps.verify-image-scan.outcome == 'success' && steps.image-scan.outcome != 'cancelled' && steps.image-scan.outcome != 'skipped'
+        with:
+          sarif_file: 'trivy-post-merge-image-scan.sarif'
+          category: 'trivy-post-merge-image-scan'
+
+      - name: Fail job if image vulnerabilities found or verification failed (Post Trivy Scan)
+        if: |
+          steps.image-scan.outcome == 'failure' ||
+          steps.image-scan.outcome == 'cancelled' ||
+          steps.verify-image-scan.outcome == 'failure' ||
+          steps.verify-image-scan.outcome == 'cancelled'
+        run: |
+          if [ "${{ steps.verify-image-scan.outcome }}" == "failure" ]; then
+            echo "::error::SARIF検証が失敗しました - Trivyがクラッシュした可能性があります"
+            echo "::warning::考えられる原因: DB取得失敗、タイムアウト、ディスク容量不足"
+          fi
+          if [ "${{ steps.image-scan.outcome }}" == "failure" ]; then
+            echo "::error::脆弱性（CRITICAL/HIGH）が Docker image で検出されました"
+            echo "::notice::対処法: 脆弱性レポートを確認し、ベースイメージを更新してください"
+          fi
+          exit 1
+
+      # ===== Cleanup =====
+      - name: Clean up Docker image (Post Trivy Scan)
+        if: always() && steps.docker-build.outcome != 'skipped'
+        run: docker rmi myapp:${{ github.sha }} || true
 
   # ============================================================
-  # Stage 3: Weekly Comprehensive Tests (< 30 min)
-  # Triggers: schedule (Sunday 00:00 UTC)
-  # Tests: Performance + External API + Full Coverage
-  # Note: Security は PR 毎の静的解析（gitleaks, bandit, ruff(S)）で代用
+  # Stage 2.2: Post-Merge mypy Check
+  # Triggers: push to main or develop
+  # Rationale: PR時に型チェック済みだが、複数PR合流による型矛盾
+  #   （Semantic Merge Conflict）や依存ライブラリ更新に伴う
+  #   メインブランチ破損を確実に検知するために再実行する。
   # ============================================================
-  weekly-comprehensive:
-    name: Weekly Comprehensive
-    if: github.event_name == 'schedule'
+  post-mypy-check:
+    name: Post-Merge mypy Check
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      matrix:
-        python-version: ['3.14']
+    timeout-minutes: 5
 
     steps:
       - name: Checkout code
@@ -467,7 +528,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: '3.14'
 
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
@@ -477,28 +538,63 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev
 
-      - name: Run performance tests
+      - name: Run mypy type check
+        run: uv run mypy utils/ config/ models/
+
+  # ============================================================
+  # Stage 3: Weekly Comprehensive Tests (< 30 min)
+  # Triggers: schedule (Sunday 00:00 UTC)
+  # Tests: Performance + External API + Full Coverage
+  # Note: Security は PR 毎の静的解析（gitleaks, bandit, ruff(S)）で代用
+  # ============================================================
+  weekly-extended-test:
+    name: Weekly Extended Test
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        python-version: ['3.14']
+
+    steps:
+      - name: Checkout code (Weekly Extended Test)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Python (Weekly Extended Test)
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv (Weekly Extended Test)
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install dependencies (Weekly Extended Test)
+        run: uv sync --dev
+
+      - name: Run performance tests (Weekly Extended Test)
         run: uv run pytest -m "performance" -v
 
-      - name: Run external API tests (Weekly validation)
+      - name: Run external API tests (Weekly Extended Test)
         id: external-tests  # Used for outcome-based error handling
         run: |
           uv run pytest -m "external" -v --maxfail=5
         continue-on-error: true
 
-      - name: Report external test status (Failure)
+      - name: Report external test status (Failure) (Weekly Extended Test)
         if: steps.external-tests.outcome == 'failure'
         run: echo "::warning::External API tests failed - investigate rate limits or API changes"
 
-      - name: Report external test status (Success)
+      - name: Report external test status (Success) (Weekly Extended Test)
         if: steps.external-tests.outcome == 'success'
         run: echo "::notice::External API tests passed - all integrations healthy"
 
-      - name: Full coverage report
+      - name: Full coverage report (Weekly Extended Test)
         # ALL 7 markers: unit/integration/smoke/e2e/performance/slow/external (no -m filter)
         run: uv run pytest --cov=. --cov-report=html:reports/htmlcov --cov-report=json -v
 
-      - name: Upload weekly test results
+      - name: Upload weekly test results (Weekly Extended Test)
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -522,19 +618,19 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Checkout code
+      - name: Checkout code (Weekly Link Check)
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Setup Node.js
+      - name: Setup Node.js (Weekly Link Check)
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install dependencies
+      - name: Install dependencies (Weekly Link Check)
         run: npm ci
 
-      - name: Find Markdown files
+      - name: Find Markdown files (Weekly Link Check)
         id: find-md
         run: |
           # Find MD files, excluding ignored directories (sync with .textlintignore)
@@ -557,7 +653,7 @@ jobs:
           tr '\n' '\0' < md_files.txt > md_files.nul
           echo "Found $(wc -l < md_files.txt) Markdown files"
 
-      - name: Run markdown-link-check
+      - name: Run markdown-link-check (Weekly Link Check)
         run: |
           # Security: Use -print0/xargs -0 to safely handle filenames with special characters
           # Performance note: Sequential execution chosen for weekly job (batch mode would fail-fast on first error)
@@ -576,7 +672,7 @@ jobs:
           xargs -0 -I {} bash -c 'check_file "$@"' _ {} < md_files.nul
         continue-on-error: true
 
-      - name: Upload link check results
+      - name: Upload link check results (Weekly Link Check)
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -593,7 +689,7 @@ jobs:
     runs-on: ubuntu-latest
     # Note: Skipped jobs are treated as 'success' by GitHub Actions
     # !cancelled() overrides implicit success() check, allowing execution after success/failure/skipped
-    needs: [pr-validation, type-check, pr-security-scan, md-quality, post-merge-validation, weekly-comprehensive, weekly-link-check]
+    needs: [pr-validation, pr-mypy-check, pr-trivy-scan, pr-md-quality-check, post-merge-validation, post-trivy-scan, post-mypy-check, weekly-extended-test, weekly-link-check]
     if: "!cancelled()"
     timeout-minutes: 5
 
@@ -613,13 +709,15 @@ jobs:
           echo "- Coverage Target: 85% (baseline protection)" >> status_report.md
           echo "" >> status_report.md
           echo "## Stage Results" >> status_report.md
-          echo "- PR Validation: ${{ needs.pr-validation.result || 'skipped' }}" >> status_report.md
-          echo "- Type Check (mypy): ${{ needs.type-check.result || 'skipped' }}" >> status_report.md
-          echo "- PR Security Scan: ${{ needs.pr-security-scan.result || 'skipped' }}" >> status_report.md
-          echo "- MD Quality: ${{ needs.md-quality.result || 'skipped' }}" >> status_report.md
-          echo "- Post-Merge: ${{ needs.post-merge-validation.result || 'skipped' }}" >> status_report.md
-          echo "- Weekly Comprehensive: ${{ needs.weekly-comprehensive.result || 'skipped' }}" >> status_report.md
-          echo "- Weekly Link Check: ${{ needs.weekly-link-check.result || 'skipped' }}" >> status_report.md
+          echo "- PR Validation: ${{ needs.pr-validation.result }}" >> status_report.md
+          echo "- PR mypy Check: ${{ needs.pr-mypy-check.result }}" >> status_report.md
+          echo "- PR Trivy Scan: ${{ needs.pr-trivy-scan.result }}" >> status_report.md
+          echo "- PR MD Quality: ${{ needs.pr-md-quality-check.result }}" >> status_report.md
+          echo "- Post-Merge Validation: ${{ needs.post-merge-validation.result }}" >> status_report.md
+          echo "- Post-Merge Trivy: ${{ needs.post-trivy-scan.result }}" >> status_report.md
+          echo "- Post-Merge mypy: ${{ needs.post-mypy-check.result }}" >> status_report.md
+          echo "- Weekly Comprehensive: ${{ needs.weekly-extended-test.result }}" >> status_report.md
+          echo "- Weekly Link Check: ${{ needs.weekly-link-check.result }}" >> status_report.md
           echo "" >> status_report.md
           echo "## Triggered By: ${{ github.event_name }}" >> status_report.md
           cat status_report.md
