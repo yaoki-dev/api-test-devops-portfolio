@@ -25,3 +25,4 @@ AGENTS.md
 CLAUDE.md
 # GSD planning documents (auto-generated working documents)
 .planning/**
+graphify-out/**

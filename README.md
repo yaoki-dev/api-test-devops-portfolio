@@ -24,7 +24,7 @@
 - **カバレッジ: 93.43%**（unit+integration条件）: 継続的な品質向上
 - **CI実行テスト: 575件**（unit+integration条件, external・performance・smoke除外）
   - 内訳: Unit 549件 + Integration 26件（31件のうちexternal 5件を除外）
-- **CI/CD自動化**: GitHub Actions による4段階パイプライン
+- **CI/CD自動化**: GitHub Actions による多段階パイプライン
 - **セキュリティ**: CI/CD品質ゲート（pytest + ruff + mypy + Trivy）
 - **GitHub API統合**: 実務的なAPI統合スキルを証明（Rate Limit管理、ETag活用、非同期処理）
 
@@ -73,7 +73,7 @@ uv run pytest tests/unit/test_api_client.py --cov=utils --cov=config --cov=model
 
 ### 3. CI/CD自動化
 
-![CI/CD Demo - git pushでGitHub Actions自動起動、4段階パイプラインで品質保証。CI/CDスキルを実証](assets/demo-cicd.gif)
+![CI/CD Demo - git pushでGitHub Actions自動起動、多段階パイプラインで品質保証。CI/CDスキルを実証](assets/demo-cicd.gif)
 
 > **📝 デモ内容**: git push後GitHub Actionsで自動テスト・デプロイ
 
@@ -81,7 +81,7 @@ uv run pytest tests/unit/test_api_client.py --cov=utils --cov=config --cov=model
 
 - GitHub Actionsによる自動化パイプライン
 - コード変更時の自動テスト実行
-- 4段階パイプライン（PR検証 → Post-Merge → Branch検証 → 週次包括）
+- 多段階パイプライン（PR検証 → Security Scan → Post-Merge → 週次拡張 → Status Report）
 
 ## 技術スタック
 
@@ -94,7 +94,7 @@ uv run pytest tests/unit/test_api_client.py --cov=utils --cov=config --cov=model
 | **リンター** | ruff（高速、Rust製） |
 | **型チェック** | mypy（strict mode） |
 | **パッケージ管理** | uv（高速、Rust製） |
-| **CI/CD** | GitHub Actions（4段階パイプライン） |
+| **CI/CD** | GitHub Actions（多段階パイプライン） |
 | **エラー監視** | Sentry SDK + MCP統合 |
 | **ログ** | structlog（構造化ログ） |
 
@@ -323,14 +323,18 @@ graph TB
 
 > **CI最適化戦略**: `external`マーカーを週次実行に分離し、PRバリデーションを高速化（目標: 10分以内）
 
-### CI/CD 4段階パイプライン
+### CI/CD 多段階パイプライン
 
 | Stage | トリガー | テスト内容 | timeout |
 |-------|---------|-----------|---------|
-| PR Validation | Pull Request | Unit + Integration | 10分 |
-| PR Security Scan | Pull Request | Trivy脆弱性スキャン | 10分 |
-| Post-Merge | Push to main | Docker Build + Trivy | 8分 |
-| Weekly Comprehensive | 週次スケジュール | Performance + External API | 30分 |
+| PR Validation | Pull Request | mypy + Unit + Integration + smoke | 10分 |
+| PR Markdown Quality Check | Pull Request| markdownlint && textlint | 5分 |
+| PR Trivy scan | Pull Request | Trivy脆弱性スキャン | 20分 |
+| Post Validation | Push to main/develop | mypy + Smoke + e2e | 10分 |
+| Post Trivy scan | Push to main/develop | Docker Build + Trivy | 20分 |
+| Weekly Extended Test | Weekly | Performance + External API | 30分 |
+| Weekly Link Check | Weekly | Markdown link check | 15分 |
+| Status Report | 全トリガー | Pipeline結果集約 | 5分 |
 
 ### Trivy Security Scan（SARIF形式 + 3層検証）
 
