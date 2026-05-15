@@ -29,7 +29,8 @@ graph TB
 | **pr-trivy-scan** | `pull_request` | Trivy scan（Filesystem + Image）+ Docker Build  | 20分 | ○ |
 | **post-validation** | `push to develop/main` | mypy + (Smoke + e2e) Tests | 10分 | × |
 | **post-trivy-scan** | `push to develop/main` | Trivy scan（Filesystem + Image）+ Docker Build | 20分 | × |
-| **weekly-extended-test** | `schedule` (週次) | (Performance + External) Tests + Link Check | 30分 | × |
+| **weekly-extended-test** | `schedule` (週次) | (Performance + External) Tests | 30分 | × |
+| **weekly-link-check** | `schedule` (週次) | Markdown link check | 15分 | × |
 
 ---
 
