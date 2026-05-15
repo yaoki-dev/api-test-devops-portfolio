@@ -53,8 +53,7 @@ jobs:
 
       # mypyをvalidationジョブ内ステップとして統合
       # 設計決定: runner起動コスト~60秒削減 > 並列フィードバック喪失
-      # 根拠: テスト612件・信頼度高、mypy失敗頻度低（498df52の並列設計から変更）
-      # トレードオフ承認: PR#351で合意済
+      # 根拠: テスト612件・信頼度高、mypy失敗頻度低
       - name: Run mypy type check
         run: uv run mypy utils/ config/ models/
 
@@ -62,14 +61,14 @@ jobs:
         id: markers
         run: |
           echo "smoke_marker=smoke and not external" >> $GITHUB_OUTPUT
-          echo "value=(unit or integration) and not external" >> $GITHUB_OUTPUT
+          echo "test_filter=(unit or integration) and not external" >> $GITHUB_OUTPUT
           echo "🎯 PR Validation: Unit + Integration (with coverage) → Smoke (no coverage)"
 
       - name: Run tests (unit + integration + smoke)
         run: |
           mkdir -p reports
           # Step 1: unit + integration with coverage
-          uv run pytest -n auto -m "${{ steps.markers.outputs.value }}" \
+          uv run pytest -n auto -m "${{ steps.markers.outputs.test_filter }}" \
             --cov=utils --cov=config --cov=models \
             --cov-report=json:coverage.json \
             --cov-report=term-missing \
@@ -133,6 +132,7 @@ jobs:
   # pr-mypy-check / post-mypy-check: merged into pr-validation / post-validation
   # post-merge-validation: renamed to post-validation
   # REMOVE after all open PRs pick up this commit
+  # Scheduled for removal after merging PRs #347, #351, #361 into develop and #340 into main
   pr-mypy-check:
     name: mypy Check (PR Validation)
     if: github.event_name == 'pull_request'
@@ -217,19 +217,27 @@ jobs:
 
       - name: Fail job if vulnerabilities found or verification failed
         if: |
-          steps.fs-scan.outcome == 'failure' ||
-          steps.fs-scan.outcome == 'cancelled' ||
-          steps.verify-fs-scan.outcome == 'failure' ||
-          steps.verify-fs-scan.outcome == 'cancelled'
+          !cancelled() && (
+            steps.fs-scan.outcome == 'failure' ||
+            steps.fs-scan.outcome == 'cancelled' ||
+            steps.fs-scan.outcome == 'skipped' ||
+            steps.verify-fs-scan.outcome == 'failure' ||
+            steps.verify-fs-scan.outcome == 'cancelled'
+          )
         run: |
-          # 優先度1: SARIF検証失敗（インフラ問題の可能性）
+          # 優先度1: スキャン未実施
+          if [ "${{ steps.fs-scan.outcome }}" == "skipped" ]; then
+            echo "::error::Trivy filesystem scan was skipped — security gate requires scan to complete"
+            exit 1
+          fi
+          # 優先度2: SARIF検証失敗（インフラ問題の可能性）
           if [ "${{ steps.verify-fs-scan.outcome }}" == "failure" ]; then
             echo "::error::SARIF検証が失敗しました - Trivyがクラッシュした可能性があります"
             echo "::warning::考えられる原因: DB取得失敗、タイムアウト、ディスク容量不足"
             echo "::notice::対処法: Trivyログを確認し、インフラ問題を調査してください"
           fi
 
-          # 優先度2: 脆弱性検出（正常な失敗）
+          # 優先度3: 脆弱性検出（正常な失敗）
           if [ "${{ steps.fs-scan.outcome }}" == "failure" ]; then
             echo "::error::脆弱性（CRITICAL/HIGH）が dependencies で検出されました"
             echo "::notice::対処法: 脆弱性レポートを確認し、依存関係を更新してください"
@@ -287,10 +295,12 @@ jobs:
 
       - name: Fail job if vulnerabilities found or verification failed
         if: |
-          steps.image-scan.outcome == 'failure' ||
-          steps.image-scan.outcome == 'cancelled' ||
-          steps.verify-image-scan.outcome == 'failure' ||
-          steps.verify-image-scan.outcome == 'cancelled'
+          !cancelled() && (
+            steps.image-scan.outcome == 'failure' ||
+            steps.image-scan.outcome == 'cancelled' ||
+            steps.verify-image-scan.outcome == 'failure' ||
+            steps.verify-image-scan.outcome == 'cancelled'
+          )
         run: |
           # 優先度1: SARIF検証失敗（インフラ問題の可能性）
           if [ "${{ steps.verify-image-scan.outcome }}" == "failure" ]; then
@@ -346,22 +356,23 @@ jobs:
 
       # mypyをvalidationジョブ内ステップとして統合
       # 設計決定: runner起動コスト~60秒削減 > 並列フィードバック喪失
-      # 根拠: テスト612件・信頼度高、mypy失敗頻度低（498df52の並列設計から変更）
-      # トレードオフ承認: PR#351で合意済
+      # 根拠: テスト612件・信頼度高、mypy失敗頻度低
       - name: Run mypy type check
+        id: mypy-check
         run: uv run mypy utils/ config/ models/
 
       - name: Run smoke tests (Post Validation)
+        id: smoke-tests
         #  mypy type check失敗時はsmokeをスキップ（fast-fail方針）
-        if: success()
+        if: steps.mypy-check.outcome == 'success'
         run: |
-          uv run pytest -m "smoke" -v --tb=short --no-cov
+          uv run pytest -m "smoke and not external" -v --tb=short --no-cov
         env:
           ENVIRONMENT: testing
 
       - name: Run e2e tests (Post Validation)
         # smoke成功時のみe2eを実行（テストピラミッドgate: smokeが失敗したらe2eをスキップ）
-        if: success()
+        if: steps.smoke-tests.outcome == 'success'
         run: |
           exit_code=0
           uv run pytest -m "e2e" -v --tb=short --no-cov || exit_code=$?
@@ -373,6 +384,9 @@ jobs:
           esac
         env:
           ENVIRONMENT: testing
+
+      - name: Create reports directory
+        run: mkdir -p reports
 
       - name: Upload regression test results
         if: always()
@@ -437,11 +451,18 @@ jobs:
 
       - name: Fail job if fs vulnerabilities found or verification failed (Post Trivy Scan)
         if: |
-          steps.fs-scan.outcome == 'failure' ||
-          steps.fs-scan.outcome == 'cancelled' ||
-          steps.verify-fs-scan.outcome == 'failure' ||
-          steps.verify-fs-scan.outcome == 'cancelled'
+          !cancelled() && (
+            steps.fs-scan.outcome == 'failure' ||
+            steps.fs-scan.outcome == 'cancelled' ||
+            steps.fs-scan.outcome == 'skipped' ||
+            steps.verify-fs-scan.outcome == 'failure' ||
+            steps.verify-fs-scan.outcome == 'cancelled'
+          )
         run: |
+          if [ "${{ steps.fs-scan.outcome }}" == "skipped" ]; then
+            echo "::error::Trivy filesystem scan was skipped — security gate requires scan to complete"
+            exit 1
+          fi
           if [ "${{ steps.verify-fs-scan.outcome }}" == "failure" ]; then
             echo "::error::SARIF検証が失敗しました - Trivyがクラッシュした可能性があります"
             echo "::warning::考えられる原因: DB取得失敗、タイムアウト、ディスク容量不足"
@@ -472,9 +493,13 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Fail if Docker build failed (security gate)
-        if: steps.docker-build.outcome == 'failure'
+        if: |
+          !cancelled() && (
+            steps.docker-build.outcome == 'failure' ||
+            steps.docker-build.outcome == 'cancelled'
+          )
         run: |
-          echo "::error::Docker build failed — image scan skipped. Security gate requires image scan to pass."
+          echo "::error::Docker build ${{ steps.docker-build.outcome }} — image scan skipped. Security gate requires image scan to pass."
           exit 1
 
       # ===== Stage 3: Docker Image Scan =====
@@ -512,10 +537,12 @@ jobs:
 
       - name: Fail job if image vulnerabilities found or verification failed (Post Trivy Scan)
         if: |
-          steps.image-scan.outcome == 'failure' ||
-          steps.image-scan.outcome == 'cancelled' ||
-          steps.verify-image-scan.outcome == 'failure' ||
-          steps.verify-image-scan.outcome == 'cancelled'
+          !cancelled() && (
+            steps.image-scan.outcome == 'failure' ||
+            steps.image-scan.outcome == 'cancelled' ||
+            steps.verify-image-scan.outcome == 'failure' ||
+            steps.verify-image-scan.outcome == 'cancelled'
+          )
         run: |
           if [ "${{ steps.verify-image-scan.outcome }}" == "failure" ]; then
             echo "::error::SARIF検証が失敗しました - Trivyがクラッシュした可能性があります"
@@ -545,9 +572,6 @@ jobs:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      matrix:
-        python-version: ['3.14']
 
     steps:
       - name: Checkout code (Weekly Extended Test)
@@ -556,7 +580,7 @@ jobs:
       - name: Set up Python (Weekly Extended Test)
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: '3.14'
 
       - name: Install uv (Weekly Extended Test)
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
@@ -594,7 +618,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: weekly-comprehensive-results-py${{ matrix.python-version }}
+          name: weekly-comprehensive-results-py3.14
           path: |
             reports/
             coverage.json

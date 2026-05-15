@@ -81,7 +81,7 @@ uv run pytest tests/unit/test_api_client.py --cov=utils --cov=config --cov=model
 
 - GitHub Actionsによる自動化パイプライン
 - コード変更時の自動テスト実行
-- 多段階パイプライン（PR検証 → Security Scan → Post-Merge → 週次拡張 → Status Report）
+- 多段階パイプライン #`CI/CD 多段階パイプライン`参照
 
 ## 技術スタック
 
