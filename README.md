@@ -81,7 +81,7 @@ uv run pytest tests/unit/test_api_client.py --cov=utils --cov=config --cov=model
 
 - GitHub Actionsによる自動化パイプライン
 - コード変更時の自動テスト実行
-- 多段階パイプライン #`CI/CD 多段階パイプライン`参照
+- 多段階パイプライン（[CI/CD 多段階パイプライン](#cicd-多段階パイプライン)参照）
 
 ## 技術スタック
 
@@ -360,7 +360,7 @@ graph LR
 - 各層で明確なエラーメッセージ出力
 - Filesystem/Image scan個別に検証実行
 
-**実装詳細**: 3層検証ロジックはComposite Actionとして実装され、PR/Post-Mergeの3箇所で再利用されています。
+**実装詳細**: 3層検証ロジックはComposite Actionとして実装され、pr-trivy-scan/post-trivy-scanの計4箇所（fs/imageスキャン各2）で再利用されています。
 
 > 📚 詳細実装は [CI/CD運用ガイド](docs/guides/ci_cd_guide.md) を参照
 

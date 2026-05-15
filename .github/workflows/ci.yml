@@ -54,7 +54,7 @@ jobs:
       # mypyをvalidationジョブ内ステップとして統合
       # 設計決定: runner起動コスト~60秒削減 > 並列フィードバック喪失
       # 根拠: テスト612件・信頼度高、mypy失敗頻度低
-      - name: Run mypy type check
+      - name: Run mypy check
         run: uv run mypy utils/ config/ models/
 
       - name: Set test markers
@@ -259,6 +259,16 @@ jobs:
             exit 1
           fi
 
+      - name: Fail if Docker build failed (security gate)
+        if: |
+          always() && !cancelled() && (
+            steps.docker-build.outcome == 'failure' ||
+            steps.docker-build.outcome == 'cancelled'
+          )
+        run: |
+          echo "::error::Docker build ${{ steps.docker-build.outcome }} — image scan skipped. Security gate requires image scan to pass."
+          exit 1
+
       # Step 3: Docker image scan (main PRs + Dependabot docker PRs)
       - name: Trivy image scan (main PRs + docker label)
         id: image-scan
@@ -295,12 +305,12 @@ jobs:
 
       - name: Fail job if vulnerabilities found or verification failed
         if: |
-          !cancelled() && (
+            always() && !cancelled() && (
             steps.image-scan.outcome == 'failure' ||
             steps.image-scan.outcome == 'cancelled' ||
             steps.verify-image-scan.outcome == 'failure' ||
             steps.verify-image-scan.outcome == 'cancelled'
-          )
+            )
         run: |
           # 優先度1: SARIF検証失敗（インフラ問題の可能性）
           if [ "${{ steps.verify-image-scan.outcome }}" == "failure" ]; then
@@ -330,7 +340,7 @@ jobs:
     name: Post Validation (mypy + Smoke + e2e)
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     runs-on: ubuntu-latest
-    timeout-minutes: 10  # Smoke + e2e
+    timeout-minutes: 10  # mypy + Smoke + e2e（直列）
     permissions:
       contents: read
 
@@ -357,14 +367,11 @@ jobs:
       # mypyをvalidationジョブ内ステップとして統合
       # 設計決定: runner起動コスト~60秒削減 > 並列フィードバック喪失
       # 根拠: テスト612件・信頼度高、mypy失敗頻度低
-      - name: Run mypy type check
-        id: mypy-check
+      - name: Run mypy check
         run: uv run mypy utils/ config/ models/
 
       - name: Run smoke tests (Post Validation)
         id: smoke-tests
-        #  mypy type check失敗時はsmokeをスキップ（fast-fail方針）
-        if: steps.mypy-check.outcome == 'success'
         run: |
           uv run pytest -m "smoke and not external" -v --tb=short --no-cov
         env:
@@ -474,7 +481,7 @@ jobs:
           exit 1
 
       # ===== Stage 2: Docker Image Build =====
-      - name: Set up Docker Buildx (Post Trivy Scan)
+      - name: Set up Docker Build (Post Trivy Scan)
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 
       - name: Set image tag
@@ -611,8 +618,8 @@ jobs:
         run: echo "::notice::External API tests passed - all integrations healthy"
 
       - name: Full coverage report (Weekly Extended Test)
-        # ALL 7 markers: unit/integration/smoke/e2e/performance/slow/external (no -m filter)
-        run: uv run pytest --cov=. --cov-report=html:reports/htmlcov --cov-report=json -v
+        # unit/integration/smoke/e2e/slow のみ（performance/external は上で個別実行済）
+        run: uv run pytest -m 'not performance and not external' --cov=. --cov-report=html:reports/htmlcov --cov-report=json -v
 
       - name: Upload weekly test results (Weekly Extended Test)
         if: always()
