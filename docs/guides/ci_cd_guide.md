@@ -10,24 +10,29 @@
 graph TB
     PR[Pull Request] --> PV[pr-validation]
     PR --> PS[pr-trivy-scan]
+    PR --> PMQ[pr-md-quality-check]
     PV --> Merge{Merge to develop/main?}
     PS --> Merge
+    PMQ --> Merge
     Merge -->|Yes| PoV[post-validation]
     Merge -->|Yes| PoS[post-trivy-scan]
     Weekly[Weekly Schedule] --> WC[weekly-extended-test]
+    Weekly --> WL[weekly-link-check]
 
     style PV fill:#1e90ff,color:#fff
     style PS fill:#ff6b6b,color:#fff
+    style PMQ fill:#9b59b6,color:#fff
     style PoV fill:#2ed573,color:#fff
     style PoS fill:#e84393,color:#fff
     style WC fill:#ffa502,color:#fff
+    style WL fill:#f39c12,color:#fff
 ```
 
 | Stage | トリガー | 実行内容 | Timeout | 並列実行 |
 |-------|---------|---------|---------|---------|
 | **pr-validation** | `pull_request` | mypy+ (Unit + Integration + smoke) Tests | 15分 | ○ |
 | **pr-trivy-scan** | `pull_request` | Trivy scan（Filesystem + Image）+ Docker Build  | 20分 | ○ |
-| **post-validation** | `push to develop/main` | mypy + (Smoke + e2e) Tests | 10分 | × |
+| **post-validation** | `push to develop/main` | mypy + (Smoke + e2e) Tests | 15分 | × |
 | **post-trivy-scan** | `push to develop/main` | Trivy scan（Filesystem + Image）+ Docker Build | 20分 | × |
 | **weekly-extended-test** | `schedule` (週次) | (Performance + External) Tests | 30分 | × |
 | **weekly-link-check** | `schedule` (週次) | Markdown link check | 15分 | × |
@@ -222,22 +227,23 @@ ls -lh trivy-fs-scan.sarif
 
 ### Status Report依存関係不足
 
-**症状**: `status-report`ジョブが`pr-security-scan`結果を含まない
+**症状**: `status-report`ジョブが`pr-trivy-scan`/`pr-md-quality-check`結果を含まない
 
 **修正前**（Bug CRITICAL-3）:
 
 ```yaml
 status-report:
-  needs: [pr-validation, md-quality, ...]  # pr-security-scan未指定❌
+  needs: [pr-validation, ...]  # pr-trivy-scan/pr-md-quality-check未指定❌
 ```
 
 **修正後**:
 
 ```yaml
 status-report:
-  needs: [pr-validation, pr-security-scan, md-quality, ...]  # 追加✅
+  needs: [pr-validation, pr-trivy-scan, pr-md-quality-check, ...]  # 追加✅
   run: |
-    echo "- PR Security Scan: ${{ needs.pr-security-scan.result || 'skipped' }}"
+    echo "- PR Trivy Scan: ${{ needs.pr-trivy-scan.result || 'skipped' }}"
+    echo "- PR MD Quality Check: ${{ needs.pr-md-quality-check.result || 'skipped' }}"
 ```
 
 ---

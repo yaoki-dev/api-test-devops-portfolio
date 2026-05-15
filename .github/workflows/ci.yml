@@ -340,7 +340,7 @@ jobs:
     name: Post Validation (mypy + Smoke + e2e)
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     runs-on: ubuntu-latest
-    timeout-minutes: 10  # mypy + Smoke + e2e（直列）
+    timeout-minutes: 15  # mypy + Smoke + e2e（直列、pr-validationと同等構成。mypy初回キャッシュ未生成時の余裕確保）
     permissions:
       contents: read
 
@@ -501,7 +501,7 @@ jobs:
 
       - name: Fail if Docker build failed (security gate)
         if: |
-          !cancelled() && (
+          always() && (
             steps.docker-build.outcome == 'failure' ||
             steps.docker-build.outcome == 'cancelled'
           )
@@ -542,11 +542,14 @@ jobs:
           sarif_file: 'trivy-post-image-scan.sarif'
           category: 'trivy-post-image-scan'
 
+      # 'skipped'チェックは Docker build security gate (上記) が先に exit する shielding により
+      # 通常重複だが、将来の条件分岐変更時の防御的セーフネット（pr-trivy-scan fs-scan L464と対称）
       - name: Fail job if image vulnerabilities found or verification failed (Post Trivy Scan)
         if: |
           !cancelled() && (
             steps.image-scan.outcome == 'failure' ||
             steps.image-scan.outcome == 'cancelled' ||
+            steps.image-scan.outcome == 'skipped' ||
             steps.verify-image-scan.outcome == 'failure' ||
             steps.verify-image-scan.outcome == 'cancelled'
           )
