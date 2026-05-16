@@ -501,7 +501,7 @@ jobs:
 
       - name: Fail if Docker build failed (security gate)
         if: |
-          always() && (
+          !cancelled() && (
             steps.docker-build.outcome == 'failure' ||
             steps.docker-build.outcome == 'cancelled'
           )
@@ -614,7 +614,20 @@ jobs:
 
       - name: Report external test status (Failure)
         if: steps.external-tests.outcome == 'failure'
-        run: echo "::warning::External API tests failed - investigate rate limits or API changes"
+        run: |
+          echo "::warning::External API tests failed - investigate rate limits or API changes"
+          {
+            echo "## ⚠️ 外部APIテスト: 失敗"
+            echo ""
+            echo "週次外部APIテスト (\`pytest -m external\`) が失敗しました。"
+            echo ""
+            echo "**原因候補**:"
+            echo "- 外部API rate limit 到達"
+            echo "- API仕様変更（JSONPlaceholder等）"
+            echo "- ネットワーク一時障害"
+            echo ""
+            echo "**確認手順**: Actions ログの \`external-tests\` ステップを参照してください。"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Report external test status (Success)
         if: steps.external-tests.outcome == 'success'

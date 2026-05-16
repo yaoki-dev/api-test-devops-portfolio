@@ -18,6 +18,13 @@ graph TB
     Merge -->|Yes| PoS[post-trivy-scan]
     Weekly[Weekly Schedule] --> WC[weekly-extended-test]
     Weekly --> WL[weekly-link-check]
+    PV --> SR[status-report]
+    PS --> SR
+    PMQ --> SR
+    PoV --> SR
+    PoS --> SR
+    WC --> SR
+    WL --> SR
 
     style PV fill:#1e90ff,color:#fff
     style PS fill:#ff6b6b,color:#fff
@@ -26,6 +33,7 @@ graph TB
     style PoS fill:#e84393,color:#fff
     style WC fill:#ffa502,color:#fff
     style WL fill:#f39c12,color:#fff
+    style SR fill:#34495e,color:#fff
 ```
 
 | Stage | トリガー | 実行内容 | Timeout | 並列実行 |
@@ -36,6 +44,7 @@ graph TB
 | **post-trivy-scan** | `push to develop/main` | Trivy scan（Filesystem + Image）+ Docker Build | 20分 | × |
 | **weekly-extended-test** | `schedule` (週次) | (Performance + External) Tests | 30分 | × |
 | **weekly-link-check** | `schedule` (週次) | Markdown link check | 15分 | × |
+| **status-report** | 全トリガー | パイプラインサマリー生成（`if: !cancelled()`） | 5分 | × |
 
 ---
 
@@ -141,10 +150,10 @@ uv run pytest -n auto -m "(unit or integration) and not external" \
 
 | ブランチ | 用途 | CI実行 | マージ先 |
 |---------|------|--------|---------|
-| `feature/*` | 新機能開発 | PR Validation + PR Security Scan | `develop` |
-| `develop` | 統合ブランチ | PR Validation + PR Security Scan | `main` |
+| `feature/*` | 新機能開発 | pr-validation + pr-trivy-scan + pr-md-quality-check | `develop` |
+| `develop` | 統合ブランチ | pr-validation + pr-trivy-scan + pr-md-quality-check | `main` |
 | `main` | 本番環境 | post-validation (mypy + Smoke + e2e) + post-trivy-scan (Docker + Trivy) | - |
-| `hotfix/*` | 緊急修正 | PR Validation + PR Security Scan | `main` + `develop` |
+| `hotfix/*` | 緊急修正 | pr-validation + pr-trivy-scan + pr-md-quality-check | `main` + `develop` |
 
 **マージ戦略**:
 
