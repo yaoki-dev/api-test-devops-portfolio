@@ -1,1 +1,5 @@
 .planning/
+graphify-out/**
+claudedocs/**
+.venv/**
+node_modules
