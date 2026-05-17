@@ -595,8 +595,12 @@ class AsyncGitHubClient:
 
         params が None または空の場合は endpoint をそのまま返す。
         params がある場合は ``endpoint?key1=val1&key2=val2`` 形式で返す。
-        URLエンコードには ``quote_via=quote`` を使用し、httpx のエンコード方式
-        （スペースは ``%20``）と一致させる。
+        URLエンコードには ``quote_via=quote`` を使用する（スペースは ``%20``）。
+        httpx の ``QueryParams`` 既定エンコードは ``quote_plus`` 相当（スペースは ``+``）
+        のため、本キャッシュキーは httpx のリクエスト URL とは一致しないが、本キーは
+        プロセス内キャッシュ照合専用であり外部 URL と直接比較しないため問題ない。
+        現在の GitHub API パラメータにスペース文字を含むキーは存在しないため即時バグはなく、
+        将来パラメータ追加時もパラメータ間で一貫したエンコードを使えば決定論性は保たれる。
         パラメータはキーでソートされ決定論的なキーを生成する。
 
         Args:
@@ -613,16 +617,35 @@ class AsyncGitHubClient:
         return f"{endpoint}?{urlencode(sorted_params, quote_via=quote)}"
 
     def _enforce_cache_limit(self) -> None:
-        """ETag/dataキャッシュを max_cache_entries 以下に保つ。"""
+        """ETag/dataキャッシュを max_cache_entries 以下に保つ。
+
+        _update_etag_cache は _etag_cache と _data_cache を常にペアで書き込むため、
+        _etag_cache のみを基準に古いエントリを削除すれば両キャッシュの整合性が保たれる。
+
+        Invariant 違反検出時は logger.error + 両キャッシュ clear で safe-fallback する。
+        ``assert`` 文は ``python -O`` モードで silent disable されるため production では使わない。
+
+        Invariant 判定は ``dict.keys()`` の集合等価比較 (defense-in-depth)。
+        ``len`` だけでは「同件数だがキー集合が異なる」状態 (例: 1 件抜けて 1 件余分) を
+        検出できないため、set-equality でキー差異も検出する。
+        """
+        if self._etag_cache.keys() != self._data_cache.keys():
+            # 通常フローでは発生しない。発生した場合は実装バグの兆候として
+            # Sentry に捕捉される logger.error を出力し、両キャッシュを clear して
+            # 次回リクエストの fresh fetch に倒す（user request flow は維持）。
+            self.logger.error(
+                "cache_invariant_violation",
+                etag_cache_size=len(self._etag_cache),
+                data_cache_size=len(self._data_cache),
+                action="cleared_both_caches",
+            )
+            self._etag_cache.clear()
+            self._data_cache.clear()
+            return
         while len(self._etag_cache) > self.max_cache_entries:
             oldest_key = next(iter(self._etag_cache))
             self._etag_cache.pop(oldest_key, None)
             self._data_cache.pop(oldest_key, None)
-        # _data_cache が独立してオーバーした場合の安全網
-        while len(self._data_cache) > self.max_cache_entries:
-            oldest_key = next(iter(self._data_cache))
-            self._data_cache.pop(oldest_key, None)
-            self._etag_cache.pop(oldest_key, None)
 
     async def _request(  # noqa: C901 - HTTPプロトコル処理の最小必要分岐（4xxステータス, 5xxリトライ, タイムアウト, キャンセル等）のため許容 CC≈12
         self,

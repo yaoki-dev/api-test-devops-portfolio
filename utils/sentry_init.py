@@ -22,7 +22,7 @@ structlogと連携し、ERROR以上のログをSentryに送信。
     環境変数 SENTRY_DEBUG=true で初期化失敗の警告を有効化。
 
 セキュリティ:
-    - before_sendフックで機密データを自動除外（32種類のキーパターン）
+    - before_sendフックで機密データを自動除外（39種類のキーパターン）
     - DSNはSecretStrで管理（config/settings.py）
     - enabled=Falseで完全無効化可能
 """
@@ -30,12 +30,49 @@ structlogと連携し、ERROR以上のログをSentryに送信。
 from __future__ import annotations
 
 import os
+import sys
 import warnings
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from config.settings import get_settings
 from utils.logger import get_logger
+
+# 再帰防止用の内部識別子。scrub 失敗を Sentry に通知する際にこの tag を付与し、
+# _before_send 冒頭で検出して scrub をスキップ通過させることで無限ループ
+# (capture_message → _before_send → 例外 → capture_message ...) を遮断する。
+_INTERNAL_TAG_KEY: str = "sentry_internal_event"
+_INTERNAL_TAG_VALUE: str = "scrub_failure"
+
+
+def _has_internal_tag(tags: Any) -> bool:
+    """内部識別 tag の有無を dict / list[tuple] 両形式で検出する。
+
+    Sentry SDK の現行版 (sentry-sdk >= 2.x) では ``scope.set_tag`` 経由で event に
+    到達する ``tags`` は常に dict 形式 (``Scope._apply_tags_to_event`` 参照)。
+    ただし ``_before_send`` 自体は SDK 仕様に従い list[tuple[str, str]] 形式も
+    受け入れる契約 (``test_before_send_list_tags_redacts_sensitive_key``) のため、
+    防御の対称性として recursion guard も両形式に対応する (defense-in-depth)。
+
+    判定仕様:
+        - dict 形式: ``tags[_INTERNAL_TAG_KEY] == _INTERNAL_TAG_VALUE`` で判定。
+        - list 形式: ``(_INTERNAL_TAG_KEY, _INTERNAL_TAG_VALUE)`` タプルの完全一致
+          で判定 (key のみ一致 / value が異なるペアは通常 event として扱い、
+          recursion guard は発火しない)。
+        - 上記以外 (None, str, int 等): 常に False。
+
+    Args:
+        tags: event["tags"] 相当の値 (dict / list / その他)。
+
+    Returns:
+        内部識別 tag が検出された場合 True。
+    """
+    if isinstance(tags, dict):
+        return tags.get(_INTERNAL_TAG_KEY) == _INTERNAL_TAG_VALUE
+    if isinstance(tags, list):
+        return (_INTERNAL_TAG_KEY, _INTERNAL_TAG_VALUE) in tags
+    return False
+
 
 # デバッグモード（環境変数で有効化）
 SENTRY_DEBUG: bool = os.environ.get("SENTRY_DEBUG", "").lower() in ("true", "1", "yes")
@@ -88,6 +125,13 @@ SENSITIVE_KEYS: frozenset[str] = frozenset(
         # HTTPレスポンスプレビュー: _before_send は capture_exception / capture_message の
         # 両方で適用され、body_preview は extra 経由のペイロードをスクラブする。
         "body_preview",
+        "access_key",
+        "proxy-authorization",
+        "set-cookie",
+        "x-auth-token",
+        "x-csrf-token",
+        "x-refresh-token",
+        "x-access-token",
     },
 )
 
@@ -99,7 +143,53 @@ _sentry_initialized: bool = False
 MAX_SCRUB_DEPTH: int = 10
 
 # before_send でスクラブ対象とするイベントフィールド（PII漏洩防止の対象集合）
-_SCRUBBED_EVENT_FIELDS: frozenset[str] = frozenset({"extra", "user", "contexts", "tags"})
+_SCRUBBED_EVENT_FIELDS: frozenset[str] = frozenset(
+    {"extra", "user", "contexts", "tags", "breadcrumbs"}
+)
+
+# defense-in-depth: ハイフン/アンダースコア表記揺れを吸収するため、
+# SENSITIVE_KEYS と検査対象キー双方をハイフン→アンダースコアへ正規化してから
+# substring 一致で判定する。これにより以下を同一視できる:
+#   - X-Auth-Token / x-auth-token / x_auth_token
+#   - Set-Cookie / set_cookie
+# また composite key (例: user_password, email_address, session_id, auth_token_v2,
+# customer_jwt) も substring 一致で redact される。
+_NORMALIZED_SENSITIVE_KEYS: frozenset[str] = frozenset(
+    sensitive.replace("-", "_") for sensitive in SENSITIVE_KEYS
+)
+
+
+def _is_sensitive_key(key: str) -> bool:
+    """機密キーかどうかを判定する（substring 一致 + ハイフン/アンダースコア正規化）。
+
+    判定アルゴリズム:
+        1. key を lower-case 化
+        2. ハイフン (``-``) をアンダースコア (``_``) へ正規化
+        3. ``_NORMALIZED_SENSITIVE_KEYS`` の各要素を substring として検索
+
+    これにより `user_password`, `email_address`, `X-Auth-Token` 等の
+    composite key / HTTP header variant も redact される (defense-in-depth)。
+
+    Args:
+        key: 判定対象のキー文字列。
+
+    Returns:
+        機密キーと判定された場合 True。
+
+    """
+    key_norm = key.lower().replace("-", "_")
+    return any(sensitive in key_norm for sensitive in _NORMALIZED_SENSITIVE_KEYS)
+
+
+def _scrub_list_item(item: Any, _depth: int) -> Any:
+    """list要素を深さ上限を守ってスクラブする。"""
+    if _depth >= MAX_SCRUB_DEPTH:
+        return "[MAX_DEPTH_EXCEEDED]"
+    if isinstance(item, dict):
+        return _scrub_sensitive_data(item, _depth)
+    if isinstance(item, list):
+        return [_scrub_list_item(child, _depth + 1) for child in item]
+    return item
 
 
 def _scrub_sensitive_data(data: Any, _depth: int = 0) -> Any:
@@ -126,26 +216,66 @@ def _scrub_sensitive_data(data: Any, _depth: int = 0) -> Any:
 
     result: dict[str, Any] = {}
     for key, value in data.items():
-        key_lower = key.lower()
-        if any(sensitive in key_lower for sensitive in SENSITIVE_KEYS):
+        if _is_sensitive_key(key):
             result[key] = "[REDACTED]"
         elif isinstance(value, dict):
             result[key] = _scrub_sensitive_data(value, _depth + 1)
         elif isinstance(value, list):
-            result[key] = [
-                _scrub_sensitive_data(item, _depth + 1) if isinstance(item, dict) else item
-                for item in value
-            ]
+            result[key] = [_scrub_list_item(item, _depth + 1) for item in value]
         else:
             result[key] = value
     return result
+
+
+def _scrub_query_string(query_string: str) -> str:
+    """重複キーを保持したままクエリ文字列をスクラブする。"""
+    pairs = parse_qsl(query_string, keep_blank_values=True)
+    scrubbed_pairs = [
+        (key, "[REDACTED]" if _is_sensitive_key(key) else value) for key, value in pairs
+    ]
+    return urlencode(scrubbed_pairs)
+
+
+def _scrub_url(url: str) -> str:
+    """URLのuserinfo/fragmentを除去し、queryをスクラブする。"""
+    parsed = urlparse(url)
+    hostname = parsed.hostname
+    if hostname is None:
+        netloc = ""
+    else:
+        netloc = f"[{hostname}]" if ":" in hostname and not hostname.startswith("[") else hostname
+        try:
+            port = parsed.port
+        except ValueError:
+            port = None
+        if port is not None:
+            netloc = f"{netloc}:{port}"
+    return urlunparse(
+        parsed._replace(
+            netloc=netloc,
+            query=_scrub_query_string(parsed.query) if parsed.query else "",
+            fragment="",
+        )
+    )
+
+
+def _scrub_tag_pair(item: Any) -> Any:
+    """tags の (key, value) ペアをスクラブする（list 形式 tags 用）。"""
+    if isinstance(item, (tuple, list)) and len(item) == 2:
+        key = item[0]
+        if isinstance(key, str) and _is_sensitive_key(key):
+            return (key, "[REDACTED]")
+    return item
 
 
 def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
     """Sentryイベントの単一フィールドをスクラブする（_before_send 専用）。
 
     dict型の場合は _scrub_sensitive_data() で再帰的にスクラブする。
-    非dict型の場合は空dictに置換し（安全サイド）、SENTRY_DEBUG の値に関わらず
+    list型の場合は (key, value) ペア形式と見なして各ペアをスクラブし、非PII の
+    デバッグ情報（リクエストID等）は保持する（Sentry SDK 仕様: tags は
+    ``list[tuple[str, str]]`` 形式も許容）。
+    上記以外の型の場合は空dictに置換し（安全サイド）、SENTRY_DEBUG の値に関わらず
     logger.warning を常時出力する（本番監視対応）。
     _scrub_sensitive_data の内部 non-dict ガードと二重防御を構成する。
 
@@ -158,8 +288,10 @@ def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
         value = event_dict[field]
         if isinstance(value, dict):
             event_dict[field] = _scrub_sensitive_data(value)
+        elif isinstance(value, list):
+            event_dict[field] = [_scrub_tag_pair(item) for item in value]
         else:
-            # 非dict型はスクラブ不可能。空dictに置換して安全サイドに倒す。
+            # dict/list以外はスクラブ不可能。空dictに置換して安全サイドに倒す。
             event_dict[field] = {}
             _logger.warning(
                 "sentry_field_type_unexpected",
@@ -169,8 +301,50 @@ def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
             )
 
 
+def _emit_scrub_failure_to_sentry(exc: BaseException) -> None:
+    """scrub 失敗を内部識別 tag 付きで Sentry へ通知する（fail-safe）。
+
+    sentry_sdk.capture_message は再度 _before_send を通るが、付与した
+    _INTERNAL_TAG_KEY=_INTERNAL_TAG_VALUE を冒頭で検出して scrub をスキップ
+    通過させるため無限再帰しない。内部 SDK 呼び出し自体が例外を投げた場合は
+    最終フォールバックとして stderr へ出力し、メインプロセスをクラッシュさせない。
+    """
+    try:
+        sentry_sdk = sys.modules.get("sentry_sdk")
+        if sentry_sdk is None:
+            # SDK 未ロード（テスト・未インストール環境）: stderr フォールバック
+            print(
+                f"[SENTRY_SCRUB_FAILED] sentry_sdk_not_loaded "
+                f"error_type={type(exc).__qualname__} "
+                f"error_module={type(exc).__module__}",
+                file=sys.stderr,
+            )
+            return
+        with sentry_sdk.new_scope() as scope:
+            scope.set_tag(_INTERNAL_TAG_KEY, _INTERNAL_TAG_VALUE)
+            scope.set_level("error")
+            scope.set_extra("error_type", type(exc).__qualname__)
+            scope.set_extra("error_module", type(exc).__module__)
+            scope.set_extra("action", "event_dropped")
+            sentry_sdk.capture_message("sentry_scrub_failed", level="error")
+    except Exception as inner_exc:  # noqa: BLE001
+        # Sentry 通知自体が失敗 → stderr へ最終フォールバック
+        print(
+            f"[SENTRY_SCRUB_FAILED] inner_error_type={type(inner_exc).__qualname__} "
+            f"inner_error_module={type(inner_exc).__module__} "
+            f"original_error_type={type(exc).__qualname__} "
+            f"original_error_module={type(exc).__module__}",
+            file=sys.stderr,
+        )
+
+
 def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001
     """Sentry送信前フック（機密データ除外）
+
+    再帰防止: scrub 失敗時に発火する内部通知イベント（_INTERNAL_TAG_KEY
+    が付与されている）は冒頭で検出し、scrub をスキップして通過させる。
+    これにより capture_message → _before_send → 例外 → capture_message
+    の無限ループを遮断する（_emit_scrub_failure_to_sentry 参照）。
 
     Args:
         event: Sentryイベント
@@ -180,31 +354,47 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001
         処理済みイベント、またはNone（送信キャンセル）
 
     """
-    # リクエストデータのスクラブ
-    if "request" in event:
-        request = event["request"]
-        if isinstance(request, dict):
-            if "headers" in request:
-                request["headers"] = _scrub_sensitive_data(request["headers"])
-            if "data" in request:
-                request["data"] = _scrub_sensitive_data(request["data"])
-            if "query_string" in request and isinstance(request["query_string"], str):
-                qs_dict = dict(parse_qsl(request["query_string"]))
-                scrubbed_qs = _scrub_sensitive_data(qs_dict)
-                request["query_string"] = urlencode(scrubbed_qs)
-            if "url" in request and isinstance(request["url"], str):
-                parsed = urlparse(request["url"])
-                if parsed.query:
-                    qs_dict = dict(parse_qsl(parsed.query))
-                    scrubbed_url_qs = _scrub_sensitive_data(qs_dict)
-                    request["url"] = urlunparse(parsed._replace(query=urlencode(scrubbed_url_qs)))
+    # 再帰防止ガード: 内部通知イベントは scrub をスキップして通過させる
+    # dict / list[tuple] 両形式に対応 (defense-in-depth, _has_internal_tag 参照)
+    if _has_internal_tag(event.get("tags")):
+        return event
 
-    # 追加データのスクラブ（2層防御）
-    # _scrub_sentry_field: 非dict型フィールドを空dictに置換（型安全化・PII漏洩防止）
-    # _scrub_sensitive_data: dict内の機密キーを [REDACTED] に置換（PII除外）
-    event_dict = cast(dict[str, Any], event)
-    for field in _SCRUBBED_EVENT_FIELDS:
-        _scrub_sentry_field(event_dict, field)
+    try:
+        # リクエストデータのスクラブ。成功時だけ event["request"] を差し替える。
+        # _scrub_sensitive_data / _scrub_query_string / _scrub_url は全て non-destructive で
+        # 新しいオブジェクトを返すため、top-level dict の shallow copy で十分。
+        # 元 request の non-mutation 契約は既存テスト
+        # ``test_before_send_fail_closed_without_partial_request_mutation`` で継続検証。
+        if "request" in event:
+            request = event["request"]
+            if isinstance(request, dict):
+                scrubbed_request = dict(request)
+                if "headers" in scrubbed_request:
+                    scrubbed_request["headers"] = _scrub_sensitive_data(scrubbed_request["headers"])
+                if "data" in scrubbed_request:
+                    scrubbed_request["data"] = _scrub_sensitive_data(scrubbed_request["data"])
+                if "query_string" in scrubbed_request and isinstance(
+                    scrubbed_request["query_string"], str
+                ):
+                    scrubbed_request["query_string"] = _scrub_query_string(
+                        scrubbed_request["query_string"]
+                    )
+                if "url" in scrubbed_request and isinstance(scrubbed_request["url"], str):
+                    scrubbed_request["url"] = _scrub_url(scrubbed_request["url"])
+                event["request"] = scrubbed_request
+
+        # 追加データのスクラブ（2層防御）
+        # _scrub_sentry_field: 非dict型フィールドを空dictに置換（型安全化・PII漏洩防止）
+        # _scrub_sensitive_data: dict内の機密キーを [REDACTED] に置換（PII除外）
+        event_dict = cast(dict[str, Any], event)
+        for field in _SCRUBBED_EVENT_FIELDS:
+            _scrub_sentry_field(event_dict, field)
+    except Exception as exc:
+        # 元イベントは PII 漏洩防止のため確実にドロップする (return None)
+        # その上で scrub 失敗を Sentry に通知する。内部通知失敗時は stderr へ
+        # フォールバックし、メインプロセスはクラッシュさせない。
+        _emit_scrub_failure_to_sentry(exc)
+        return None
 
     return event
 

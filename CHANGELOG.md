@@ -52,7 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       当該サービスの credential key 名を SENSITIVE_KEYS に追加する.
     - 詳細は `utils/sentry_init.py` の SENSITIVE_KEYS 拡張ポリシーコメント
       参照 (`# SENSITIVE_KEYS 拡張ポリシー` セクション).
-  - **追加された redact key (32 → 49)**:
+  - **追加された redact key (32 → 39)**:
     - 認証系: `access_key`
     - HTTP headers: `proxy-authorization`, `set-cookie`, `x-auth-token`,
       `x-csrf-token`, `x-refresh-token`, `x-access-token`
@@ -130,7 +130,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Changed**: `utils/sentry_init.py` の `_is_sensitive_key` から
   `@lru_cache(maxsize=512)` を削除.
   - **変更理由 (KISS)**: Python `frozenset` への `in` 演算は O(1) であり
-    lru_cache の追加 overhead は不要. SENSITIVE_KEYS が 49 要素のため
+    lru_cache の追加 overhead は不要. SENSITIVE_KEYS が 39 要素のため
     cache hit ratio も低く、memory cost と complexity の正当化が困難.
 
 - **Fixed**: `utils/github_client.py` および `utils/api_client.py` の
@@ -152,6 +152,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     機密キーを `[REDACTED]` 置換.
   - IPv6 hostname (`[::1]:8080`) のブラケット保持に対応.
   - 不正ポート番号 (非整数) は `ValueError` を局所化して継続処理.
+
+- **Added (defense-in-depth)**: `utils/sentry_init.py` に `_has_internal_tag`
+  ヘルパーを追加し、`_before_send` の recursion guard を dict / list[tuple] 両形式
+  対応へ拡張.
+  - **変更理由**: Sentry SDK 現行版 (sentry-sdk >= 2.x) では `scope.set_tag`
+    経由の event["tags"] は常に dict 形式 (`Scope._apply_tags_to_event`
+    `event.setdefault("tags", {}).update(self._tags)` 参照) のため現状 functional bug
+    は無いが、`_before_send` 自体は SDK 仕様に従い list[tuple[str, str]] 形式も
+    受け入れる契約 (`test_before_send_list_tags_redacts_sensitive_key`) のため、
+    将来 SDK 仕様変更 / 別経路 emit への防御対称性を確保.
+  - **新規テスト**: `test_before_send_skips_scrub_for_list_form_internal_tagged_event`
+    で list-form 内部 tag 検出を回帰防止. Red-green TDD で test の effectiveness
+    実証済 (revert 時 1 failed, restore 時 127 passed).
 
 ---
 

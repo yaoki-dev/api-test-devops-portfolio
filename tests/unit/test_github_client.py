@@ -366,6 +366,9 @@ async def test_timeout_final_retry_logs_error() -> None:
     assert error_logs[0]["error_type"] == "ConnectTimeout"
     assert error_logs[0]["error_context"] == "timeout"
     assert error_logs[0]["max_retries"] == MAX_RETRIES
+    # timeout/network error path では status_code フィールドが明示的に None で記録される
+    # ことを継続検証する（ログスキーマ回帰防止）
+    assert error_logs[0]["status_code"] is None
     assert "secret" not in str(error_logs[0])
 
 
@@ -1369,8 +1372,10 @@ def test_handle_http_status_error_uses_debug_for_other_4xx() -> None:
         with pytest.raises(GitHubAPIError, match=r"^HTTP 404 error$") as exc_info:
             client._handle_http_status_error(mock_response, "/test", "GET")
         assert exc_info.value.__cause__ is None
-        # __context__ は直接呼び出し時は常に None のため検証をスキップ
-        # （from None の効果はHTTP経由の統合テストで検証済み）
+        # PII保護回帰テスト: __context__ に HTTPStatusError(response) が残存しないことを継続検証。
+        # 現実装では `raise ... from None` が except 外のため常に None だが、将来 except 内へ
+        # 移動した場合のレスポンスボディ経由 PII 露出リグレッションをこの assertion が検出する。
+        assert exc_info.value.__context__ is None
         mock_logger.debug.assert_called_once_with(
             "http_status_error",
             status_code=404,
@@ -1391,7 +1396,8 @@ def test_handle_http_status_error_uses_warning_for_401() -> None:
         with pytest.raises(GitHubAPIError, match=r"^HTTP 401 error$") as exc_info:
             client._handle_http_status_error(mock_response, "/test", "GET")
         assert exc_info.value.__cause__ is None
-        # __context__ は直接呼び出し時は常に None のため検証をスキップ
+        # PII保護回帰テスト: 将来 except 内移動時のレスポンスボディ経由 PII 露出を検出する。
+        assert exc_info.value.__context__ is None
         mock_logger.warning.assert_called_once_with(
             "http_status_error",
             status_code=401,
@@ -1556,6 +1562,62 @@ def test_update_etag_cache_evicts_oldest_entry_when_limit_exceeded() -> None:
     assert "/first" not in client._data_cache
     assert list(client._etag_cache) == ["/second", "/third"]
     assert list(client._data_cache) == ["/second", "/third"]
+
+
+def test_enforce_cache_limit_invariant_violation_clears_both_caches() -> None:
+    """invariant違反検出時は logger.error + 両キャッシュ clear で safe-fallback する。
+
+    production安全策: assert文はpython -Oで削除されるため、Python条件分岐+
+    logger.errorで invariant violation を可観測化 + recovery する。
+    """
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES, max_cache_entries=2)
+    # 異常状態を直接構築（_etag_cache=1件、_data_cache=2件 → invariant違反）
+    client._etag_cache["/first"] = "etag-1"
+    client._data_cache["/first"] = {"id": 1}
+    client._data_cache["/orphan"] = {"id": 99}
+
+    with patch.object(client, "logger") as mock_logger:
+        client._enforce_cache_limit()
+
+    # 両キャッシュclear確認
+    assert client._etag_cache == {}
+    assert client._data_cache == {}
+    # logger.error呼び出し検証（Sentry捕捉対象）
+    mock_logger.error.assert_called_once_with(
+        "cache_invariant_violation",
+        etag_cache_size=1,
+        data_cache_size=2,
+        action="cleared_both_caches",
+    )
+
+
+def test_enforce_cache_limit_detects_key_divergence_with_same_length() -> None:
+    """同件数だがキー集合が異なる invariant 違反も検出する (set-equality)。
+
+    旧来の ``len`` 比較では「1 件抜けて 1 件余分」状態を検出できなかった。
+    ``dict.keys()`` の集合等価比較に切り替えたことで、defense-in-depth として
+    キー差異も invariant violation として捕捉する。
+    """
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES, max_cache_entries=4)
+    # 異常状態: 同件数 (2件ずつ) だがキー集合が異なる
+    client._etag_cache["/a"] = "etag-a"
+    client._etag_cache["/b"] = "etag-b"
+    client._data_cache["/a"] = {"id": 1}
+    client._data_cache["/c"] = {"id": 3}  # /b ではなく /c (divergence)
+
+    with patch.object(client, "logger") as mock_logger:
+        client._enforce_cache_limit()
+
+    # 両キャッシュclear確認
+    assert client._etag_cache == {}
+    assert client._data_cache == {}
+    # logger.error 呼び出し検証 (sizeはlogに残るが判定はkeys()で行われる)
+    mock_logger.error.assert_called_once_with(
+        "cache_invariant_violation",
+        etag_cache_size=2,
+        data_cache_size=2,
+        action="cleared_both_caches",
+    )
 
 
 def test_handle_403_response_no_json_log() -> None:
