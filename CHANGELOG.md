@@ -30,23 +30,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- **BREAKING (security behavior)**: `utils/sentry_init.py` の機密データ判定を
-  substring match から完全一致比較 (`frozenset` lookup) に変更.
+- **Changed (security behavior)**: `utils/sentry_init.py` の機密データ判定を
+  正規化付き substring match (`_is_sensitive_key()`) に変更.
   - **変更内容**:
     - 旧: `any(sensitive in key.lower() for sensitive in SENSITIVE_KEYS)`
-    - 新: `key.lower() in SENSITIVE_KEYS` (`_is_sensitive_key()` 経由)
+    - 新: `key.lower().replace("-", "_")` と正規化済み key 集合を substring 比較
   - **設計意図 (Senior 視点 — KISS + threat model 駆動)**:
-    - **false positive 排除**: 旧仕様では `key="user"` (含 "ser") のような
-      偶発一致も発生しうる. 完全一致で意図しない redact を防止.
-    - **明示登録の徹底**: `aws_access_key_id` 等の variant は SENSITIVE_KEYS
-      に明示登録する方針へ統一. substring に頼らない.
+    - **variant key 対応**: `x-auth-token`, `api-key-v2`,
+      `aws-access-key-id` のような表記揺れを redact 対象に含める.
+    - **defense-in-depth**: Sentry payload は外部 SDK 由来の任意 dict を含むため、
+      完全一致より substring match を維持する方が漏洩防止に強い.
   - **影響範囲 (regression リスク)**:
-    - 旧仕様で偶発的に redact されていた variant key (例: `api_key_v2`,
-      `aws_access_key_id`, `my_password_field`) が新仕様で素通しになる
-      可能性あり. 当該 key が Sentry payload に含まれる場合、PII 漏洩.
-    - 本プロジェクト範囲では実 payload に variant key 経路が存在しないため
-      実害確率は低い (HTTP 通信先: `api.github.com` /
-      `jsonplaceholder.typicode.com` のみ. AWS/GCP env var 不在).
+    - substring match のため、一部の非機密 composite key が過剰 redact される
+      可能性あり. ただし Sentry 送信前の安全側処理として許容.
+    - hyphen / underscore の表記揺れにより redact 漏れになるリスクを低減.
   - **利用者対応**:
     - 新規外部サービス統合時 (AWS / GCP / Azure / Stripe / Auth0 等) は
       当該サービスの credential key 名を SENSITIVE_KEYS に追加する.
@@ -129,9 +126,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Changed**: `utils/sentry_init.py` の `_is_sensitive_key` から
   `@lru_cache(maxsize=512)` を削除.
-  - **変更理由 (KISS)**: Python `frozenset` への `in` 演算は O(1) であり
-    lru_cache の追加 overhead は不要. SENSITIVE_KEYS が 39 要素のため
-    cache hit ratio も低く、memory cost と complexity の正当化が困難.
+  - **変更理由 (KISS)**: SENSITIVE_KEYS は 39 要素で、正規化済み集合は
+    module load 時に一度だけ構築される. 現状の呼び出し規模では cache の
+    memory cost と invalidation complexity を正当化できない.
 
 - **Fixed**: `utils/github_client.py` および `utils/api_client.py` の
   `__aexit__` で `aclose()` 例外を `try/except Exception` で wrap.

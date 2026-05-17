@@ -85,7 +85,7 @@ api-test-devops-portfolio/
 ### Module: utils.sentry_init
 - **Path**: `utils/sentry_init.py`
 - **Exports**: `init_sentry()`
-- **Purpose**: Sentry SDK初期化。32種類の機密キー自動スクラブ。httpx統合。
+- **Purpose**: Sentry SDK初期化。39種類の機密キー自動スクラブ。httpx統合。
 
 ### Module: models.responses
 - **Path**: `models/responses.py`
@@ -262,7 +262,7 @@ uv run pytest && uv run ruff check . && uv run mypy utils/ config/ models/
 
 ### 2. エラー監視（Sentry統合）
 - **自動エラー送信**: ERROR以上のログをSentryに送信
-- **機密情報スクラブ**: 32種類のキー（API_KEY, PASSWORD等）自動除外
+- **機密情報スクラブ**: 39種類のキー（API_KEY, PASSWORD等）自動除外
 - **環境別制御**: `SENTRY__ENABLED=false` で開発時無効化
 
 ### 3. 設定管理ベストプラクティス

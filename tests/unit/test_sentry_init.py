@@ -305,6 +305,11 @@ class TestScrubQueryStringAndUrl:
         result = _scrub_query_string("token=a&safe=1&token=b&empty=")
         assert result == "token=%5BREDACTED%5D&safe=1&token=%5BREDACTED%5D&empty="
 
+    def test_scrub_request_query_string_accepts_bytes(self) -> None:
+        """request.query_string が bytes でもスクラブする"""
+        result = sentry_module._scrub_request_query_string(b"token=a&safe=1")
+        assert result == "token=%5BREDACTED%5D&safe=1"
+
     def test_scrub_url_removes_userinfo_and_fragment(self) -> None:
         """URLのuserinfo/fragmentを除去しqueryをスクラブする"""
         url = "https://user:pass@example.com/path?x-access-token=tok&safe=1#frag"
@@ -426,6 +431,12 @@ class TestBeforeSend:
             result_dict["request"]["query_string"]
             == "token=%5BREDACTED%5D&safe=1&token=%5BREDACTED%5D"
         )
+
+    def test_scrub_request_query_string_accepts_bytes(self) -> None:
+        """request.query_string が bytes でも機密値をスクラブする"""
+        event = cast(Event, {"request": {"query_string": b"token=a&safe=1"}})
+        result_dict = self._call_before_send(event)
+        assert result_dict["request"]["query_string"] == "token=%5BREDACTED%5D&safe=1"
 
     def test_scrub_request_url_removes_userinfo_and_fragment(self) -> None:
         """request.urlのuserinfo/fragmentを除去する"""
@@ -658,6 +669,20 @@ class TestBeforeSend:
         assert call_kwargs["field"] == "contexts"
         assert call_kwargs["actual_type"] == "int"
         assert call_kwargs["action"] == "replaced_with_empty_dict"
+
+    def test_scrub_sentry_field_logger_failure_does_not_drop_event(self) -> None:
+        """logger.warning 失敗時も Sentry イベントを drop しない"""
+        event = cast(Event, {"extra": "not-a-dict"})
+
+        with patch.object(
+            sentry_module._logger,
+            "warning",
+            side_effect=RuntimeError("logger broken"),
+        ):
+            result = _before_send(event, {})
+
+        assert result is not None
+        assert result["extra"] == {}
 
 
 class TestInitSentry:

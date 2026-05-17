@@ -236,6 +236,13 @@ def _scrub_query_string(query_string: str) -> str:
     return urlencode(scrubbed_pairs)
 
 
+def _scrub_request_query_string(query_string: str | bytes) -> str:
+    """Sentry request.query_string の str/bytes 値を安全にスクラブする。"""
+    if isinstance(query_string, bytes):
+        query_string = query_string.decode("utf-8", errors="replace")
+    return _scrub_query_string(query_string)
+
+
 def _scrub_url(url: str) -> str:
     """URLのuserinfo/fragmentを除去し、queryをスクラブする。"""
     parsed = urlparse(url)
@@ -293,12 +300,16 @@ def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
         else:
             # dict/list以外はスクラブ不可能。空dictに置換して安全サイドに倒す。
             event_dict[field] = {}
-            _logger.warning(
-                "sentry_field_type_unexpected",
-                field=field,
-                actual_type=type(value).__name__,
-                action="replaced_with_empty_dict",
-            )
+            try:
+                _logger.warning(
+                    "sentry_field_type_unexpected",
+                    field=field,
+                    actual_type=type(value).__name__,
+                    action="replaced_with_empty_dict",
+                )
+            except Exception:  # noqa: BLE001, S110
+                # ログ失敗で Sentry イベント自体を drop しない。
+                pass
 
 
 def _emit_scrub_failure_to_sentry(exc: BaseException) -> None:
@@ -374,9 +385,9 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001
                 if "data" in scrubbed_request:
                     scrubbed_request["data"] = _scrub_sensitive_data(scrubbed_request["data"])
                 if "query_string" in scrubbed_request and isinstance(
-                    scrubbed_request["query_string"], str
+                    scrubbed_request["query_string"], (str, bytes)
                 ):
-                    scrubbed_request["query_string"] = _scrub_query_string(
+                    scrubbed_request["query_string"] = _scrub_request_query_string(
                         scrubbed_request["query_string"]
                     )
                 if "url" in scrubbed_request and isinstance(scrubbed_request["url"], str):
