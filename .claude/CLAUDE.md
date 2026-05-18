@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 1. **ALWAYS** respond in `Japanese` for all outputs, including skill usage
 2. **ALWAYS** create a task list using `todowrite` before starting any work (exception: obvious single-step trivial tasks; RULES.md Workflow Rules "TodoWrite (3+ tasks)" qualifier)
-3. **ALWAYS** use AskUserQuestion for 2+ distinct user choices
+3. **ALWAYS** Before any significant task, always show me 2-3 possible approaches first. Wait for my choice before proceeding
 4. **NEVER** use `git commit` → **ALWAYS** use `Skill(commit)`
 5. **NEVER** use `gh pr create` → **ALWAYS** use `Skill(push-pr)`
 6. **NEVER** use `gh issue create` → **ALWAYS** use `Skill(create-issue)`

@@ -24,6 +24,7 @@ Users/                         # 誤配置ディレクトリ
 .swarm/                        # Swarm MCP内部DB
 memory/                        # 旧Memory実装
 .spec-workflow/                # Spec Workflow（テンプレート含む）
+.claude/skill-report/          # Skill監査レポート（大容量JSON、173MB）
 
 # === 3. レポート・生成物（Important） ===
 reports/                         # テスト・カバレッジレポート（大容量HTML）

@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import os
 import sys
-import warnings
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
@@ -184,9 +183,10 @@ def _is_sensitive_key(key: str) -> bool:
 def _scrub_list_item(item: Any, _depth: int) -> Any:
     """list要素を深さ上限を守ってスクラブする。"""
     if _depth >= MAX_SCRUB_DEPTH:
+        _logger.warning("scrub_max_depth_exceeded", depth=_depth, max=MAX_SCRUB_DEPTH)
         return "[MAX_DEPTH_EXCEEDED]"
     if isinstance(item, dict):
-        return _scrub_sensitive_data(item, _depth)
+        return _scrub_sensitive_data(item, _depth + 1)
     if isinstance(item, list):
         return [_scrub_list_item(child, _depth + 1) for child in item]
     return item
@@ -212,6 +212,7 @@ def _scrub_sensitive_data(data: Any, _depth: int = 0) -> Any:
 
     # 再帰制限チェック（循環参照対策）
     if _depth >= MAX_SCRUB_DEPTH:
+        _logger.warning("scrub_max_depth_exceeded", depth=_depth, max=MAX_SCRUB_DEPTH)
         return "[MAX_DEPTH_EXCEEDED]"
 
     result: dict[str, Any] = {}
@@ -349,7 +350,7 @@ def _emit_scrub_failure_to_sentry(exc: BaseException) -> None:
         )
 
 
-def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001
+def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C901
     """Sentry送信前フック（機密データ除外）
 
     再帰防止: scrub 失敗時に発火する内部通知イベント（_INTERNAL_TAG_KEY
@@ -400,6 +401,11 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001
         event_dict = cast(dict[str, Any], event)
         for field in _SCRUBBED_EVENT_FIELDS:
             _scrub_sentry_field(event_dict, field)
+    except MemoryError, RecursionError:
+        # システム異常（OOM・スタックオーバーフロー）は吸収せず再 raise する。
+        # scrub 失敗の silent absorption で PII ドロップが遅延するリスクより
+        # プロセス異常終了を優先させる（CWE-391 対策）。
+        raise
     except Exception as exc:
         # 元イベントは PII 漏洩防止のため確実にドロップする (return None)
         # その上で scrub 失敗を Sentry に通知する。内部通知失敗時は stderr へ
@@ -410,7 +416,7 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001
     return event
 
 
-def init_sentry() -> bool:
+def init_sentry() -> bool:  # noqa: C901
     """Sentry SDK初期化
 
     config/settings.pyのSentryConfigに基づいて初期化。
@@ -476,13 +482,18 @@ def init_sentry() -> bool:
                 f"Sentry SDK not installed in production: {exc}. Add 'sentry-sdk' to dependencies.",
             ) from exc
 
-        # 開発/テスト環境では許容（警告のみ）
+        # 開発/テスト環境では許容（ログ警告のみ）
+        # warnings.warn は filterwarnings('error') 環境で UserWarning を raise し、
+        # __context__ 経由で DSN が漏洩するリスクがあるため _logger.warning に変更。
         if SENTRY_DEBUG:
-            warnings.warn(
-                f"Sentry SDK not installed: {exc}",
-                UserWarning,
-                stacklevel=2,
-            )
+            try:
+                _logger.warning(
+                    "sentry_sdk_not_installed",
+                    error_type=type(exc).__name__,
+                    error_module=type(exc).__module__,
+                )
+            except Exception:  # noqa: BLE001, S110
+                pass  # ロガー失敗で __context__ 経由 DSN 漏洩を遮断
         return False
 
     except Exception as exc:
@@ -492,13 +503,18 @@ def init_sentry() -> bool:
                 f"Sentry initialization failed in production: {type(exc).__name__}: {exc}",
             ) from exc
 
-        # 開発/テスト環境では警告のみ
+        # 開発/テスト環境ではログ警告のみ
+        # warnings.warn は filterwarnings('error') 環境で UserWarning を raise し、
+        # __context__ 経由で DSN が漏洩するリスクがあるため _logger.warning に変更。
         if SENTRY_DEBUG:
-            warnings.warn(
-                f"Sentry initialization failed: {type(exc).__name__}: {exc}",
-                UserWarning,
-                stacklevel=2,
-            )
+            try:
+                _logger.warning(
+                    "sentry_init_failed",
+                    error_type=type(exc).__name__,
+                    error_module=type(exc).__module__,
+                )
+            except Exception:  # noqa: BLE001, S110
+                pass  # ロガー失敗で __context__ 経由 DSN 漏洩を遮断
         return False
 
 

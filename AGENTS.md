@@ -224,7 +224,7 @@ SECURITY__API_KEY=your-secret-key
 ## Sentry統合（エラー監視）
 
 **詳細**: memory `~/projects/python/api-test-devops-portfolio/.serena/memories/sentry_integration.md`
-**概要**: ERROR以上のログを自動でSentryに送信。29種類の機密キーを自動スクラブ。
+**概要**: ERROR以上のログを自動でSentryに送信。39種類の機密キーを自動スクラブ。
 **開発時無効化推奨**: `SENTRY__ENABLED=false`（demo/prod環境のみ有効化）
 
 ## 開発時の注意事項

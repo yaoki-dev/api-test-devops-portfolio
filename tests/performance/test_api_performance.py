@@ -236,7 +236,7 @@ class TestAPIPerformance:
                 # start サンプル値は信頼できない → None 固定で記録 (測定上のノイズ排除)。
                 # CPU 実値が必要な箇所は test 後半の cpu_end_percent を参照する。
                 cpu_start_percent=None,
-                cpu_end_percent=round(summary["cpu_usage"]["end_percent"], 1),
+                cpu_end_percent=round(summary["cpu_usage"]["end_percent"] or 0.0, 1),
             )
 
     @pytest.mark.asyncio
@@ -300,7 +300,7 @@ class TestAPIPerformance:
                 # start サンプル値は信頼できない → None 固定で記録 (測定上のノイズ排除)。
                 # CPU 実値が必要な箇所は test 後半の cpu_end_percent を参照する。
                 cpu_start_percent=None,
-                cpu_end_percent=round(summary["cpu_usage"]["end_percent"], 1),
+                cpu_end_percent=round(summary["cpu_usage"]["end_percent"] or 0.0, 1),
             )
 
     @pytest.mark.asyncio

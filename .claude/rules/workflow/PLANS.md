@@ -4,7 +4,7 @@ paths:
   - "~/.claude/plans"
 ---
 
-# PLANS.md - 計画文書テンプレート
+# PLANS.html - 計画文書テンプレート
 
 *最終更新: 2026-03-05*
 
@@ -59,7 +59,7 @@ AskUserQuestion の回答・設計判断を記録する。
 
 | 決定 | 根拠 | 日付 |
 |------|------|------|
-| （例）PLANS.mdを .claude/rules/ に配置 | rules/ は他ルールファイルと同一管理下 | 2026-03-02 |
+| （例）PLANS.htmlを .claude/rules/ に配置 | rules/ は他ルールファイルと同一管理下 | 2026-03-02 |
 
 ---
 
@@ -94,7 +94,7 @@ AskUserQuestion の回答・設計判断を記録する。
 - [ ] `Skill(reflexion:reflect)` （信頼度90%以上）
 - [ ] `Skill(code-review:review-local-changes)`（80点閾値通過）
 
-**ドキュメント実装（.md 変更）**:
+**ドキュメント実装（.md OR .html 変更）**:
 
 - [ ] `npm run lint:md && npm run lint:text` 全pass
 - [ ] `Skill(superpowers:verification-before-completion)`（全タスク完了確認 — 未完了検出時: 修正 → 品質ゲート → 再実行 - 最大3回まで）
@@ -144,7 +144,7 @@ AskUserQuestion の回答・設計判断を記録する。
 ## ファイル命名・保存先
 
 ```
-claudedocs/plans/YYYY-MM-DD-<topic>.md   # フィーチャー別計画
+claudedocs/plans/YYYY-MM-DD-<topic>.html   # フィーチャー別計画
 ~/.claude/tasks/todo.md                  # 大規模タスク併用
 ```
 

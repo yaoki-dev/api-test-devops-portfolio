@@ -2151,6 +2151,10 @@ async def test_etag_cache_key_includes_query_params() -> None:
 
     assert updated_route.call_count == 2  # 200 + 304
     assert created_route.call_count == 1  # 200 only
+    # 2回目リクエスト (304条件付き) で If-None-Match ヘッダーが正しく送出されている
+    second_request = updated_route.calls[1].request
+    assert "if-none-match" in second_request.headers
+    assert second_request.headers["if-none-match"] == '"updated-etag"'
 
 
 @respx.mock

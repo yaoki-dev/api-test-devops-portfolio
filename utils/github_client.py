@@ -242,8 +242,16 @@ class AsyncGitHubClient:
     ) -> None:
         """非同期コンテキストマネージャーの終了処理"""
         if self._client:
-            await self._client.aclose()
-            self.logger.info("AsyncGitHubClient closed")
+            try:
+                await self._client.aclose()
+                self.logger.info("AsyncGitHubClient closed")
+            except Exception as close_exc:  # noqa: BLE001
+                # __aexit__ で raise すると body 例外 (exc_val) を上書きするため
+                # warning log のみ出力、re-raise しない (error_type のみ)
+                self.logger.warning(
+                    "github_client_aclose_failed",
+                    error_type=type(close_exc).__name__,
+                )
 
     async def get_user(self, username: str) -> dict[str, Any]:
         """ユーザー情報取得
@@ -646,6 +654,12 @@ class AsyncGitHubClient:
             oldest_key = next(iter(self._etag_cache))
             self._etag_cache.pop(oldest_key, None)
             self._data_cache.pop(oldest_key, None)
+            self.logger.info(
+                "cache_entry_evicted",
+                cache_key=oldest_key,
+                current_size=len(self._etag_cache),
+                max_size=self.max_cache_entries,
+            )
 
     async def _request(  # noqa: C901 - HTTPプロトコル処理の最小必要分岐（4xxステータス, 5xxリトライ, タイムアウト, キャンセル等）のため許容 CC≈12
         self,

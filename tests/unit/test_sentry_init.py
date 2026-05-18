@@ -13,7 +13,6 @@ utils/sentry_init.py の単体テスト。
 from __future__ import annotations
 
 import sys
-import warnings
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
@@ -27,6 +26,7 @@ from utils.sentry_init import (
     MAX_SCRUB_DEPTH,
     SENSITIVE_KEYS,
     _before_send,
+    _is_sensitive_key,
     _scrub_query_string,
     _scrub_sensitive_data,
     _scrub_url,
@@ -272,6 +272,32 @@ class TestSensitiveKeysCompleteness:
             f"composite key '{composite_key}' must be redacted to prevent PII regression"
         )
 
+    @pytest.mark.parametrize(
+        ("key", "expected"),
+        [
+            # True positives: 短縮語そのもの → True
+            ("otp", True),
+            ("mfa", True),
+            ("totp", True),
+            # False positives: 短縮語を含む非機密な長キー → 現状 substring match のため True
+            # (将来 exact match へ変更する際の回帰検知用に現状動作を固定する)
+            ("otp_count", True),  # noqa: S105  # substring "otp" に hit
+            ("mfa_setup", True),  # substring "mfa" に hit
+            ("totp_secret", True),  # "totp" + "secret" 両方 hit
+            # 関係ないキー → False
+            ("user_id", False),
+            ("created_at", False),
+        ],
+    )
+    def test_is_sensitive_key_short_word_behaviors(self, key: str, expected: bool) -> None:
+        """短縮語 substring match の現状動作を回帰防止テストとして固定する。
+
+        otp/mfa/totp 等の短縮語は SENSITIVE_KEYS に含まれるため単体では True。
+        これらを接頭辞とする複合キー (otp_count 等) も substring match で True になる
+        現状動作を明示的に記録する。将来 exact match へ変更する場合は本テストを更新する。
+        """
+        assert _is_sensitive_key(key) is expected
+
 
 class TestScrubbedEventFieldsCompleteness:
     """_SCRUBBED_EVENT_FIELDSの網羅性テスト"""
@@ -324,6 +350,19 @@ class TestScrubQueryStringAndUrl:
         assert _scrub_url("http://example.com:bad/path?token=a#frag") == (
             "http://example.com/path?token=%5BREDACTED%5D"
         )
+
+    def test_scrub_url_handles_no_hostname(self) -> None:
+        """hostname=None (空ホストのURL) で netloc='' が返ること。
+
+        urlparse("http:///path?token=abc").hostname is None になるURL を渡した際、
+        _scrub_url 内 L251 の `if hostname is None: netloc = ""` 分岐を通過する。
+        query の機密値はスクラブされ、scheme:// と path は保持されること。
+        """
+        result = _scrub_url("http:///path?token=abc")
+        # hostname=None 分岐 → netloc="" → "http:///path?..." の形式で返る
+        assert result == "http:///path?token=%5BREDACTED%5D"
+        # abc (token値) はスクラブ済み
+        assert "abc" not in result
 
 
 class TestHasInternalTag:
@@ -828,8 +867,9 @@ class TestSentryDebugMode:
         """無効なDSNでSENTRY_DEBUG=trueの場合はSDK例外の警告が出る
 
         Note: DSN_PATTERN削除後、DSN検証はSDKに委任。
-        SDKがBadDsn例外を投げると、except節でキャッチされ警告出力。
+        SDKがBadDsn例外を投げると、except節でキャッチされ _logger.warning を出力。
         非本番環境のみ（本番環境ではRuntimeError発生）。
+        warnings.warn → _logger.warning に変更（filterwarnings('error') 環境での DSN 漏洩防止）
         """
         # SENTRY_DEBUGを再読み込み（モジュールレベル変数）
         import utils.sentry_init as sentry_module
@@ -840,22 +880,23 @@ class TestSentryDebugMode:
         mock_settings.return_value.sentry.dsn = SecretStr("invalid-dsn")
         mock_settings.return_value.is_production_like.return_value = False  # 非本番環境 (#39)
 
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
+        with patch.object(sentry_module._logger, "warning") as mock_warn:
             result = init_sentry()
 
             assert result is False
-            assert len(w) == 1
-            # DSN検証はSDKに委任（BadDsn例外 → 警告出力）
-            assert "Sentry initialization failed" in str(w[0].message)
-            assert w[0].category is UserWarning
+            mock_warn.assert_called_once()
+            call_kwargs = mock_warn.call_args
+            # DSN検証はSDKに委任（BadDsn例外 → _logger.warning 出力）
+            assert call_kwargs[0][0] == "sentry_init_failed"
 
         # クリーンアップ
         sentry_module.SENTRY_DEBUG = False
 
     @patch("utils.sentry_init.get_settings")
     def test_invalid_dsn_no_warning_without_debug(self, mock_settings: MagicMock) -> None:
-        """無効なDSNでSENTRY_DEBUG=falseの場合は警告なし（非本番環境）"""
+        """無効なDSNでSENTRY_DEBUG=falseの場合は警告なし（非本番環境）
+        warnings.warn → _logger.warning に変更（filterwarnings('error') 環境での DSN 漏洩防止）
+        """
         import utils.sentry_init as sentry_module
 
         sentry_module.SENTRY_DEBUG = False
@@ -864,12 +905,11 @@ class TestSentryDebugMode:
         mock_settings.return_value.sentry.dsn = SecretStr("invalid-dsn")
         mock_settings.return_value.is_production_like.return_value = False  # 非本番環境 (#39)
 
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
+        with patch.object(sentry_module._logger, "warning") as mock_warn:
             result = init_sentry()
 
             assert result is False
-            assert len(w) == 0  # 警告なし
+            mock_warn.assert_not_called()  # SENTRY_DEBUG=False なのでログ警告なし
 
 
 class TestSdkExceptionHandling:
@@ -940,7 +980,9 @@ class TestSdkExceptionHandling:
         mock_sdk_init: MagicMock,
         mock_settings: MagicMock,
     ) -> None:
-        """SDK例外時にSENTRY_DEBUG=trueなら警告が出る（非本番環境）"""
+        """SDK例外時にSENTRY_DEBUG=trueなら _logger.warning が出る（非本番環境）
+        warnings.warn → _logger.warning に変更（filterwarnings('error') 環境での DSN 漏洩防止）
+        """
         import utils.sentry_init as sentry_module
 
         sentry_module.SENTRY_DEBUG = True
@@ -956,14 +998,15 @@ class TestSdkExceptionHandling:
         mock_settings.return_value.environment.value = "testing"
         mock_settings.return_value.is_production_like.return_value = False  # 非本番環境 (#39)
 
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
+        with patch.object(sentry_module._logger, "warning") as mock_warn:
             result = init_sentry()
 
             assert result is False
-            assert len(w) == 1
-            assert "Sentry initialization failed" in str(w[0].message)
-            assert "ConnectionError" in str(w[0].message)
+            mock_warn.assert_called_once()
+            call_kwargs = mock_warn.call_args
+            # error_type に例外クラス名が含まれる（DSN 値は含まない）
+            assert call_kwargs[0][0] == "sentry_init_failed"
+            assert call_kwargs[1]["error_type"] == "ConnectionError"
 
         sentry_module.SENTRY_DEBUG = False
 

@@ -835,7 +835,15 @@ class AsyncAPIClient:
         exc_tb: TracebackType | None,
     ) -> None:
         """非同期コンテキストマネージャーの終了処理"""
-        await self.aclose()
+        try:
+            await self.aclose()
+        except Exception as close_exc:  # noqa: BLE001
+            # __aexit__ で raise すると body 例外 (exc_val) を上書きするため
+            # warning log のみ出力、re-raise しない (error_type のみ)
+            self.logger.warning(
+                "async_api_client_aclose_failed",
+                error_type=type(close_exc).__name__,
+            )
 
     async def aclose(self) -> None:
         """クライアントのクローズ"""
