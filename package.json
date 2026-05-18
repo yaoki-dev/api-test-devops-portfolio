@@ -16,7 +16,7 @@
     "@notprolands/ast-grep-mcp": "^1.1.1",
     "markdown-link-check": "^3.14.0",
     "markdownlint-cli": "^0.48.0",
-    "textlint": "^15.6.0",
+    "textlint": "^15.7.0",
     "textlint-rule-preset-ja-technical-writing": "^12.0.2"
   }
 }
