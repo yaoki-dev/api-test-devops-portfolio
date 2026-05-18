@@ -203,11 +203,11 @@ class TestSensitiveKeysCompleteness:
         """期待される機密キーが含まれている"""
         assert key in SENSITIVE_KEYS
 
-    def test_sensitive_key_match_uses_substring_with_hyphen_normalization(self) -> None:
-        """機密キー判定は substring 一致 + ハイフン/アンダースコア正規化 (defense-in-depth)。
+    def test_sensitive_key_match_uses_word_boundaries_with_hyphen_normalization(self) -> None:
+        """機密キー判定は単語境界一致 + ハイフン/アンダースコア正規化。
 
         composite key (接頭辞/接尾辞付き)、ハイフン variant、case 違いの全てを redact する。
-        SENSITIVE_KEYS に含まれない word (例: `name`) は redact しない。
+        SENSITIVE_KEYS に含まれない word や unrelated substring は redact しない。
         """
         result = _scrub_sensitive_data(
             {
@@ -226,6 +226,9 @@ class TestSensitiveKeysCompleteness:
                 # 非機密
                 "name": "public",
                 "items_count": 42,
+                "photo_url": "https://example.com/avatar.png",
+                "prototype": "v2",
+                "option": "safe",
             }
         )
         assert result["access_token"] == "[REDACTED]"  # noqa: S105
@@ -237,6 +240,9 @@ class TestSensitiveKeysCompleteness:
         # 非機密キーは保持
         assert result["name"] == "public"
         assert result["items_count"] == 42
+        assert result["photo_url"] == "https://example.com/avatar.png"
+        assert result["prototype"] == "v2"
+        assert result["option"] == "safe"
 
     @pytest.mark.parametrize(
         "composite_key",
@@ -279,22 +285,53 @@ class TestSensitiveKeysCompleteness:
             ("otp", True),
             ("mfa", True),
             ("totp", True),
-            # False positives: 短縮語を含む非機密な長キー → 現状 substring match のため True
-            # (将来 exact match へ変更する際の回帰検知用に現状動作を固定する)
-            ("otp_count", True),  # noqa: S105  # substring "otp" に hit
-            ("mfa_setup", True),  # substring "mfa" に hit
+            # True positives: アンダースコア境界で区切られた複合キー → True
+            ("otp_count", True),  # noqa: S105
+            ("mfa_setup", True),
             ("totp_secret", True),  # "totp" + "secret" 両方 hit
+            ("user_otp", True),
+            ("otp_secret", True),
+            # False positives: 短縮語を含むだけの非機密キー → False
+            ("photo_url", False),
+            ("prototype", False),
+            ("option", False),
+            ("comfort_level", False),
+            ("message", False),
+            ("version", False),
             # 関係ないキー → False
             ("user_id", False),
             ("created_at", False),
         ],
     )
     def test_is_sensitive_key_short_word_behaviors(self, key: str, expected: bool) -> None:
-        """短縮語 substring match の現状動作を回帰防止テストとして固定する。
+        """短縮語は単語境界で区切られた場合のみ機密キーとして扱う。
 
         otp/mfa/totp 等の短縮語は SENSITIVE_KEYS に含まれるため単体では True。
-        これらを接頭辞とする複合キー (otp_count 等) も substring match で True になる
-        現状動作を明示的に記録する。将来 exact match へ変更する場合は本テストを更新する。
+        これらを接頭辞/接尾辞とする複合キー (otp_count / user_otp 等) も
+        アンダースコア境界で区切られている場合は True になる。
+        """
+        assert _is_sensitive_key(key) is expected
+
+    @pytest.mark.parametrize(
+        ("key", "expected"),
+        [
+            # camelCase 機密キー → True（snake_case 正規化後にパターン一致）
+            ("accessToken", True),
+            ("apiKey", True),
+            ("emailAddress", True),
+            ("refreshToken", True),
+            ("clientSecret", True),
+            # camelCase 非機密キー → False
+            ("photoUrl", False),
+            ("itemCount", False),
+        ],
+    )
+    def test_is_sensitive_key_camelcase_normalization(self, key: str, expected: bool) -> None:
+        """camelCase キーは snake_case に正規化してから機密判定する。
+
+        accessToken → access_token → token 境界で True。
+        apiKey → api_key → api_key 完全一致で True。
+        PR#347 review fix #1: camelCase PII バイパス修正の回帰テスト。
         """
         assert _is_sensitive_key(key) is expected
 
@@ -462,6 +499,77 @@ class TestBeforeSend:
         result_dict = self._call_before_send(event)
         assert result_dict["breadcrumbs"]["values"][0]["data"]["set-cookie"] == "[REDACTED]"
 
+    def test_scrub_breadcrumbs_list_form(self) -> None:
+        """list[dict] 形式 breadcrumbs 内の機密データもスクラブされる"""
+        event = cast(
+            Event,
+            {"breadcrumbs": [{"data": {"Authorization": "Bearer secret", "request_id": "req-1"}}]},
+        )
+        result_dict = self._call_before_send(event)
+        breadcrumb = result_dict["breadcrumbs"][0]
+        assert breadcrumb["data"]["Authorization"] == "[REDACTED]"
+        assert breadcrumb["data"]["request_id"] == "req-1"
+
+    def test_scrub_tags_tuple_form(self) -> None:
+        """tags が list[tuple[str, str]] 形式 (Sentry SDK 標準) で機密キーが redact される"""
+        event = cast(Event, {"tags": [("user_password", "secret"), ("name", "public")]})
+        result_dict = self._call_before_send(event)
+        # tuple は scrub 後も sequence のまま
+        scrubbed = list(result_dict["tags"])
+        assert (scrubbed[0][0], scrubbed[0][1]) == ("user_password", "[REDACTED]")
+        assert (scrubbed[1][0], scrubbed[1][1]) == ("name", "public")
+
+    def test_scrub_tags_list_pair_form(self) -> None:
+        """tags が list[list[str, str]] 形式 (JSON roundtrip) でも機密キーが redact される"""
+        event = cast(Event, {"tags": [["api_token", "abc"], ["safe", "ok"]]})
+        result_dict = self._call_before_send(event)
+        scrubbed = list(result_dict["tags"])
+        assert (scrubbed[0][0], scrubbed[0][1]) == ("api_token", "[REDACTED]")
+        assert (scrubbed[1][0], scrubbed[1][1]) == ("safe", "ok")
+
+    def test_scrub_tags_dict_form_defense_in_depth(self) -> None:
+        """tags が非標準 list[dict] 形式でも defense-in-depth で機密キーが redact される
+
+        Sentry SDK 標準仕様外だが custom before_send hook 等で生じうるため
+        PII 漏洩を防ぐ目的で dict 要素も再帰スクラブする (PR #347 review iter2)。
+        """
+        event = cast(Event, {"tags": [{"authorization": "Bearer X", "label": "public"}]})
+        result_dict = self._call_before_send(event)
+        tag_dict = result_dict["tags"][0]
+        assert tag_dict["authorization"] == "[REDACTED]"
+        assert tag_dict["label"] == "public"
+
+    def test_scrub_tags_non_sensitive_preserved(self) -> None:
+        """tags 内の非機密ペア (key が SENSITIVE_KEYS に該当しない) は redact されない"""
+        event = cast(Event, {"tags": [("environment", "production"), ("version", "1.0.0")]})
+        result_dict = self._call_before_send(event)
+        scrubbed = list(result_dict["tags"])
+        assert (scrubbed[0][0], scrubbed[0][1]) == ("environment", "production")
+        assert (scrubbed[1][0], scrubbed[1][1]) == ("version", "1.0.0")
+
+    def test_scrub_breadcrumbs_2_element_list_not_overscrubbed(self) -> None:
+        """breadcrumbs 内の非PII 2要素 list ([label, value]) が誤って tag-pair 扱いされない
+
+        PR #347 review KP-003 / T3 対応の regression test。
+        旧コードでは list[2]+str[0] heuristic が breadcrumbs まで適用され、
+        非機密の表示用ペアまで [REDACTED] になっていた。
+        """
+        event = cast(
+            Event,
+            {
+                "breadcrumbs": [
+                    {"category": "ui", "data": [["display_label", "visible-text"]]},
+                ],
+            },
+        )
+        result_dict = self._call_before_send(event)
+        # breadcrumbs[0].data は dict、その中の list は generic scrub に流れるため
+        # ["display_label", "visible-text"] は tag-pair 扱いされない。
+        breadcrumb_data = result_dict["breadcrumbs"][0]["data"]
+        # _scrub_sensitive_data が dict を recurse、list value は要素ごと処理されるが
+        # str element はそのまま preserved
+        assert breadcrumb_data == [["display_label", "visible-text"]]
+
     def test_scrub_request_preserves_duplicate_query_params(self) -> None:
         """request.query_stringの重複キーを保持してスクラブする"""
         event = cast(Event, {"request": {"query_string": "token=a&safe=1&token=b"}})
@@ -516,6 +624,24 @@ class TestBeforeSend:
         passed_exc = mock_emit.call_args.args[0]
         assert isinstance(passed_exc, RuntimeError)
         assert str(passed_exc) == "boom"
+
+    def test_before_send_reraises_memory_error(self) -> None:
+        """MemoryError は scrub 失敗として吸収せず再raiseする"""
+        event = cast(Event, {"request": {"headers": {}}})
+        with (
+            patch.object(sentry_module, "_scrub_sensitive_data", side_effect=MemoryError()),
+            pytest.raises(MemoryError),
+        ):
+            _before_send(event, {})
+
+    def test_before_send_reraises_recursion_error(self) -> None:
+        """RecursionError は scrub 失敗として吸収せず再raiseする"""
+        event = cast(Event, {"extra": {"key": "value"}})
+        with (
+            patch.object(sentry_module, "_scrub_sentry_field", side_effect=RecursionError()),
+            pytest.raises(RecursionError),
+        ):
+            _before_send(event, {})
 
     def test_before_send_skips_scrub_for_internal_tagged_event(self) -> None:
         """再帰防止: 内部通知 tag が付与された event は scrub をスキップし通過させる。
@@ -672,6 +798,11 @@ class TestBeforeSend:
         assert result is not None
         assert result["tags"] == ["item1", "item2", ("safe", "value")]
 
+    def test_scrub_list_item_respects_max_depth(self) -> None:
+        """_scrub_list_item も最大深さ上限で再帰を停止する"""
+        result = sentry_module._scrub_list_item({"token": "secret"}, MAX_SCRUB_DEPTH)
+        assert result == "[MAX_DEPTH_EXCEEDED]"
+
     def test_scrub_sentry_field_non_dict_logs_warning(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -709,8 +840,10 @@ class TestBeforeSend:
         assert call_kwargs["actual_type"] == "int"
         assert call_kwargs["action"] == "replaced_with_empty_dict"
 
-    def test_scrub_sentry_field_logger_failure_does_not_drop_event(self) -> None:
-        """logger.warning 失敗時も Sentry イベントを drop しない"""
+    def test_scrub_sentry_field_logger_failure_falls_back_to_stderr(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """logger.warning 失敗時も Sentry イベントを drop せず stderr にフォールバックする"""
         event = cast(Event, {"extra": "not-a-dict"})
 
         with patch.object(
@@ -722,6 +855,10 @@ class TestBeforeSend:
 
         assert result is not None
         assert result["extra"] == {}
+        captured = capsys.readouterr()
+        assert "[SENTRY_FIELD_WARNING_FAILED]" in captured.err
+        assert "field=extra" in captured.err
+        assert "logger_error_type=RuntimeError" in captured.err
 
 
 class TestInitSentry:
@@ -888,6 +1025,9 @@ class TestSentryDebugMode:
             call_kwargs = mock_warn.call_args
             # DSN検証はSDKに委任（BadDsn例外 → _logger.warning 出力）
             assert call_kwargs[0][0] == "sentry_init_failed"
+            # BadDsn は sentry_sdk.utils に定義されている
+            assert call_kwargs[1]["error_module"] == "sentry_sdk.utils"
+            assert call_kwargs[1]["error_type"] == "BadDsn"
 
         # クリーンアップ
         sentry_module.SENTRY_DEBUG = False
@@ -1007,6 +1147,7 @@ class TestSdkExceptionHandling:
             # error_type に例外クラス名が含まれる（DSN 値は含まない）
             assert call_kwargs[0][0] == "sentry_init_failed"
             assert call_kwargs[1]["error_type"] == "ConnectionError"
+            assert call_kwargs[1]["error_module"] == "builtins"
 
         sentry_module.SENTRY_DEBUG = False
 

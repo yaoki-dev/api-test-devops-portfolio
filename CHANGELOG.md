@@ -31,24 +31,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - **Changed (security behavior)**: `utils/sentry_init.py` の機密データ判定を
-  正規化付き substring match (`_is_sensitive_key()`) に変更.
+  正規化付き単語境界 match (`_is_sensitive_key()`) に変更.
   - **変更内容**:
     - 旧: `any(sensitive in key.lower() for sensitive in SENSITIVE_KEYS)`
-    - 新: `key.lower().replace("-", "_")` と正規化済み key 集合を substring 比較
+    - 新: `key.lower().replace("-", "_")` と正規化済み key 集合を
+      先頭/末尾/アンダースコア境界で正規表現比較
   - **設計意図 (Senior 視点 — KISS + threat model 駆動)**:
     - **variant key 対応**: `x-auth-token`, `api-key-v2`,
       `aws-access-key-id` のような表記揺れを redact 対象に含める.
     - **defense-in-depth**: Sentry payload は外部 SDK 由来の任意 dict を含むため、
-      完全一致より substring match を維持する方が漏洩防止に強い.
+      完全一致より複合キー対応を維持する方が漏洩防止に強い.
   - **影響範囲 (regression リスク)**:
-    - substring match のため、一部の非機密 composite key が過剰 redact される
-      可能性あり. ただし Sentry 送信前の安全側処理として許容.
+    - `photo_url`, `prototype`, `option` のような unrelated substring は保持し、
+      `user_otp`, `otp_secret` のような複合キーは redact する.
     - hyphen / underscore の表記揺れにより redact 漏れになるリスクを低減.
   - **利用者対応**:
     - 新規外部サービス統合時 (AWS / GCP / Azure / Stripe / Auth0 等) は
       当該サービスの credential key 名を SENSITIVE_KEYS に追加する.
-    - 詳細は `utils/sentry_init.py` の SENSITIVE_KEYS 拡張ポリシーコメント
-      参照 (`# SENSITIVE_KEYS 拡張ポリシー` セクション).
+    - 詳細は `utils/sentry_init.py` の `SENSITIVE_KEYS` frozenset 定義と
+      `_NORMALIZED_SENSITIVE_KEYS` 周辺コメントを参照.
   - **追加された redact key (32 → 39)**:
     - 認証系: `access_key`
     - HTTP headers: `proxy-authorization`, `set-cookie`, `x-auth-token`,

@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 1. **ALWAYS** respond in `Japanese` for all outputs, including skill usage
 2. **ALWAYS** create a task list using `todowrite` before starting any work (exception: obvious single-step trivial tasks; RULES.md Workflow Rules "TodoWrite (3+ tasks)" qualifier)
-3. **ALWAYS** Before any significant task, always show me 2-3 possible approaches first. Wait for my choice before proceeding
+3. **ALWAYS** use the ⁠AskUserQuestion⁠ tool to propose 2-3 alternative approaches and wait for user confirmation before executing any major tasks or structural changes
 4. **NEVER** use `git commit` → **ALWAYS** use `Skill(commit)`
 5. **NEVER** use `gh pr create` → **ALWAYS** use `Skill(push-pr)`
 6. **NEVER** use `gh issue create` → **ALWAYS** use `Skill(create-issue)`
@@ -120,7 +120,7 @@ SECURITY__API_KEY=your-secret-key
 
 ```
 【準備フェーズ】
-0. 大規模タスク（複数セッション）: `.claude/rules/workflow/RULES.md` 「Task Management (Persistent Layer)」参照（todo.md活用）
+0. 大規模タスク（複数セッション）: `.claude/rules/workflow/RULES.md` 「Task Management (Persistent Layer)」参照
 1. 固定Worktreeでブランチ作成 → /git:feature（常時※1）
    → 固定WT: ${HOME}/projects/python/.worktrees/wt-feature0[1-3]（個人環境ごとにカスタマイズ）
    → 計画ファイル作成が必要な場合: claudedocs/plans/ に作成（閾値詳細: .claude/rules/workflow/PLANS.md §使用閾値）

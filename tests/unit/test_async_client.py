@@ -912,6 +912,23 @@ async def test_async_context_manager_cleanup_on_exception():
         mock_client_instance.aclose.assert_called_once()
 
 
+async def test_async_api_client_aexit_aclose_exception_is_suppressed_with_warning() -> None:
+    """__aexit__ で aclose() が例外を投げても警告ログのみ出力する"""
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(client, "aclose", new=AsyncMock(side_effect=RuntimeError("close-failed"))),
+        capture_logs() as log_output,
+    ):
+        await client.__aexit__(None, None, None)
+
+    warning_logs = [
+        log for log in log_output if log.get("event") == "async_api_client_aclose_failed"
+    ]
+    assert len(warning_logs) == 1
+    assert warning_logs[0]["error_type"] == "RuntimeError"
+
+
 @respx.mock
 async def test_async_health_check_success():
     """

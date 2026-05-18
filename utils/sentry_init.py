@@ -30,6 +30,7 @@ structlogと連携し、ERROR以上のログをSentryに送信。
 from __future__ import annotations
 
 import os
+import re
 import sys
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
@@ -143,31 +144,47 @@ MAX_SCRUB_DEPTH: int = 10
 
 # before_send でスクラブ対象とするイベントフィールド（PII漏洩防止の対象集合）
 _SCRUBBED_EVENT_FIELDS: frozenset[str] = frozenset(
-    {"extra", "user", "contexts", "tags", "breadcrumbs"}
+    {
+        "extra",
+        "user",
+        "contexts",
+        "tags",
+        "breadcrumbs",
+    }
 )
 
 # defense-in-depth: ハイフン/アンダースコア表記揺れを吸収するため、
 # SENSITIVE_KEYS と検査対象キー双方をハイフン→アンダースコアへ正規化してから
-# substring 一致で判定する。これにより以下を同一視できる:
+# 単語境界（先頭/末尾/アンダースコア）で判定する。これにより以下を同一視できる:
 #   - X-Auth-Token / x-auth-token / x_auth_token
 #   - Set-Cookie / set_cookie
 # また composite key (例: user_password, email_address, session_id, auth_token_v2,
-# customer_jwt) も substring 一致で redact される。
+# customer_jwt) も単語単位で redact される一方、photo_url / prototype 等の
+# unrelated substring は過剰 redact しない。
 _NORMALIZED_SENSITIVE_KEYS: frozenset[str] = frozenset(
     sensitive.replace("-", "_") for sensitive in SENSITIVE_KEYS
+)
+_SENSITIVE_KEY_PATTERN: re.Pattern[str] = re.compile(
+    r"(?:^|_)(?:"
+    + "|".join(re.escape(sensitive) for sensitive in sorted(_NORMALIZED_SENSITIVE_KEYS))
+    + r")(?:_|$)"
 )
 
 
 def _is_sensitive_key(key: str) -> bool:
-    """機密キーかどうかを判定する（substring 一致 + ハイフン/アンダースコア正規化）。
+    """機密キーかどうかを判定する（単語境界一致 + ハイフン/アンダースコア正規化）。
 
     判定アルゴリズム:
-        1. key を lower-case 化
-        2. ハイフン (``-``) をアンダースコア (``_``) へ正規化
-        3. ``_NORMALIZED_SENSITIVE_KEYS`` の各要素を substring として検索
+        1. camelCase → snake_case 変換（`accessToken` → `access_Token`）
+        2. key を lower-case 化
+        3. ハイフン (``-``) をアンダースコア (``_``) へ正規化
+        4. ``_NORMALIZED_SENSITIVE_KEYS`` の各要素を単語境界で検索
 
     これにより `user_password`, `email_address`, `X-Auth-Token` 等の
-    composite key / HTTP header variant も redact される (defense-in-depth)。
+    composite key / HTTP header variant を redact しつつ、`photo_url`,
+    `prototype`, `option` 等の unrelated substring は保持する。
+    camelCase キー (`accessToken`, `apiKey`, `emailAddress`) も正規化後に
+    snake_case として検出される。
 
     Args:
         key: 判定対象のキー文字列。
@@ -176,15 +193,24 @@ def _is_sensitive_key(key: str) -> bool:
         機密キーと判定された場合 True。
 
     """
-    key_norm = key.lower().replace("-", "_")
-    return any(sensitive in key_norm for sensitive in _NORMALIZED_SENSITIVE_KEYS)
+    key_norm = re.sub(r"(?<=[a-z])(?=[A-Z])", "_", key).lower().replace("-", "_")
+    return _SENSITIVE_KEY_PATTERN.search(key_norm) is not None
 
 
 def _scrub_list_item(item: Any, _depth: int) -> Any:
-    """list要素を深さ上限を守ってスクラブする。"""
+    """list要素を深さ上限を守ってスクラブする（汎用 element scrubber）。
+
+    tags 専用の (key, value) ペア判定は ``_scrub_sentry_field`` の field 単位
+    dispatch に集約し、本関数では tuple のみを tag pair として扱う
+    （Sentry SDK が tags を list[tuple[str, str]] で渡す場合の互換性のため）。
+    list[2] with str[0] のような汎用 list を tag pair と誤判定して
+    breadcrumb 等の非 PII 2要素 list を過剰 redact する問題を避ける。
+    """
     if _depth >= MAX_SCRUB_DEPTH:
         _logger.warning("scrub_max_depth_exceeded", depth=_depth, max=MAX_SCRUB_DEPTH)
         return "[MAX_DEPTH_EXCEEDED]"
+    if isinstance(item, tuple):
+        return _scrub_tag_pair(item)
     if isinstance(item, dict):
         return _scrub_sensitive_data(item, _depth + 1)
     if isinstance(item, list):
@@ -240,7 +266,7 @@ def _scrub_query_string(query_string: str) -> str:
 def _scrub_request_query_string(query_string: str | bytes) -> str:
     """Sentry request.query_string の str/bytes 値を安全にスクラブする。"""
     if isinstance(query_string, bytes):
-        query_string = query_string.decode("utf-8", errors="replace")
+        query_string = query_string.decode("utf-8", errors="ignore")
     return _scrub_query_string(query_string)
 
 
@@ -276,13 +302,31 @@ def _scrub_tag_pair(item: Any) -> Any:
     return item
 
 
+def _scrub_tags_item(item: Any) -> Any:
+    """tags フィールド要素を Sentry spec + defense-in-depth でスクラブする。
+
+    Sentry SDK 仕様: tags は ``dict[str, str]`` または ``list[tuple[str, str]]``。
+    JSON roundtrip で tuple が list 化されるため list[2] も tag pair として扱う。
+    加えて非標準だが custom before_send hook 等で生じうる dict / nested list 形態でも
+    機密キーを redact する（defense-in-depth）。
+    """
+    if isinstance(item, (tuple, list)) and len(item) == 2:
+        return _scrub_tag_pair(item)
+    if isinstance(item, dict):
+        return _scrub_sensitive_data(item)
+    if isinstance(item, list):
+        # nested list は汎用 scrub にフォールバック
+        return [_scrub_list_item(child, _depth=0) for child in item]
+    return item
+
+
 def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
     """Sentryイベントの単一フィールドをスクラブする（_before_send 専用）。
 
     dict型の場合は _scrub_sensitive_data() で再帰的にスクラブする。
-    list型の場合は (key, value) ペア形式と見なして各ペアをスクラブし、非PII の
-    デバッグ情報（リクエストID等）は保持する（Sentry SDK 仕様: tags は
-    ``list[tuple[str, str]]`` 形式も許容）。
+    list型の場合は (key, value) ペア形式の tags と dict/list 要素形式の
+    breadcrumbs の両方をスクラブし、非PII のデバッグ情報（リクエストID等）は
+    保持する（Sentry SDK 仕様: tags は ``list[tuple[str, str]]`` 形式も許容）。
     上記以外の型の場合は空dictに置換し（安全サイド）、SENTRY_DEBUG の値に関わらず
     logger.warning を常時出力する（本番監視対応）。
     _scrub_sensitive_data の内部 non-dict ガードと二重防御を構成する。
@@ -297,7 +341,18 @@ def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
         if isinstance(value, dict):
             event_dict[field] = _scrub_sensitive_data(value)
         elif isinstance(value, list):
-            event_dict[field] = [_scrub_tag_pair(item) for item in value]
+            # field 単位 dispatch: tags は Sentry spec 上 list[tuple[str, str]]
+            # （JSON経由で list[list[str, str]] にもなり得る）なので tag pair として処理。
+            # 加えて非標準だが custom before_send hook 等で生じうる list[dict] / list[list]
+            # 形態でも defense-in-depth で内部の機密キーを redact する
+            # （PR #347 review reflexion iter2: tags-as-list-of-dicts 退行修正）。
+            # 他フィールド（breadcrumbs/contexts/extra/user）は汎用要素として
+            # 処理し、list[2] with str[0] の偶発的 tag-pair 誤判定で過剰 redact
+            # しない（PR #347 review: KP-003 / T3 対応）。
+            if field == "tags":
+                event_dict[field] = [_scrub_tags_item(item) for item in value]
+            else:
+                event_dict[field] = [_scrub_list_item(item, _depth=0) for item in value]
         else:
             # dict/list以外はスクラブ不可能。空dictに置換して安全サイドに倒す。
             event_dict[field] = {}
@@ -308,9 +363,14 @@ def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
                     actual_type=type(value).__name__,
                     action="replaced_with_empty_dict",
                 )
-            except Exception:  # noqa: BLE001, S110
+            except Exception as logging_exc:  # noqa: BLE001
                 # ログ失敗で Sentry イベント自体を drop しない。
-                pass
+                # 同モジュール内 stderr 出力スタイルを print(..., file=sys.stderr) に統一。
+                print(
+                    "[SENTRY_FIELD_WARNING_FAILED] "
+                    f"field={field} logger_error_type={type(logging_exc).__name__}",
+                    file=sys.stderr,
+                )
 
 
 def _emit_scrub_failure_to_sentry(exc: BaseException) -> None:

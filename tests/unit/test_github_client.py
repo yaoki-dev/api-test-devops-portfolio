@@ -447,6 +447,59 @@ async def test_network_error_retry_handling(
 
 
 @pytest.mark.parametrize(
+    "network_exception",
+    [
+        pytest.param(httpx.ConnectError("Connection refused"), id="connect_error"),
+        pytest.param(
+            httpx.RemoteProtocolError("Remote protocol failed"), id="remote_protocol_error"
+        ),
+    ],
+)
+@respx.mock
+async def test_network_error_final_retry_logs_error(
+    network_exception: httpx.NetworkError | httpx.RemoteProtocolError,
+) -> None:
+    """NetworkError最終リトライ時にERRORレベルで github_retry_failed がログ出力される。
+
+    PR#347 review fix #3: 最終試行後の ERROR ログ欠落の回帰テスト。
+    """
+    respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=network_exception)
+
+    with patch(
+        "utils.github_client.exponential_backoff_with_jitter",
+        return_value=0.0,
+    ):
+        with patch("utils.github_client.asyncio.sleep", new_callable=AsyncMock):
+            with capture_logs() as log_output:
+                async with AsyncGitHubClient() as client:
+                    with pytest.raises(GitHubAPIError):
+                        await client.get_user("octocat")
+
+    final_logs = [log for log in log_output if log.get("event") == "github_retry_failed"]
+    assert len(final_logs) == 1
+    final_log = final_logs[0]
+    assert final_log["log_level"] == "error"
+    assert final_log["endpoint"] == "/users/octocat"
+    assert final_log["method"] == "GET"
+    assert final_log["error_type"] == type(network_exception).__qualname__
+    assert final_log["error_module"] == type(network_exception).__module__
+    assert final_log["error_context"] == "network"
+    assert final_log["status_code"] is None
+    assert final_log["max_retries"] == MAX_RETRIES
+    assert set(final_log) == {
+        "endpoint",
+        "method",
+        "error_type",
+        "error_module",
+        "error_context",
+        "max_retries",
+        "status_code",
+        "event",
+        "log_level",
+    }
+
+
+@pytest.mark.parametrize(
     "exception_class",
     [
         pytest.param(httpx.ConnectError, id="network_error"),
@@ -616,6 +669,20 @@ async def test_context_manager_initialization():
     # __aexit__でhttpx.AsyncClientがクローズされたことを確認
     assert managed_client is not None
     assert managed_client.is_closed
+
+
+async def test_aexit_aclose_exception_is_suppressed_with_warning() -> None:
+    """__aexit__ で aclose() が例外を投げても警告ログのみ出力する"""
+    client = AsyncGitHubClient()
+    client._client = AsyncMock()
+    client._client.aclose = AsyncMock(side_effect=RuntimeError("close-failed"))
+
+    with capture_logs() as log_output:
+        await client.__aexit__(None, None, None)
+
+    warning_logs = [log for log in log_output if log.get("event") == "github_client_aclose_failed"]
+    assert len(warning_logs) == 1
+    assert warning_logs[0]["error_type"] == "RuntimeError"
 
 
 async def test_request_without_context_manager():
@@ -1587,6 +1654,8 @@ def test_enforce_cache_limit_invariant_violation_clears_both_caches() -> None:
         "cache_invariant_violation",
         etag_cache_size=1,
         data_cache_size=2,
+        etag_only_keys=[],
+        data_only_keys=["/orphan"],
         action="cleared_both_caches",
     )
 
@@ -1616,6 +1685,8 @@ def test_enforce_cache_limit_detects_key_divergence_with_same_length() -> None:
         "cache_invariant_violation",
         etag_cache_size=2,
         data_cache_size=2,
+        etag_only_keys=["/b"],
+        data_only_keys=["/c"],
         action="cleared_both_caches",
     )
 
@@ -1703,8 +1774,11 @@ def test_parse_json_response_invalid_json_raises() -> None:
         with pytest.raises(GitHubAPIError, match="Invalid JSON response") as exc_info:
             client._parse_json_response(response, "/test-endpoint")
 
-    assert exc_info.value.__cause__ is None
-    # except外raiseパターンで__context__も完全切断されていること（PII隔離保証）
+    # __cause__は sanitized cause (Exception型) であるが、raw JSONコンテンツは保持しない
+    assert exc_info.value.__cause__ is not None
+    assert isinstance(exc_info.value.__cause__, Exception)
+    assert "not-valid-json" not in str(exc_info.value.__cause__)
+    # __context__は完全切断（PII隔離保証）
     assert exc_info.value.__context__ is None
     assert "not-valid-json" not in str(exc_info.value)
     decode_logs = [log for log in log_output if log.get("event") == "json_decode_error"]

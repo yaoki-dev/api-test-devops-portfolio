@@ -4,7 +4,7 @@ paths:
   - "~/.claude/plans"
 ---
 
-# PLANS.html - 計画文書テンプレート
+# PLANS.md - 計画文書テンプレート
 
 *最終更新: 2026-03-05*
 
@@ -18,7 +18,6 @@ paths:
 | **本テンプレート** | フィーチャー単位の計画・決定記録 | Within-task |
 | **execution-efficiency.md** | 実行効率化・並列判定の手法詳細 | How to execute |
 | **TodoWrite** | セッション内タスク進捗UI表示 | 揮発性 |
-| **~/.claude/tasks/todo.md** | 大規模タスクの永続追跡 | Cross-session |
 | **lessons.md** (Rule 15) | セッション横断の教訓蓄積 | Cross-project |
 
 ### 使用閾値
@@ -59,7 +58,7 @@ AskUserQuestion の回答・設計判断を記録する。
 
 | 決定 | 根拠 | 日付 |
 |------|------|------|
-| （例）PLANS.htmlを .claude/rules/ に配置 | rules/ は他ルールファイルと同一管理下 | 2026-03-02 |
+| （例）PLANS.mdを .claude/rules/ に配置 | rules/ は他ルールファイルと同一管理下 | 2026-03-02 |
 
 ---
 
@@ -145,7 +144,6 @@ AskUserQuestion の回答・設計判断を記録する。
 
 ```
 claudedocs/plans/YYYY-MM-DD-<topic>.html   # フィーチャー別計画
-~/.claude/tasks/todo.md                  # 大規模タスク併用
 ```
 
 ---

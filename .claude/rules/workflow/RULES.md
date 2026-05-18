@@ -109,8 +109,6 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
 ## Category: Task Management (Persistent Layer)
 **Trigger:** Multi-session or large-scale tasks | **Priority:** Important
 
-For large-scale or multi-session tasks,
-record plans in `~/.claude/tasks/todo.md` (complements the ephemeral TodoWrite tool):
 1. **Plan First**: Write a checkable item list before starting
 2. **Verify Plan**: Align with the user before implementation
 3. **Track Progress**: Mark items as complete
@@ -119,7 +117,6 @@ record plans in `~/.claude/tasks/todo.md` (complements the ephemeral TodoWrite t
 
 Usage distinction:
 - TodoWrite = in-session UI display (unchanged)
-- `~/.claude/tasks/todo.md` = persistent record for large tasks spanning sessions
 
 **Reference:** CLAUDE.md Section「🔄 開発ワークフロー」Step 0（全体開発ワークフローとの統合コンテキスト）
 

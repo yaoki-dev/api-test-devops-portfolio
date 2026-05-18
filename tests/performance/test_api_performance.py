@@ -108,7 +108,7 @@ class PerformanceMetrics:
                 # start_percent: non-blocking 設計のため意図的に未計測（None）
                 # 測定開始時点のCPU%は記録しない仕様。end_percent は start からの delta 平均。
                 "start_percent": None,  # non-blocking設計のため未計測（warmupのみ実施）
-                "end_percent": self.cpu_usage[-1] if self.cpu_usage else 0,
+                "end_percent": self.cpu_usage[-1] if self.cpu_usage else 0.0,
             },
         }
 
@@ -144,6 +144,19 @@ class TestAPIPerformance:
     # - 実測値: 4-5 req/s（ローカル環境、2025-12時点）
     # - TLS handshake・DNS解決等の初回接続コスト含む
     THROUGHPUT_THRESHOLD = 3  # 3 requests/sec
+
+    def test_get_summary_empty_cpu_usage_uses_float_default(self):
+        """cpu_usage が空の場合も end_percent は float 型で返す"""
+        metrics = PerformanceMetrics()
+        metrics.start_time = 1.0
+        metrics.end_time = 2.0
+        metrics.response_times.append(0.1)
+        metrics.memory_usage.append(10.0)
+
+        summary = metrics.get_summary()
+
+        assert summary["cpu_usage"]["end_percent"] == 0.0
+        assert isinstance(summary["cpu_usage"]["end_percent"], float)
 
     @pytest.mark.asyncio
     async def test_single_request_performance(self):

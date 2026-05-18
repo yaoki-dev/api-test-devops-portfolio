@@ -510,6 +510,7 @@ class AsyncGitHubClient:
         endpoint: str,
     ) -> dict[str, Any] | list[dict[str, Any]]:
         """JSONレスポンスをパースする。破損JSON時はGitHubAPIErrorを発生。"""
+        _sanitized_cause: Exception | None = None
         try:
             return cast(
                 "dict[str, Any] | list[dict[str, Any]]",
@@ -524,10 +525,14 @@ class AsyncGitHubClient:
                 error_pos=e.pos,
                 error_lineno=e.lineno,
             )
-        # JSONDecodeError.doc はレスポンスbody全体を保持する。
-        # except 内で raise すると __context__ に元例外が残存して露出するため、
-        # active exception context の外で raise して __context__ を None に保つ。
-        raise GitHubAPIError("Invalid JSON response") from None
+            # JSONDecodeError.doc はレスポンスbody全体を保持する。
+            # doc を除外し、型情報と位置情報のみを保持する sanitized cause を作成。
+            # except 内で raise すると __context__ に元例外が残存して露出するため、
+            # active exception context の外で raise して __context__ を None に保つ。
+            _sanitized_cause = Exception(
+                f"{type(e).__module__}.{type(e).__qualname__}: pos={e.pos}, lineno={e.lineno}"
+            )
+        raise GitHubAPIError("Invalid JSON response") from _sanitized_cause
 
     def _handle_http_status_error(
         self,
@@ -638,6 +643,12 @@ class AsyncGitHubClient:
         検出できないため、set-equality でキー差異も検出する。
         """
         if self._etag_cache.keys() != self._data_cache.keys():
+            etag_only_keys = sorted(
+                k.split("?")[0] for k in (self._etag_cache.keys() - self._data_cache.keys())
+            )
+            data_only_keys = sorted(
+                k.split("?")[0] for k in (self._data_cache.keys() - self._etag_cache.keys())
+            )
             # 通常フローでは発生しない。発生した場合は実装バグの兆候として
             # Sentry に捕捉される logger.error を出力し、両キャッシュを clear して
             # 次回リクエストの fresh fetch に倒す（user request flow は維持）。
@@ -645,6 +656,8 @@ class AsyncGitHubClient:
                 "cache_invariant_violation",
                 etag_cache_size=len(self._etag_cache),
                 data_cache_size=len(self._data_cache),
+                etag_only_keys=etag_only_keys,
+                data_only_keys=data_only_keys,
                 action="cleared_both_caches",
             )
             self._etag_cache.clear()
