@@ -370,6 +370,7 @@ def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
                     "[SENTRY_FIELD_WARNING_FAILED] "
                     f"field={field} logger_error_type={type(logging_exc).__name__}",
                     file=sys.stderr,
+                    flush=True,
                 )
 
 
@@ -390,6 +391,7 @@ def _emit_scrub_failure_to_sentry(exc: BaseException) -> None:
                 f"error_type={type(exc).__qualname__} "
                 f"error_module={type(exc).__module__}",
                 file=sys.stderr,
+                flush=True,
             )
             return
         with sentry_sdk.new_scope() as scope:
@@ -407,6 +409,7 @@ def _emit_scrub_failure_to_sentry(exc: BaseException) -> None:
             f"original_error_type={type(exc).__qualname__} "
             f"original_error_module={type(exc).__module__}",
             file=sys.stderr,
+            flush=True,
         )
 
 
@@ -461,7 +464,7 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
         event_dict = cast(dict[str, Any], event)
         for field in _SCRUBBED_EVENT_FIELDS:
             _scrub_sentry_field(event_dict, field)
-    except MemoryError, RecursionError:
+    except (MemoryError, RecursionError):  # fmt: skip  # noqa: E261
         # システム異常（OOM・スタックオーバーフロー）は吸収せず再 raise する。
         # scrub 失敗の silent absorption で PII ドロップが遅延するリスクより
         # プロセス異常終了を優先させる（CWE-391 対策）。

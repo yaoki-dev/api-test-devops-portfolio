@@ -927,6 +927,35 @@ async def test_async_api_client_aexit_aclose_exception_is_suppressed_with_warnin
     ]
     assert len(warning_logs) == 1
     assert warning_logs[0]["error_type"] == "RuntimeError"
+    # PR#347 review Q2: third-party 例外起点モジュール識別のため error_module を併用
+    assert warning_logs[0]["error_module"] == "builtins"
+
+
+async def test_async_api_client_aexit_body_exception_not_overridden_by_close_exception() -> None:
+    """__aexit__ で本体例外発生中に aclose() も例外を出すケース。
+
+    PR#347 review Q8: body 例外 (exc_val) が close 例外で上書きされないこと
+    (warning log only, no re-raise) を end-to-end で検証する。設計意図:
+    ``async with`` body 例外 + aclose 例外の両発生時、原因情報 (body 例外) を
+    優先伝播させて debuggability を維持する (CWE-755 例外マスク回避)。
+    """
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(client, "aclose", new=AsyncMock(side_effect=RuntimeError("close-failed"))),
+        pytest.raises(ValueError, match="body-error"),
+        capture_logs() as log_output,
+    ):
+        async with client:
+            raise ValueError("body-error")
+
+    # close 例外は warning log のみ。body 例外は ValueError として外側に伝播。
+    warning_logs = [
+        log for log in log_output if log.get("event") == "async_api_client_aclose_failed"
+    ]
+    assert len(warning_logs) == 1
+    assert warning_logs[0]["error_type"] == "RuntimeError"
+    assert warning_logs[0]["error_module"] == "builtins"
 
 
 @respx.mock

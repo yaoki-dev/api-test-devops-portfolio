@@ -839,10 +839,14 @@ class AsyncAPIClient:
             await self.aclose()
         except Exception as close_exc:  # noqa: BLE001
             # __aexit__ で raise すると body 例外 (exc_val) を上書きするため
-            # warning log のみ出力、re-raise しない (error_type のみ)
+            # warning log のみ出力、re-raise しない。
+            # error_type + error_module を併用することで third-party 例外
+            # (例: httpx.CloseError vs builtins.RuntimeError) の起点モジュールを
+            # 識別可能にする (sentry_init._emit_scrub_failure_to_sentry と同パターン)。
             self.logger.warning(
                 "async_api_client_aclose_failed",
                 error_type=type(close_exc).__name__,
+                error_module=type(close_exc).__module__,
             )
 
     async def aclose(self) -> None:
