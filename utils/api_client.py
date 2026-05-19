@@ -753,7 +753,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         try:
             response = self.get("/users", params={"_limit": 1})
             return response.status_code == 200
-        except KeyboardInterrupt, SystemExit, MemoryError:
+        except (KeyboardInterrupt, SystemExit, MemoryError):  # fmt: skip  # noqa: E261
             # システム例外は再発生（K8s OOMKilled検知、graceful shutdown対応）
             raise
         except APIClientError as e:
@@ -837,14 +837,18 @@ class AsyncAPIClient:
         """非同期コンテキストマネージャーの終了処理"""
         try:
             await self.aclose()
-        except Exception as close_exc:  # noqa: BLE001
-            # __aexit__ で raise すると body 例外 (exc_val) を上書きするため
-            # warning log のみ出力、re-raise しない。
-            # error_type + error_module を併用することで third-party 例外
-            # (例: httpx.CloseError vs builtins.RuntimeError) の起点モジュールを
-            # 識別可能にする (sentry_init._emit_scrub_failure_to_sentry と同パターン)。
+        except (httpx.CloseError, OSError) as close_exc:
+            # 既知のクローズ時例外 — 警告のみ（body 例外を上書きしない）
             self.logger.warning(
                 "async_api_client_aclose_failed",
+                error_type=type(close_exc).__name__,
+                error_module=type(close_exc).__module__,
+            )
+        except Exception as close_exc:  # noqa: BLE001
+            # 予期しない例外（AttributeError, RuntimeError 等の実装バグ可能性）
+            # — error レベルで記録し、隠蔽しない
+            self.logger.error(
+                "async_api_client_aclose_unexpected_error",
                 error_type=type(close_exc).__name__,
                 error_module=type(close_exc).__module__,
             )
@@ -1490,33 +1494,3 @@ def main() -> None:
 if __name__ == "__main__":
     # structlogはget_logger()初回呼び出し時に自動設定されるため、手動設定不要
     main()
-
-
-# =============================================================================
-# 学習ポイント:
-#
-# 1. クライアント設計パターン:
-#    - ベースクライアントと特化クライアントの分離
-#    - 設定との統合
-#    - コンテキストマネージャー対応
-#
-# 2. エラーハンドリング戦略:
-#    - 階層的な例外クラス設計
-#    - HTTPステータスコード別の処理
-#    - 詳細なログ出力
-#
-# 3. リトライロジック:
-#    - 指数バックオフの実装可能性
-#    - エラー種別による制御
-#    - 設定可能なパラメータ
-#
-# 4. 実用性:
-#    - APIスキーマとの対応
-#    - 便利メソッドの提供
-#    - デバッグ支援機能
-#
-# 5. 拡張性:
-#    - 認証機能の追加可能性
-#    - カスタムヘッダー対応
-#    - 非同期版への拡張基盤
-# =============================================================================

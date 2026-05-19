@@ -50,7 +50,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       当該サービスの credential key 名を SENSITIVE_KEYS に追加する.
     - 詳細は `utils/sentry_init.py` の `SENSITIVE_KEYS` frozenset 定義と
       `_NORMALIZED_SENSITIVE_KEYS` 周辺コメントを参照.
-  - **追加された redact key (32 → 39)**:
+  - **追加された redact key (32 → 39, +7件)**
+    （※ 32 は PR#340 で email/ip_address/body_preview 追加後の件数。
+    　累積: 29 → 39（+10件））:
     - 認証系: `access_key`
     - HTTP headers: `proxy-authorization`, `set-cookie`, `x-auth-token`,
       `x-csrf-token`, `x-refresh-token`, `x-access-token`

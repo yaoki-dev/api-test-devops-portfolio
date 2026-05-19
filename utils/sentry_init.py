@@ -167,7 +167,7 @@ _NORMALIZED_SENSITIVE_KEYS: frozenset[str] = frozenset(
 _SENSITIVE_KEY_PATTERN: re.Pattern[str] = re.compile(
     r"(?:^|_)(?:"
     + "|".join(re.escape(sensitive) for sensitive in sorted(_NORMALIZED_SENSITIVE_KEYS))
-    + r")(?:_|$)"
+    + r")(?:_|\d|$)"  # 数字サフィックス (password2, api_key2 等) も境界として扱う
 )
 
 
@@ -210,7 +210,11 @@ def _scrub_list_item(item: Any, _depth: int) -> Any:
         _logger.warning("scrub_max_depth_exceeded", depth=_depth, max=MAX_SCRUB_DEPTH)
         return "[MAX_DEPTH_EXCEEDED]"
     if isinstance(item, tuple):
-        return _scrub_tag_pair(item)
+        if len(item) == 2:
+            key = item[0]
+            if isinstance(key, str) and _is_sensitive_key(key):
+                return (key, "[REDACTED]")
+        return item
     if isinstance(item, dict):
         return _scrub_sensitive_data(item, _depth + 1)
     if isinstance(item, list):
@@ -284,22 +288,20 @@ def _scrub_url(url: str) -> str:
             port = None
         if port is not None:
             netloc = f"{netloc}:{port}"
+    # tuple 6 要素を全フィールド明示で構築する
+    # (vs `parsed._replace(...)`): ParseResult に新フィールドが追加された場合、
+    # 暗黙保持で意図しないフィールドが残るリスクを排除する fail-safe 設計。
+    # フィールド順は ParseResult 定義に従う: (scheme, netloc, path, params, query, fragment)
     return urlunparse(
-        parsed._replace(
-            netloc=netloc,
-            query=_scrub_query_string(parsed.query) if parsed.query else "",
-            fragment="",
+        (
+            parsed.scheme,
+            netloc,
+            parsed.path,
+            parsed.params,
+            _scrub_query_string(parsed.query) if parsed.query else "",
+            "",  # fragment を除去（PII 漏洩防止）
         )
     )
-
-
-def _scrub_tag_pair(item: Any) -> Any:
-    """tags の (key, value) ペアをスクラブする（list 形式 tags 用）。"""
-    if isinstance(item, (tuple, list)) and len(item) == 2:
-        key = item[0]
-        if isinstance(key, str) and _is_sensitive_key(key):
-            return (key, "[REDACTED]")
-    return item
 
 
 def _scrub_tags_item(item: Any) -> Any:
@@ -311,7 +313,10 @@ def _scrub_tags_item(item: Any) -> Any:
     機密キーを redact する（defense-in-depth）。
     """
     if isinstance(item, (tuple, list)) and len(item) == 2:
-        return _scrub_tag_pair(item)
+        key = item[0]
+        if isinstance(key, str) and _is_sensitive_key(key):
+            return (key, "[REDACTED]")
+        return item
     if isinstance(item, dict):
         return _scrub_sensitive_data(item)
     if isinstance(item, list):
@@ -548,15 +553,19 @@ def init_sentry() -> bool:  # noqa: C901
         # 開発/テスト環境では許容（ログ警告のみ）
         # warnings.warn は filterwarnings('error') 環境で UserWarning を raise し、
         # __context__ 経由で DSN が漏洩するリスクがあるため _logger.warning に変更。
-        if SENTRY_DEBUG:
-            try:
-                _logger.warning(
-                    "sentry_sdk_not_installed",
-                    error_type=type(exc).__name__,
-                    error_module=type(exc).__module__,
-                )
-            except Exception:  # noqa: BLE001, S110
-                pass  # ロガー失敗で __context__ 経由 DSN 漏洩を遮断
+        try:
+            _logger.warning(
+                "sentry_sdk_not_installed",
+                error_type=type(exc).__name__,
+                error_module=type(exc).__module__,
+            )
+        except Exception:  # noqa: BLE001, S110
+            # ロガー失敗時は stderr へフォールバック（PII 非露出）
+            print(
+                "[SENTRY_WARN] sentry_sdk_not_installed",
+                file=sys.stderr,
+                flush=True,
+            )
         return False
 
     except Exception as exc:
@@ -569,15 +578,19 @@ def init_sentry() -> bool:  # noqa: C901
         # 開発/テスト環境ではログ警告のみ
         # warnings.warn は filterwarnings('error') 環境で UserWarning を raise し、
         # __context__ 経由で DSN が漏洩するリスクがあるため _logger.warning に変更。
-        if SENTRY_DEBUG:
-            try:
-                _logger.warning(
-                    "sentry_init_failed",
-                    error_type=type(exc).__name__,
-                    error_module=type(exc).__module__,
-                )
-            except Exception:  # noqa: BLE001, S110
-                pass  # ロガー失敗で __context__ 経由 DSN 漏洩を遮断
+        try:
+            _logger.warning(
+                "sentry_init_failed",
+                error_type=type(exc).__name__,
+                error_module=type(exc).__module__,
+            )
+        except Exception:  # noqa: BLE001, S110
+            # ロガー失敗時は stderr へフォールバック（PII 非露出）
+            print(
+                "[SENTRY_WARN] sentry_init_failed",
+                file=sys.stderr,
+                flush=True,
+            )
         return False
 
 

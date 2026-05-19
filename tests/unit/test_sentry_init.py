@@ -145,7 +145,12 @@ class TestSensitiveKeysCompleteness:
         assert isinstance(SENSITIVE_KEYS, frozenset)
 
     def test_sensitive_keys_count(self) -> None:
-        """39種類の機密キーが定義されている"""
+        """39 sensitive keys defined (sentinel test).
+
+        The hardcoded count is intentional: it serves as a sentinel to detect
+        unintended additions/removals to SENSITIVE_KEYS. When adding keys,
+        update the count in this test as well.
+        """
         assert len(SENSITIVE_KEYS) == 39
 
     @pytest.mark.parametrize(
@@ -332,6 +337,39 @@ class TestSensitiveKeysCompleteness:
         accessToken → access_token → token 境界で True。
         apiKey → api_key → api_key 完全一致で True。
         PR#347 review fix #1: camelCase PII バイパス修正の回帰テスト。
+        """
+        assert _is_sensitive_key(key) is expected
+
+    @pytest.mark.parametrize(
+        ("key", "expected"),
+        [
+            # True positives: 数字サフィックス付き機密キー（境界条件 \d）→ True
+            ("password2", True),
+            ("api_key2", True),
+            ("token2", True),
+            ("password1", True),
+            ("secret9", True),
+            ("authorization2", True),
+            # False positives: 機密語にハイフン/アンダースコアの先頭境界がなく
+            # `_NORMALIZED_SENSITIVE_KEYS` にも一致しない連結文字列 → False
+            ("apikey1token", False),  # apikey は単体登録なし、api_key は `_` 必須
+            ("notasecretkey", False),  # 先頭境界 `^|_` 不成立
+            # 既存挙動の維持確認: 数字なし + アンダースコア境界
+            ("password_2", True),  # _ 区切りで境界成立
+            ("api_key_2", True),
+        ],
+    )
+    def test_is_sensitive_key_digit_suffix_boundary(self, key: str, expected: bool) -> None:
+        r"""数字サフィックスを単語境界として扱う (`\d` 境界拡張) の回帰テスト。
+
+        PR#347 review fix #2: `_SENSITIVE_KEY_PATTERN` 末尾境界を `(?:_|$)` から
+        `(?:_|\d|$)` へ拡張。これにより `password2` / `api_key2` 等の連番命名規約
+        でも redact が確実に発火する。
+
+        Note: 現パターン `(?:_|\d|$)` は数字後に文字が続く `token1value` 等も True
+        判定する（数字単独で境界成立のため）。これは defense-in-depth の安全側挙動
+        として許容するが、契約として固定する負例は「先頭境界不成立」(`apikey1token`,
+        `notasecretkey`) のみ ── 不安定領域は契約から外している。
         """
         assert _is_sensitive_key(key) is expected
 
@@ -1034,22 +1072,24 @@ class TestSentryDebugMode:
 
     @patch("utils.sentry_init.get_settings")
     def test_invalid_dsn_no_warning_without_debug(self, mock_settings: MagicMock) -> None:
-        """無効なDSNでSENTRY_DEBUG=falseの場合は警告なし（非本番環境）
-        warnings.warn → _logger.warning に変更（filterwarnings('error') 環境での DSN 漏洩防止）
-        """
+        """Invalid DSN always triggers _logger.warning regardless of SENTRY_DEBUG"""
         import utils.sentry_init as sentry_module
 
         sentry_module.SENTRY_DEBUG = False
 
         mock_settings.return_value.sentry.enabled = True
         mock_settings.return_value.sentry.dsn = SecretStr("invalid-dsn")
-        mock_settings.return_value.is_production_like.return_value = False  # 非本番環境 (#39)
+        mock_settings.return_value.is_production_like.return_value = False
 
         with patch.object(sentry_module._logger, "warning") as mock_warn:
             result = init_sentry()
 
             assert result is False
-            mock_warn.assert_not_called()  # SENTRY_DEBUG=False なのでログ警告なし
+            mock_warn.assert_called_once_with(
+                "sentry_init_failed",
+                error_type="BadDsn",
+                error_module="sentry_sdk.utils",
+            )
 
 
 class TestSdkExceptionHandling:

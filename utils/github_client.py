@@ -112,7 +112,11 @@ class RateLimitError(GitHubAPIError):
 
     def __init__(self, reset_time: int):
         self.reset_time = reset_time
-        super().__init__(f"Rate limit exceeded. Reset at {reset_time}")
+        if reset_time > 0:
+            reset_str = datetime.fromtimestamp(reset_time, tz=UTC).isoformat()
+        else:
+            reset_str = "unknown"
+        super().__init__(f"Rate limit exceeded. Reset at {reset_str}")
 
 
 class NotFoundError(GitHubAPIError):
@@ -613,12 +617,7 @@ class AsyncGitHubClient:
         params が None または空の場合は endpoint をそのまま返す。
         params がある場合は ``endpoint?key1=val1&key2=val2`` 形式で返す。
         URLエンコードには ``quote_via=quote`` を使用する（スペースは ``%20``）。
-        httpx の ``QueryParams`` 既定エンコードは ``quote_plus`` 相当（スペースは ``+``）
-        のため、本キャッシュキーは httpx のリクエスト URL とは一致しないが、本キーは
-        プロセス内キャッシュ照合専用であり外部 URL と直接比較しないため問題ない。
-        現在の GitHub API パラメータにスペース文字を含むキーは存在しないため即時バグはなく、
-        将来パラメータ追加時もパラメータ間で一貫したエンコードを使えば決定論性は保たれる。
-        パラメータはキーでソートされ決定論的なキーを生成する。
+         パラメータはキーでソートされ決定論的なキーを生成する。
 
         Args:
             endpoint: APIエンドポイントパス（例: ``/users/octocat/repos``）。
@@ -666,14 +665,17 @@ class AsyncGitHubClient:
             )
             self._etag_cache.clear()
             self._data_cache.clear()
-            return
+            return  # clear() によりサイズ 0 → max_cache_entries 制限は達成済み（while ループ不要）
+        evicted_count = 0
         while len(self._etag_cache) > self.max_cache_entries:
             oldest_key = next(iter(self._etag_cache))
             self._etag_cache.pop(oldest_key, None)
             self._data_cache.pop(oldest_key, None)
+            evicted_count += 1
+        if evicted_count > 0:
             self.logger.info(
-                "cache_entry_evicted",
-                cache_key=oldest_key,
+                "cache_entries_evicted",
+                evicted_count=evicted_count,
                 current_size=len(self._etag_cache),
                 max_size=self.max_cache_entries,
             )
@@ -710,7 +712,7 @@ class AsyncGitHubClient:
                 予期しないエラーは即失敗
 
         Note:
-            max_retries は 5xx エラーと timeout / NetworkError / RemoteProtocolError の再試行回数を制御する。
+            max_retries は 5xx エラーと timeout / NetworkError / RemoteProtocolError の試行回数（初回含む合計）を制御する。
             unexpected エラーは再試行せず、1回目で GitHubAPIError へ変換する。
             X-RateLimit-Remaining ヘッダーが不正値の場合:
             - 監視パス: _RATE_LIMIT_FALLBACK_REMAINING（残量十分と見なし、rate_limit_low警告なし）
@@ -752,12 +754,13 @@ class AsyncGitHubClient:
                     raise NotFoundError(f"Resource not found: {endpoint}")
 
                 # 通常パス: raise_for_status()より前に429を検出してRateLimitErrorに変換
-                # from None不要: defensive pathはfrom Noneで明示的に抑制
                 if response.status_code == 429:
                     reset_time = self._parse_rate_limit_header(
                         response.headers, "X-RateLimit-Reset", _RATE_LIMIT_RESET_FALLBACK
                     )
-                    raise RateLimitError(reset_time)
+                    # PII漏洩防止: 例外チェーン経由の httpx URL/header 露出を抑制
+                    # (defensive path との等価性維持: 403→RateLimitError 変換も from None)
+                    raise RateLimitError(reset_time) from None
 
                 if response.status_code == 403:
                     self._handle_403_response(response)

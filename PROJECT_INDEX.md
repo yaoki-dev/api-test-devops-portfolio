@@ -69,7 +69,7 @@ api-test-devops-portfolio/
 
 ### Module: utils.api_client
 - **Path**: `utils/api_client.py`
-- **Exports**: `SyncAPIClient` (同期), `AsyncAPIClient` (非同期), `APIClientError`, `APIConnectionError`, `APITimeoutError`, `APIHTTPError`, `APIRetryError`, `APIJSONDecodeError`
+- **Exports**（`utils` パッケージ）: `SyncAPIClient` (同期), `AsyncAPIClient` (非同期), `SyncJSONPlaceholderClient`, `AsyncJSONPlaceholderClient`, `APIClientError`, `APIJSONDecodeError`。個別例外クラス（`APIConnectionError`, `APITimeoutError`, `APIHTTPError`, `APIRetryError`）は `utils.api_client` から直接 import
 - **Purpose**: HTTP API クライアント。リトライロジック・エラーハンドリング・コネクションプール実装。
 
 ### Module: utils.github_client

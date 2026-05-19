@@ -77,10 +77,21 @@ if init_sentry():
 - 起点 PR が異なるため数値表記が一致しない。最終状態は両方とも **39 件**で一致。
 
 **確認元**: `utils/sentry_init.py` (`SENSITIVE_KEYS` frozenset)
-**マッチング方式**: `_is_sensitive_key` は substring 一致 + ハイフン/アンダースコア
-正規化を行うため、composite key (例: `user_password`, `email_address`,
-`X-Auth-Token`) も全て redact される (defense-in-depth)。詳細は
-`utils/sentry_init.py` の `_NORMALIZED_SENSITIVE_KEYS` 周辺コメント参照。
+**マッチング方式**: `_is_sensitive_key` は **単語境界マッチ + ハイフン/アンダースコア
+正規化** で判定する (`_SENSITIVE_KEY_PATTERN = (?:^|_)(KEY)(?:_|\d|$)`)。
+これにより composite key (例: `user_password`, `email_address`, `X-Auth-Token`)
+や数字サフィックス付きキー (例: `password2`, `api_key2`) も全て redact される
+(defense-in-depth)。一方で `prototype` / `photo_url` 等の機密語を**部分文字列として
+含むだけ**の非機密キーは過剰検出されない (PR#347 で substring → 単語境界へ変更)。
+
+履歴:
+- PR#340 以前: substring 一致 → 過剰検出あり
+- PR#347 fix #1: substring → exact 一致で composite key 漏洩 regression 発生 → 修正
+- PR#347 fix #2: 末尾境界に `\d` 追加 (`password2` 系を補足)
+
+詳細は `utils/sentry_init.py` の `_NORMALIZED_SENSITIVE_KEYS` / `_SENSITIVE_KEY_PATTERN`
+周辺コメント、契約テストは `tests/unit/test_sentry_init.py::TestSensitiveKeysCompleteness`
+を参照。
 
 ---
 

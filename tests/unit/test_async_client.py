@@ -917,7 +917,7 @@ async def test_async_api_client_aexit_aclose_exception_is_suppressed_with_warnin
     client = AsyncAPIClient()
 
     with (
-        patch.object(client, "aclose", new=AsyncMock(side_effect=RuntimeError("close-failed"))),
+        patch.object(client, "aclose", new=AsyncMock(side_effect=httpx.CloseError("close-failed"))),
         capture_logs() as log_output,
     ):
         await client.__aexit__(None, None, None)
@@ -926,9 +926,8 @@ async def test_async_api_client_aexit_aclose_exception_is_suppressed_with_warnin
         log for log in log_output if log.get("event") == "async_api_client_aclose_failed"
     ]
     assert len(warning_logs) == 1
-    assert warning_logs[0]["error_type"] == "RuntimeError"
-    # PR#347 review Q2: third-party 例外起点モジュール識別のため error_module を併用
-    assert warning_logs[0]["error_module"] == "builtins"
+    assert warning_logs[0]["error_type"] == "CloseError"
+    assert warning_logs[0]["error_module"] == "httpx"
 
 
 async def test_async_api_client_aexit_body_exception_not_overridden_by_close_exception() -> None:
@@ -942,7 +941,7 @@ async def test_async_api_client_aexit_body_exception_not_overridden_by_close_exc
     client = AsyncAPIClient()
 
     with (
-        patch.object(client, "aclose", new=AsyncMock(side_effect=RuntimeError("close-failed"))),
+        patch.object(client, "aclose", new=AsyncMock(side_effect=httpx.CloseError("close-failed"))),
         pytest.raises(ValueError, match="body-error"),
         capture_logs() as log_output,
     ):
@@ -954,8 +953,8 @@ async def test_async_api_client_aexit_body_exception_not_overridden_by_close_exc
         log for log in log_output if log.get("event") == "async_api_client_aclose_failed"
     ]
     assert len(warning_logs) == 1
-    assert warning_logs[0]["error_type"] == "RuntimeError"
-    assert warning_logs[0]["error_module"] == "builtins"
+    assert warning_logs[0]["error_type"] == "CloseError"
+    assert warning_logs[0]["error_module"] == "httpx"
 
 
 @respx.mock
