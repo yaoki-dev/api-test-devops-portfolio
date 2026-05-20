@@ -52,7 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       `_NORMALIZED_SENSITIVE_KEYS` 周辺コメントを参照.
   - **追加された redact key (32 → 39, +7件)**
     （※ 32 は PR#340 で email/ip_address/body_preview 追加後の件数。
-    　累積: 29 → 39（+10件））:
+    　PR#340 前起点では 29 → 39（+10件））:
     - 認証系: `access_key`
     - HTTP headers: `proxy-authorization`, `set-cookie`, `x-auth-token`,
       `x-csrf-token`, `x-refresh-token`, `x-access-token`
@@ -92,7 +92,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     成功時の挙動は不変 (`event["request"]` の dict identity は変わる).
     Sentry SDK は event 全体を serialize して送信するため、本実装変更が観測可能な
     挙動差を生む経路は確認していない (Sentry SDK source 未検証 — 推察). 万一
-    identity 依存経路が判明した場合は rollback path で復元可能 (下記参照).
+    identity 依存経路が判明した場合は git history / commit log を参照。
   - **運用上の留意 (operational concern)**:
     本 BREAKING change により、production の real error が scrub edge case で
     drop され operator が原 error を観測できないリスクが残る.
@@ -101,16 +101,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
        (Datadog / Loki / CloudWatch 等) で metric 化.
     2. 異常な発生率上昇時は SENSITIVE_KEYS / scrub logic の defect 兆候として
        triage. payload 構造を sanitized form でローカル再現し原因特定.
-    3. 想定外影響時の rollback path: `utils/sentry_init.py` `_before_send` の
-       atomic swap block (`new_request: dict[str, Any] = {}` 〜
-       `event["request"] = new_request`) を旧 mutation pattern
-       (`request["headers"] = _scrub_sensitive_data(request["headers"])` 等) に
-       戻し、`except` block の `return None` を `return event` に変更すること
-       で fail-open + mutation pattern に復元可 (CHANGELOG / commit history
-       参照).
-    将来の改善案 (本 PR scope 外): scrub 失敗時に metadata-only stub event
-    (元 exception type + module 名のみ) を Sentry へ emit する nuanced 設計を
-    検討.
+
 
 - **Changed**: `utils/sentry_init.py` の `init_sentry()` の `except Exception`
   分岐で `warnings.warn` を `_logger.warning("sentry_init_failed", ...)` に変更.

@@ -851,6 +851,7 @@ class AsyncAPIClient:
                 "async_api_client_aclose_unexpected_error",
                 error_type=type(close_exc).__name__,
                 error_module=type(close_exc).__module__,
+                has_body_exception=exc_type is not None,  # PR#347: body例外の有無をデバッグ用に記録
             )
 
     async def aclose(self) -> None:

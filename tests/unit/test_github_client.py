@@ -2049,6 +2049,7 @@ async def test_429_response_missing_reset_header_falls_back_to_zero() -> None:
             await client.get_user("octocat")
 
     assert exc_info.value.reset_time == 0
+    assert "unknown" in str(exc_info.value)  # else分岐のメッセージ内容を保護 (PR#347)
     assert route.call_count == 1
 
 
@@ -2069,6 +2070,7 @@ async def test_httpx_status_error_429_missing_reset_header_falls_back_to_zero() 
             await client.get_user("octocat")
 
     assert exc_info.value.reset_time == 0
+    assert "unknown" in str(exc_info.value)  # else分岐のメッセージ内容を保護 (PR#347)
     assert route.call_count == 1
 
 
@@ -2171,6 +2173,18 @@ def test_cache_key_int_and_str_params_are_equivalent() -> None:
     key_int = AsyncGitHubClient._cache_key("/repos", {"per_page": 30})
     key_str = AsyncGitHubClient._cache_key("/repos", {"per_page": "30"})
     assert key_int == key_str
+
+
+def test_cache_key_url_encodes_spaces_as_percent20() -> None:
+    """スペースを含むパラメータ値が %20 でエンコードされる（+ ではない）。
+
+    _cache_key() は quote_via=quote を指定しており、urllib.parse.quote
+    はスペースを %20 にエンコードする。+ エンコード（application/x-www-form-urlencoded
+    標準）とは異なるため、キャッシュキー一致の回帰検出に必要。
+    """
+    key = AsyncGitHubClient._cache_key("/search", {"q": "hello world"})
+    assert "hello%20world" in key
+    assert "hello+world" not in key
 
 
 def test_handle_304_response_cache_miss_error_omits_query_params() -> None:

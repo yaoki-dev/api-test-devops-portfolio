@@ -150,6 +150,7 @@ _SCRUBBED_EVENT_FIELDS: frozenset[str] = frozenset(
         "contexts",
         "tags",
         "breadcrumbs",
+        "exception",  # スタックフレームのlocal vars (frames[*].vars) のPII漏洩防止 (PR#347)
     }
 )
 
@@ -169,22 +170,34 @@ _SENSITIVE_KEY_PATTERN: re.Pattern[str] = re.compile(
     + "|".join(re.escape(sensitive) for sensitive in sorted(_NORMALIZED_SENSITIVE_KEYS))
     + r")(?:_|\d|$)"  # 数字サフィックス (password2, api_key2 等) も境界として扱う
 )
+# 全大文字命名 fallback 用: アンダースコア除去後の完全一致集合 (PR#347)
+# APIKEY / ACCESSTOKEN 等は ACRONYM 分割が効かないため別途事前計算
+_COMPACT_SENSITIVE_KEYS: frozenset[str] = frozenset(
+    sensitive.replace("_", "") for sensitive in _NORMALIZED_SENSITIVE_KEYS
+)
 
 
 def _is_sensitive_key(key: str) -> bool:
     """機密キーかどうかを判定する（単語境界一致 + ハイフン/アンダースコア正規化）。
 
     判定アルゴリズム:
-        1. camelCase → snake_case 変換（`accessToken` → `access_Token`）
-        2. key を lower-case 化
-        3. ハイフン (``-``) をアンダースコア (``_``) へ正規化
-        4. ``_NORMALIZED_SENSITIVE_KEYS`` の各要素を単語境界で検索
+        1. ACRONYMWord → ACRONYM_Word 変換（`APIKey` → `API_Key`）
+        2. camelCase → snake_case 変換（`accessToken` → `access_Token`）
+        3. key を lower-case 化
+        4. ハイフン (``-``) をアンダースコア (``_``) へ正規化
+        5. ``_NORMALIZED_SENSITIVE_KEYS`` の各要素を単語境界で検索
+        6. 全大文字命名 fallback: アンダースコア除去後の完全一致
+           （`APIKEY` → `apikey` == `api_key` compact → True）
 
     これにより `user_password`, `email_address`, `X-Auth-Token` 等の
     composite key / HTTP header variant を redact しつつ、`photo_url`,
     `prototype`, `option` 等の unrelated substring は保持する。
     camelCase キー (`accessToken`, `apiKey`, `emailAddress`) も正規化後に
     snake_case として検出される。
+    全大文字命名 (`APIKEY`, `ACCESSTOKEN`) は ACRONYM 分割が効かないため
+    compact fallback（アンダースコア除去後の完全一致）で補完する。
+    compact fallback は substring 一致ではなく完全一致のため、
+    `PHOTOURL` (compact: photourl) が `url` にマッチして過剰 redact する問題は発生しない。
 
     Args:
         key: 判定対象のキー文字列。
@@ -193,8 +206,14 @@ def _is_sensitive_key(key: str) -> bool:
         機密キーと判定された場合 True。
 
     """
-    key_norm = re.sub(r"(?<=[a-z])(?=[A-Z])", "_", key).lower().replace("-", "_")
-    return _SENSITIVE_KEY_PATTERN.search(key_norm) is not None
+    key_norm = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", key)  # ACRONYMWord → ACRONYM_Word (PR#347)
+    key_norm = re.sub(r"(?<=[a-z])(?=[A-Z])", "_", key_norm)  # wordWord → word_Word
+    key_norm = key_norm.lower().replace("-", "_")
+    if _SENSITIVE_KEY_PATTERN.search(key_norm) is not None:
+        return True
+    # 全大文字命名 fallback (APIKEY, ACCESSTOKEN 等): ACRONYM 分割が効かない場合に
+    # アンダースコア除去後の完全一致で補完 (PR#347)
+    return key_norm.replace("_", "") in _COMPACT_SENSITIVE_KEYS
 
 
 def _scrub_list_item(item: Any, _depth: int) -> Any:
@@ -466,6 +485,7 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
         # 追加データのスクラブ（2層防御）
         # _scrub_sentry_field: 非dict型フィールドを空dictに置換（型安全化・PII漏洩防止）
         # _scrub_sensitive_data: dict内の機密キーを [REDACTED] に置換（PII除外）
+        scrub_exc: Exception | None = None
         event_dict = cast(dict[str, Any], event)
         for field in _SCRUBBED_EVENT_FIELDS:
             _scrub_sentry_field(event_dict, field)
@@ -475,10 +495,13 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
         # プロセス異常終了を優先させる（CWE-391 対策）。
         raise
     except Exception as exc:
-        # 元イベントは PII 漏洩防止のため確実にドロップする (return None)
-        # その上で scrub 失敗を Sentry に通知する。内部通知失敗時は stderr へ
-        # フォールバックし、メインプロセスはクラッシュさせない。
-        _emit_scrub_failure_to_sentry(exc)
+        # sys.exc_info() がアクティブな状態で _emit_scrub_failure_to_sentry を
+        # 呼ぶと、Sentry SDK が元例外（PII 付き）を内部通知イベントに添付する
+        # リスクがあるため、例外コンテキストの外で呼び出す（fail-closed 防御, PR#347）。
+        scrub_exc = exc
+
+    if scrub_exc is not None:
+        _emit_scrub_failure_to_sentry(scrub_exc)
         return None
 
     return event

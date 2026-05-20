@@ -373,29 +373,52 @@ class TestSensitiveKeysCompleteness:
         """
         assert _is_sensitive_key(key) is expected
 
+    @pytest.mark.parametrize(
+        ("key", "expected"),
+        [
+            # True positives: 全大文字命名（ACRONYM 分割不可 → compact fallback）→ True
+            ("APIKEY", True),  # api_key compact = apikey
+            ("ACCESSTOKEN", True),  # access_token compact = accesstoken
+            ("PASSWORD", True),  # password compact = password
+            ("SECRET", True),  # secret compact = secret (PR#347 fallback)
+            # True positives: 既存 ACRONYM 分割が正常動作するケース → True
+            ("APIKey", True),  # → api_key (ACRONYM_Word 分割)
+            ("JSONWebToken", True),  # → json_web_token
+            # False positives: 全大文字非機密キー → False
+            ("PHOTOURL", False),  # compact photourl ≠ any sensitive compact
+            ("PROTOTYPE", False),  # compact prototype ≠ any sensitive compact
+            ("ITEMCOUNT", False),  # compact itemcount ≠ any sensitive compact
+        ],
+    )
+    def test_is_sensitive_key_allcaps_normalization(self, key: str, expected: bool) -> None:
+        """全大文字命名は compact fallback で機密判定する。
+
+        ACRONYM regex `([A-Z]+)([A-Z][a-z])` は末尾が小文字で終わらない
+        全大文字命名（APIKEY, ACCESSTOKEN 等）を分割できない。
+        compact fallback（アンダースコア除去後の完全一致）がこれを補完する。
+        `PHOTOURL` は compact `photourl` が `url` と完全一致しないため False 維持
+        （substring 一致 ≠ 完全一致）。
+        PR#347 review fix: 全大文字 PII バイパス修正の回帰テスト。
+        """
+        assert _is_sensitive_key(key) is expected
+
 
 class TestScrubbedEventFieldsCompleteness:
     """_SCRUBBED_EVENT_FIELDSの網羅性テスト"""
 
-    def test_scrubbed_event_fields_is_frozenset(self) -> None:
-        """_SCRUBBED_EVENT_FIELDSはfrozenset（不変）"""
+    def test_scrubbed_event_fields_match_expected_contract(self) -> None:
+        """スクラブ対象フィールドが過不足なく定義されている。"""
         assert isinstance(_SCRUBBED_EVENT_FIELDS, frozenset)
-
-    def test_scrubbed_event_fields_count(self) -> None:
-        """5種類のフィールドが定義されている"""
-        assert len(_SCRUBBED_EVENT_FIELDS) == 5
-
-    @pytest.mark.parametrize(
-        "field",
-        ["extra", "user", "contexts", "tags", "breadcrumbs"],
-    )
-    def test_expected_fields_present(self, field: str) -> None:
-        """期待されるフィールドが含まれている"""
-        assert field in _SCRUBBED_EVENT_FIELDS
-
-    def test_request_field_excluded(self) -> None:
-        """requestフィールドは意図的に除外されている（_before_send内で個別スクラブ）"""
-        assert "request" not in _SCRUBBED_EVENT_FIELDS
+        assert _SCRUBBED_EVENT_FIELDS == frozenset(
+            {
+                "extra",
+                "user",
+                "contexts",
+                "tags",
+                "breadcrumbs",
+                "exception",
+            }
+        )
 
 
 class TestScrubQueryStringAndUrl:
