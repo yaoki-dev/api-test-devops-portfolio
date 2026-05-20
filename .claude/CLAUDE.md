@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 1. **ALWAYS** respond in `Japanese` for all outputs, including skill usage
 2. **ALWAYS** create a task list using `todowrite` before starting any work (exception: obvious single-step trivial tasks; RULES.md Workflow Rules "TodoWrite (3+ tasks)" qualifier)
-3. **ALWAYS** use the ⁠AskUserQuestion⁠ tool to propose 2-3 alternative approaches and wait for user confirmation before executing any major tasks or structural changes
+3. **ALWAYS** use the AskUserQuestion tool to propose 2-3 alternative approaches and wait for user confirmation before executing any major tasks or structural changes (exception: explicit slash command invocation (e.g., `/commit`, `/push-pr`), subagent execution context — parent agent owns the AskUserQuestion call, user-directed single-line trivial fix)
 4. **NEVER** use `git commit` → **ALWAYS** use `Skill(commit)`
 5. **NEVER** use `gh pr create` → **ALWAYS** use `Skill(push-pr)`
 6. **NEVER** use `gh issue create` → **ALWAYS** use `Skill(create-issue)`
@@ -27,7 +27,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 13. **ALWAYS** verify file content with Read/Grep tool BEFORE making any claim about line numbers, file structure, or code content
 14. **ALWAYS** enforce worktree boundary: セッション開始時に `git rev-parse --show-toplevel` でWORKTREE_ROOTを確認し、WORKTREE_ROOT外ファイルの自律的編集を禁止する（`~/.claude/tasks/` は例外）
     → 詳細手続き（worktree list検証、compact後再検証、mismatch報告等）: `.claude/rules/workflow/RULES.md` Section「Category: Worktree Boundary Enforcement」
-15. **ALWAYS** manage `~/.claude/tasks/lessons.md`:
+15. **ALWAYS** manage `~/.claude/lessons/lessons.md`:
     a) セッション開始時に読み込み、現プロジェクトのlessonsを確認（ENOENT: 無視して続行）
     b) ユーザーからの修正フィードバック時に即時追記（Edit tool使用、Write禁止。フォーマット: `## [YYYY-MM-DD] [project-name] - Category`）
     → 詳細手続き（エラーハンドリング、closed-list確認、ソース制約等）: `.claude/rules/workflow/RULES.md` Section「Category: Lessons Management」
@@ -36,6 +36,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     - ⚠️ Limited autonomous fix (spec-changing modifications → confirmation required; non-functional modifications: autonomous OK): `scripts/*.py`, `models/responses.py`, `utils/api_client.py`, `utils/github_client.py`, `tests/test_smoke.py`, `utils/*.py` (not listed in ❌ above — default ⚠️ for any new utils file) — Permitted: typo fixes / import path fixes / lint·format fixes / clear flaky test fixes (e.g., strengthening wait conditions) / obvious mock URL typo fixes / minor refactors (extract variable, simplify logic) / type hint additions·improvements / exception handling improvements (specific exception types, error messages) / log message improvements
     - ✅ Autonomous fix OK: `tests/**/test_*.py` and `tests/test_*.py` (except `tests/test_smoke.py` — governed by ⚠️ above), `*.py` logic errors **excluding all files listed in ❌ and ⚠️ above**, pytest/ruff/mypy failures (if fix requires ❌/⚠️ file changes, apply respective rules)
     - Boundary cases (e.g., adding pyproject.toml dependencies) → apply Rule 3 (AskUserQuestion)
+    - さらに: 変更ファイル数 3 以上 / 不可逆操作 / 既存外部契約 (公開API / 環境変数 / CI設定) 変更 を伴う場合は ⚠️ 同等扱い (= Rule 3 適用)
+      - 除外条件: ドキュメント (`*.md` / `docs/` / `claudedocs/`) ・バイナリ資産 (画像 / PDF) のみの更新で、 コードロジック (`*.py` / `config/` / `*.yml` / `*.toml`) 未変更の場合
 
 ## プロジェクト概要
 

@@ -109,14 +109,14 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
 ## Category: Task Management (Persistent Layer)
 **Trigger:** Multi-session or large-scale tasks | **Priority:** Important
 
+For large-scale or multi-session tasks,
 1. **Plan First**: Write a checkable item list before starting
 2. **Verify Plan**: Align with the user before implementation
 3. **Track Progress**: Mark items as complete
 4. **Document Results**: Append review section after completion
-5. **Capture Lessons**: Update `~/.claude/tasks/lessons.md` after any corrections
 
-Usage distinction:
-- TodoWrite = in-session UI display (unchanged)
+Persistent record location: `claudedocs/plans/<YYYY-MM-DD-topic>.html` (per PLANS.md)
+TodoWrite remains the in-session UI tool.
 
 **Reference:** CLAUDE.md Section「🔄 開発ワークフロー」Step 0（全体開発ワークフローとの統合コンテキスト）
 
@@ -128,6 +128,13 @@ Usage distinction:
 **Learning Phase:** Self-review after each task: `Skill(superpowers:verification-before-completion)` → `Skill(reflexion:reflect)`. Fix issues before proceeding.
 
 **Production Phase:** Review only when: 3+ files changed, security/API changes, confidence < 90%, new patterns.
+
+**Change Report (after verification + reflect):** End coding tasks with structured summary:
+- **Files changed**: full path list (every file touched, including renames/deletes)
+- **Files in scope but untouched**: explicit list of files considered but deliberately NOT modified
+- **Next verification**: 2-3 user-side check items (test command / browse path / log location)
+
+**Skip conditions**: typo-only / format-only / single-line trivial fixes / docs-or-asset-only updates without code logic impact (`*.py` / `config/` / `*.yml` / `*.toml` unchanged).
 
 ---
 
@@ -263,6 +270,21 @@ uv run pytest --cov-fail-under=[target] && uv run ruff check . && uv run mypy ut
 
 ---
 
+## Category: Irreversible Action Confirmation
+**Trigger:** Side-effect-producing or irreversible operations | **Priority:** Critical
+
+The following actions require explicit in-session confirmation before executing:
+- Deployment to any environment (when applicable infrastructure exists)
+- Schema or data migration on any persistent store (when DB introduced)
+- Side-effect-producing external API call (POST / PUT / DELETE / PATCH against real public APIs) — test fixtures (e.g., `https://jsonplaceholder.typicode.com`, localhost mock servers) excluded
+- File deletion via `rm` / `git clean` outside `claudedocs/` and `reports/`
+- Git history rewrite (force-push / branch deletion / interactive rebase / amend on published commit)
+- Pull request merge to `develop` or `main` (especially squash merge — history rewrite + commit consolidation)
+
+Confirmation form: AskUserQuestion with closed-list (Approve / Reject). Free-text "yes" / 「了解」 alone are invalid — explicit closed-list selection required.
+
+---
+
 ## Category: Time Awareness
 **Trigger:** Date/time references, version checks | **Priority:** Critical
 
@@ -345,9 +367,9 @@ Options: "Approve and continue" / "Reject and stop" / "Free text input"
 
 ### 15a: Session Start Read
 
-Read `~/.claude/tasks/lessons.md` and review lessons tagged with current project:
+Read `~/.claude/lessons/lessons.md` and review lessons tagged with current project:
 - **ENOENT**: silently ignore, treat as no lessons
-- **Empty file**: warn user ("lessons.md が空ファイルです — 前セッションの書き込み失敗の可能性があります。手動削除を推奨: rm ~/.claude/tasks/lessons.md")
+- **Empty file**: warn user ("lessons.md が空ファイルです — 前セッションの書き込み失敗の可能性があります。手動削除を推奨: rm ~/.claude/lessons/lessons.md")
 - **Unidentifiable errors**: treat as corruption — report to user, WARN that Edit operations may fail; await explicit confirmation (closed-list confirmation)
 - **Permissions / corruption / broken symlink**: report + WARN + await closed-list confirmation
 - **Other identifiable errors** (ETIMEDOUT, EMFILE, EIO): treat same as corruption
@@ -374,7 +396,7 @@ Read `~/.claude/tasks/lessons.md` and review lessons tagged with current project
 2. Edit tool → append content
    - Failure after Write succeeds:
      1. Delete empty file (to restore ENOENT state for next session)
-        - If Delete also fails: proceed to step 2 and report ALL: (a) Edit error detail (b) Delete error detail (c) 空ファイルが残存している事実 (d) 次セッションで空ファイル警告が発生する予告 → 手動削除推奨: `rm ~/.claude/tasks/lessons.md`
+        - If Delete also fails: proceed to step 2 and report ALL: (a) Edit error detail (b) Delete error detail (c) 空ファイルが残存している事実 (d) 次セッションで空ファイル警告が発生する予告 → 手動削除推奨: `rm ~/.claude/lessons/lessons.md`
      2. Report → output in chat → await closed-list confirmation → NEVER retry
 
 **Edit failure on existing file**: report (re-state session-start warnings if any) → output in chat → await closed-list confirmation → NEVER retry

@@ -152,4 +152,4 @@ claudedocs/plans/YYYY-MM-DD-<topic>.html   # フィーチャー別計画
 
 - `@memory:execution-efficiency` - 実行効率化詳細（Phase 0/1/2）
 - `.claude/rules/workflow/RULES.md` - Planning Efficiency ルール
-- `~/.claude/tasks/lessons.md` - Rule 15 教訓蓄積ファイル
+- `~/.claude/lessons/lessons.md` - Rule 15 教訓蓄積ファイル

@@ -92,11 +92,11 @@
     - For files outside WORKTREE_ROOT:
       - Autonomous edit: **NEVER**
       - User-requested edit: **STOP**, show exact absolute path, require explicit confirmation before proceeding
-      - Exception: all files under `~/.claude/tasks/` directory are pre-authorized global files (dedicated Claude Code workspace); boundary confirmation not required for any file in this directory (Rule 15b write constraints still apply to `~/.claude/tasks/lessons.md`)
-15. **ALWAYS** do both of the following with `~/.claude/tasks/lessons.md`:
+      - Exception: all files under `~/.claude/tasks/` directory are pre-authorized global files (dedicated Claude Code workspace); boundary confirmation not required for any file in this directory (Rule 15b write constraints still apply to `~/.claude/lessons/lessons.md`)
+15. **ALWAYS** do both of the following with `~/.claude/lessons/lessons.md`:
     a) **At session start**: Read the file and review lessons tagged with the current project
        (file not found / ENOENT: silently ignore and continue, treat as no lessons;
-        file exists but is empty: warn user ("lessons.md が空ファイルです — 前セッションの書き込み失敗の可能性があります。手動削除を推奨: rm ~/.claude/tasks/lessons.md"); treat as no lessons and continue;
+        file exists but is empty: warn user ("lessons.md が空ファイルです — 前セッションの書き込み失敗の可能性があります。手動削除を推奨: rm ~/.claude/lessons/lessons.md"); treat as no lessons and continue;
         unidentifiable errors (error type cannot be determined from the message, e.g., generic "file read failed"): treat as corruption errors (most conservative path) — report to user, WARN that Edit operations may fail this session; await explicit confirmation before continuing (same confirmation requirements as corruption/broken symlink);
         other errors:
           - permissions: report to user, WARN that Rule 15b (Edit) will fail this session; await explicit confirmation before continuing (same confirmation requirements as corruption/broken symlink)
@@ -114,7 +114,7 @@
        **Closed list definition (Rule 15 common)**: explicit confirmation required — closed list: 「記録した」/「了解した」/「確認した」only; 「OK」/「続けて」are always invalid — even when combined with other words (e.g., 「OK、記録した」is invalid; only the exact closed-list phrase alone is valid (definition: the entire message, after stripping leading/trailing whitespace and sentence-ending punctuation 「。！!.」, consists of exactly one phrase from the closed list; e.g., 「記録した。」→ valid; 「なるほど、記録した」→ invalid))
        - Write rule: Use Edit tool to append ONLY. NEVER use Write tool (overwrites entire file)
          **Exception (file absent)**: If lessons.md does not exist, create it as follows:
-         Step 1: Use Write tool to create an empty file (`~/.claude/tasks/lessons.md`).
+         Step 1: Use Write tool to create an empty file (`~/.claude/lessons/lessons.md`).
            - If Step 1 fails (directory absent, permission denied, disk full, etc.): (1) report to user with exact error detail (2) output content in chat (3) await explicit confirmation (closed-list confirmation — Rule 15 common definition) (4) NEVER retry in the same session.
            - If Step 1 succeeds: proceed to Step 2.
          Step 2: Use Edit tool to append content.
@@ -124,8 +124,8 @@
             - If Delete also fails: proceed to step 2 and report ALL of the following explicitly:
                 (a) Edit error detail
                 (b) Delete error detail
-                (c) 空ファイルが `~/.claude/tasks/lessons.md` に残存している事実
-                (d) 次セッションで Rule 15a の「空ファイル」警告が発生することの予告 → 手動削除推奨: `rm ~/.claude/tasks/lessons.md`
+                (c) 空ファイルが `~/.claude/lessons/lessons.md` に残存している事実
+                (d) 次セッションで Rule 15a の「空ファイル」警告が発生することの予告 → 手動削除推奨: `rm ~/.claude/lessons/lessons.md`
          2. Report to user with exact error detail
          3. Output content in chat
          4. Await explicit confirmation before continuing (silent continuation prohibited; closed-list confirmation — Rule 15 common definition)
