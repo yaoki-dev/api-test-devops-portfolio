@@ -20,6 +20,7 @@ websiteはURL形式のためhtmlコンテキスト出力時は呼び出し元で
 import html
 import re
 import unicodedata
+from functools import lru_cache
 from typing import Annotated
 from urllib.parse import ParseResult, quote, unquote, urlparse, urlunparse
 
@@ -37,7 +38,7 @@ _PERCENT_CTRL_RE: re.Pattern[str] = re.compile(
     re.IGNORECASE,
 )
 # 不完全な%シーケンス検出 — unquoteがリテラル扱いするためUnicodeDecodeErrorが発生しない
-_INCOMPLETE_PCT_RE: re.Pattern[str] = re.compile(r"%(?![0-9a-fA-F]{2})")
+_INCOMPLETE_PCT_RE: re.Pattern[str] = re.compile(r"%(?![0-9a-f]{2})", re.IGNORECASE)
 _ASCII_WHITESPACE_RE: re.Pattern[str] = re.compile(r"[ \t\n\r\f\v]")
 _VARIATION_SELECTORS: frozenset[str] = frozenset(
     {chr(codepoint) for codepoint in range(0xFE00, 0xFE10)}
@@ -49,13 +50,19 @@ _INVISIBLE_CATEGORIES = frozenset({"Cf", "Cc", "Zs", "Zl", "Zp"})
 _STRIP_CATEGORIES = _INVISIBLE_CATEGORIES | frozenset({"Cs"})
 
 
+@lru_cache(maxsize=2048)
+def _unicode_category(c: str) -> str:
+    """Unicodeカテゴリ取得をキャッシュする。"""
+    return unicodedata.category(c)
+
+
 def _is_strippable_char(c: str, categories: frozenset[str]) -> bool:
     """不可視文字として除去すべき文字か判定する。
 
     Variation Selectors は Mn に分類されるが、結合文字（例: U+0301）は保持し、
     NFD由来のホスト名をサイレントに別文字列へ改変しない。
     """
-    return c != " " and (unicodedata.category(c) in categories or c in _VARIATION_SELECTORS)
+    return c != " " and (_unicode_category(c) in categories or c in _VARIATION_SELECTORS)
 
 
 def _strip_invisible_chars(v: str) -> str:
@@ -239,7 +246,8 @@ def _validate_scheme_less_url(sanitized: str) -> None:
     except UnicodeDecodeError as e:
         raise ValueError(f"URLに不正なパーセントエンコードが含まれています: {e}") from e
     # 不完全な%シーケンス（例: %、%GG）はunquoteがリテラル扱いするため個別チェック
-    if _INCOMPLETE_PCT_RE.search(sanitized):
+    sanitized_lower = sanitized.lower()
+    if _INCOMPLETE_PCT_RE.search(sanitized_lower):
         raise ValueError("URLに不完全なパーセントエンコードが含まれています")
     if "/" in sanitized or "/" in decoded:
         raise ValueError("スキームなしURLにパスは指定できません")

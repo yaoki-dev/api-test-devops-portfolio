@@ -8,6 +8,7 @@
 
 import asyncio
 import hashlib
+import itertools
 import json
 import re
 from datetime import UTC, datetime
@@ -248,18 +249,27 @@ class AsyncGitHubClient:
         if self._client:
             try:
                 await self._client.aclose()
-                self.logger.info("AsyncGitHubClient closed")
-            except Exception as close_exc:  # noqa: BLE001
-                # __aexit__ で raise すると body 例外 (exc_val) を上書きするため
-                # warning log のみ出力、re-raise しない。
-                # error_type + error_module を併用することで third-party 例外
-                # (例: httpx.CloseError vs builtins.RuntimeError) の起点モジュールを
-                # 識別可能にする (sentry_init._emit_scrub_failure_to_sentry と同パターン)。
+            except (httpx.CloseError, OSError) as close_exc:
+                # 既知のクローズ時例外 — warning のみ（body 例外 exc_val を上書きしない）。
+                # error_type + error_module で third-party 例外の起点モジュールを識別可能にする。
                 self.logger.warning(
                     "github_client_aclose_failed",
                     error_type=type(close_exc).__name__,
                     error_module=type(close_exc).__module__,
                 )
+            except Exception as close_exc:  # noqa: BLE001
+                # 予期しない例外（AttributeError, RuntimeError 等の実装バグ可能性）
+                # — error レベルで記録し隠蔽しない（AsyncAPIClient.__aexit__ と設計統一, PR#347）。
+                self.logger.error(
+                    "github_client_aclose_unexpected_error",
+                    error_type=type(close_exc).__name__,
+                    error_module=type(close_exc).__module__,
+                    has_body_exception=exc_type is not None,
+                )
+            else:
+                # aclose() 成功時のみ closed ログを出す。logger.info を try 内に置くと
+                # logger 自体の例外が aclose 失敗として誤検知されるため else 節に分離 (PR#347)。
+                self.logger.info("AsyncGitHubClient closed")
 
     async def get_user(self, username: str) -> dict[str, Any]:
         """ユーザー情報取得
@@ -401,7 +411,7 @@ class AsyncGitHubClient:
         self,
         response_headers: httpx.Headers,
         remaining: int,
-    ) -> None:
+    ) -> int | None:
         """RateLimit残量が閾値未満の場合に警告ログを出力する。"""
         if remaining < _RATE_LIMIT_WARNING_THRESHOLD:
             reset_time = self._parse_rate_limit_header(
@@ -413,6 +423,8 @@ class AsyncGitHubClient:
                 remaining=remaining,
                 reset_time=reset_dt.isoformat(),
             )
+            return reset_time
+        return None
 
     def _handle_304_response(self, cache_key: str) -> dict[str, Any] | list[dict[str, Any]]:
         """304 Not Modified: キャッシュデータを返却する。キャッシュミス時はエラー。"""
@@ -432,17 +444,25 @@ class AsyncGitHubClient:
             f"Cache inconsistency: 304 response without cached data for {endpoint_only}"
         )
 
-    def _handle_403_response(self, response: httpx.Response) -> NoReturn:
+    def _handle_403_response(
+        self,
+        response: httpx.Response,
+        *,
+        rate_remaining: int | None = None,
+        reset_time: int | None = None,
+    ) -> NoReturn:
         """403エラー処理: Rate Limit超過 vs その他の403を判別して raise する。"""
         # フォールバック -1 = 不正値時はRate Limit超過と判定せずGitHubAPIErrorへ
-        rate_remaining = self._parse_rate_limit_header(
-            response.headers, "X-RateLimit-Remaining", _RATE_LIMIT_FORBIDDEN_FALLBACK
-        )
+        if rate_remaining is None:
+            rate_remaining = self._parse_rate_limit_header(
+                response.headers, "X-RateLimit-Remaining", _RATE_LIMIT_FORBIDDEN_FALLBACK
+            )
         if rate_remaining == 0:
             # Rate Limit超過確定
-            reset_time = self._parse_rate_limit_header(
-                response.headers, "X-RateLimit-Reset", _RATE_LIMIT_RESET_FALLBACK
-            )
+            if reset_time is None:
+                reset_time = self._parse_rate_limit_header(
+                    response.headers, "X-RateLimit-Reset", _RATE_LIMIT_RESET_FALLBACK
+                )
             raise RateLimitError(reset_time) from None
         # その他の403エラー（IPブロック、アクセス権限不足等）
         error_message = ""
@@ -606,7 +626,7 @@ class AsyncGitHubClient:
             self._enforce_cache_limit()
         else:
             if cache_key in self._etag_cache or cache_key in self._data_cache:
-                self.logger.debug("etag_removed", endpoint=cache_key.split("?")[0])
+                self.logger.info("etag_removed", endpoint=cache_key.split("?")[0])
             self._etag_cache.pop(cache_key, None)
             self._data_cache.pop(cache_key, None)
 
@@ -666,16 +686,16 @@ class AsyncGitHubClient:
             self._etag_cache.clear()
             self._data_cache.clear()
             return  # clear() によりサイズ 0 → max_cache_entries 制限は達成済み（while ループ不要）
-        evicted_count = 0
-        while len(self._etag_cache) > self.max_cache_entries:
-            oldest_key = next(iter(self._etag_cache))
-            self._etag_cache.pop(oldest_key, None)
-            self._data_cache.pop(oldest_key, None)
-            evicted_count += 1
-        if evicted_count > 0:
+        excess = len(self._etag_cache) - self.max_cache_entries
+        if excess > 0:
+            # 削除件数を事前計算し islice でまとめて取得（毎反復 len() 再計算を回避, PR#347）。
+            keys_to_evict = list(itertools.islice(self._etag_cache, excess))
+            for key in keys_to_evict:
+                self._etag_cache.pop(key, None)
+                self._data_cache.pop(key, None)
             self.logger.info(
                 "cache_entries_evicted",
-                evicted_count=evicted_count,
+                evicted_count=excess,
                 current_size=len(self._etag_cache),
                 max_size=self.max_cache_entries,
             )
@@ -744,7 +764,7 @@ class AsyncGitHubClient:
                 remaining = self._parse_rate_limit_header(
                     response.headers, "X-RateLimit-Remaining", _RATE_LIMIT_FALLBACK_REMAINING
                 )
-                self._check_rate_limit_warning(response.headers, remaining)
+                warning_reset_time = self._check_rate_limit_warning(response.headers, remaining)
 
                 # ステータスコード処理
                 if response.status_code == 304:
@@ -755,15 +775,23 @@ class AsyncGitHubClient:
 
                 # 通常パス: raise_for_status()より前に429を検出してRateLimitErrorに変換
                 if response.status_code == 429:
-                    reset_time = self._parse_rate_limit_header(
-                        response.headers, "X-RateLimit-Reset", _RATE_LIMIT_RESET_FALLBACK
+                    reset_time = (
+                        warning_reset_time
+                        if warning_reset_time is not None
+                        else self._parse_rate_limit_header(
+                            response.headers, "X-RateLimit-Reset", _RATE_LIMIT_RESET_FALLBACK
+                        )
                     )
                     # PII漏洩防止: 例外チェーン経由の httpx URL/header 露出を抑制
                     # (defensive path との等価性維持: 403→RateLimitError 変換も from None)
                     raise RateLimitError(reset_time) from None
 
                 if response.status_code == 403:
-                    self._handle_403_response(response)
+                    self._handle_403_response(
+                        response,
+                        rate_remaining=remaining,
+                        reset_time=warning_reset_time,
+                    )
                 elif response.status_code >= 500:
                     await self._handle_5xx_response(response, attempt, endpoint, method)
                     continue

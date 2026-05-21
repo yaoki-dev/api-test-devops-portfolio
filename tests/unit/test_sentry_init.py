@@ -773,7 +773,7 @@ class TestBeforeSend:
             sentry_module._INTERNAL_TAG_VALUE,
         )
         mock_scope.set_level.assert_called_once_with("error")
-        mock_sdk.capture_message.assert_called_once_with("sentry_scrub_failed", level="error")
+        mock_scope.capture_message.assert_called_once_with("sentry_scrub_failed", level="error")
 
     def test_emit_scrub_failure_falls_back_to_stderr_on_inner_exception(
         self, capsys: pytest.CaptureFixture[str]
@@ -920,6 +920,45 @@ class TestBeforeSend:
         assert "[SENTRY_FIELD_WARNING_FAILED]" in captured.err
         assert "field=extra" in captured.err
         assert "logger_error_type=RuntimeError" in captured.err
+
+    def test_before_send_scrubs_exception_stacktrace_vars(self) -> None:
+        """exception.values[*].stacktrace.frames[*].vars 内の機密変数がスクラブされる。"""
+        event = cast(
+            Event,
+            {
+                "exception": {
+                    "values": [
+                        {
+                            "stacktrace": {
+                                "frames": [
+                                    {
+                                        "vars": {
+                                            "password": "super_secret",
+                                            "api_key": "KEY123",
+                                            "user_input": "safe_value",
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            },
+        )
+        result = _before_send(event, {})
+        assert result is not None
+        frame_vars = result["exception"]["values"][0]["stacktrace"]["frames"][0]["vars"]
+        assert frame_vars["password"] == "[REDACTED]"  # noqa: S105
+        assert frame_vars["api_key"] == "[REDACTED]"
+        assert frame_vars["user_input"] == "safe_value"
+
+    def test_scrub_tags_item_nested_list_redacts_sensitive(self) -> None:
+        """_scrub_tags_item の nested list 分岐 (3要素以上) で機密キーが redact される。"""
+        nested = [("password", "secret"), ("safe", "ok"), ("token", "abc")]
+        result = sentry_module._scrub_tags_item(nested)
+        assert result[0] == ("password", "[REDACTED]")
+        assert result[1] == ("safe", "ok")
+        assert result[2] == ("token", "[REDACTED]")
 
 
 class TestInitSentry:

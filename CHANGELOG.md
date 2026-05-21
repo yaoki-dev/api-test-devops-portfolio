@@ -56,8 +56,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - 認証系: `access_key`
     - HTTP headers: `proxy-authorization`, `set-cookie`, `x-auth-token`,
       `x-csrf-token`, `x-refresh-token`, `x-access-token`
-  - **追加されたスクラブ対象フィールド (4 → 5)**: `breadcrumbs` を
+  - **追加されたスクラブ対象フィールド (4 → 6)**: `breadcrumbs` および `exception` を
     `_SCRUBBED_EVENT_FIELDS` に追加.
+    - `breadcrumbs`: ブレッドクラム内の機密キーを redact.
+    - `exception`: スタックフレームの local vars (`frames[*].vars`) 経由の PII 漏洩防止.
   - **意図的に追加しなかった variant (KISS + threat model 駆動)**:
     実証検索 (grep / ast-grep / serena) で payload 経路不在を確認した上で
     以下を SENSITIVE_KEYS から除外. dead config を生まない方針.

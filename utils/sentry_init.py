@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import os
 import re
+import secrets
 import sys
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
@@ -41,8 +42,12 @@ from utils.logger import get_logger
 # 再帰防止用の内部識別子。scrub 失敗を Sentry に通知する際にこの tag を付与し、
 # _before_send 冒頭で検出して scrub をスキップ通過させることで無限ループ
 # (capture_message → _before_send → 例外 → capture_message ...) を遮断する。
+# value はプロセス起動ごとにランダム生成し、OSS で公開された固定値を悪用した
+# scrub バイパス (任意 event tag への注入で _before_send を素通りさせる攻撃) を
+# 防ぐ (PR#347 review)。_has_internal_tag / _emit_scrub_failure_to_sentry は
+# 同一モジュール global を参照するため一貫して機能する。
 _INTERNAL_TAG_KEY: str = "sentry_internal_event"
-_INTERNAL_TAG_VALUE: str = "scrub_failure"
+_INTERNAL_TAG_VALUE: str = secrets.token_hex(16)
 
 
 def _has_internal_tag(tags: Any) -> bool:
@@ -176,6 +181,12 @@ _COMPACT_SENSITIVE_KEYS: frozenset[str] = frozenset(
     sensitive.replace("_", "") for sensitive in _NORMALIZED_SENSITIVE_KEYS
 )
 
+# camelCase / ACRONYM 分割用の事前コンパイル済みパターン (PR#347 review)。
+# _is_sensitive_key はホットパス (_before_send 経由) で頻繁に呼ばれるため、
+# 生リテラル re.sub の re._cache 依存を排し _SENSITIVE_KEY_PATTERN と設計を統一する。
+_ACRONYM_PATTERN: re.Pattern[str] = re.compile(r"([A-Z]+)([A-Z][a-z])")
+_CAMEL_PATTERN: re.Pattern[str] = re.compile(r"(?<=[a-z])(?=[A-Z])")
+
 
 def _is_sensitive_key(key: str) -> bool:
     """機密キーかどうかを判定する（単語境界一致 + ハイフン/アンダースコア正規化）。
@@ -206,8 +217,8 @@ def _is_sensitive_key(key: str) -> bool:
         機密キーと判定された場合 True。
 
     """
-    key_norm = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", key)  # ACRONYMWord → ACRONYM_Word (PR#347)
-    key_norm = re.sub(r"(?<=[a-z])(?=[A-Z])", "_", key_norm)  # wordWord → word_Word
+    key_norm = _ACRONYM_PATTERN.sub(r"\1_\2", key)  # ACRONYMWord → ACRONYM_Word (PR#347)
+    key_norm = _CAMEL_PATTERN.sub("_", key_norm)  # wordWord → word_Word
     key_norm = key_norm.lower().replace("-", "_")
     if _SENSITIVE_KEY_PATTERN.search(key_norm) is not None:
         return True
@@ -323,24 +334,28 @@ def _scrub_url(url: str) -> str:
     )
 
 
-def _scrub_tags_item(item: Any) -> Any:
+def _scrub_tags_item(item: Any, _depth: int = 0) -> Any:
     """tags フィールド要素を Sentry spec + defense-in-depth でスクラブする。
 
     Sentry SDK 仕様: tags は ``dict[str, str]`` または ``list[tuple[str, str]]``。
     JSON roundtrip で tuple が list 化されるため list[2] も tag pair として扱う。
     加えて非標準だが custom before_send hook 等で生じうる dict / nested list 形態でも
     機密キーを redact する（defense-in-depth）。
+    _depth による再帰深さ保護を行い、MAX_SCRUB_DEPTH 超過時は安全サイドに倒す。
     """
+    if _depth >= MAX_SCRUB_DEPTH:
+        _logger.warning("scrub_max_depth_exceeded", depth=_depth, max=MAX_SCRUB_DEPTH)
+        return "[MAX_DEPTH_EXCEEDED]"
     if isinstance(item, (tuple, list)) and len(item) == 2:
         key = item[0]
         if isinstance(key, str) and _is_sensitive_key(key):
             return (key, "[REDACTED]")
         return item
     if isinstance(item, dict):
-        return _scrub_sensitive_data(item)
+        return _scrub_sensitive_data(item, _depth + 1)
     if isinstance(item, list):
-        # nested list は汎用 scrub にフォールバック
-        return [_scrub_list_item(child, _depth=0) for child in item]
+        # nested list は汎用 scrub にフォールバック（深さを引き継ぐ）
+        return [_scrub_list_item(child, _depth=_depth + 1) for child in item]
     return item
 
 
@@ -424,7 +439,7 @@ def _emit_scrub_failure_to_sentry(exc: BaseException) -> None:
             scope.set_extra("error_type", type(exc).__qualname__)
             scope.set_extra("error_module", type(exc).__module__)
             scope.set_extra("action", "event_dropped")
-            sentry_sdk.capture_message("sentry_scrub_failed", level="error")
+            scope.capture_message("sentry_scrub_failed", level="error")
     except Exception as inner_exc:  # noqa: BLE001
         # Sentry 通知自体が失敗 → stderr へ最終フォールバック
         print(
@@ -458,6 +473,7 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
     if _has_internal_tag(event.get("tags")):
         return event
 
+    scrub_exc: Exception | None = None
     try:
         # リクエストデータのスクラブ。成功時だけ event["request"] を差し替える。
         # _scrub_sensitive_data / _scrub_query_string / _scrub_url は全て non-destructive で
@@ -485,7 +501,6 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
         # 追加データのスクラブ（2層防御）
         # _scrub_sentry_field: 非dict型フィールドを空dictに置換（型安全化・PII漏洩防止）
         # _scrub_sensitive_data: dict内の機密キーを [REDACTED] に置換（PII除外）
-        scrub_exc: Exception | None = None
         event_dict = cast(dict[str, Any], event)
         for field in _SCRUBBED_EVENT_FIELDS:
             _scrub_sentry_field(event_dict, field)
@@ -582,10 +597,13 @@ def init_sentry() -> bool:  # noqa: C901
                 error_type=type(exc).__name__,
                 error_module=type(exc).__module__,
             )
-        except Exception:  # noqa: BLE001, S110
-            # ロガー失敗時は stderr へフォールバック（PII 非露出）
+        except Exception as logger_exc:  # noqa: BLE001
+            # ロガー失敗時は stderr へフォールバック（PII 非露出）。
+            # _emit_scrub_failure_to_sentry と同様にエラー型/モジュールを記録し設計を統一 (PR#347)。
             print(
-                "[SENTRY_WARN] sentry_sdk_not_installed",
+                "[SENTRY_WARN] sentry_sdk_not_installed "
+                f"logger_error_type={type(logger_exc).__name__} "
+                f"logger_error_module={type(logger_exc).__module__}",
                 file=sys.stderr,
                 flush=True,
             )
@@ -607,10 +625,13 @@ def init_sentry() -> bool:  # noqa: C901
                 error_type=type(exc).__name__,
                 error_module=type(exc).__module__,
             )
-        except Exception:  # noqa: BLE001, S110
-            # ロガー失敗時は stderr へフォールバック（PII 非露出）
+        except Exception as logger_exc:  # noqa: BLE001
+            # ロガー失敗時は stderr へフォールバック（PII 非露出）。
+            # _emit_scrub_failure_to_sentry と同様にエラー型/モジュールを記録し設計を統一 (PR#347)。
             print(
-                "[SENTRY_WARN] sentry_init_failed",
+                "[SENTRY_WARN] sentry_init_failed "
+                f"logger_error_type={type(logger_exc).__name__} "
+                f"logger_error_module={type(logger_exc).__module__}",
                 file=sys.stderr,
                 flush=True,
             )

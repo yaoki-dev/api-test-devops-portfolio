@@ -671,8 +671,35 @@ async def test_context_manager_initialization():
     assert managed_client.is_closed
 
 
-async def test_aexit_aclose_exception_is_suppressed_with_warning() -> None:
-    """__aexit__ で aclose() が例外を投げても警告ログのみ出力する"""
+async def test_aexit_aclose_known_exception_is_suppressed_with_warning() -> None:
+    """__aexit__ で httpx.CloseError / OSError は warning ログのみ出力する（PR#347 #18）。
+
+    既知のクローズ時例外は warning レベルで記録し、body 例外を上書きしない。
+    """
+    client = AsyncGitHubClient()
+    client._client = AsyncMock()
+    client._client.aclose = AsyncMock(side_effect=OSError("connection reset"))
+
+    with capture_logs() as log_output:
+        await client.__aexit__(None, None, None)
+
+    warning_logs = [log for log in log_output if log.get("event") == "github_client_aclose_failed"]
+    assert len(warning_logs) == 1
+    assert warning_logs[0]["error_type"] == "OSError"
+    # PR#347 review Q2: third-party 例外起点モジュール識別のため error_module を併用
+    assert warning_logs[0]["error_module"] == "builtins"
+    # 既知例外では error ログは出ない
+    unexpected_event = "github_client_aclose_unexpected_error"
+    error_logs = [log for log in log_output if log.get("event") == unexpected_event]
+    assert len(error_logs) == 0
+
+
+async def test_aexit_aclose_unexpected_exception_logs_error() -> None:
+    """__aexit__ で予期しない例外（RuntimeError 等）は error ログを出力する（PR#347 #18）。
+
+    実装バグ可能性のある例外は error レベルで記録し、has_body_exception フィールドを含む。
+    body 例外がない場合は has_body_exception=False。
+    """
     client = AsyncGitHubClient()
     client._client = AsyncMock()
     client._client.aclose = AsyncMock(side_effect=RuntimeError("close-failed"))
@@ -680,20 +707,26 @@ async def test_aexit_aclose_exception_is_suppressed_with_warning() -> None:
     with capture_logs() as log_output:
         await client.__aexit__(None, None, None)
 
-    warning_logs = [log for log in log_output if log.get("event") == "github_client_aclose_failed"]
-    assert len(warning_logs) == 1
-    assert warning_logs[0]["error_type"] == "RuntimeError"
+    unexpected_event = "github_client_aclose_unexpected_error"
+    error_logs = [log for log in log_output if log.get("event") == unexpected_event]
+    assert len(error_logs) == 1
+    assert error_logs[0]["error_type"] == "RuntimeError"
     # PR#347 review Q2: third-party 例外起点モジュール識別のため error_module を併用
-    assert warning_logs[0]["error_module"] == "builtins"
+    assert error_logs[0]["error_module"] == "builtins"
+    assert error_logs[0]["has_body_exception"] is False
+    # 予期しない例外では warning ログは出ない
+    warning_logs = [log for log in log_output if log.get("event") == "github_client_aclose_failed"]
+    assert len(warning_logs) == 0
 
 
 async def test_aexit_body_exception_not_overridden_by_close_exception() -> None:
-    """__aexit__ で本体例外発生中に aclose() も例外を出すケース。
+    """__aexit__ で本体例外発生中に aclose() も予期しない例外を出すケース。
 
     PR#347 review Q8: body 例外 (exc_val) が close 例外で上書きされないこと
-    (warning log only, no re-raise) を end-to-end で検証する。設計意図:
+    (re-raise しない) を end-to-end で検証する。設計意図:
     ``async with`` body 例外 + aclose 例外の両発生時、原因情報 (body 例外) を
     優先伝播させて debuggability を維持する (CWE-755 例外マスク回避)。
+    RuntimeError は予期しない例外ブランチ → error ログ + has_body_exception=True。
     """
     client = AsyncGitHubClient()
 
@@ -705,11 +738,17 @@ async def test_aexit_body_exception_not_overridden_by_close_exception() -> None:
             client._client.aclose = AsyncMock(side_effect=RuntimeError("close-failed"))
             raise ValueError("body-error")
 
-    # close 例外は warning log のみ。body 例外は ValueError として外側に伝播。
+    # close 例外は re-raise しない。body 例外は ValueError として外側に伝播。
+    # RuntimeError は予期しない例外 → error ログ (has_body_exception=True)
+    unexpected_event = "github_client_aclose_unexpected_error"
+    error_logs = [log for log in log_output if log.get("event") == unexpected_event]
+    assert len(error_logs) == 1
+    assert error_logs[0]["error_type"] == "RuntimeError"
+    assert error_logs[0]["error_module"] == "builtins"
+    assert error_logs[0]["has_body_exception"] is True
+    # warning ログは出ない
     warning_logs = [log for log in log_output if log.get("event") == "github_client_aclose_failed"]
-    assert len(warning_logs) == 1
-    assert warning_logs[0]["error_type"] == "RuntimeError"
-    assert warning_logs[0]["error_module"] == "builtins"
+    assert len(warning_logs) == 0
 
 
 async def test_request_without_context_manager():
@@ -1191,9 +1230,8 @@ async def test_invalid_rate_limit_header_403():
 
     検証項目:
     - フォールバック -1 により rate_remaining == 0 は偽 → GitHubAPIError("Access forbidden") が発生
-    - invalid_rate_limit_header warning ログが2件出力されること
-      （X-RateLimit-Remainingを共通パス（remaining監視）と403固有パス
-       （rate_remaining判定）の2箇所で読み取り、どちらもValueError発生）
+    - invalid_rate_limit_header warning ログが1件出力されること
+      （X-RateLimit-Remainingの二重パースを避ける）
     - header/value フィールドがログに含まれること
     """
     respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
@@ -1208,9 +1246,7 @@ async def test_invalid_rate_limit_header_403():
                 await client.get_user("octocat")
 
     warning_logs = [log for log in log_output if log.get("event") == "invalid_rate_limit_header"]
-    # 共通パス(default=_RATE_LIMIT_FALLBACK_REMAINING)と403固有パス(default=_RATE_LIMIT_FORBIDDEN_FALLBACK)の2箇所でwarning発生  # noqa: E501
-    # _RATE_LIMIT_FALLBACK_REMAINING(999) >= _RATE_LIMIT_WARNING_THRESHOLD(10) のため rate_limit_low は未発生、invalid_rate_limit_header のみ2件  # noqa: E501
-    assert len(warning_logs) == 2
+    assert len(warning_logs) == 1
     for log_entry in warning_logs:
         assert log_entry["log_level"] == "warning"
         assert log_entry["header"] == "X-RateLimit-Remaining"
@@ -1268,9 +1304,8 @@ async def test_invalid_rate_limit_reset_header_rate_limit_exceeded():
 
     検証項目:
     - RateLimitError が発生すること（rate_remaining==0のため）
-    - invalid_rate_limit_header warning ログが2件出力されること
-      （共通remaining<10チェックパスにおけるX-RateLimit-Resetパース +
-       403固有rate_remaining==0パスにおけるX-RateLimit-Resetパース の2箇所で発生）
+    - invalid_rate_limit_header warning ログが1件出力されること
+      （共通remaining<10チェックパスのX-RateLimit-Resetパース結果を再利用する）
     - rate_limit_low warning ログが1件出力されること（remaining=0 < 10）
     - header="X-RateLimit-Reset", value="broken" がログに含まれること
     """
@@ -1288,11 +1323,11 @@ async def test_invalid_rate_limit_reset_header_rate_limit_exceeded():
             with pytest.raises(RateLimitError):
                 await client.get_user("octocat")
 
-    # invalid_rate_limit_header warningが2件（共通パス + 403固有パス）
+    # invalid_rate_limit_header warningは共通パスで1件のみ（resetヘッダー二重パース回避）
     invalid_header_logs = [
         log for log in log_output if log.get("event") == "invalid_rate_limit_header"
     ]
-    assert len(invalid_header_logs) == 2
+    assert len(invalid_header_logs) == 1
     for log_entry in invalid_header_logs:
         assert log_entry["log_level"] == "warning"
         assert log_entry["header"] == "X-RateLimit-Reset"
@@ -1438,6 +1473,10 @@ def test_handle_403_response(
         rate_limit_error = exc_info.value
         assert isinstance(rate_limit_error, RateLimitError)
         assert rate_limit_error.reset_time == int(reset_header)
+        assert rate_limit_error.__cause__ is None  # from None: PII防止のため例外連鎖切断
+    else:
+        assert exc_info.value.__cause__ is None  # from None: PII防止のため例外連鎖切断
+    assert exc_info.value.__context__ is None
 
 
 def test_redact_body_preview_returns_fixed_format() -> None:
@@ -1740,8 +1779,9 @@ def test_handle_403_response_no_json_log() -> None:
         assert "error" not in warning_logs[0]
         assert warning_logs[0].get("error_type") == "JSONDecodeError"
         assert warning_logs[0].get("error_module") == "json.decoder"
-        # __cause__ なし（from None で保護）
+        # from None: PII防止のため例外連鎖切断（__cause__ は None）
         assert exc_info.value.__cause__ is None
+        assert exc_info.value.__context__ is None
 
 
 def test_handle_403_response_truncates_message_to_200_chars() -> None:
@@ -1874,7 +1914,7 @@ def test_update_etag_cache_clears_stale_cache_and_logs_endpoint(
 
     with patch.object(client, "logger") as mock_logger:
         client._update_etag_cache(cache_key, response, {"id": 2})
-        mock_logger.debug.assert_called_once_with("etag_removed", endpoint=expected_logged_endpoint)
+        mock_logger.info.assert_called_once_with("etag_removed", endpoint=expected_logged_endpoint)
 
     assert cache_key not in client._etag_cache
     assert cache_key not in client._data_cache

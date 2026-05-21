@@ -114,7 +114,7 @@ Sentry MCPサーバーでClaude Codeからエラー調査可能:
 ## テスト
 
 ```bash
-# Sentry統合テスト（31ケース）
+# Sentry統合テスト（83ケース）
 uv run pytest tests/unit/test_sentry_init.py -v
 ```
 
