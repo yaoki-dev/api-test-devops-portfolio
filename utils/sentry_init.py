@@ -171,9 +171,9 @@ _NORMALIZED_SENSITIVE_KEYS: frozenset[str] = frozenset(
     sensitive.replace("-", "_") for sensitive in SENSITIVE_KEYS
 )
 _SENSITIVE_KEY_PATTERN: re.Pattern[str] = re.compile(
-    r"(?:^|_)(?:"
+    r"(?:^|_|\d)(?:"
     + "|".join(re.escape(sensitive) for sensitive in sorted(_NORMALIZED_SENSITIVE_KEYS))
-    + r")(?:_|\d|$)"  # 数字サフィックス (password2, api_key2 等) も境界として扱う
+    + r")(?:_|\d|$)"  # 数字境界 (v2token, password2, api_key2 等) も扱う
 )
 # 全大文字命名 fallback 用: アンダースコア除去後の完全一致集合 (PR#347)
 # APIKEY / ACCESSTOKEN 等は ACRONYM 分割が効かないため別途事前計算
@@ -401,6 +401,7 @@ def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
                     field=field,
                     actual_type=type(value).__name__,
                     action="replaced_with_empty_dict",
+                    event_id=event_dict.get("event_id"),
                 )
             except Exception as logging_exc:  # noqa: BLE001
                 # ログ失敗で Sentry イベント自体を drop しない。
@@ -480,8 +481,9 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
         # 新しいオブジェクトを返すため、top-level dict の shallow copy で十分。
         # 元 request の non-mutation 契約は既存テスト
         # ``test_before_send_fail_closed_without_partial_request_mutation`` で継続検証。
-        if "request" in event:
-            request = event["request"]
+        event_dict = cast(dict[str, Any], event)
+        if "request" in event_dict:
+            request = event_dict["request"]
             if isinstance(request, dict):
                 scrubbed_request = dict(request)
                 if "headers" in scrubbed_request:
@@ -496,12 +498,19 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
                     )
                 if "url" in scrubbed_request and isinstance(scrubbed_request["url"], str):
                     scrubbed_request["url"] = _scrub_url(scrubbed_request["url"])
-                event["request"] = scrubbed_request
+                event_dict["request"] = scrubbed_request
+            else:
+                event_dict["request"] = {}
+                _logger.warning(
+                    "sentry_request_type_unexpected",
+                    actual_type=type(request).__name__,
+                    action="replaced_with_empty_dict",
+                    event_id=event_dict.get("event_id"),
+                )
 
         # 追加データのスクラブ（2層防御）
         # _scrub_sentry_field: 非dict型フィールドを空dictに置換（型安全化・PII漏洩防止）
         # _scrub_sensitive_data: dict内の機密キーを [REDACTED] に置換（PII除外）
-        event_dict = cast(dict[str, Any], event)
         for field in _SCRUBBED_EVENT_FIELDS:
             _scrub_sentry_field(event_dict, field)
     except (MemoryError, RecursionError):  # fmt: skip  # noqa: E261

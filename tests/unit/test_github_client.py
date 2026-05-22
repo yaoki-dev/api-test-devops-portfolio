@@ -25,6 +25,7 @@ from utils.github_client import (
     NotFoundError,
     RateLimitError,
     _redact_body_preview,
+    _SanitizedJSONDecodeError,
     validate_github_repo,
 )
 
@@ -1697,6 +1698,28 @@ def test_update_etag_cache_evicts_oldest_entry_when_limit_exceeded() -> None:
     assert list(client._data_cache) == ["/second", "/third"]
 
 
+def test_enforce_cache_limit_evicts_multiple_entries_when_excess_gt_one() -> None:
+    """_enforce_cache_limit: excess > 1 でも複数エントリ削除と件数ログが正しい"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES, max_cache_entries=2)
+    for index in range(5):
+        key = f"/entry-{index}"
+        client._etag_cache[key] = f"etag-{index}"
+        client._data_cache[key] = {"id": index}
+
+    with patch.object(client, "logger") as mock_logger:
+        client._enforce_cache_limit()
+
+    assert list(client._etag_cache) == ["/entry-3", "/entry-4"]
+    assert list(client._data_cache) == ["/entry-3", "/entry-4"]
+    mock_logger.info.assert_called_once_with(
+        "cache_entries_evicted",
+        evicted_count=3,
+        current_size=2,
+        max_size=2,
+    )
+    mock_logger.error.assert_not_called()
+
+
 def test_enforce_cache_limit_invariant_violation_clears_both_caches() -> None:
     """invariant違反検出時は logger.error + 両キャッシュ clear で safe-fallback する。
 
@@ -1828,8 +1851,8 @@ def test_parse_json_response_valid_json() -> None:
     assert result == {"id": 1, "login": "user"}
 
 
-def test_parse_json_response_invalid_json_raises() -> None:
-    """_parse_json_response: 破損JSONでGitHubAPIError + json_decode_errorログ"""
+def test_parse_json_response_invalid_json_uses_sanitized_cause() -> None:
+    """_parse_json_response: 破損JSONでbodyを保持しない専用causeを使う"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
     # 明示的に不正JSONコンテンツを持つレスポンスを構築
     response = httpx.Response(
@@ -1841,9 +1864,15 @@ def test_parse_json_response_invalid_json_raises() -> None:
         with pytest.raises(GitHubAPIError, match="Invalid JSON response") as exc_info:
             client._parse_json_response(response, "/test-endpoint")
 
-    # __cause__は sanitized cause (Exception型) であるが、raw JSONコンテンツは保持しない
+    # __cause__は sanitized cause であるが、raw JSONコンテンツは保持しない
     assert exc_info.value.__cause__ is not None
-    assert isinstance(exc_info.value.__cause__, Exception)
+    assert isinstance(exc_info.value.__cause__, _SanitizedJSONDecodeError)
+    assert not isinstance(exc_info.value.__cause__, json.JSONDecodeError)
+    assert exc_info.value.__cause__.error_type == (
+        f"{json.JSONDecodeError.__module__}.{json.JSONDecodeError.__qualname__}"
+    )
+    assert isinstance(exc_info.value.__cause__.pos, int)
+    assert isinstance(exc_info.value.__cause__.lineno, int)
     assert "not-valid-json" not in str(exc_info.value.__cause__)
     # __context__は完全切断（PII隔離保証）
     assert exc_info.value.__context__ is None

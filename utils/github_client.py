@@ -108,6 +108,16 @@ class GitHubAPIError(APIClientError):
     """GitHub API基底例外（APIClientErrorを継承し統一的なエラーハンドリングを実現）"""
 
 
+class _SanitizedJSONDecodeError(Exception):
+    """レスポンスbodyを保持しない JSONDecodeError cause。"""
+
+    def __init__(self, error_type: str, pos: int, lineno: int):
+        self.error_type = error_type
+        self.pos = pos
+        self.lineno = lineno
+        super().__init__(f"{error_type}: pos={pos}, lineno={lineno}")
+
+
 class RateLimitError(GitHubAPIError):
     """Rate Limit超過エラー（403/429）"""
 
@@ -538,7 +548,7 @@ class AsyncGitHubClient:
         endpoint: str,
     ) -> dict[str, Any] | list[dict[str, Any]]:
         """JSONレスポンスをパースする。破損JSON時はGitHubAPIErrorを発生。"""
-        _sanitized_cause: Exception | None = None
+        _sanitized_cause: _SanitizedJSONDecodeError | None = None
         try:
             return cast(
                 "dict[str, Any] | list[dict[str, Any]]",
@@ -557,8 +567,10 @@ class AsyncGitHubClient:
             # doc を除外し、型情報と位置情報のみを保持する sanitized cause を作成。
             # except 内で raise すると __context__ に元例外が残存して露出するため、
             # active exception context の外で raise して __context__ を None に保つ。
-            _sanitized_cause = Exception(
-                f"{type(e).__module__}.{type(e).__qualname__}: pos={e.pos}, lineno={e.lineno}"
+            _sanitized_cause = _SanitizedJSONDecodeError(
+                f"{type(e).__module__}.{type(e).__qualname__}",
+                e.pos,
+                e.lineno,
             )
         raise GitHubAPIError("Invalid JSON response") from _sanitized_cause
 

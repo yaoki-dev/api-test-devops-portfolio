@@ -350,26 +350,33 @@ class TestSensitiveKeysCompleteness:
             ("password1", True),
             ("secret9", True),
             ("authorization2", True),
+            # True positives: 数字プレフィックス/中間数字を左境界として扱う
+            ("v2token", True),
+            ("2secret", True),
+            ("3password", True),
+            ("api_key1token", True),
             # False positives: 機密語にハイフン/アンダースコアの先頭境界がなく
             # `_NORMALIZED_SENSITIVE_KEYS` にも一致しない連結文字列 → False
-            ("apikey1token", False),  # apikey は単体登録なし、api_key は `_` 必須
             ("notasecretkey", False),  # 先頭境界 `^|_` 不成立
+            ("prototype", False),
+            ("photo_url", False),
+            ("v2prototype", False),
+            ("release2photo_url", False),
             # 既存挙動の維持確認: 数字なし + アンダースコア境界
             ("password_2", True),  # _ 区切りで境界成立
             ("api_key_2", True),
         ],
     )
-    def test_is_sensitive_key_digit_suffix_boundary(self, key: str, expected: bool) -> None:
-        r"""数字サフィックスを単語境界として扱う (`\d` 境界拡張) の回帰テスト。
+    def test_is_sensitive_key_digit_boundary(self, key: str, expected: bool) -> None:
+        r"""数字プレフィックス/サフィックスを単語境界として扱う回帰テスト。
 
-        PR#347 review fix #2: `_SENSITIVE_KEY_PATTERN` 末尾境界を `(?:_|$)` から
-        `(?:_|\d|$)` へ拡張。これにより `password2` / `api_key2` 等の連番命名規約
-        でも redact が確実に発火する。
+        PR#347 review fix #2/#1: `_SENSITIVE_KEY_PATTERN` の数字境界を拡張。
+        これにより `password2` / `api_key2` / `v2token` 等の連番命名規約でも
+        redact が確実に発火する。
 
-        Note: 現パターン `(?:_|\d|$)` は数字後に文字が続く `token1value` 等も True
+        Note: 現パターンは数字後に文字が続く `token1value` 等も True
         判定する（数字単独で境界成立のため）。これは defense-in-depth の安全側挙動
-        として許容するが、契約として固定する負例は「先頭境界不成立」(`apikey1token`,
-        `notasecretkey`) のみ ── 不安定領域は契約から外している。
+        として許容するが、`prototype` / `photo_url` 等の過剰検出は引き続き防ぐ。
         """
         assert _is_sensitive_key(key) is expected
 
@@ -882,6 +889,7 @@ class TestBeforeSend:
         assert call_kwargs["field"] == "extra"
         assert call_kwargs["actual_type"] == "str"
         assert call_kwargs["action"] == "replaced_with_empty_dict"
+        assert call_kwargs["event_id"] is None
 
     def test_scrub_sentry_field_non_dict_logs_warning_regardless_of_debug(
         self, monkeypatch: pytest.MonkeyPatch
@@ -900,6 +908,35 @@ class TestBeforeSend:
         assert call_kwargs["field"] == "contexts"
         assert call_kwargs["actual_type"] == "int"
         assert call_kwargs["action"] == "replaced_with_empty_dict"
+        assert call_kwargs["event_id"] is None
+
+    def test_scrub_sentry_field_non_dict_logs_event_id(self) -> None:
+        """非dict/listフィールドの警告には event_id を含める。"""
+        event = cast(Event, {"event_id": "evt-123", "extra": "not-a-dict"})
+
+        with patch.object(sentry_module._logger, "warning") as mock_warning:
+            result = _before_send(event, {})
+
+        assert result is not None
+        assert result["extra"] == {}
+        call_kwargs = mock_warning.call_args[1]
+        assert call_kwargs["event_id"] == "evt-123"
+
+    def test_before_send_request_non_dict_replaced_with_empty_dict_and_logs_warning(self) -> None:
+        """request が非dict型の場合、空dictに置換し event_id 付きで警告する。"""
+        event = cast(Event, {"event_id": "evt-456", "request": "raw-request"})
+
+        with patch.object(sentry_module._logger, "warning") as mock_warning:
+            result = _before_send(event, {})
+
+        assert result is not None
+        assert result["request"] == {}
+        mock_warning.assert_called_once()
+        call_kwargs = mock_warning.call_args[1]
+        assert mock_warning.call_args.args == ("sentry_request_type_unexpected",)
+        assert call_kwargs["actual_type"] == "str"
+        assert call_kwargs["action"] == "replaced_with_empty_dict"
+        assert call_kwargs["event_id"] == "evt-456"
 
     def test_scrub_sentry_field_logger_failure_falls_back_to_stderr(
         self, capsys: pytest.CaptureFixture[str]
