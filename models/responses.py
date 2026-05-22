@@ -246,8 +246,7 @@ def _validate_scheme_less_url(sanitized: str) -> None:
     except UnicodeDecodeError as e:
         raise ValueError(f"URLに不正なパーセントエンコードが含まれています: {e}") from e
     # 不完全な%シーケンス（例: %、%GG）はunquoteがリテラル扱いするため個別チェック
-    sanitized_lower = sanitized.lower()
-    if _INCOMPLETE_PCT_RE.search(sanitized_lower):
+    if _INCOMPLETE_PCT_RE.search(sanitized):
         raise ValueError("URLに不完全なパーセントエンコードが含まれています")
     if "/" in sanitized or "/" in decoded:
         raise ValueError("スキームなしURLにパスは指定できません")

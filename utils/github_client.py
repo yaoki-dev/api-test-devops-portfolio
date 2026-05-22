@@ -124,7 +124,10 @@ class RateLimitError(GitHubAPIError):
     def __init__(self, reset_time: int):
         self.reset_time = reset_time
         if reset_time > 0:
-            reset_str = datetime.fromtimestamp(reset_time, tz=UTC).isoformat()
+            try:
+                reset_str = datetime.fromtimestamp(reset_time, tz=UTC).isoformat()
+            except OverflowError, OSError:
+                reset_str = f"unix:{reset_time}"
         else:
             reset_str = "unknown"
         super().__init__(f"Rate limit exceeded. Reset at {reset_str}")
@@ -269,13 +272,18 @@ class AsyncGitHubClient:
                 )
             except Exception as close_exc:  # noqa: BLE001
                 # 予期しない例外（AttributeError, RuntimeError 等の実装バグ可能性）
-                # — error レベルで記録し隠蔽しない（AsyncAPIClient.__aexit__ と設計統一, PR#347）。
+                has_body_exception = exc_type is not None
                 self.logger.error(
                     "github_client_aclose_unexpected_error",
                     error_type=type(close_exc).__name__,
                     error_module=type(close_exc).__module__,
-                    has_body_exception=exc_type is not None,
+                    has_body_exception=has_body_exception,
+                    exc_info=True,  # スタックトレースをログに残す
                 )
+                # body 例外がない場合のみ実装バグとして re-raise。
+                # body 例外がある場合は本質的原因の上書きを防ぐため raise しない。
+                if not has_body_exception:
+                    raise close_exc
             else:
                 # aclose() 成功時のみ closed ログを出す。logger.info を try 内に置くと
                 # logger 自体の例外が aclose 失敗として誤検知されるため else 節に分離 (PR#347)。
@@ -422,7 +430,17 @@ class AsyncGitHubClient:
         response_headers: httpx.Headers,
         remaining: int,
     ) -> int | None:
-        """RateLimit残量が閾値未満の場合に警告ログを出力する。"""
+        """RateLimit残量が閾値未満の場合に警告ログを出力する。
+
+        Args:
+            response_headers: HTTPレスポンスヘッダー（X-RateLimit-Reset を参照）
+            remaining: 残りAPIコール数
+
+        Returns:
+            remaining が閾値未満の場合は X-RateLimit-Reset のエポック秒（int）を返す。
+            閾値以上の場合は None を返す。
+            返却値は呼び出し元で Rate Limit エラー処理用 reset_time としても使用される。
+        """
         if remaining < _RATE_LIMIT_WARNING_THRESHOLD:
             reset_time = self._parse_rate_limit_header(
                 response_headers, "X-RateLimit-Reset", _RATE_LIMIT_RESET_FALLBACK

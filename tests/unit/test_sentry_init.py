@@ -365,6 +365,8 @@ class TestSensitiveKeysCompleteness:
             # 既存挙動の維持確認: 数字なし + アンダースコア境界
             ("password_2", True),  # _ 区切りで境界成立
             ("api_key_2", True),
+            # ハイフン区切り + 数字境界: api-key-v2 → api_key_v2 → True
+            ("api-key-v2", True),
         ],
     )
     def test_is_sensitive_key_digit_boundary(self, key: str, expected: bool) -> None:
@@ -871,6 +873,11 @@ class TestBeforeSend:
         result = sentry_module._scrub_list_item({"token": "secret"}, MAX_SCRUB_DEPTH)
         assert result == "[MAX_DEPTH_EXCEEDED]"
 
+    def test_scrub_tags_item_respects_max_depth(self) -> None:
+        """_scrub_tags_item も MAX_SCRUB_DEPTH 到達時に "[MAX_DEPTH_EXCEEDED]" を返す"""
+        result = sentry_module._scrub_tags_item(("token", "secret"), _depth=MAX_SCRUB_DEPTH)
+        assert result == "[MAX_DEPTH_EXCEEDED]"
+
     def test_scrub_sentry_field_non_dict_logs_warning(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -996,6 +1003,41 @@ class TestBeforeSend:
         assert result[0] == ("password", "[REDACTED]")
         assert result[1] == ("safe", "ok")
         assert result[2] == ("token", "[REDACTED]")
+
+    def test_scrub_tags_item_nonsensitive_value_nested_dict_scrubbed(self) -> None:
+        """非機密タグペアの value が dict の場合、内部の機密キーが redact される。"""
+        tag = ("user_metadata", {"password": "secret", "safe": "ok"})
+        result = sentry_module._scrub_tags_item(tag)
+        # キーは保持、value 内の機密キーは redact
+        assert result[0] == "user_metadata"
+        assert result[1]["password"] == "[REDACTED]"  # noqa: S105
+        assert result[1]["safe"] == "ok"
+
+    def test_scrub_tags_item_nonsensitive_value_two_element_list_preserved(self) -> None:
+        """非機密タグペアの value が2要素リストでもタグペアと誤認せずそのまま保持する。
+
+        （例: ("user_metadata", ["email", "user@example.com"]) の ["email", ...] は
+        tag pair ではなく単なる配列値。_scrub_list_item を使うことで過剰 redact を防ぐ）
+        """
+        tag = ("user_metadata", ["email", "user@example.com"])
+        result = sentry_module._scrub_tags_item(tag)
+        assert result[0] == "user_metadata"
+        # value の2要素リストはタグペアと誤認されず保持される
+        assert result[1] == ["email", "user@example.com"]
+
+    def test_scrub_tags_item_nonsensitive_value_nested_tuples_scrubbed(self) -> None:
+        """非機密タグペアの value 内のネスト tuple の機密キーが redact される。
+
+        _scrub_list_item 経由で tuple の tag pair 判定が継承されるため、
+        ネストされた機密キーも適切にスクラブされる。
+        """
+        tag = ("meta", [("password", "s1"), ("token", "s2"), ("safe", "ok")])
+        result = sentry_module._scrub_tags_item(tag)
+        assert result[0] == "meta"
+        # _scrub_list_item が tuple の tag pair を判定し redact
+        assert result[1][0] == ("password", "[REDACTED]")
+        assert result[1][1] == ("token", "[REDACTED]")
+        assert result[1][2] == ("safe", "ok")
 
 
 class TestInitSentry:

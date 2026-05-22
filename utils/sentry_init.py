@@ -155,7 +155,8 @@ _SCRUBBED_EVENT_FIELDS: frozenset[str] = frozenset(
         "contexts",
         "tags",
         "breadcrumbs",
-        "exception",  # スタックフレームのlocal vars (frames[*].vars) のPII漏洩防止 (PR#347)
+        "exception",  # スタックフレームのlocal vars (frames[*].vars) のスクラブ対象 (PR#347)
+        # 注: キー名が _is_sensitive_key で True の場合のみ scrub。非機密キー名の機密値は対象外
     }
 )
 
@@ -171,9 +172,9 @@ _NORMALIZED_SENSITIVE_KEYS: frozenset[str] = frozenset(
     sensitive.replace("-", "_") for sensitive in SENSITIVE_KEYS
 )
 _SENSITIVE_KEY_PATTERN: re.Pattern[str] = re.compile(
-    r"(?:^|_|\d)(?:"
+    r"(?:^|[_\d])(?:"
     + "|".join(re.escape(sensitive) for sensitive in sorted(_NORMALIZED_SENSITIVE_KEYS))
-    + r")(?:_|\d|$)"  # 数字境界 (v2token, password2, api_key2 等) も扱う
+    + r")(?:[_\d]|$)"  # 数字境界 (v2token, password2, api_key2 等) も扱う
 )
 # 全大文字命名 fallback 用: アンダースコア除去後の完全一致集合 (PR#347)
 # APIKEY / ACCESSTOKEN 等は ACRONYM 分割が効かないため別途事前計算
@@ -182,8 +183,10 @@ _COMPACT_SENSITIVE_KEYS: frozenset[str] = frozenset(
 )
 
 # camelCase / ACRONYM 分割用の事前コンパイル済みパターン (PR#347 review)。
-# _is_sensitive_key はホットパス (_before_send 経由) で頻繁に呼ばれるため、
-# 生リテラル re.sub の re._cache 依存を排し _SENSITIVE_KEY_PATTERN と設計を統一する。
+# 生リテラル re.sub の re._cache 依存を排し、設計を統一するため、
+# すべての正規表現をモジュールレベルで事前コンパイルしています。
+# (注: Pythonレイヤーでのハッシュルックアップ・オーバーヘッドを避けるため、
+#  関数自体への @lru_cache 適用はあえて行わず、Cレイヤーの正規表現マッチのみで高速処理します)
 _ACRONYM_PATTERN: re.Pattern[str] = re.compile(r"([A-Z]+)([A-Z][a-z])")
 _CAMEL_PATTERN: re.Pattern[str] = re.compile(r"(?<=[a-z])(?=[A-Z])")
 
@@ -244,7 +247,11 @@ def _scrub_list_item(item: Any, _depth: int) -> Any:
             key = item[0]
             if isinstance(key, str) and _is_sensitive_key(key):
                 return (key, "[REDACTED]")
-        return item
+        # len==2 非機密キー tuple を含む全 tuple の各要素を再帰スクラブし、
+        # ネストされた dict/list 内の機密キーの漏洩を防ぐ。
+        # 注: 素の str/数値要素はキーコンテキストを持たないため redact 対象外
+        # （キーベース scrub の仕様限界）。
+        return tuple(_scrub_list_item(elem, _depth + 1) for elem in item)
     if isinstance(item, dict):
         return _scrub_sensitive_data(item, _depth + 1)
     if isinstance(item, list):
@@ -350,12 +357,20 @@ def _scrub_tags_item(item: Any, _depth: int = 0) -> Any:
         key = item[0]
         if isinstance(key, str) and _is_sensitive_key(key):
             return (key, "[REDACTED]")
-        return item
+        # 非機密キー: value を _scrub_list_item で汎用スクラブする。
+        # _scrub_tags_item 自身を再帰させると、value 内の2要素リスト
+        # （例: ["email", "user@example.com"]）をタグペアと誤認し
+        # "email" を機密キーとして過剰 redact するため、タグペア
+        # コンテキストを持たない _scrub_list_item を使用する。
+        return (key, _scrub_list_item(item[1], _depth + 1))
     if isinstance(item, dict):
         return _scrub_sensitive_data(item, _depth + 1)
     if isinstance(item, list):
         # nested list は汎用 scrub にフォールバック（深さを引き継ぐ）
         return [_scrub_list_item(child, _depth=_depth + 1) for child in item]
+    if isinstance(item, tuple):
+        # len != 2 の tuple も _scrub_list_item で汎用スクラブ（list との一貫性）
+        return tuple(_scrub_list_item(child, _depth + 1) for child in item)
     return item
 
 

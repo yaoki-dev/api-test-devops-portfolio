@@ -695,17 +695,20 @@ async def test_aexit_aclose_known_exception_is_suppressed_with_warning() -> None
     assert len(error_logs) == 0
 
 
-async def test_aexit_aclose_unexpected_exception_logs_error() -> None:
-    """__aexit__ で予期しない例外（RuntimeError 等）は error ログを出力する（PR#347 #18）。
+async def test_aexit_aclose_unexpected_exception_reraises_when_no_body_exception() -> None:
+    """__aexit__ で body 例外なし + 予期しない close 例外 → close_exc を re-raise する。
 
-    実装バグ可能性のある例外は error レベルで記録し、has_body_exception フィールドを含む。
-    body 例外がない場合は has_body_exception=False。
+    （PR#347 二段構え）
+
+    body 例外がない状態（exc_type is None）では、aclose() の予期しない例外は
+    実装バグとして呼び出し元に伝播させる。
+    error ログ（has_body_exception=False, exc_info=True）が記録されてから re-raise。
     """
     client = AsyncGitHubClient()
     client._client = AsyncMock()
     client._client.aclose = AsyncMock(side_effect=RuntimeError("close-failed"))
 
-    with capture_logs() as log_output:
+    with pytest.raises(RuntimeError, match="close-failed"), capture_logs() as log_output:
         await client.__aexit__(None, None, None)
 
     unexpected_event = "github_client_aclose_unexpected_error"
@@ -715,6 +718,8 @@ async def test_aexit_aclose_unexpected_exception_logs_error() -> None:
     # PR#347 review Q2: third-party 例外起点モジュール識別のため error_module を併用
     assert error_logs[0]["error_module"] == "builtins"
     assert error_logs[0]["has_body_exception"] is False
+    # exc_info=True によりスタックトレースが記録される（PR#347 二段構え）
+    assert error_logs[0].get("exc_info") is True
     # 予期しない例外では warning ログは出ない
     warning_logs = [log for log in log_output if log.get("event") == "github_client_aclose_failed"]
     assert len(warning_logs) == 0
@@ -728,6 +733,7 @@ async def test_aexit_body_exception_not_overridden_by_close_exception() -> None:
     ``async with`` body 例外 + aclose 例外の両発生時、原因情報 (body 例外) を
     優先伝播させて debuggability を維持する (CWE-755 例外マスク回避)。
     RuntimeError は予期しない例外ブランチ → error ログ + has_body_exception=True。
+    body 例外あり時は close_exc を re-raise しない（二段構え）。
     """
     client = AsyncGitHubClient()
 
@@ -747,6 +753,8 @@ async def test_aexit_body_exception_not_overridden_by_close_exception() -> None:
     assert error_logs[0]["error_type"] == "RuntimeError"
     assert error_logs[0]["error_module"] == "builtins"
     assert error_logs[0]["has_body_exception"] is True
+    # exc_info=True によりスタックトレースが記録される（PR#347 二段構え）
+    assert error_logs[0].get("exc_info") is True
     # warning ログは出ない
     warning_logs = [log for log in log_output if log.get("event") == "github_client_aclose_failed"]
     assert len(warning_logs) == 0
