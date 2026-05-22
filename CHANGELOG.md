@@ -131,8 +131,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **変更理由**: CPython 仕様上、`__aexit__` 内で raise すると body 例外
     (`exc_val`) を visible exception が close 例外で上書き (`__context__` には
     body 例外が入るが視認しづらい).
-  - close 失敗時は warning log (`*_aclose_failed`, error_type のみ記録) を
-    出力し、re-raise しない. 両ファイル一貫適用.
+  - 既知の close 失敗 (`httpx.CloseError`, `OSError`): warning log
+    (`*_aclose_failed`, error_type のみ記録) を出力し、re-raise しない.
+  - 予期しない close 失敗 (その他の `Exception`): error log
+    (`*_aclose_unexpected_error`, `has_body_exception`, `exc_info=True`) を記録し、
+    body 例外がない場合のみ実装バグとして re-raise する (body 例外がある場合は
+    本質的原因の上書きを防ぐため re-raise しない).
+  - 上記の close 例外ハンドリングは両ファイル (`github_client.py` /
+    `api_client.py`) で一貫適用.
 
 - **Changed**: `tests/unit/test_sentry_init.py` の Sentry init exception 経路
   test で、DSN 非漏洩 assertion を強化.

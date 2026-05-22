@@ -19,7 +19,8 @@ structlogと連携し、ERROR以上のログをSentryに送信。
         logger.info("Sentry monitoring enabled")
 
 デバッグ:
-    環境変数 SENTRY_DEBUG=true で初期化失敗の警告を有効化。
+    初期化失敗時は SENTRY_DEBUG の値に関わらず warning ログを常時出力する。
+    （SENTRY_DEBUG は将来の拡張用に定義済みだが、現行 init_sentry() では参照しない）
 
 セキュリティ:
     - before_sendフックで機密データを自動除外（39種類のキーパターン）
@@ -528,7 +529,7 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
         # _scrub_sensitive_data: dict内の機密キーを [REDACTED] に置換（PII除外）
         for field in _SCRUBBED_EVENT_FIELDS:
             _scrub_sentry_field(event_dict, field)
-    except (MemoryError, RecursionError):  # fmt: skip  # noqa: E261
+    except (MemoryError, RecursionError):  # fmt: skip
         # システム異常（OOM・スタックオーバーフロー）は吸収せず再 raise する。
         # scrub 失敗の silent absorption で PII ドロップが遅延するリスクより
         # プロセス異常終了を優先させる（CWE-391 対策）。

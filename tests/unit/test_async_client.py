@@ -957,6 +957,72 @@ async def test_async_api_client_aexit_body_exception_not_overridden_by_close_exc
     assert warning_logs[0]["error_module"] == "httpx"
 
 
+async def test_aexit_unexpected_exception_reraises_when_no_body_exception() -> None:
+    """__aexit__ で body 例外なし + 予期しない close 例外 → close_exc を re-raise する。
+
+    github_client.py L698 のテストを api_client 用に移植（PR#347 二段構え統一）。
+
+    body 例外がない状態（exc_type is None）では、aclose() の予期しない例外は
+    実装バグとして呼び出し元に伝播させる。
+    error ログ（has_body_exception=False, exc_info=True）が記録されてから re-raise。
+    """
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(client, "aclose", new=AsyncMock(side_effect=RuntimeError("close-failed"))),
+        pytest.raises(RuntimeError, match="close-failed"),
+        capture_logs() as log_output,
+    ):
+        await client.__aexit__(None, None, None)
+
+    unexpected_event = "async_api_client_aclose_unexpected_error"
+    error_logs = [log for log in log_output if log.get("event") == unexpected_event]
+    assert len(error_logs) == 1
+    assert error_logs[0]["error_type"] == "RuntimeError"
+    assert error_logs[0]["error_module"] == "builtins"
+    assert error_logs[0]["has_body_exception"] is False
+    # exc_info=True によりスタックトレースが記録される（PR#347 二段構え）
+    assert error_logs[0].get("exc_info") is True
+    # 予期しない例外では warning ログは出ない
+    failed_event = "async_api_client_aclose_failed"
+    warning_logs = [log for log in log_output if log.get("event") == failed_event]
+    assert len(warning_logs) == 0
+
+
+async def test_aexit_unexpected_exception_suppressed_when_body_exception() -> None:
+    """__aexit__ で body 例外あり + 予期しない close 例外 → re-raise しない（body 例外優先）。
+
+    github_client.py L728 のテストを api_client 用に移植（PR#347 二段構え統一）。
+
+    body 例外がある状態（exc_type is not None）では close_exc を re-raise せず、
+    body 例外を優先伝播させて debuggability を維持する（CWE-755 例外マスク回避）。
+    RuntimeError は予期しない例外ブランチ → error ログ + has_body_exception=True。
+    """
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(client, "aclose", new=AsyncMock(side_effect=RuntimeError("close-failed"))),
+        pytest.raises(ValueError, match="body-error"),
+        capture_logs() as log_output,
+    ):
+        async with client:
+            raise ValueError("body-error")
+
+    # close 例外は re-raise しない。body 例外は ValueError として外側に伝播。
+    unexpected_event = "async_api_client_aclose_unexpected_error"
+    error_logs = [log for log in log_output if log.get("event") == unexpected_event]
+    assert len(error_logs) == 1
+    assert error_logs[0]["error_type"] == "RuntimeError"
+    assert error_logs[0]["error_module"] == "builtins"
+    assert error_logs[0]["has_body_exception"] is True
+    # exc_info=True によりスタックトレースが記録される（PR#347 二段構え）
+    assert error_logs[0].get("exc_info") is True
+    # warning ログは出ない
+    failed_event = "async_api_client_aclose_failed"
+    warning_logs = [log for log in log_output if log.get("event") == failed_event]
+    assert len(warning_logs) == 0
+
+
 @respx.mock
 async def test_async_health_check_success():
     """

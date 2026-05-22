@@ -166,7 +166,7 @@ def _validate_netloc(parsed: ParseResult) -> None:
     # （urlparse が特定のエンコード済み入力で username=None を返すエッジケース対策）
     try:
         has_userinfo = parsed.username is not None or parsed.password is not None
-    except (ValueError, OverflowError) as e:
+    except (ValueError, OverflowError) as e:  # fmt: skip
         # parsed.username/password は内部で独自にunquoteするため、L135-137のチェックとは独立
         raise ValueError(f"URLのuserinfoパースに失敗しました（netloc={parsed.netloc!r}）") from e
     if has_userinfo:

@@ -126,7 +126,7 @@ class RateLimitError(GitHubAPIError):
         if reset_time > 0:
             try:
                 reset_str = datetime.fromtimestamp(reset_time, tz=UTC).isoformat()
-            except OverflowError, OSError:
+            except (OverflowError, OSError):  # fmt: skip
                 reset_str = f"unix:{reset_time}"
         else:
             reset_str = "unknown"
@@ -262,7 +262,7 @@ class AsyncGitHubClient:
         if self._client:
             try:
                 await self._client.aclose()
-            except (httpx.CloseError, OSError) as close_exc:
+            except (httpx.CloseError, OSError) as close_exc:  # fmt: skip
                 # 既知のクローズ時例外 — warning のみ（body 例外 exc_val を上書きしない）。
                 # error_type + error_module で third-party 例外の起点モジュールを識別可能にする。
                 self.logger.warning(
@@ -445,11 +445,17 @@ class AsyncGitHubClient:
             reset_time = self._parse_rate_limit_header(
                 response_headers, "X-RateLimit-Reset", _RATE_LIMIT_RESET_FALLBACK
             )
-            reset_dt = datetime.fromtimestamp(reset_time, tz=UTC)
+            # 異常に大きい reset_time では OverflowError/OSError が発生する場合がある。
+            # RateLimitError.__init__（L127-130）と同じパターンで保護し、
+            # 警告ログの継続出力を保証する。
+            try:
+                reset_str = datetime.fromtimestamp(reset_time, tz=UTC).isoformat()
+            except (OverflowError, OSError):  # fmt: skip
+                reset_str = f"unix:{reset_time}"
             self.logger.warning(
                 "rate_limit_low",
                 remaining=remaining,
-                reset_time=reset_dt.isoformat(),
+                reset_time=reset_str,
             )
             return reset_time
         return None
@@ -857,7 +863,7 @@ class AsyncGitHubClient:
                 if attempt < self.max_retries - 1:
                     continue
 
-            except (httpx.NetworkError, httpx.RemoteProtocolError) as e:
+            except (httpx.NetworkError, httpx.RemoteProtocolError) as e:  # fmt: skip
                 # PII漏洩防止: str(e)はURL/host:port等を含む可能性があるためログから除外
                 retry_error_message = f"Network error: {type(e).__qualname__}"
                 await self._log_and_sleep_for_retry(

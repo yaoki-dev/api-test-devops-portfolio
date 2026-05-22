@@ -205,7 +205,7 @@ def _safe_error_summary(e: BaseException) -> str:
         try:
             errs = list(errors_fn(include_input=False))
             return f"{len(errs)} validation error(s)"
-        except (MemoryError, RecursionError):  # fmt: skip  # noqa: E261
+        except (MemoryError, RecursionError):  # fmt: skip
             raise
         except Exception as summary_err:  # noqa: BLE001
             # errors() 呼出失敗 (Pydantic v3 互換性等) — 型名のみ 1 回通知
@@ -325,7 +325,7 @@ def _sentry_processor(  # noqa: C901
     if sentry_sdk is None:
         try:
             _emit_import_error_warnings()
-        except (MemoryError, RecursionError):  # fmt: skip  # noqa: E261
+        except (MemoryError, RecursionError):  # fmt: skip
             # システム例外は再発生させ OOMKilled / 無限再帰検知を妨げない
             raise
         except Exception as warn_err:  # noqa: BLE001
@@ -370,7 +370,7 @@ def _sentry_processor(  # noqa: C901
             for key, value in extra.items():
                 try:
                     scope.set_extra(key, value)
-                except (AttributeError, TypeError):  # fmt: skip  # noqa: E261
+                except (AttributeError, TypeError):  # fmt: skip
                     # user-data serialization failure (e.g. broken __repr__ on Pydantic model)
                     # → 該当キーのみスキップし、追加ログは出さない（PII再露出/再帰防止）
                     continue
@@ -406,7 +406,7 @@ def _sentry_processor(  # noqa: C901
                     level=sentry_level,
                 )
 
-    except (KeyboardInterrupt, SystemExit, MemoryError, RecursionError):  # fmt: skip  # noqa: E261
+    except (KeyboardInterrupt, SystemExit, MemoryError, RecursionError):  # fmt: skip
         # システム例外は再発生（graceful shutdown/K8s OOMKilled検知対応）
         raise
     except (AttributeError, TypeError) as e:

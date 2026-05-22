@@ -2391,3 +2391,106 @@ async def test_304_returns_correct_cached_data_per_params() -> None:
 
     assert updated_route.call_count == 2
     assert created_route.call_count == 1
+
+
+# =============================================================================
+# PR#347 追加テスト（3件）
+# =============================================================================
+
+
+def test_rate_limit_error_overflow_fallback() -> None:
+    """RateLimitError: 極端な reset_time で OverflowError/OSError → unix:{reset_time} フォールバック
+
+    datetime.fromtimestamp は 2**63 のような極端な値で OverflowError または OSError を発生させる。
+    フォールバックとして "unix:{reset_time}" 形式のメッセージが生成されることを確認する。
+    """
+    extreme_reset_time = 2**63
+    err = RateLimitError(extreme_reset_time)
+    assert f"unix:{extreme_reset_time}" in str(err)
+    assert err.reset_time == extreme_reset_time
+
+
+@pytest.mark.parametrize(
+    "invalid_value",
+    [
+        pytest.param(0, id="zero"),
+        pytest.param(-1, id="negative_one"),
+        pytest.param(-100, id="negative_hundred"),
+    ],
+)
+def test_async_github_client_max_cache_entries_validation(invalid_value: int) -> None:
+    """AsyncGitHubClient: max_cache_entries が 1 未満の値で ValueError を送出する
+
+    max_cache_entries=0 / -1 / -100 はいずれも不正値であり、
+    "max_cache_entries must be >= 1" メッセージの ValueError を発生させる。
+    """
+    with pytest.raises(ValueError, match="max_cache_entries must be >= 1"):
+        AsyncGitHubClient(max_cache_entries=invalid_value)
+
+
+async def test_aexit_normal_close_logs_info() -> None:
+    """__aexit__ 正常クローズ時に "AsyncGitHubClient closed" の info ログが1回出力される
+
+    aclose() が例外なく完了した場合（else 節）に structlog の info ログが記録されることを
+    capture_logs で検証する。
+    """
+    with capture_logs() as log_output:
+        async with AsyncGitHubClient():
+            pass  # 正常終了
+
+    closed_logs = [log for log in log_output if log.get("event") == "AsyncGitHubClient closed"]
+    assert len(closed_logs) == 1
+    assert closed_logs[0]["log_level"] == "info"
+
+
+# =============================================================================
+# _check_rate_limit_warning: 異常 reset_time フォールバックテスト
+# =============================================================================
+
+
+@respx.mock
+async def test_check_rate_limit_warning_overflow_reset_time() -> None:
+    """_check_rate_limit_warning: 極端に大きい X-RateLimit-Reset でも例外が伝播しないこと
+
+    検証項目:
+    - OverflowError/OSError が呼び出し元に伝播しないこと（正常完了）
+    - rate_limit_low warning ログが1件出力されること
+    - reset_time ログフィールドが "unix:{reset_time}" 形式のフォールバック文字列になること
+    - 戻り値（_request 内での reset_time）は元の int 値が保持されること
+      （result["login"] が正常取得できることで間接確認）
+
+    既存パターン準拠:
+    - RateLimitError.__init__ の try/except (OverflowError, OSError) と同じ保護
+    - フォールバック形式 "unix:{reset_time}" は L130 と完全一致
+    """
+    # 2**63 はほとんどのプラットフォームで datetime.fromtimestamp が
+    # OverflowError または OSError を送出する値
+    overflow_reset: int = 2**63
+
+    respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+        status_code=200,
+        json={"login": "octocat"},
+        headers={
+            "X-RateLimit-Remaining": "5",  # < 10 → _check_rate_limit_warning 実行
+            "X-RateLimit-Reset": str(overflow_reset),
+        },
+    )
+
+    with capture_logs() as log_output:
+        async with AsyncGitHubClient() as client:
+            # 例外が伝播しないことを確認（正常完了）
+            result = await client.get_user("octocat")
+
+    # (3) 戻り値: 正常取得できること
+    assert result["login"] == "octocat"
+
+    # (1) 例外が伝播しないこと → ここまで到達できれば検証済み
+
+    # (2) rate_limit_low warning ログが1件出力されること
+    rate_limit_low_logs = [log for log in log_output if log.get("event") == "rate_limit_low"]
+    assert len(rate_limit_low_logs) == 1
+    assert rate_limit_low_logs[0]["log_level"] == "warning"
+    assert rate_limit_low_logs[0]["remaining"] == 5
+
+    # (2) reset_time フィールドが "unix:{reset_time}" フォールバック形式になること
+    assert rate_limit_low_logs[0]["reset_time"] == f"unix:{overflow_reset}"

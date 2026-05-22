@@ -1365,6 +1365,43 @@ class TestSdkExceptionHandling:
         assert is_sentry_initialized() is False
 
     @patch("utils.sentry_init.get_settings")
+    @patch("sentry_sdk.init", side_effect=RuntimeError("SDK init failed"))
+    def test_init_sentry_logger_failure_falls_back_to_stderr(
+        self,
+        mock_sdk_init: MagicMock,
+        mock_settings: MagicMock,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """非本番環境でSDK初期化失敗後、_logger.warning自体が例外を出した場合にstderrへフォールバックする"""
+        # 非本番環境・有効なDSN設定で except Exception 経路に誘導
+        mock_settings.return_value.sentry.enabled = True
+        mock_settings.return_value.sentry.dsn = SecretStr(
+            "https://abc123@o456.ingest.us.sentry.io/789",
+        )
+        mock_settings.return_value.sentry.environment = "testing"
+        mock_settings.return_value.sentry.traces_sample_rate = 0.1
+        mock_settings.return_value.sentry.profiles_sample_rate = 0.1
+        mock_settings.return_value.sentry.send_default_pii = False
+        mock_settings.return_value.environment.value = "testing"
+        mock_settings.return_value.is_production_like.return_value = False  # 非本番環境
+
+        import utils.sentry_init as sentry_module
+
+        # _logger.warning が例外を出すことでstderrフォールバック経路を強制
+        with patch.object(
+            sentry_module._logger,
+            "warning",
+            side_effect=RuntimeError("logger broken"),
+        ):
+            result = init_sentry()
+
+        assert result is False
+        captured = capsys.readouterr()
+        assert "[SENTRY_WARN]" in captured.err
+        assert "sentry_init_failed" in captured.err
+        assert "logger_error_type=RuntimeError" in captured.err
+
+    @patch("utils.sentry_init.get_settings")
     def test_import_error_raises_in_production(self, mock_settings: MagicMock) -> None:
         """本番環境でsentry-sdk未インストールの場合はRuntimeErrorを発生させる
 

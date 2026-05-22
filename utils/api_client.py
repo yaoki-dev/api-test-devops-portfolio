@@ -753,7 +753,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         try:
             response = self.get("/users", params={"_limit": 1})
             return response.status_code == 200
-        except (KeyboardInterrupt, SystemExit, MemoryError):  # fmt: skip  # noqa: E261
+        except (KeyboardInterrupt, SystemExit, MemoryError):  # fmt: skip
             # システム例外は再発生（K8s OOMKilled検知、graceful shutdown対応）
             raise
         except APIClientError as e:
@@ -846,13 +846,18 @@ class AsyncAPIClient:
             )
         except Exception as close_exc:  # noqa: BLE001
             # 予期しない例外（AttributeError, RuntimeError 等の実装バグ可能性）
-            # — error レベルで記録し、隠蔽しない
+            has_body_exception = exc_type is not None
             self.logger.error(
                 "async_api_client_aclose_unexpected_error",
                 error_type=type(close_exc).__name__,
                 error_module=type(close_exc).__module__,
-                has_body_exception=exc_type is not None,  # PR#347: body例外の有無をデバッグ用に記録
+                has_body_exception=has_body_exception,
+                exc_info=True,  # スタックトレースをログに残す
             )
+            # body 例外がない場合のみ実装バグとして re-raise。
+            # body 例外がある場合は本質的原因の上書きを防ぐため raise しない。
+            if not has_body_exception:
+                raise close_exc
 
     async def aclose(self) -> None:
         """クライアントのクローズ"""
