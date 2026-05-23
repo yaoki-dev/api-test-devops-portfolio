@@ -20,6 +20,9 @@ from structlog.typing import FilteringBoundLogger
 from config.settings import settings
 from utils.logger import get_logger
 
+# httpx 例外（NetworkError, RemoteProtocolError 等）をここに追加してはならない。
+# github_client.py の _request では except 句の順序で先行キャッチしており、
+# この定数に httpx 例外を追加すると NetworkError のリトライが壊れる。
 ASYNC_FATAL_EXCEPTIONS: tuple[type[BaseException], ...] = (
     KeyboardInterrupt,
     SystemExit,
@@ -224,7 +227,8 @@ def _resolve_client_config(
         (base_url, timeout, retry_count, retry_delay, default_headers) のタプル
 
     Raises:
-        ValueError: base_urlが空文字列またはスペースのみの文字列の場合
+        ValueError: base_urlが空文字列またはホワイトスペース
+            （str.strip() で除去される文字）のみの文字列の場合
 
     """
     base_url = base_url if base_url is not None else settings.api.base_url
@@ -343,7 +347,8 @@ class SyncAPIClient:
         headers: 追加HTTPヘッダー
 
         Raises:
-            ValueError: base_urlが空文字列の場合
+            ValueError: base_urlが空文字列またはホワイトスペース
+                （スペース・タブ・改行等）のみの文字列の場合
 
         """
         # 設定解決・バリデーション（Sync/Async共通ロジック）
@@ -733,6 +738,8 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         Note:
             Async版と同一インターフェースで統一。
             CLI、スクリプト、レガシーシステム統合時に使用。
+            同期版はasyncioタスクキャンセル文脈を持たないため、
+            Async版と異なりCancelledErrorの再発生処理は不要。
             ログ出力（``health_check_failed`` イベント）では ``error`` フィールドを省略し、
             ``error_type`` のみ記録する（``_classify_error()`` は経由せず
             直接 ``logger.warning`` を呼び出す）。
@@ -789,7 +796,8 @@ class AsyncAPIClient:
         headers: 追加HTTPヘッダー
 
         Raises:
-            ValueError: base_urlが空文字列の場合
+            ValueError: base_urlが空文字列またはホワイトスペース
+                （スペース・タブ・改行等）のみの文字列の場合
 
         """
         # 設定解決・バリデーション（Sync/Async共通ロジック）
@@ -1151,7 +1159,8 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             users_data: 作成するユーザーデータのリスト（各要素はname/emailを含むdict）
 
         Returns:
-            成功したユーザーデータのリスト（失敗した分は除外される）
+            成功したユーザーデータのリスト（失敗した分は除外される）。
+            部分失敗時は入力件数より短いリストを返す。
 
         Raises:
             asyncio.CancelledError: 単一タスクがキャンセルされた場合（K8s graceful shutdown等）
@@ -1391,7 +1400,16 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         results = await asyncio.gather(*[fetch_with_semaphore(uid) for uid in user_ids])
 
         # None除外（失敗分）
-        return [r for r in results if r is not None]
+        successful = [r for r in results if r is not None]
+        failed_count = len(user_ids) - len(successful)
+        if failed_count:
+            self.logger.warning(
+                "get_multiple_users_partial_failure_summary",
+                failed_count=failed_count,
+                success_count=len(successful),
+                requested_count=len(user_ids),
+            )
+        return successful
 
 
 # =============================================================================

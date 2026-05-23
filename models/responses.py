@@ -4,6 +4,7 @@ XSS攻撃防止のため、ユーザー生成コンテンツフィールドに
 html.escape()サニタイゼーションを適用したPydanticモデル。
 （email・websiteはhtml.escape対象外: emailはEmailStr RFC準拠バリデーション、
 websiteはURL形式のためhtmlコンテキスト出力時は呼び出し元でエスケープ）
+モデル値はAPIレスポンスの意味論を保つ。HTML等への出力時のエスケープ責務は呼び出し元が持つ。
 
 実務推奨パターン:
 1. Defense in Depth: 型検証 + サニタイゼーション + 長さ制限
@@ -278,18 +279,7 @@ class Post(BaseModel):
     @field_validator("title", "body")
     @classmethod
     def sanitize_post_content(cls, v: str) -> str:
-        """投稿のタイトルと本文をサニタイズ
-
-        XSS攻撃を防ぐため、ユーザー生成コンテンツから
-        危険なHTML特殊文字をエスケープ。
-
-        Args:
-            v: サニタイズ対象の文字列
-
-        Returns:
-            サニタイズ済み文字列
-
-        """
+        """投稿のタイトルと本文をサニタイズする。"""
         return sanitize_user_content(v)
 
 
@@ -328,18 +318,7 @@ class Comment(BaseModel):
     @field_validator("name", "body")
     @classmethod
     def sanitize_comment_content(cls, v: str) -> str:
-        """コメントの名前、本文をサニタイズ
-
-        XSS攻撃を防ぐため、ユーザー生成コンテンツから
-        危険なHTML特殊文字をエスケープ。
-
-        Args:
-            v: サニタイズ対象の文字列
-
-        Returns:
-            サニタイズ済み文字列
-
-        """
+        """コメントの名前、本文をサニタイズする。"""
         return sanitize_user_content(v)
 
 
@@ -376,18 +355,7 @@ class Geo(BaseModel):
     @field_validator("lat", "lng")
     @classmethod
     def sanitize_geo_content(cls, v: str) -> str:
-        """地理座標をサニタイズ
-
-        XSS攻撃を防ぐため、ユーザー生成コンテンツから
-        危険なHTML特殊文字をエスケープ。
-
-        Args:
-            v: サニタイズ対象の文字列
-
-        Returns:
-            サニタイズ済み文字列
-
-        """
+        """地理座標をサニタイズする。"""
         return sanitize_user_content(v)
 
 
@@ -417,18 +385,7 @@ class Address(BaseModel):
     @field_validator("street", "suite", "city", "zipcode")
     @classmethod
     def sanitize_address_content(cls, v: str) -> str:
-        """住所情報をサニタイズ
-
-        XSS攻撃を防ぐため、ユーザー生成コンテンツから
-        危険なHTML特殊文字をエスケープ。
-
-        Args:
-            v: サニタイズ対象の文字列
-
-        Returns:
-            サニタイズ済み文字列
-
-        """
+        """住所情報をサニタイズする。"""
         return sanitize_user_content(v)
 
 
@@ -459,18 +416,7 @@ class Company(BaseModel):
     @field_validator("name", "catch_phrase", "bs")
     @classmethod
     def sanitize_company_content(cls, v: str) -> str:
-        """企業情報をサニタイズ
-
-        XSS攻撃を防ぐため、ユーザー生成コンテンツから
-        危険なHTML特殊文字をエスケープ。
-
-        Args:
-            v: サニタイズ対象の文字列
-
-        Returns:
-            サニタイズ済み文字列
-
-        """
+        """企業情報をサニタイズする。"""
         return sanitize_user_content(v)
 
 
@@ -486,7 +432,8 @@ class User(BaseModel):
         id: ユーザーID（1以上）
         name: ユーザー名（サニタイズ済み、最大100文字）
         username: ユーザー名（英数字、サニタイズ済み、最大50文字）
-        email: メールアドレス（EmailStr RFC構文チェック済み・DNS検証なし、最大100文字）
+        email: メールアドレス（EmailStr RFC構文チェック済み・DNS検証なし、最大100文字。
+            html.escape 非適用。HTML出力時は呼び出し元で html.escape(email) 必須）
         address: 住所情報（ネストされたAddressモデル）
         phone: 電話番号（サニタイズ済み、最大50文字）
         website: ウェブサイトURL（制御文字除去・前後空白除去・http/httpsスキーム検証済み、
@@ -517,18 +464,7 @@ class User(BaseModel):
     @field_validator("name", "username", "phone")
     @classmethod
     def sanitize_user_fields(cls, v: str) -> str:
-        """ユーザー情報フィールド（name, username, phone）をサニタイズ
-
-        XSS攻撃を防ぐため、ユーザー生成コンテンツから
-        危険なHTML特殊文字をエスケープ。
-
-        Args:
-            v: サニタイズ対象の文字列
-
-        Returns:
-            サニタイズ済み文字列
-
-        """
+        """ユーザー情報フィールド（name, username, phone）をサニタイズする。"""
         return sanitize_user_content(v)
 
     @field_validator("website", mode="before")
@@ -659,18 +595,7 @@ class Todo(BaseModel):
     @field_validator("title")
     @classmethod
     def sanitize_todo_title(cls, v: str) -> str:
-        """TODOタイトルをサニタイズ
-
-        XSS攻撃を防ぐため、ユーザー生成コンテンツから
-        危険なHTML特殊文字をエスケープ。
-
-        Args:
-            v: サニタイズ対象の文字列
-
-        Returns:
-            サニタイズ済み文字列
-
-        """
+        """TODOタイトルをサニタイズする。"""
         return sanitize_user_content(v)
 
 
@@ -696,18 +621,7 @@ class Album(BaseModel):
     @field_validator("title")
     @classmethod
     def sanitize_album_title(cls, v: str) -> str:
-        """アルバムタイトルをサニタイズ
-
-        XSS攻撃を防ぐため、ユーザー生成コンテンツから
-        危険なHTML特殊文字をエスケープ。
-
-        Args:
-            v: サニタイズ対象の文字列
-
-        Returns:
-            サニタイズ済み文字列
-
-        """
+        """アルバムタイトルをサニタイズする。"""
         return sanitize_user_content(v)
 
 
@@ -745,18 +659,7 @@ class Photo(BaseModel):
     @field_validator("title")
     @classmethod
     def sanitize_photo_title(cls, v: str) -> str:
-        """写真タイトルをサニタイズ
-
-        XSS攻撃を防ぐため、ユーザー生成コンテンツから
-        危険なHTML特殊文字をエスケープ。
-
-        Args:
-            v: サニタイズ対象の文字列
-
-        Returns:
-            サニタイズ済み文字列
-
-        """
+        """写真タイトルをサニタイズする。"""
         return sanitize_user_content(v)
 
     # mode 未指定（デフォルト after）: Pydantic が str 型強制後にバリデーション実行

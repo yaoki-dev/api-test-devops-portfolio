@@ -341,7 +341,7 @@ class TestGeoModel:
         with pytest.raises(ValidationError) as exc_info:
             Geo(lat="0", lng="0", extra="not allowed")  # type: ignore[call-arg]
 
-        assert "extra" in str(exc_info.value).lower()
+        assert exc_info.value.errors()[0]["type"] == "extra_forbidden"
 
     @pytest.mark.parametrize(
         ("lat", "lng"),
@@ -627,7 +627,7 @@ class TestUserModel:
         with pytest.raises(ValidationError) as exc_info:
             User(**valid_user_data)
 
-        assert "extra" in str(exc_info.value).lower()
+        assert exc_info.value.errors()[0]["type"] == "extra_forbidden"
 
     def test_user_email_must_be_valid_format(self, valid_user_data: _UserData) -> None:
         """User.email が EmailStr 型により無効なメールアドレスを拒否すること"""
@@ -2114,7 +2114,7 @@ class TestExtraFieldsForbidden:
         with pytest.raises(ValidationError) as exc_info:
             model_class(**invalid_data)
 
-        assert "extra" in str(exc_info.value).lower()
+        assert exc_info.value.errors()[0]["type"] == "extra_forbidden"
 
 
 # =============================================================================

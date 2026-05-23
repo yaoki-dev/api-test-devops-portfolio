@@ -132,8 +132,8 @@ class TestSensitiveKeysCompleteness:
         assert isinstance(SENSITIVE_KEYS, frozenset)
 
     def test_sensitive_keys_count(self) -> None:
-        """31種類の機密キーが定義されている（body_preview追加後）"""
-        assert len(SENSITIVE_KEYS) == 31
+        """32種類の機密キーが定義されている（ip_address追加後）"""
+        assert len(SENSITIVE_KEYS) == 32
 
     @pytest.mark.parametrize(
         "key",
@@ -169,6 +169,7 @@ class TestSensitiveKeysCompleteness:
             "totp",
             # 個人情報
             "email",
+            "ip_address",
             "database_url",
             "ssn",
             "credit_card",
@@ -685,3 +686,35 @@ class TestSentryProcessorBeforeSendChain:
         assert extra["api_key"] == "[REDACTED]"
         assert extra["secret"] == "[REDACTED]"  # noqa: S105
         assert extra["passwd"] == "[REDACTED]"  # noqa: S105
+
+    def test_user_and_contexts_sensitive_keys_are_redacted(self) -> None:
+        """user/contexts 内の機密フィールドも _before_send で除去される"""
+        event: Event = cast(
+            Event,
+            {
+                "level": "error",
+                "message": "test",
+                "user": {
+                    "id": "42",
+                    "email": "user@example.com",
+                    "ip_address": "203.0.113.10",
+                },
+                "contexts": {
+                    "auth": {
+                        "token": "secret-token",
+                        "role": "admin",
+                    }
+                },
+            },
+        )
+
+        result = _before_send(event, {})
+
+        assert result is not None
+        user = cast(dict[str, Any], result["user"])
+        contexts = cast(dict[str, Any], result["contexts"])
+        assert user["id"] == "42"
+        assert user["email"] == "[REDACTED]"
+        assert user["ip_address"] == "[REDACTED]"
+        assert contexts["auth"]["token"] == "[REDACTED]"  # noqa: S105
+        assert contexts["auth"]["role"] == "admin"

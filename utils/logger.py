@@ -18,7 +18,6 @@ import os
 import sys
 import threading
 import time
-from functools import lru_cache
 from types import TracebackType
 from typing import Any, Literal, cast
 
@@ -27,7 +26,7 @@ from structlog.typing import FilteringBoundLogger, WrappedLogger
 
 from config.settings import LogFormat, get_settings
 
-# _sentry_warning_lock: per-process 1 回抑制フラグ群の atomic check-and-set 用 lock。
+# _sentry_warning_lock: per-process 1 回抑制フラグ群を同一critical sectionで確認・更新するlock。
 # **重要制約**: lock 内はフラグ操作 (_sentry_warnings_emitted への add/in) と
 # 純粋な文字列生成 (事前計算済み値の結合のみ) に限定すること。
 # str(e) / _sentry_debug_detail(e) 等のユーザーコード呼び出しを lock 内に置くと、
@@ -63,13 +62,13 @@ _SENTRY_LEVEL_MAP: dict[str, Literal["error", "critical"]] = {
 _SENTRY_DEBUG_DETAIL_MAX_LEN: int = 100
 
 
-@lru_cache(maxsize=1)
 def _is_sentry_debug_enabled() -> bool:
     """SENTRY_DEBUG 環境変数が有効か判定
 
-    結果はプロセスライフタイムでキャッシュされる (lru_cache)。
-    SENTRY_DEBUG の変更を反映するにはプロセス再起動が必要。
-    テストで動的に変更する場合は `_is_sentry_debug_enabled.cache_clear()` を呼ぶこと。
+    環境変数の変更はリアルタイムに反映される（キャッシュなし）。
+    デプロイ後のSENTRY_DEBUG有効化に対応し、プロセス再起動不要。
+    os.environ.get() はO(1)で軽量なため、呼び出しごとのチェックでも
+    通常のホットパスへの影響は小さい。
     """
     return os.environ.get("SENTRY_DEBUG", "").lower() in ("true", "1", "yes")
 
@@ -324,6 +323,7 @@ def _sentry_processor(  # noqa: C901
             # システム例外は再発生させ OOMKilled / 無限再帰検知を妨げない
             raise
         except Exception as warn_err:  # noqa: BLE001
+            # import warning の失敗は診断補助に限定し、本体のログ処理は止めない
             print(
                 f"[SENTRY_WARN] Failed to emit import warning: {type(warn_err).__name__}",
                 file=sys.stderr,
@@ -366,7 +366,7 @@ def _sentry_processor(  # noqa: C901
                     scope.set_extra(key, value)
                 except AttributeError, TypeError:  # noqa: PERF203
                     # user-data serialization failure (e.g. broken __repr__ on Pydantic model)
-                    # → 該当キーのみスキップし [SENTRY_BUG] には昇格させない
+                    # → 該当キーのみスキップし、追加ログは出さない（PII再露出/再帰防止）
                     continue
             if exc_info is True:
                 # except ブロック外では sys.exc_info()[1] が None → capture_exception 不可
