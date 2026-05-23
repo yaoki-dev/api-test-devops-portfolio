@@ -1,0 +1,108 @@
+name: Docker Compose Verification
+
+# docker-compose.yml の動作検証:
+#   1) test profile で pytest を実行しカバレッジ成果物を生成
+#   2) app(runtime) を起動し HEALTHCHECK が healthy に遷移することを確認
+# 既存 ci.yml と独立。compose の破壊的変更を PR 段階で検知。
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compose-test:
+    name: Compose test profile (pytest + coverage)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Validate compose config
+        run: docker compose config
+
+      - name: Build test image
+        run: docker compose --profile test build test
+
+      - name: Prepare reports dir (bind-mount uid mismatch回避)
+        # CI runner (uid=1001) と container appuser (uid=1000) の uid 不整合で
+        # bind mount への書込が EACCES になるのを回避。CI環境は ephemeral のため 777 で問題なし。
+        run: |
+          mkdir -p reports
+          chmod 777 reports
+
+      - name: Run pytest in test container
+        run: docker compose --profile test run --rm test
+
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coverage-reports
+          path: reports/
+          if-no-files-found: warn
+          retention-days: 14
+
+  compose-healthcheck:
+    name: Compose app healthcheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Validate compose config
+        run: docker compose config
+
+      - name: Build app(runtime) image
+        run: docker compose build app
+
+      - name: Start app and wait for healthy
+        id: wait_healthy
+        run: |
+          set -euo pipefail
+          docker compose up -d app
+          cid=$(docker compose ps -q app)
+          if [ -z "$cid" ]; then
+            echo "container id resolution failed" >&2
+            docker compose ps
+            docker compose logs app || true
+            exit 1
+          fi
+          # Dockerfile HEALTHCHECK: start-period=5s, interval=30s, retries=3
+          # 余裕を持って最大 120 秒待つ（2 秒ポーリング × 60 回）
+          for i in $(seq 1 60); do
+            status=$(docker inspect --format='{{.State.Health.Status}}' "$cid" 2>/dev/null || echo "missing")
+            state=$(docker inspect --format='{{.State.Status}}' "$cid" 2>/dev/null || echo "missing")
+            echo "tick $i: health=$status state=$state"
+            if [ "$status" = "healthy" ]; then
+              echo "app reached healthy"
+              exit 0
+            fi
+            if [ "$state" = "exited" ] || [ "$state" = "dead" ]; then
+              echo "container exited before becoming healthy" >&2
+              docker compose logs app || true
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "timed out waiting for healthy" >&2
+          docker compose logs app || true
+          exit 1
+
+      - name: Compose ps (diagnostic)
+        if: always()
+        run: docker compose ps
+
+      - name: Tear down
+        if: always()
+        run: docker compose down --remove-orphans

@@ -13,7 +13,7 @@
 #   2026-03-07: Python 3.13→3.14 (プロジェクト全体統一移行 PR#228)
 # 注意: CVE-2025-8869はPEP 706対応Python（3.9.17+/3.10.12+/3.11.4+/3.12+を含む）
 #        では影響を受けない。pip 26.x（>=26,<27 でアップグレード済み）でも修正済み（詳細: .trivyignore参照）
-FROM python:3.14-slim@sha256:5b3879b6f3cb77e712644d50262d05a7c146b7312d784a18eff7ff5462e77033 AS base
+FROM python:3.14-slim@sha256:7a500125bc50693f2214e842a621440a1b1b9cbb2188f74ab045d29ed2ea5856 AS base
 
 WORKDIR /app
 
