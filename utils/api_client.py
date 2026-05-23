@@ -856,8 +856,10 @@ class AsyncAPIClient:
             )
             # body 例外がない場合のみ実装バグとして re-raise。
             # body 例外がある場合は本質的原因の上書きを防ぐため raise しない。
+            # bare ``raise`` で active exception の traceback を完全保持
+            # （``raise close_exc`` への回帰防止: 余分な frame を追加せず Python idiom）。
             if not has_body_exception:
-                raise close_exc
+                raise
 
     async def aclose(self) -> None:
         """クライアントのクローズ"""

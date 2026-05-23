@@ -97,6 +97,16 @@ class TestScrubSensitiveData:
         """非辞書データはそのまま返す"""
         assert _scrub_sensitive_data(input_data) == expected
 
+    def test_scrub_non_dict_triggers_fail_open_warning(self) -> None:
+        """非dict入力時にfail-open警告がログ出力され、データはそのまま返る。"""
+        with patch.object(sentry_module._logger, "warning") as mock_warning:
+            result = _scrub_sensitive_data("not_a_dict")
+        assert result == "not_a_dict"
+        mock_warning.assert_called_once()
+        call_kwargs = mock_warning.call_args[1]
+        assert call_kwargs["actual_type"] == "str"
+        assert call_kwargs["action"] == "return_as_is"
+
     def test_scrub_empty_dict(self) -> None:
         """空辞書は空辞書を返す"""
         assert _scrub_sensitive_data({}) == {}
@@ -145,13 +155,13 @@ class TestSensitiveKeysCompleteness:
         assert isinstance(SENSITIVE_KEYS, frozenset)
 
     def test_sensitive_keys_count(self) -> None:
-        """39 sensitive keys defined (sentinel test).
+        """40 sensitive keys defined (sentinel test).
 
         The hardcoded count is intentional: it serves as a sentinel to detect
         unintended additions/removals to SENSITIVE_KEYS. When adding keys,
         update the count in this test as well.
         """
-        assert len(SENSITIVE_KEYS) == 39
+        assert len(SENSITIVE_KEYS) == 40
 
     @pytest.mark.parametrize(
         "key",
@@ -200,6 +210,7 @@ class TestSensitiveKeysCompleteness:
             "set-cookie",
             "x-auth-token",
             "x-csrf-token",
+            "csrf_token",
             "x-refresh-token",
             "x-access-token",
         ],
@@ -995,6 +1006,155 @@ class TestBeforeSend:
         assert frame_vars["password"] == "[REDACTED]"  # noqa: S105
         assert frame_vars["api_key"] == "[REDACTED]"
         assert frame_vars["user_input"] == "safe_value"
+
+    def test_before_send_exception_fail_open_unexpected_structure(self) -> None:
+        """exception フィールドの構造が未知でもイベントをdropせずfail-openする。
+
+        values が非 list（例: str）の場合、_scrub_exception_field は
+        警告を残して元データをそのまま返し、_before_send は None を返さず
+        イベントを通過させる（fail-open）。
+        """
+        event: dict[str, Any] = {
+            "exception": {
+                "values": "not_a_list",  # 不正な型: list 期待だが str
+            },
+        }
+        result = _before_send(event, {})
+        assert result is not None, "fail-open: 異常構造でもイベントdropしない"
+        result_dict = cast(dict[str, Any], result)
+        assert result_dict["exception"]["values"] == "not_a_list", (
+            "元の値が保持されている（破壊的置換なし）"
+        )
+
+    def test_before_send_exception_fail_open_non_dict_value_item(self) -> None:
+        """values 内に非 dict 要素があってもイベントをdropせずfail-openする。
+
+        _scrub_exception_field は型不一致の value 要素を
+        スクラブせずそのまま通過させる（fail-open）。
+        正常な dict 要素は引き続きスクラブされる。
+        """
+        event: dict[str, Any] = {
+            "exception": {
+                "values": [
+                    {"stacktrace": {"frames": [{"vars": {"password": "secret"}}]}},
+                    "not_a_dict",  # 不正な型: dict 期待だが str
+                    42,  # 不正な型: dict 期待だが int
+                ],
+            },
+        }
+        result = _before_send(event, {})
+        assert result is not None, "fail-open: 異常構造でもイベントdropしない"
+        result_dict = cast(dict[str, Any], result)
+        values = result_dict["exception"]["values"]
+        # 正常な dict 要素はスクラブされている
+        assert values[0]["stacktrace"]["frames"][0]["vars"]["password"] == "[REDACTED]"  # noqa: S105
+        # 非 dict 要素はそのまま保持（fail-open）
+        assert values[1] == "not_a_dict"
+        assert values[2] == 42
+
+    def test_before_send_exception_fail_open_non_dict_stacktrace(self) -> None:
+        """stacktrace が非 dict でもイベントをdropせずfail-openする。
+
+        _scrub_exception_field は stacktrace が dict でない場合、
+        警告を残して stacktrace のスクラブをスキップし、
+        イベントを破壊しない（fail-open）。
+        """
+        event: dict[str, Any] = {
+            "exception": {
+                "values": [
+                    {
+                        "type": "ValueError",
+                        "stacktrace": "not_a_dict",  # 不正な型: dict 期待だが str
+                    },
+                ],
+            },
+        }
+        result = _before_send(event, {})
+        assert result is not None, "fail-open: 異常構造でもイベントdropしない"
+        result_dict = cast(dict[str, Any], result)
+        val = result_dict["exception"]["values"][0]
+        assert val["type"] == "ValueError"
+        assert val["stacktrace"] == "not_a_dict", "元の stacktrace が保持されている"
+
+    def test_before_send_exception_fail_open_non_list_frames(self) -> None:
+        """frames が非 list でもイベントをdropせずfail-openする。
+
+        _scrub_exception_field は frames が list でない場合、
+        警告を残して frames のスクラブをスキップし、
+        イベントを破壊しない（fail-open）。
+        """
+        event: dict[str, Any] = {
+            "exception": {
+                "values": [
+                    {
+                        "stacktrace": {
+                            "frames": "not_a_list",  # 不正な型: list 期待だが str
+                        },
+                    },
+                ],
+            },
+        }
+        result = _before_send(event, {})
+        assert result is not None, "fail-open: 異常構造でもイベントdropしない"
+        result_dict = cast(dict[str, Any], result)
+        stacktrace = result_dict["exception"]["values"][0]["stacktrace"]
+        assert stacktrace["frames"] == "not_a_list", "元の frames が保持されている"
+
+    def test_before_send_exception_fail_open_non_dict_frame(self) -> None:
+        """frames 内に非 dict 要素があってもイベントをdropせずfail-openする。
+
+        _scrub_exception_field は型不一致の frame 要素を
+        スクラブせずそのまま通過させる（fail-open）。
+        正常な dict frame は引き続きスクラブされる。
+        """
+        event: dict[str, Any] = {
+            "exception": {
+                "values": [
+                    {
+                        "stacktrace": {
+                            "frames": [
+                                {"vars": {"password": "secret"}},
+                                "not_a_dict_frame",  # 不正な型: dict 期待だが str
+                            ],
+                        },
+                    },
+                ],
+            },
+        }
+        result = _before_send(event, {})
+        assert result is not None, "fail-open: 異常構造でもイベントdropしない"
+        result_dict = cast(dict[str, Any], result)
+        frames = result_dict["exception"]["values"][0]["stacktrace"]["frames"]
+        assert frames[0]["vars"]["password"] == "[REDACTED]"  # noqa: S105
+        assert frames[1] == "not_a_dict_frame", "非 dict frame がそのまま保持されている"
+
+    def test_before_send_exception_fail_open_non_dict_vars(self) -> None:
+        """vars が非 dict でもイベントをdropせずfail-openする。
+
+        _scrub_exception_field は vars が dict でない場合、
+        警告を残して vars のスクラブをスキップし、
+        イベントを破壊しない（fail-open）。
+        """
+        event: dict[str, Any] = {
+            "exception": {
+                "values": [
+                    {
+                        "stacktrace": {
+                            "frames": [
+                                {
+                                    "vars": "not_a_dict",  # 不正な型: dict 期待だが str
+                                },
+                            ],
+                        },
+                    },
+                ],
+            },
+        }
+        result = _before_send(event, {})
+        assert result is not None, "fail-open: 異常構造でもイベントdropしない"
+        result_dict = cast(dict[str, Any], result)
+        frame = result_dict["exception"]["values"][0]["stacktrace"]["frames"][0]
+        assert frame["vars"] == "not_a_dict", "元の vars が保持されている"
 
     def test_scrub_tags_item_nested_list_redacts_sensitive(self) -> None:
         """_scrub_tags_item の nested list 分岐 (3要素以上) で機密キーが redact される。"""

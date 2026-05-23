@@ -136,6 +136,7 @@ SENSITIVE_KEYS: frozenset[str] = frozenset(
         "set-cookie",
         "x-auth-token",
         "x-csrf-token",
+        "csrf_token",
         "x-refresh-token",
         "x-access-token",
     },
@@ -276,6 +277,16 @@ def _scrub_sensitive_data(data: Any, _depth: int = 0) -> Any:
 
     """
     if not isinstance(data, dict):
+        # fail-open: 非dict入力はスクラブ不可。警告を残してそのまま返す。
+        # _scrub_sentry_field の isinstance(value, dict) ガードと二重防御。
+        try:
+            _logger.warning(
+                "scrub_sensitive_data_unexpected_type",
+                actual_type=type(data).__name__,
+                action="return_as_is",
+            )
+        except Exception:  # noqa: BLE001, S110
+            pass
         return data
 
     # 再帰制限チェック（循環参照対策）
@@ -375,6 +386,115 @@ def _scrub_tags_item(item: Any, _depth: int = 0) -> Any:
     return item
 
 
+def _scrub_exception_field(exception_value: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
+    """Sentry exception フィールドを構造検証付きでスクラブする（fail-open）。
+
+    Sentry の exception 構造:
+      {values: [{type, value, stacktrace: {frames: [{vars: {...}}]}}]}
+
+    各階層（values→stacktrace→frames→vars）で型を isinstance で検証し、
+    未知の構造では警告を残してスキップする（破壊しない）。
+    vars 内の機密キーは _scrub_sensitive_data() で redact する。
+
+    設計トレードオフ (fail-open):
+        Sentry SDK の将来バージョンや custom integration により未知の exception
+        構造が渡された場合、本関数は破壊せず通過させる（observability 優先）。
+        この設計には残存リスクが1点存在する:
+        **未知構造の内側に機密データが含まれていた場合、scrub されず Sentry に
+        到達する可能性がある**。
+        最外殻 ``_before_send`` の ``except Exception`` 二重防御は、本関数が
+        ``MemoryError`` / ``RecursionError`` 以外の例外を送出した場合にのみ
+        ``_emit_scrub_failure_to_sentry`` 経由で event drop に倒すが、
+        fail-open ロジックは例外を送出せず正常完了するため、未知構造による
+        PII 漏洩は二重防御では検出されない（許容された残存リスク）。
+        fail-closed への変更を検討する場合は、観測性低下（正常な例外イベント
+        まで drop される）とのトレードオフを評価すること。
+
+    Args:
+        exception_value: Sentry イベントの "exception" 辞書
+
+    Returns:
+        スクラブ済み exception 辞書（元データは変更しない）
+
+    """
+    values = exception_value.get("values")
+    if not isinstance(values, list):
+        try:
+            _logger.warning(
+                "sentry_exception_values_unexpected_type",
+                actual_type=type(values).__name__,
+                action="exception_scrub_skipped",
+            )
+        except Exception:  # noqa: BLE001, S110
+            pass
+        return exception_value  # fail-open: 元データを返す
+
+    result = dict(exception_value)
+    scrubbed_values: list[Any] = []
+    for val in values:
+        if not isinstance(val, dict):
+            try:
+                _logger.warning(
+                    "sentry_exception_value_item_unexpected_type",
+                    actual_type=type(val).__name__,
+                    action="skip_item",
+                )
+            except Exception:  # noqa: BLE001, S110
+                pass
+            scrubbed_values.append(val)  # fail-open: そのまま通過
+            continue
+
+        scrubbed_val = dict(val)
+        stacktrace = scrubbed_val.get("stacktrace")
+        if isinstance(stacktrace, dict):
+            frames = stacktrace.get("frames")
+            if isinstance(frames, list):
+                scrubbed_frames: list[Any] = []
+                for frame in frames:
+                    if isinstance(frame, dict):
+                        scrubbed_frame = dict(frame)
+                        frame_vars = scrubbed_frame.get("vars")
+                        if isinstance(frame_vars, dict):
+                            scrubbed_frame["vars"] = _scrub_sensitive_data(frame_vars)
+                        elif frame_vars is not None:
+                            try:
+                                _logger.warning(
+                                    "sentry_exception_frame_vars_unexpected_type",
+                                    actual_type=type(frame_vars).__name__,
+                                    action="skip_vars_scrub",
+                                )
+                            except Exception:  # noqa: BLE001, S110
+                                pass
+                        scrubbed_frames.append(scrubbed_frame)
+                    else:
+                        scrubbed_frames.append(frame)  # fail-open: そのまま通過
+                scrubbed_stacktrace = dict(stacktrace)
+                scrubbed_stacktrace["frames"] = scrubbed_frames
+                scrubbed_val["stacktrace"] = scrubbed_stacktrace
+            elif frames is not None:
+                try:
+                    _logger.warning(
+                        "sentry_exception_frames_unexpected_type",
+                        actual_type=type(frames).__name__,
+                        action="skip_frames_scrub",
+                    )
+                except Exception:  # noqa: BLE001, S110
+                    pass
+        elif stacktrace is not None:
+            try:
+                _logger.warning(
+                    "sentry_exception_stacktrace_unexpected_type",
+                    actual_type=type(stacktrace).__name__,
+                    action="skip_stacktrace_scrub",
+                )
+            except Exception:  # noqa: BLE001, S110
+                pass
+        scrubbed_values.append(scrubbed_val)
+
+    result["values"] = scrubbed_values
+    return result
+
+
 def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
     """Sentryイベントの単一フィールドをスクラブする（_before_send 専用）。
 
@@ -394,7 +514,10 @@ def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
     if field in event_dict:
         value = event_dict[field]
         if isinstance(value, dict):
-            event_dict[field] = _scrub_sensitive_data(value)
+            if field == "exception":
+                event_dict[field] = _scrub_exception_field(value)
+            else:
+                event_dict[field] = _scrub_sensitive_data(value)
         elif isinstance(value, list):
             # field 単位 dispatch: tags は Sentry spec 上 list[tuple[str, str]]
             # （JSON経由で list[list[str, str]] にもなり得る）なので tag pair として処理。

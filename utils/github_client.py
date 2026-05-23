@@ -282,8 +282,10 @@ class AsyncGitHubClient:
                 )
                 # body 例外がない場合のみ実装バグとして re-raise。
                 # body 例外がある場合は本質的原因の上書きを防ぐため raise しない。
+                # bare ``raise`` で active exception の traceback を完全保持
+                # （``raise close_exc`` への回帰防止: 余分な frame を追加せず Python idiom）。
                 if not has_body_exception:
-                    raise close_exc
+                    raise
             else:
                 # aclose() 成功時のみ closed ログを出す。logger.info を try 内に置くと
                 # logger 自体の例外が aclose 失敗として誤検知されるため else 節に分離 (PR#347)。
