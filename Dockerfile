@@ -100,7 +100,6 @@ COPY config/ ./config/
 COPY utils/ ./utils/
 COPY models/ ./models/
 COPY tests/ ./tests/
-COPY pytest.ini ./
 
 # 不要ファイル削除
 RUN find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \

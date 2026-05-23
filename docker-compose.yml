@@ -74,7 +74,7 @@ services:
     environment:
       ENVIRONMENT: testing
     # Dockerfile CMD を上書きし pyproject.toml の addopts を採用（カバレッジ scope 是正）
-    command: ["pytest"]
+    command: ["pytest", "-m", "(unit or integration) and not external"]
     # カバレッジ成果物を host に永続化（htmlcov / coverage.xml）
     volumes:
       - ./reports:/app/reports

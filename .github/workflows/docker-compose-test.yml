@@ -30,8 +30,20 @@ jobs:
       - name: Validate compose config
         run: docker compose config
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
       - name: Build test image
-        run: docker compose --profile test build test
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: .
+          target: test
+          tags: api-test:test
+          load: true
+          # load: true時の manifest unknown エラー回避
+          provenance: false
+          cache-from: type=gha,scope=compose-test
+          cache-to: type=gha,mode=max,scope=compose-test
 
       - name: Prepare reports dir (bind-mount uid mismatch回避)
         # CI runner (uid=1001) と container appuser (uid=1000) の uid 不整合で
@@ -45,11 +57,11 @@ jobs:
 
       - name: Upload coverage artifacts
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-reports
           path: reports/
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14
 
   compose-healthcheck:
@@ -63,45 +75,32 @@ jobs:
       - name: Validate compose config
         run: docker compose config
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
       - name: Build app(runtime) image
-        run: docker compose build app
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: .
+          target: runtime
+          tags: api-test:runtime
+          load: true
+          # load: true時の manifest unknown エラー回避 (compose-test job と対称)
+          provenance: false
+          cache-from: type=gha,scope=compose-runtime
+          cache-to: type=gha,mode=max,scope=compose-runtime
 
       - name: Start app and wait for healthy
-        id: wait_healthy
-        run: |
-          set -euo pipefail
-          docker compose up -d app
-          cid=$(docker compose ps -q app)
-          if [ -z "$cid" ]; then
-            echo "container id resolution failed" >&2
-            docker compose ps
-            docker compose logs app || true
-            exit 1
-          fi
-          # Dockerfile HEALTHCHECK: start-period=5s, interval=30s, retries=3
-          # 余裕を持って最大 120 秒待つ（2 秒ポーリング × 60 回）
-          for i in $(seq 1 60); do
-            status=$(docker inspect --format='{{.State.Health.Status}}' "$cid" 2>/dev/null || echo "missing")
-            state=$(docker inspect --format='{{.State.Status}}' "$cid" 2>/dev/null || echo "missing")
-            echo "tick $i: health=$status state=$state"
-            if [ "$status" = "healthy" ]; then
-              echo "app reached healthy"
-              exit 0
-            fi
-            if [ "$state" = "exited" ] || [ "$state" = "dead" ]; then
-              echo "container exited before becoming healthy" >&2
-              docker compose logs app || true
-              exit 1
-            fi
-            sleep 2
-          done
-          echo "timed out waiting for healthy" >&2
-          docker compose logs app || true
-          exit 1
+        # Docker Compose 2.2 以降のネイティブ機能に置き換え
+        # タイムアウト根拠: start-period(5s) + interval(30s) * retries(3) = 95s。余裕を持たせて120sに設定。
+        run: docker compose up -d --wait --wait-timeout 120 app
 
       - name: Compose ps (diagnostic)
-        if: always()
-        run: docker compose ps
+        if: failure()
+        # CIのログ肥大化を防ぐため、直近200行のみ抽出
+        run: |
+          docker compose ps
+          docker compose logs --tail=200 app
 
       - name: Tear down
         if: always()
