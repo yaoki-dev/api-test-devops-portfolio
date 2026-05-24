@@ -711,6 +711,8 @@ class AsyncGitHubClient:
             # redact 対象外。logger.error → Sentry 送信時のログ肥大・PII露出を
             # 抑えるため _MAX_CACHE_INVARIANT_LOG_KEYS 件に制限する。
             # query string は split("?")[0] で除去済み。
+            etag_only_count = len(self._etag_cache.keys() - self._data_cache.keys())
+            data_only_count = len(self._data_cache.keys() - self._etag_cache.keys())
             etag_only_keys = sorted(
                 k.split("?")[0] for k in (self._etag_cache.keys() - self._data_cache.keys())
             )[:_MAX_CACHE_INVARIANT_LOG_KEYS]
@@ -726,8 +728,8 @@ class AsyncGitHubClient:
                 data_cache_size=len(self._data_cache),
                 etag_only_keys=etag_only_keys,
                 data_only_keys=data_only_keys,
-                etag_only_keys_truncated=len(etag_only_keys) == _MAX_CACHE_INVARIANT_LOG_KEYS,
-                data_only_keys_truncated=len(data_only_keys) == _MAX_CACHE_INVARIANT_LOG_KEYS,
+                etag_only_keys_truncated=etag_only_count > _MAX_CACHE_INVARIANT_LOG_KEYS,
+                data_only_keys_truncated=data_only_count > _MAX_CACHE_INVARIANT_LOG_KEYS,
                 action="cleared_both_caches",
             )
             self._etag_cache.clear()

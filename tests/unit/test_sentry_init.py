@@ -19,6 +19,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pydantic import SecretStr
 from sentry_sdk.types import Event
+from structlog.testing import capture_logs
 
 import utils.sentry_init as sentry_module
 from utils.sentry_init import (
@@ -27,6 +28,7 @@ from utils.sentry_init import (
     SENSITIVE_KEYS,
     _before_send,
     _is_sensitive_key,
+    _scrub_exception_field,
     _scrub_query_string,
     _scrub_sensitive_data,
     _scrub_url,
@@ -337,6 +339,10 @@ class TestSensitiveKeysCompleteness:
             ("emailAddress", True),
             ("refreshToken", True),
             ("clientSecret", True),
+            # Dotted keys from nested config/log fields are normalized like snake_case.
+            ("config.password", True),
+            ("user.email", True),
+            ("auth.token", True),
             # camelCase 非機密キー → False
             ("photoUrl", False),
             ("itemCount", False),
@@ -460,6 +466,17 @@ class TestScrubQueryStringAndUrl:
         result = _scrub_url(url)
         assert result == "https://example.com/path?x-access-token=%5BREDACTED%5D&safe=1"
 
+    def test_scrub_url_preserves_non_sensitive_query_params(self) -> None:
+        """非機密 query は変更せず、通常URLの正常系を保持する。"""
+        url = "https://example.com/path?page=2&sort=asc"
+        assert _scrub_url(url) == url
+
+    def test_scrub_url_redacts_sensitive_path_params(self) -> None:
+        """URL path params (`;key=value`) 内の機密値も query と同じ基準で redact する。"""
+        result = _scrub_url("https://example.com/path;session_id=secret?sort=asc#frag")
+        assert result == "https://example.com/path;session_id=%5BREDACTED%5D?sort=asc"
+        assert "secret" not in result
+
     def test_scrub_url_handles_ipv6_and_invalid_port(self) -> None:
         """IPv6と不正ポートでも例外を出さず処理する"""
         assert _scrub_url("http://user@[::1]:8080/path?token=a#frag") == (
@@ -481,6 +498,40 @@ class TestScrubQueryStringAndUrl:
         assert result == "http:///path?token=%5BREDACTED%5D"
         # abc (token値) はスクラブ済み
         assert "abc" not in result
+
+
+class TestScrubExceptionField:
+    """Sentry exception フィールドの fail-open 分岐を検証する。"""
+
+    def test_non_dict_frame_logs_warning_and_passes_through(self) -> None:
+        """非 dict frame は fail-open しつつ、無音にせず warning を残す。"""
+        exception_value = {
+            "values": [
+                {
+                    "stacktrace": {
+                        "frames": [
+                            "raw-frame",
+                            {"vars": {"password": "secret", "safe": "ok"}},
+                        ],
+                    },
+                },
+            ],
+        }
+
+        with capture_logs() as log_output:
+            result = _scrub_exception_field(exception_value)
+
+        frames = result["values"][0]["stacktrace"]["frames"]
+        assert frames[0] == "raw-frame"
+        assert frames[1]["vars"] == {"password": "[REDACTED]", "safe": "ok"}
+        warning_logs = [
+            log
+            for log in log_output
+            if log.get("event") == "sentry_exception_frame_unexpected_type"
+        ]
+        assert len(warning_logs) == 1
+        assert warning_logs[0]["actual_type"] == "str"
+        assert warning_logs[0]["action"] == "skip_frame_scrub"
 
 
 class TestHasInternalTag:

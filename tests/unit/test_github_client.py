@@ -672,23 +672,32 @@ async def test_context_manager_initialization():
     assert managed_client.is_closed
 
 
-async def test_aexit_aclose_known_exception_is_suppressed_with_warning() -> None:
+@pytest.mark.parametrize(
+    ("close_exception", "expected_type", "expected_module"),
+    [
+        (OSError("connection reset"), "OSError", "builtins"),
+        (httpx.CloseError("close failed"), "CloseError", "httpx"),
+    ],
+)
+async def test_aexit_aclose_known_exception_is_suppressed_with_warning(
+    close_exception: Exception, expected_type: str, expected_module: str
+) -> None:
     """__aexit__ で httpx.CloseError / OSError は warning ログのみ出力する（PR#347 #18）。
 
     既知のクローズ時例外は warning レベルで記録し、body 例外を上書きしない。
     """
     client = AsyncGitHubClient()
     client._client = AsyncMock()
-    client._client.aclose = AsyncMock(side_effect=OSError("connection reset"))
+    client._client.aclose = AsyncMock(side_effect=close_exception)
 
     with capture_logs() as log_output:
         await client.__aexit__(None, None, None)
 
     warning_logs = [log for log in log_output if log.get("event") == "github_client_aclose_failed"]
     assert len(warning_logs) == 1
-    assert warning_logs[0]["error_type"] == "OSError"
+    assert warning_logs[0]["error_type"] == expected_type
     # PR#347 review Q2: third-party 例外起点モジュール識別のため error_module を併用
-    assert warning_logs[0]["error_module"] == "builtins"
+    assert warning_logs[0]["error_module"] == expected_module
     # 既知例外では error ログは出ない
     unexpected_event = "github_client_aclose_unexpected_error"
     error_logs = [log for log in log_output if log.get("event") == unexpected_event]
@@ -1763,7 +1772,7 @@ def test_enforce_cache_limit_invariant_violation_clears_both_caches() -> None:
     assert client._data_cache == {}
     # logger.error呼び出し検証（Sentry捕捉対象）
     # PR#347 review #3-2: etag_only_keys_truncated/data_only_keys_truncated は
-    # _MAX_CACHE_INVARIANT_LOG_KEYS (=5) 件到達時のみ True。本テストは 0/1 件のため False。
+    # 実際に切り詰められた場合のみ True。本テストは 0/1 件のため False。
     mock_logger.error.assert_called_once_with(
         "cache_invariant_violation",
         etag_cache_size=1,
@@ -1798,7 +1807,7 @@ def test_enforce_cache_limit_detects_key_divergence_with_same_length() -> None:
     assert client._data_cache == {}
     # logger.error 呼び出し検証 (sizeはlogに残るが判定はkeys()で行われる)
     # PR#347 review #3-2: etag_only_keys_truncated/data_only_keys_truncated は
-    # _MAX_CACHE_INVARIANT_LOG_KEYS (=5) 件到達時のみ True。本テストは 1 件のため False。
+    # 実際に切り詰められた場合のみ True。本テストは 1 件のため False。
     mock_logger.error.assert_called_once_with(
         "cache_invariant_violation",
         etag_cache_size=2,
@@ -1809,6 +1818,30 @@ def test_enforce_cache_limit_detects_key_divergence_with_same_length() -> None:
         data_only_keys_truncated=False,
         action="cleared_both_caches",
     )
+
+
+def test_enforce_cache_limit_invariant_violation_truncated_flag_requires_over_limit() -> None:
+    """truncated flag は表示上限ちょうどではなく、上限超過時のみ True になる。"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES, max_cache_entries=10)
+    for index in range(6):
+        client._etag_cache[f"/etag-only-{index}"] = f"etag-{index}"
+    client._data_cache["/data-only"] = {"id": 1}
+
+    with patch.object(client, "logger") as mock_logger:
+        client._enforce_cache_limit()
+
+    mock_logger.error.assert_called_once()
+    _, kwargs = mock_logger.error.call_args
+    assert kwargs["etag_only_keys"] == [
+        "/etag-only-0",
+        "/etag-only-1",
+        "/etag-only-2",
+        "/etag-only-3",
+        "/etag-only-4",
+    ]
+    assert kwargs["etag_only_keys_truncated"] is True
+    assert kwargs["data_only_keys"] == ["/data-only"]
+    assert kwargs["data_only_keys_truncated"] is False
 
 
 def test_handle_403_response_no_json_log() -> None:
@@ -1833,6 +1866,8 @@ def test_handle_403_response_no_json_log() -> None:
         assert "error" not in warning_logs[0]
         assert warning_logs[0].get("error_type") == "JSONDecodeError"
         assert warning_logs[0].get("error_module") == "json.decoder"
+        assert isinstance(warning_logs[0].get("error_pos"), int)
+        assert isinstance(warning_logs[0].get("error_lineno"), int)
         # from None: PII防止のため例外連鎖切断（__cause__ は None）
         assert exc_info.value.__cause__ is None
         assert exc_info.value.__context__ is None

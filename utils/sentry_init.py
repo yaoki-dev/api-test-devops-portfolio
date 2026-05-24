@@ -23,7 +23,7 @@ structlogと連携し、ERROR以上のログをSentryに送信。
     （SENTRY_DEBUG は将来の拡張用に定義済みだが、現行 init_sentry() では参照しない）
 
 セキュリティ:
-    - before_sendフックで機密データを自動除外（39種類のキーパターン）
+    - before_sendフックで機密データを自動除外（40種類のキーパターン）
     - DSNはSecretStrで管理（config/settings.py）
     - enabled=Falseで完全無効化可能
 """
@@ -242,8 +242,8 @@ def _is_sensitive_key(key: str) -> bool:
 
     """
     key_norm = _ACRONYM_PATTERN.sub(r"\1_\2", key)  # ACRONYMWord → ACRONYM_Word (PR#347)
-    key_norm = _CAMEL_PATTERN.sub("_", key_norm)  # wordWord → word_Word
-    key_norm = key_norm.lower().replace("-", "_")
+    key_norm = _CAMEL_PATTERN.sub("_", key_norm)  # wordWord → word_word（lower()後）
+    key_norm = key_norm.lower().replace("-", "_").replace(".", "_")
     if _SENSITIVE_KEY_PATTERN.search(key_norm) is not None:
         return True
     # 全大文字命名 fallback (APIKEY, ACCESSTOKEN 等): ACRONYM 分割が効かない場合に
@@ -362,7 +362,7 @@ def _scrub_url(url: str) -> str:
             parsed.scheme,
             netloc,
             parsed.path,
-            parsed.params,
+            _scrub_query_string(parsed.params) if parsed.params else "",
             _scrub_query_string(parsed.query) if parsed.query else "",
             "",  # fragment を除去（PII 漏洩防止）
         )
@@ -474,6 +474,11 @@ def _scrub_exception_field(exception_value: dict[str, Any]) -> dict[str, Any]:  
                             )
                         scrubbed_frames.append(scrubbed_frame)
                     else:
+                        _safe_log_warning(
+                            "sentry_exception_frame_unexpected_type",
+                            actual_type=type(frame).__name__,
+                            action="skip_frame_scrub",
+                        )
                         scrubbed_frames.append(frame)  # fail-open: そのまま通過
                 scrubbed_stacktrace = dict(stacktrace)
                 scrubbed_stacktrace["frames"] = scrubbed_frames
