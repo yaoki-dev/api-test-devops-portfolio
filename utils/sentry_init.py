@@ -30,6 +30,7 @@ structlogと連携し、ERROR以上のログをSentryに送信。
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import secrets
@@ -84,6 +85,24 @@ def _has_internal_tag(tags: Any) -> bool:
 SENTRY_DEBUG: bool = os.environ.get("SENTRY_DEBUG", "").lower() in ("true", "1", "yes")
 
 _logger = get_logger(__name__)
+
+
+def _safe_log_warning(event: str, **fields: Any) -> None:
+    """PII scrub フロー内で fail-open 用に warning ログを送出する（例外抑止）。
+
+    PR#347 review: ``_scrub_sensitive_data`` / ``_scrub_exception_field`` の 6 箇所に
+    重複していた ``try: _logger.warning(...) / except Exception: pass`` パターンを
+    DRY 化したヘルパー。``contextlib.suppress`` で ``# noqa: BLE001, S110`` を
+    1 箇所に集約する。
+
+    fail-open ロジック内部でのみ使用する想定。``_scrub_sentry_field`` (本ファイル
+    下流) の ``print(..., file=sys.stderr)`` フォールバックパターンとは責務が異なる:
+    あちらは fail-safe (event drop 防止) のため stderr 通知が必要、こちらは fail-open
+    (元データ通過) のため例外抑止のみで十分。
+    """
+    with contextlib.suppress(Exception):
+        _logger.warning(event, **fields)
+
 
 if TYPE_CHECKING:
     from sentry_sdk.types import Event, Hint
@@ -279,14 +298,11 @@ def _scrub_sensitive_data(data: Any, _depth: int = 0) -> Any:
     if not isinstance(data, dict):
         # fail-open: 非dict入力はスクラブ不可。警告を残してそのまま返す。
         # _scrub_sentry_field の isinstance(value, dict) ガードと二重防御。
-        try:
-            _logger.warning(
-                "scrub_sensitive_data_unexpected_type",
-                actual_type=type(data).__name__,
-                action="return_as_is",
-            )
-        except Exception:  # noqa: BLE001, S110
-            pass
+        _safe_log_warning(
+            "scrub_sensitive_data_unexpected_type",
+            actual_type=type(data).__name__,
+            action="return_as_is",
+        )
         return data
 
     # 再帰制限チェック（循環参照対策）
@@ -419,28 +435,22 @@ def _scrub_exception_field(exception_value: dict[str, Any]) -> dict[str, Any]:  
     """
     values = exception_value.get("values")
     if not isinstance(values, list):
-        try:
-            _logger.warning(
-                "sentry_exception_values_unexpected_type",
-                actual_type=type(values).__name__,
-                action="exception_scrub_skipped",
-            )
-        except Exception:  # noqa: BLE001, S110
-            pass
+        _safe_log_warning(
+            "sentry_exception_values_unexpected_type",
+            actual_type=type(values).__name__,
+            action="exception_scrub_skipped",
+        )
         return exception_value  # fail-open: 元データを返す
 
     result = dict(exception_value)
     scrubbed_values: list[Any] = []
     for val in values:
         if not isinstance(val, dict):
-            try:
-                _logger.warning(
-                    "sentry_exception_value_item_unexpected_type",
-                    actual_type=type(val).__name__,
-                    action="skip_item",
-                )
-            except Exception:  # noqa: BLE001, S110
-                pass
+            _safe_log_warning(
+                "sentry_exception_value_item_unexpected_type",
+                actual_type=type(val).__name__,
+                action="skip_item",
+            )
             scrubbed_values.append(val)  # fail-open: そのまま通過
             continue
 
@@ -457,14 +467,11 @@ def _scrub_exception_field(exception_value: dict[str, Any]) -> dict[str, Any]:  
                         if isinstance(frame_vars, dict):
                             scrubbed_frame["vars"] = _scrub_sensitive_data(frame_vars)
                         elif frame_vars is not None:
-                            try:
-                                _logger.warning(
-                                    "sentry_exception_frame_vars_unexpected_type",
-                                    actual_type=type(frame_vars).__name__,
-                                    action="skip_vars_scrub",
-                                )
-                            except Exception:  # noqa: BLE001, S110
-                                pass
+                            _safe_log_warning(
+                                "sentry_exception_frame_vars_unexpected_type",
+                                actual_type=type(frame_vars).__name__,
+                                action="skip_vars_scrub",
+                            )
                         scrubbed_frames.append(scrubbed_frame)
                     else:
                         scrubbed_frames.append(frame)  # fail-open: そのまま通過
@@ -472,23 +479,17 @@ def _scrub_exception_field(exception_value: dict[str, Any]) -> dict[str, Any]:  
                 scrubbed_stacktrace["frames"] = scrubbed_frames
                 scrubbed_val["stacktrace"] = scrubbed_stacktrace
             elif frames is not None:
-                try:
-                    _logger.warning(
-                        "sentry_exception_frames_unexpected_type",
-                        actual_type=type(frames).__name__,
-                        action="skip_frames_scrub",
-                    )
-                except Exception:  # noqa: BLE001, S110
-                    pass
-        elif stacktrace is not None:
-            try:
-                _logger.warning(
-                    "sentry_exception_stacktrace_unexpected_type",
-                    actual_type=type(stacktrace).__name__,
-                    action="skip_stacktrace_scrub",
+                _safe_log_warning(
+                    "sentry_exception_frames_unexpected_type",
+                    actual_type=type(frames).__name__,
+                    action="skip_frames_scrub",
                 )
-            except Exception:  # noqa: BLE001, S110
-                pass
+        elif stacktrace is not None:
+            _safe_log_warning(
+                "sentry_exception_stacktrace_unexpected_type",
+                actual_type=type(stacktrace).__name__,
+                action="skip_stacktrace_scrub",
+            )
         scrubbed_values.append(scrubbed_val)
 
     result["values"] = scrubbed_values

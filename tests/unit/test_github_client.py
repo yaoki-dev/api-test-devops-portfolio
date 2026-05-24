@@ -693,6 +693,11 @@ async def test_aexit_aclose_known_exception_is_suppressed_with_warning() -> None
     unexpected_event = "github_client_aclose_unexpected_error"
     error_logs = [log for log in log_output if log.get("event") == unexpected_event]
     assert len(error_logs) == 0
+    # PR#347 review #3-1: else節スキップ検証。aclose() 例外時は __aexit__ の
+    # else 節 (utils/github_client.py L291-292) が実行されず "AsyncGitHubClient closed"
+    # info ログは出力されない設計意図 (test_aexit_normal_close_logs_info L2431 の対照)。
+    closed_logs = [log for log in log_output if log.get("event") == "AsyncGitHubClient closed"]
+    assert len(closed_logs) == 0
 
 
 async def test_aexit_aclose_unexpected_exception_reraises_when_no_body_exception() -> None:
@@ -723,6 +728,11 @@ async def test_aexit_aclose_unexpected_exception_reraises_when_no_body_exception
     # 予期しない例外では warning ログは出ない
     warning_logs = [log for log in log_output if log.get("event") == "github_client_aclose_failed"]
     assert len(warning_logs) == 0
+    # PR#347 review #3-1: else節スキップ検証。aclose() 例外時は __aexit__ の
+    # else 節 (utils/github_client.py L291-292) が実行されず "AsyncGitHubClient closed"
+    # info ログは出力されない設計意図 (test_aexit_normal_close_logs_info L2431 の対照)。
+    closed_logs = [log for log in log_output if log.get("event") == "AsyncGitHubClient closed"]
+    assert len(closed_logs) == 0
 
 
 async def test_aexit_body_exception_not_overridden_by_close_exception() -> None:
@@ -758,6 +768,11 @@ async def test_aexit_body_exception_not_overridden_by_close_exception() -> None:
     # warning ログは出ない
     warning_logs = [log for log in log_output if log.get("event") == "github_client_aclose_failed"]
     assert len(warning_logs) == 0
+    # PR#347 review #3-1: else節スキップ検証。body+close 二重例外時も
+    # else 節 (utils/github_client.py L291-292) は実行されず "AsyncGitHubClient closed"
+    # info ログは出力されない (test_aexit_normal_close_logs_info L2431 の対照)。
+    closed_logs = [log for log in log_output if log.get("event") == "AsyncGitHubClient closed"]
+    assert len(closed_logs) == 0
 
 
 async def test_request_without_context_manager():
@@ -1747,12 +1762,16 @@ def test_enforce_cache_limit_invariant_violation_clears_both_caches() -> None:
     assert client._etag_cache == {}
     assert client._data_cache == {}
     # logger.error呼び出し検証（Sentry捕捉対象）
+    # PR#347 review #3-2: etag_only_keys_truncated/data_only_keys_truncated は
+    # _MAX_CACHE_INVARIANT_LOG_KEYS (=5) 件到達時のみ True。本テストは 0/1 件のため False。
     mock_logger.error.assert_called_once_with(
         "cache_invariant_violation",
         etag_cache_size=1,
         data_cache_size=2,
         etag_only_keys=[],
         data_only_keys=["/orphan"],
+        etag_only_keys_truncated=False,
+        data_only_keys_truncated=False,
         action="cleared_both_caches",
     )
 
@@ -1778,12 +1797,16 @@ def test_enforce_cache_limit_detects_key_divergence_with_same_length() -> None:
     assert client._etag_cache == {}
     assert client._data_cache == {}
     # logger.error 呼び出し検証 (sizeはlogに残るが判定はkeys()で行われる)
+    # PR#347 review #3-2: etag_only_keys_truncated/data_only_keys_truncated は
+    # _MAX_CACHE_INVARIANT_LOG_KEYS (=5) 件到達時のみ True。本テストは 1 件のため False。
     mock_logger.error.assert_called_once_with(
         "cache_invariant_violation",
         etag_cache_size=2,
         data_cache_size=2,
         etag_only_keys=["/b"],
         data_only_keys=["/c"],
+        etag_only_keys_truncated=False,
+        data_only_keys_truncated=False,
         action="cleared_both_caches",
     )
 

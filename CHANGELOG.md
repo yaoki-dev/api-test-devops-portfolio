@@ -50,12 +50,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       当該サービスの credential key 名を SENSITIVE_KEYS に追加する.
     - 詳細は `utils/sentry_init.py` の `SENSITIVE_KEYS` frozenset 定義と
       `_NORMALIZED_SENSITIVE_KEYS` 周辺コメントを参照.
-  - **追加された redact key (32 → 39, +7件)**
+  - **追加された redact key (32 → 40, +8件)**
     （※ 32 は PR#340 で email/ip_address/body_preview 追加後の件数。
-    　PR#340 前起点では 29 → 39（+10件））:
+    　PR#340 前起点では 29 → 40（+11件））:
     - 認証系: `access_key`
     - HTTP headers: `proxy-authorization`, `set-cookie`, `x-auth-token`,
-      `x-csrf-token`, `x-refresh-token`, `x-access-token`
+      `csrf_token`, `x-csrf-token`, `x-refresh-token`, `x-access-token`
   - **追加されたスクラブ対象フィールド (4 → 6)**: `breadcrumbs` および `exception` を
     `_SCRUBBED_EVENT_FIELDS` に追加.
     - `breadcrumbs`: ブレッドクラム内の機密キーを redact.
@@ -122,7 +122,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Changed**: `utils/sentry_init.py` の `_is_sensitive_key` から
   `@lru_cache(maxsize=512)` を削除.
-  - **変更理由 (KISS)**: SENSITIVE_KEYS は 39 要素で、正規化済み集合は
+  - **変更理由 (KISS)**: SENSITIVE_KEYS は 40 要素で、正規化済み集合は
     module load 時に一度だけ構築される. 現状の呼び出し規模では cache の
     memory cost と invalidation complexity を正当化できない.
 

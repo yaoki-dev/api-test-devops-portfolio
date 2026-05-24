@@ -845,7 +845,15 @@ class AsyncAPIClient:
                 error_module=type(close_exc).__module__,
             )
         except Exception as close_exc:  # noqa: BLE001
-            # 予期しない例外（AttributeError, RuntimeError 等の実装バグ可能性）
+            # 予期しない例外（AttributeError, RuntimeError, ValueError, TypeError 等
+            # の実装バグ可能性）を捕捉。`Exception` 基底のため以下は**意図的に非捕捉**:
+            #   - KeyboardInterrupt / SystemExit: シグナル・interpreter shutdown 由来。
+            #     ユーザー停止/プロセス終了を遅延させずに伝播させる。
+            #   - MemoryError: メモリ枯渇下では fail-fast。ログ出力自体が二次例外を誘発する
+            #     可能性があるため即時伝播させる (recovery 不可能)。
+            #   - asyncio.CancelledError (Py3.8+ は BaseException 派生): cooperative
+            #     cancellation の意図を妨げないため伝播。
+            # 全て `BaseException` 派生で `except Exception` の境界外。
             has_body_exception = exc_type is not None
             self.logger.error(
                 "async_api_client_aclose_unexpected_error",
