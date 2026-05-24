@@ -64,6 +64,13 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Tear down
+        if: always()
+        # compose-test ジョブは `--rm` で container は自動削除されるが network/volume は残存しうる。
+        # compose-healthcheck ジョブと対称化して明示 cleanup (過去レビュー #3292029073 対応)。
+        # シェル優先度バグ回避のためブロック化、teardown失敗は warning のみで継続。
+        run: docker compose down --remove-orphans --timeout=10 || { echo "::warning::docker compose down failed"; true; }
+
   compose-healthcheck:
     name: Compose app healthcheck
     runs-on: ubuntu-latest
@@ -87,8 +94,11 @@ jobs:
           load: true
           # load: true時の manifest unknown エラー回避 (compose-test job と対称)
           provenance: false
-          cache-from: type=gha,scope=compose-runtime
-          cache-to: type=gha,mode=max,scope=compose-runtime
+          # ci.yml と共通スコープにして runtime キャッシュを共有
+          cache-from: type=gha,scope=api-test-runtime
+          # PR時の cache poisoning 防止: cache-to は develop/main push時のみ書込
+          # (ci.yml と同 scope のため、PR時の書込抑制も ci.yml と統一する)
+          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=max,scope=api-test-runtime' || '' }}
 
       - name: Start app and wait for healthy
         # Docker Compose 2.2 以降のネイティブ機能に置き換え
@@ -104,4 +114,9 @@ jobs:
 
       - name: Tear down
         if: always()
-        run: docker compose down --remove-orphans
+        # 1. --timeout=10: network削除ハング防止 (デフォルト10秒、明示で意図明確化)
+        # 2. ブロック化 `|| { ... ; }`: シェル優先度 `(A || B) ; true` バグ修正
+        #    旧: `|| echo ... ; true` は `; true` が `||` リスト外で常時実行 = dead code
+        #    新: `|| { echo ... ; true; }` で echo + true をブロック内一括実行 (teardown失敗時のみ)
+        # 3. exit 0 維持 — teardown failure はwarning通知のみで後続ジョブをブロックしない
+        run: docker compose down --remove-orphans --timeout=10 || { echo "::warning::docker compose down failed"; true; }

@@ -496,8 +496,11 @@ jobs:
           target: runtime
           tags: ${{ steps.image-tag.outputs.tag }}
           load: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=api-test-runtime
+          # PR時の cache poisoning 防止: cache-to は develop/main push時のみ書込
+          # (PR branch contributor が tainted base layer を `api-test-runtime` scope に
+          #  注入し trunk CI が consume する same-repo poisoning vector を遮断)
+          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=max,scope=api-test-runtime' || '' }}
 
       - name: Fail if Docker build failed (security gate)
         if: |

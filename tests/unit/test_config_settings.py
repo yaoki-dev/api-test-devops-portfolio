@@ -236,6 +236,31 @@ class TestSettingsEnvironmentValidation:
         with pytest.raises(ValidationError):
             Settings(environment=123)  # type: ignore[arg-type]
 
+    @pytest.mark.parametrize(
+        "short_form",
+        [
+            pytest.param("dev", id="short_dev"),
+            pytest.param("test", id="short_test"),
+            pytest.param("demo", id="short_demo"),
+            pytest.param("prod", id="short_prod"),
+        ],
+    )
+    def test_environment_validation_short_forms_raise(self, short_form: str) -> None:
+        """validate_environment: 短縮形 (dev/test/demo/prod) は ValidationError を発生させる.
+
+        .env.example および docker-compose.yml で「Pydantic Environment enum は
+        development/testing/staging/production の 4 値のみ。短縮形は不可」と明示している。
+        本テストはその契約を保護する (PR#372 review 対応 Phase 4)。
+
+        Note:
+            docker-compose.yml の app サービスは command 内で短縮形を完全名へ
+            自動マッピングする deprecation phase を持つが、Pydantic Settings 自体は
+            短縮形を依然 reject する。本テストは「直接 python から Settings を
+            instantiate する」シナリオ (CI script, smoke test 等) を検証する。
+        """
+        with pytest.raises(ValidationError):
+            Settings(environment=short_form)  # type: ignore[arg-type]
+
 
 class TestSettingsEnvironmentMethods:
     """Settings環境判定メソッドのテスト (lines 198, 202, 206, 210)"""

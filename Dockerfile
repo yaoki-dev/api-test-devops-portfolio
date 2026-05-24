@@ -82,11 +82,24 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # ============================================================
 FROM base AS test
 
-# uv インストール
+# uv インストール (root権限が必要: グローバル site-packages 配置)
 RUN pip install --no-cache-dir uv
 
-# 依存関係ファイルコピー
-COPY pyproject.toml uv.lock ./
+# pytest-cov が cwd (/app) に .coverage SQLite DB を書くため、appuser に WORKDIR
+# 書込権限を付与する。非再帰 chown のみで十分 (.venv とアプリコードは以降の
+# `--chown=appuser:appgroup` 付き COPY と appuser 権限での `uv sync` で適切な所有に配置)。
+#
+# 旧実装 `RUN chown -R appuser:appgroup /app` は overlayfs copy-up により
+# /app/.venv (300-500MB) を新規 layer へ複製し test image サイズを実質倍化していた。
+# また `.venv` 全体が appuser 書込可能となり RCE 後のライブラリ書換 vector を残していた。
+# 新実装ではこれらを解消する (PR#372 review 対応)。
+RUN chown appuser:appgroup /app
+
+# 非rootユーザーに切替 (uv sync 以降は appuser 権限で実行 → .venv も appuser 所有で生成)
+USER appuser
+
+# 依存関係ファイルコピー (appuser 所有で配置)
+COPY --chown=appuser:appgroup pyproject.toml uv.lock ./
 
 # 全依存関係インストール（devパッケージ含む）
 # --no-install-project: ソース未コピー状態でhatchlingエラー回避（dependencies stageと同様）
@@ -95,18 +108,15 @@ RUN uv sync --frozen --no-install-project
 # PATH設定
 ENV PATH="/app/.venv/bin:$PATH"
 
-# アプリケーションコード全体をコピー
-COPY config/ ./config/
-COPY utils/ ./utils/
-COPY models/ ./models/
-COPY tests/ ./tests/
+# アプリケーションコード全体をコピー (appuser 所有で配置)
+COPY --chown=appuser:appgroup config/ ./config/
+COPY --chown=appuser:appgroup utils/ ./utils/
+COPY --chown=appuser:appgroup models/ ./models/
+COPY --chown=appuser:appgroup tests/ ./tests/
 
 # 不要ファイル削除
 RUN find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
     find . -type f -name "*.pyc" -delete 2>/dev/null || true
-
-# 非rootユーザーに切り替え（最小権限原則）
-USER appuser
 
 # デフォルトコマンド: テスト実行
 CMD ["pytest", "--cov=.", "--cov-report=term-missing", "-v"]

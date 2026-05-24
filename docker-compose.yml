@@ -27,7 +27,9 @@ services:
       target: runtime
     image: api-test:runtime
     # 4環境切替: ホストの ENVIRONMENT 変数で読込 env ファイルを選択
-    #   development / testing / staging / production（demo相当は staging にマッピング）
+    #   ENVIRONMENT=development / testing / staging / production
+    #   ※ 旧短縮形 (dev/test/demo/prod) は Pydantic Environment enum に存在しないため
+    #     ValidationError になるが、deprecation phase として command 内で自動マッピング (下記)
     #   例: ENVIRONMENT=staging docker compose up
     env_file:
       - path: .env.${ENVIRONMENT:-development}
@@ -36,10 +38,20 @@ services:
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-development}
     # 設定読込を検証してから常駐。検証失敗時は && 以降に進まず非0終了
+    # 旧短縮形 ENVIRONMENT (dev/test/demo/prod) の deprecation phase 互換マッピング:
+    #   ホストで ENVIRONMENT=dev 等を設定している既存ユーザーが Pydantic ValidationError
+    #   で起動失敗するのを防ぐため、case 文で完全名に変換する。
+    #   将来のリリースで削除予定 (詳細は .env.example の Pydantic 制約セクション参照)。
     command:
       - /bin/sh
       - -c
       - |
+        case "${ENVIRONMENT:-development}" in
+          dev)  echo "[migration] ENVIRONMENT=dev → development に変換 (短縮形は廃止予定)" >&2; export ENVIRONMENT=development ;;
+          test) echo "[migration] ENVIRONMENT=test → testing に変換 (短縮形は廃止予定)" >&2; export ENVIRONMENT=testing ;;
+          demo) echo "[migration] ENVIRONMENT=demo → staging に変換 (短縮形は廃止予定)" >&2; export ENVIRONMENT=staging ;;
+          prod) echo "[migration] ENVIRONMENT=prod → production に変換 (短縮形は廃止予定)" >&2; export ENVIRONMENT=production ;;
+        esac
         python -c "from config.settings import settings; print('[startup] config loaded:', settings.environment, settings.project_name, flush=True)" && exec sleep infinity
     # セキュリティ: 権限昇格の禁止（Dockerfile 側で非root化済み）
     security_opt:
@@ -56,7 +68,7 @@ services:
   #   - profiles により通常の `docker compose up` では起動しない
   #   - 実行: docker compose --profile test run --rm test
   #   - command: ["pytest"] で pyproject.toml [tool.pytest] addopts を採用
-  #     （Dockerfile test ステージの CMD `pytest --cov=.` を上書きし、対象を utils/config/models に限定）
+  #     （Dockerfile test ステージの CMD `pytest --cov=. --cov-report=term-missing -v` を上書きし、対象を utils/config/models に限定）
   #   - reports/htmlcov, reports/coverage.xml が /app/reports に出力され、host ./reports に永続化
   # ---------------------------------------------------------------
   test:
@@ -80,3 +92,10 @@ services:
       - ./reports:/app/reports
     security_opt:
       - "no-new-privileges:true"
+    # appuser (uid=1000) を明示 — Dockerfile USER appuser との整合保証
+    # host UID/GID で上書き可能 (Linux local dev で reports/ bind mount EACCES 回避):
+    #   UID=$(id -u) GID=$(id -g) docker compose --profile test run --rm test
+    # CI (GitHub Actions) は事前に `chmod 777 reports` で回避済み (.github/workflows/docker-compose-test.yml)
+    user: "${UID:-1000}:${GID:-1000}"
+    # PID1 を tini にしてシグナルを適切に伝播（app サービスと対称化）
+    init: true
