@@ -5,7 +5,7 @@ structlogと連携し、ERROR以上のログをSentryに送信。
 
 依存関係:
     - config/settings.py: SentryConfig（DSN、有効化フラグ等）
-    - sentry-sdk >= 2.0.0: before_send APIを使用
+    - sentry-sdk[httpx] >= 2.60.0: before_send / new_scope APIを使用
 
 初期化タイミング:
     アプリケーション起動時、ログ設定後に一度だけ呼び出し。
@@ -242,7 +242,7 @@ def _is_sensitive_key(key: str) -> bool:
 
     """
     key_norm = _ACRONYM_PATTERN.sub(r"\1_\2", key)  # ACRONYMWord → ACRONYM_Word (PR#347)
-    key_norm = _CAMEL_PATTERN.sub("_", key_norm)  # wordWord → word_word（lower()後）
+    key_norm = _CAMEL_PATTERN.sub("_", key_norm)  # wordWord → word_Word（lower()前に分割）
     key_norm = key_norm.lower().replace("-", "_").replace(".", "_")
     if _SENSITIVE_KEY_PATTERN.search(key_norm) is not None:
         return True
@@ -261,7 +261,7 @@ def _scrub_list_item(item: Any, _depth: int) -> Any:
     breadcrumb 等の非 PII 2要素 list を過剰 redact する問題を避ける。
     """
     if _depth >= MAX_SCRUB_DEPTH:
-        _logger.warning("scrub_max_depth_exceeded", depth=_depth, max=MAX_SCRUB_DEPTH)
+        _safe_log_warning("scrub_max_depth_exceeded", depth=_depth, max=MAX_SCRUB_DEPTH)
         return "[MAX_DEPTH_EXCEEDED]"
     if isinstance(item, tuple):
         if len(item) == 2:
@@ -307,7 +307,7 @@ def _scrub_sensitive_data(data: Any, _depth: int = 0) -> Any:
 
     # 再帰制限チェック（循環参照対策）
     if _depth >= MAX_SCRUB_DEPTH:
-        _logger.warning("scrub_max_depth_exceeded", depth=_depth, max=MAX_SCRUB_DEPTH)
+        _safe_log_warning("scrub_max_depth_exceeded", depth=_depth, max=MAX_SCRUB_DEPTH)
         return "[MAX_DEPTH_EXCEEDED]"
 
     result: dict[str, Any] = {}
@@ -346,7 +346,7 @@ def _scrub_url(url: str) -> str:
     if hostname is None:
         netloc = ""
     else:
-        netloc = f"[{hostname}]" if ":" in hostname and not hostname.startswith("[") else hostname
+        netloc = f"[{hostname}]" if ":" in hostname else hostname
         try:
             port = parsed.port
         except ValueError:
@@ -379,7 +379,7 @@ def _scrub_tags_item(item: Any, _depth: int = 0) -> Any:
     _depth による再帰深さ保護を行い、MAX_SCRUB_DEPTH 超過時は安全サイドに倒す。
     """
     if _depth >= MAX_SCRUB_DEPTH:
-        _logger.warning("scrub_max_depth_exceeded", depth=_depth, max=MAX_SCRUB_DEPTH)
+        _safe_log_warning("scrub_max_depth_exceeded", depth=_depth, max=MAX_SCRUB_DEPTH)
         return "[MAX_DEPTH_EXCEEDED]"
     if isinstance(item, (tuple, list)) and len(item) == 2:
         key = item[0]
@@ -411,6 +411,7 @@ def _scrub_exception_field(exception_value: dict[str, Any]) -> dict[str, Any]:  
     各階層（values→stacktrace→frames→vars）で型を isinstance で検証し、
     未知の構造では警告を残してスキップする（破壊しない）。
     vars 内の機密キーは _scrub_sensitive_data() で redact する。
+    values[*].value は例外メッセージ文字列として全体を `[REDACTED]` に置換する。
 
     設計トレードオフ (fail-open):
         Sentry SDK の将来バージョンや custom integration により未知の exception
@@ -455,6 +456,8 @@ def _scrub_exception_field(exception_value: dict[str, Any]) -> dict[str, Any]:  
             continue
 
         scrubbed_val = dict(val)
+        if isinstance(scrubbed_val.get("value"), str):
+            scrubbed_val["value"] = "[REDACTED]"
         stacktrace = scrubbed_val.get("stacktrace")
         if isinstance(stacktrace, dict):
             frames = stacktrace.get("frames")
@@ -534,29 +537,19 @@ def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
             # 処理し、list[2] with str[0] の偶発的 tag-pair 誤判定で過剰 redact
             # しない（PR #347 review: KP-003 / T3 対応）。
             if field == "tags":
-                event_dict[field] = [_scrub_tags_item(item) for item in value]
+                event_dict[field] = [_scrub_tags_item(item, _depth=0) for item in value]
             else:
                 event_dict[field] = [_scrub_list_item(item, _depth=0) for item in value]
         else:
             # dict/list以外はスクラブ不可能。空dictに置換して安全サイドに倒す。
             event_dict[field] = {}
-            try:
-                _logger.warning(
-                    "sentry_field_type_unexpected",
-                    field=field,
-                    actual_type=type(value).__name__,
-                    action="replaced_with_empty_dict",
-                    event_id=event_dict.get("event_id"),
-                )
-            except Exception as logging_exc:  # noqa: BLE001
-                # ログ失敗で Sentry イベント自体を drop しない。
-                # 同モジュール内 stderr 出力スタイルを print(..., file=sys.stderr) に統一。
-                print(
-                    "[SENTRY_FIELD_WARNING_FAILED] "
-                    f"field={field} logger_error_type={type(logging_exc).__name__}",
-                    file=sys.stderr,
-                    flush=True,
-                )
+            _safe_log_warning(
+                "sentry_field_type_unexpected",
+                field=field,
+                actual_type=type(value).__name__,
+                action="replaced_with_empty_dict",
+                event_id=event_dict.get("event_id"),
+            )
 
 
 def _emit_scrub_failure_to_sentry(exc: BaseException) -> None:
@@ -635,6 +628,10 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
                     scrubbed_request["headers"] = _scrub_sensitive_data(scrubbed_request["headers"])
                 if "data" in scrubbed_request:
                     scrubbed_request["data"] = _scrub_sensitive_data(scrubbed_request["data"])
+                if "cookies" in scrubbed_request:
+                    scrubbed_request["cookies"] = _scrub_sensitive_data(scrubbed_request["cookies"])
+                if "env" in scrubbed_request:
+                    scrubbed_request["env"] = _scrub_sensitive_data(scrubbed_request["env"])
                 if "query_string" in scrubbed_request and isinstance(
                     scrubbed_request["query_string"], (str, bytes)
                 ):
@@ -646,7 +643,7 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
                 event_dict["request"] = scrubbed_request
             else:
                 event_dict["request"] = {}
-                _logger.warning(
+                _safe_log_warning(
                     "sentry_request_type_unexpected",
                     actual_type=type(request).__name__,
                     action="replaced_with_empty_dict",

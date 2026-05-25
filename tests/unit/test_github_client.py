@@ -1785,6 +1785,29 @@ def test_enforce_cache_limit_invariant_violation_clears_both_caches() -> None:
     )
 
 
+def test_enforce_cache_limit_strips_query_strings_from_invariant_logs() -> None:
+    """cache invariant のログは query string を落として endpoint だけ残す。"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES, max_cache_entries=2)
+    client._etag_cache["/repos/octocat/Hello-World?sort=updated"] = "etag-updated"
+    client._data_cache["/repos/octocat/Hello-World?sort=created"] = {"id": 1}
+
+    with patch.object(client, "logger") as mock_logger:
+        client._enforce_cache_limit()
+
+    assert client._etag_cache == {}
+    assert client._data_cache == {}
+    mock_logger.error.assert_called_once_with(
+        "cache_invariant_violation",
+        etag_cache_size=1,
+        data_cache_size=1,
+        etag_only_keys=["/repos/octocat/Hello-World"],
+        data_only_keys=["/repos/octocat/Hello-World"],
+        etag_only_keys_truncated=False,
+        data_only_keys_truncated=False,
+        action="cleared_both_caches",
+    )
+
+
 def test_enforce_cache_limit_detects_key_divergence_with_same_length() -> None:
     """同件数だがキー集合が異なる invariant 違反も検出する (set-equality)。
 

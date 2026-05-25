@@ -19,7 +19,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pydantic import SecretStr
 from sentry_sdk.types import Event
-from structlog.testing import capture_logs
 
 import utils.sentry_init as sentry_module
 from utils.sentry_init import (
@@ -518,20 +517,31 @@ class TestScrubExceptionField:
             ],
         }
 
-        with capture_logs() as log_output:
+        with patch.object(sentry_module._logger, "warning") as mock_warning:
             result = _scrub_exception_field(exception_value)
 
         frames = result["values"][0]["stacktrace"]["frames"]
         assert frames[0] == "raw-frame"
         assert frames[1]["vars"] == {"password": "[REDACTED]", "safe": "ok"}
-        warning_logs = [
-            log
-            for log in log_output
-            if log.get("event") == "sentry_exception_frame_unexpected_type"
-        ]
-        assert len(warning_logs) == 1
-        assert warning_logs[0]["actual_type"] == "str"
-        assert warning_logs[0]["action"] == "skip_frame_scrub"
+
+        mock_warning.assert_called_once()
+        call_kwargs = mock_warning.call_args[1]
+        assert call_kwargs["actual_type"] == "str"
+        assert call_kwargs["action"] == "skip_frame_scrub"
+
+    def test_scrubs_exception_value_string(self) -> None:
+        """exception.values[*].value はメッセージ文字列ごと redaction する。"""
+        exception_value = {
+            "values": [
+                {
+                    "value": "DatabaseError: Connection to postgres://user:password@host/db failed",
+                },
+            ],
+        }
+
+        result = _scrub_exception_field(exception_value)
+
+        assert result["values"][0]["value"] == "[REDACTED]"
 
 
 class TestHasInternalTag:
@@ -599,6 +609,26 @@ class TestBeforeSend:
         event = cast(Event, {"request": {"headers": {"Cookie": "session=abc123"}}})
         result_dict = self._call_before_send(event)
         assert result_dict["request"]["headers"]["Cookie"] == "[REDACTED]"
+
+    def test_scrub_request_cookies_and_env(self) -> None:
+        """request.cookies / request.env もスクラブされる。"""
+        event = cast(
+            Event,
+            {
+                "request": {
+                    "cookies": {"session": "abc123", "theme": "dark"},
+                    "env": {
+                        "HTTP_AUTHORIZATION": "Bearer token",
+                        "SERVER_NAME": "example.com",
+                    },
+                }
+            },
+        )
+        result_dict = self._call_before_send(event)
+        assert result_dict["request"]["cookies"]["session"] == "[REDACTED]"
+        assert result_dict["request"]["cookies"]["theme"] == "dark"
+        assert result_dict["request"]["env"]["HTTP_AUTHORIZATION"] == "[REDACTED]"
+        assert result_dict["request"]["env"]["SERVER_NAME"] == "example.com"
 
     def test_scrub_request_data(self) -> None:
         """リクエストボディがスクラブされる"""
@@ -756,6 +786,30 @@ class TestBeforeSend:
         passed_exc = mock_emit.call_args.args[0]
         assert isinstance(passed_exc, RuntimeError)
         assert str(passed_exc) == "boom"
+
+    def test_before_send_fail_closed_when_scrub_exception_field_raises(self) -> None:
+        """exception フィールドのスクラブ失敗でもイベントをdropして内部通知する。"""
+        event = cast(
+            Event,
+            {
+                "exception": {
+                    "values": [{"stacktrace": {"frames": [{"vars": {"password": "secret"}}]}}]
+                }
+            },
+        )
+
+        with (
+            patch.object(
+                sentry_module,
+                "_scrub_exception_field",
+                side_effect=RuntimeError("exception-scrub-boom"),
+            ),
+            patch.object(sentry_module, "_emit_scrub_failure_to_sentry") as mock_emit,
+        ):
+            result = _before_send(event, {})
+
+        assert result is None
+        mock_emit.assert_called_once()
 
     def test_before_send_reraises_memory_error(self) -> None:
         """MemoryError は scrub 失敗として吸収せず再raiseする"""
@@ -1007,10 +1061,10 @@ class TestBeforeSend:
         assert call_kwargs["action"] == "replaced_with_empty_dict"
         assert call_kwargs["event_id"] == "evt-456"
 
-    def test_scrub_sentry_field_logger_failure_falls_back_to_stderr(
+    def test_scrub_sentry_field_logger_failure_is_suppressed(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """logger.warning 失敗時も Sentry イベントを drop せず stderr にフォールバックする"""
+        """logger.warning 失敗時も Sentry イベントを drop せず無音で継続する。"""
         event = cast(Event, {"extra": "not-a-dict"})
 
         with patch.object(
@@ -1023,9 +1077,7 @@ class TestBeforeSend:
         assert result is not None
         assert result["extra"] == {}
         captured = capsys.readouterr()
-        assert "[SENTRY_FIELD_WARNING_FAILED]" in captured.err
-        assert "field=extra" in captured.err
-        assert "logger_error_type=RuntimeError" in captured.err
+        assert captured.err == ""
 
     def test_before_send_scrubs_exception_stacktrace_vars(self) -> None:
         """exception.values[*].stacktrace.frames[*].vars 内の機密変数がスクラブされる。"""

@@ -5,6 +5,8 @@ Exports:
     AsyncAPIClient: Asynchronous API client
     SyncJSONPlaceholderClient: JSONPlaceholder API client (sync)
     AsyncJSONPlaceholderClient: JSONPlaceholder API client (async)
+    APIClientError: 共通API例外の基底クラス
+    APIJSONDecodeError: JSON decode 失敗時の例外
 """
 
 from .api_client import (

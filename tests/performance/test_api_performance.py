@@ -159,6 +159,7 @@ class TestAPIPerformance:
 
         assert summary["cpu_usage"]["end_percent"] == 0.0
         assert isinstance(summary["cpu_usage"]["end_percent"], float)
+        assert summary["cpu_usage"]["start_percent"] is None
 
     def test_get_summary_trailing_none_cpu_usage_uses_float_default(self):
         """cpu_usage 末尾が None の場合も end_percent は float 型で返す"""

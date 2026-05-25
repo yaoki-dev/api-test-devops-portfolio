@@ -113,7 +113,11 @@ class GitHubAPIError(APIClientError):
 class _SanitizedJSONDecodeError(Exception):
     """レスポンスbodyを保持しない JSONDecodeError cause。"""
 
-    def __init__(self, error_type: str, pos: int, lineno: int):
+    error_type: str
+    pos: int
+    lineno: int
+
+    def __init__(self, error_type: str, pos: int, lineno: int) -> None:
         self.error_type = error_type
         self.pos = pos
         self.lineno = lineno
@@ -689,7 +693,7 @@ class AsyncGitHubClient:
         """
         if not params:
             return endpoint
-        sorted_params = sorted(params.items())
+        sorted_params = sorted((k, str(v)) for k, v in params.items())
         return f"{endpoint}?{urlencode(sorted_params, quote_via=quote)}"
 
     def _enforce_cache_limit(self) -> None:
@@ -711,14 +715,16 @@ class AsyncGitHubClient:
             # redact 対象外。logger.error → Sentry 送信時のログ肥大・PII露出を
             # 抑えるため _MAX_CACHE_INVARIANT_LOG_KEYS 件に制限する。
             # query string は split("?")[0] で除去済み。
-            etag_only_count = len(self._etag_cache.keys() - self._data_cache.keys())
-            data_only_count = len(self._data_cache.keys() - self._etag_cache.keys())
-            etag_only_keys = sorted(
-                k.split("?")[0] for k in (self._etag_cache.keys() - self._data_cache.keys())
-            )[:_MAX_CACHE_INVARIANT_LOG_KEYS]
-            data_only_keys = sorted(
-                k.split("?")[0] for k in (self._data_cache.keys() - self._etag_cache.keys())
-            )[:_MAX_CACHE_INVARIANT_LOG_KEYS]
+            etag_only_cache_keys = self._etag_cache.keys() - self._data_cache.keys()
+            data_only_cache_keys = self._data_cache.keys() - self._etag_cache.keys()
+            etag_only_count = len(etag_only_cache_keys)
+            data_only_count = len(data_only_cache_keys)
+            etag_only_keys = sorted(k.split("?")[0] for k in etag_only_cache_keys)[
+                :_MAX_CACHE_INVARIANT_LOG_KEYS
+            ]
+            data_only_keys = sorted(k.split("?")[0] for k in data_only_cache_keys)[
+                :_MAX_CACHE_INVARIANT_LOG_KEYS
+            ]
             # 通常フローでは発生しない。発生した場合は実装バグの兆候として
             # Sentry に捕捉される logger.error を出力し、両キャッシュを clear して
             # 次回リクエストの fresh fetch に倒す（user request flow は維持）。
