@@ -811,6 +811,25 @@ class TestBeforeSend:
         assert result is None
         mock_emit.assert_called_once()
 
+    def test_before_send_fail_closed_when_scrub_url_raises(self) -> None:
+        """_scrub_url が例外を発生させた場合も fail-closed でイベントをdropする。"""
+        event = cast(Event, {"request": {"url": "https://example.com/path?token=abc"}})
+
+        with (
+            patch.object(sentry_module, "_scrub_url", side_effect=RuntimeError("url-scrub-boom")),
+            patch.object(sentry_module, "_emit_scrub_failure_to_sentry") as mock_emit,
+            patch.object(sentry_module, "_safe_log_warning") as mock_warning,
+        ):
+            result = _before_send(event, {})
+
+        assert result is None
+        mock_warning.assert_called_once_with(
+            "sentry_before_send_drop_event",
+            error_type="RuntimeError",
+            error_module="builtins",
+        )
+        mock_emit.assert_called_once()
+
     def test_before_send_reraises_memory_error(self) -> None:
         """MemoryError は scrub 失敗として吸収せず再raiseする"""
         event = cast(Event, {"request": {"headers": {}}})
@@ -1662,6 +1681,8 @@ class TestSdkExceptionHandling:
         captured = capsys.readouterr()
         assert "[SENTRY_WARN]" in captured.err
         assert "sentry_init_failed" in captured.err
+        assert "original_error_type=RuntimeError" in captured.err
+        assert "original_error_module=builtins" in captured.err
         assert "logger_error_type=RuntimeError" in captured.err
 
     @patch("utils.sentry_init.get_settings")
@@ -1723,6 +1744,46 @@ class TestSdkExceptionHandling:
 
         assert result is False
         assert is_sentry_initialized() is False
+
+    @patch("utils.sentry_init.get_settings")
+    def test_import_error_logger_failure_falls_back_with_original_error(
+        self,
+        mock_settings: MagicMock,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """ImportError 経路の stderr fallback に元例外型を含める。"""
+        mock_settings.return_value.sentry.enabled = True
+        mock_settings.return_value.sentry.dsn = SecretStr(
+            "https://abc123@o456.ingest.us.sentry.io/789",
+        )
+        mock_settings.return_value.sentry.environment = "development"
+        mock_settings.return_value.is_production_like.return_value = False
+
+        import builtins
+
+        original_import = builtins.__import__
+
+        def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+            if name == "sentry_sdk":
+                raise ImportError("No module named 'sentry_sdk'")
+            return original_import(name, *args, **kwargs)
+
+        with (
+            patch.object(builtins, "__import__", side_effect=mock_import),
+            patch.object(
+                sentry_module._logger,
+                "warning",
+                side_effect=RuntimeError("logger broken"),
+            ),
+        ):
+            result = init_sentry()
+
+        assert result is False
+        captured = capsys.readouterr()
+        assert "sentry_sdk_not_installed" in captured.err
+        assert "original_error_type=ImportError" in captured.err
+        assert "original_error_module=builtins" in captured.err
+        assert "logger_error_type=RuntimeError" in captured.err
 
 
 class TestSentryProcessorBeforeSendChain:

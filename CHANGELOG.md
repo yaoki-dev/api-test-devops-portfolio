@@ -90,7 +90,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
        を build して `event["request"] = new_request` で atomic swap する
        ことで orig dict を不変に保ち、fail-closed 契約を実装層で保証.
   - **影響範囲**: スクラブ失敗時 Sentry 側でエラー event を受信できなくなる.
-    失敗の事実は warning log (`sentry_scrub_failed`) で観測可能.
+    失敗の事実は二経路で観測可能 (両者は fail-closed パスで同時発火):
+    (a) Sentry: `sentry_scrub_failed` message event (error レベル,
+    `capture_message` 経由). Sentry SDK 未ロード時は stderr にフォールバック.
+    (b) structlog: `sentry_before_send_drop_event` warning log
+    (`error_type` / `error_module` を構造化フィールドとして記録).
     成功時の挙動は不変 (`event["request"]` の dict identity は変わる).
     Sentry SDK は event 全体を serialize して送信するため、本実装変更が観測可能な
     挙動差を生む経路は確認していない (Sentry SDK source 未検証 — 推察). 万一
@@ -98,10 +102,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **運用上の留意 (operational concern)**:
     本 BREAKING change により、production の real error が scrub edge case で
     drop され operator が原 error を観測できないリスクが残る.
-    導入後の監視推奨:
-    1. `sentry_scrub_failed` warning log の発生率を log aggregator
-       (Datadog / Loki / CloudWatch 等) で metric 化.
-    2. 異常な発生率上昇時は SENSITIVE_KEYS / scrub logic の defect 兆候として
+    導入後の監視推奨 (二経路を併用):
+    1. Sentry 側: `sentry_scrub_failed` message event (error レベル) の発生率を
+       Sentry で metric 化. SDK 未ロード時の stderr fallback はコンテナログで確認.
+    2. log aggregator 側 (Datadog / Loki / CloudWatch 等):
+       `sentry_before_send_drop_event` warning log の `error_type` /
+       `error_module` 分布を集計し、特定例外型の偏在で defect 兆候を早期検知.
+    3. 異常な発生率上昇時は SENSITIVE_KEYS / scrub logic の defect 兆候として
        triage. payload 構造を sanitized form でローカル再現し原因特定.
 
 

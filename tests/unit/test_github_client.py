@@ -2233,6 +2233,32 @@ async def test_httpx_status_error_429_missing_reset_header_falls_back_to_zero() 
 
 
 @respx.mock
+async def test_httpx_status_error_403_defensive_path_uses_rate_limit_headers() -> None:
+    """403の防御的パスでも RateLimitError 判定と reset_time を通常パスに揃える。"""
+    request = httpx.Request("GET", f"{GITHUB_API_BASE_URL}/users/octocat")
+    response_403 = httpx.Response(
+        403,
+        headers={
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": "1700000000",
+        },
+        request=request,
+    )
+    error_403 = httpx.HTTPStatusError("403 Forbidden", request=request, response=response_403)
+
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
+    route.side_effect = [error_403]
+
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(RateLimitError) as exc_info:
+            await client.get_user("octocat")
+
+    assert exc_info.value.reset_time == 1700000000
+    assert exc_info.value.__context__ is None
+    assert route.call_count == 1
+
+
+@respx.mock
 async def test_httpx_status_error_404_defensive_path_raises_not_found_error() -> None:
     """404の防御的パスでも NotFoundError に揃うことを確認する"""
     request = httpx.Request("GET", f"{GITHUB_API_BASE_URL}/users/octocat")

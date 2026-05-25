@@ -35,6 +35,7 @@ import os
 import re
 import secrets
 import sys
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
@@ -206,12 +207,13 @@ _COMPACT_SENSITIVE_KEYS: frozenset[str] = frozenset(
 # camelCase / ACRONYM 分割用の事前コンパイル済みパターン (PR#347 review)。
 # 生リテラル re.sub の re._cache 依存を排し、設計を統一するため、
 # すべての正規表現をモジュールレベルで事前コンパイルしています。
-# (注: Pythonレイヤーでのハッシュルックアップ・オーバーヘッドを避けるため、
-#  関数自体への @lru_cache 適用はあえて行わず、Cレイヤーの正規表現マッチのみで高速処理します)
+# (注: キーの正規化処理（sub() による置換）は比較的コストが高いため、
+#   頻出するキーの判定高速化と正規化コスト低減を目的として @lru_cache を適用しています。)
 _ACRONYM_PATTERN: re.Pattern[str] = re.compile(r"([A-Z]+)([A-Z][a-z])")
 _CAMEL_PATTERN: re.Pattern[str] = re.compile(r"(?<=[a-z])(?=[A-Z])")
 
 
+@lru_cache(maxsize=512)
 def _is_sensitive_key(key: str) -> bool:
     """機密キーかどうかを判定する（単語境界一致 + ハイフン/アンダースコア正規化）。
 
@@ -340,7 +342,13 @@ def _scrub_request_query_string(query_string: str | bytes) -> str:
 
 
 def _scrub_url(url: str) -> str:
-    """URLのuserinfo/fragmentを除去し、queryをスクラブする。"""
+    """URLのuserinfo/fragmentを除去し、queryをスクラブする。
+
+    注意:
+        パスセグメント内の機密情報（例: ``/users/email@example.com/token``）は
+        スクラブ対象外。パスに PII が含まれるエンドポイントでは呼び出し元で
+        path 設計を見直すか、事前に匿名化すること。
+    """
     parsed = urlparse(url)
     hostname = parsed.hostname
     if hostname is None:
@@ -412,6 +420,9 @@ def _scrub_exception_field(exception_value: dict[str, Any]) -> dict[str, Any]:  
     未知の構造では警告を残してスキップする（破壊しない）。
     vars 内の機密キーは _scrub_sensitive_data() で redact する。
     values[*].value は例外メッセージ文字列として全体を `[REDACTED]` に置換する。
+    これは PII 保護を観測性より優先する意図的なトレードオフであり、
+    PII を含まない FileNotFoundError 等の診断情報も失われる。将来改善する場合は、
+    特定キーワードのみをマスクする selective redact へ移行する。
 
     設計トレードオフ (fail-open):
         Sentry SDK の将来バージョンや custom integration により未知の exception
@@ -667,6 +678,11 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
         scrub_exc = exc
 
     if scrub_exc is not None:
+        _safe_log_warning(
+            "sentry_before_send_drop_event",
+            error_type=type(scrub_exc).__qualname__,
+            error_module=type(scrub_exc).__module__,
+        )
         _emit_scrub_failure_to_sentry(scrub_exc)
         return None
 
@@ -753,6 +769,8 @@ def init_sentry() -> bool:  # noqa: C901
             # _emit_scrub_failure_to_sentry と同様にエラー型/モジュールを記録し設計を統一 (PR#347)。
             print(
                 "[SENTRY_WARN] sentry_sdk_not_installed "
+                f"original_error_type={type(exc).__name__} "
+                f"original_error_module={type(exc).__module__} "
                 f"logger_error_type={type(logger_exc).__name__} "
                 f"logger_error_module={type(logger_exc).__module__}",
                 file=sys.stderr,
@@ -781,6 +799,8 @@ def init_sentry() -> bool:  # noqa: C901
             # _emit_scrub_failure_to_sentry と同様にエラー型/モジュールを記録し設計を統一 (PR#347)。
             print(
                 "[SENTRY_WARN] sentry_init_failed "
+                f"original_error_type={type(exc).__name__} "
+                f"original_error_module={type(exc).__module__} "
                 f"logger_error_type={type(logger_exc).__name__} "
                 f"logger_error_module={type(logger_exc).__module__}",
                 file=sys.stderr,

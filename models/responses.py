@@ -50,6 +50,9 @@ _INVISIBLE_CATEGORIES = frozenset({"Cf", "Cc", "Zs", "Zl", "Zp"})
 _STRIP_CATEGORIES = _INVISIBLE_CATEGORIES | frozenset({"Cs"})
 
 
+# URL正規化中のUnicodeカテゴリ参照を十分に吸収する余裕を持たせる。
+# 通常のURLで登場する文字種は数百程度だが、テスト・攻撃入力では多様な
+# 制御文字/不可視文字を含むため、余裕を持った上限にして再計算を避ける。
 @lru_cache(maxsize=2048)
 def _unicode_category(c: str) -> str:
     """Unicodeカテゴリ取得をキャッシュする。"""

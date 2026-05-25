@@ -78,7 +78,7 @@ if init_sentry():
 
 **確認元**: `utils/sentry_init.py` (`SENSITIVE_KEYS` frozenset)
 **マッチング方式**: `_is_sensitive_key` は **単語境界マッチ + ハイフン/アンダースコア
-正規化** で判定する (`_SENSITIVE_KEY_PATTERN = (?:^|[_\d])(KEY)(?:[_\d]|$)`)。
+正規化** で判定する (`_SENSITIVE_KEY_PATTERN = (?:^|[_\d])(?:KEY)(?:[_\d]|$)`)。
 これにより composite key (例: `user_password`, `email_address`, `X-Auth-Token`)
 や数字サフィックス付きキー (例: `password2`, `api_key2`) も全て redact される
 (defense-in-depth)。一方で `prototype` / `photo_url` 等の機密語を**部分文字列として
@@ -114,7 +114,7 @@ Sentry MCPサーバーでClaude Codeからエラー調査可能:
 ## テスト
 
 ```bash
-# Sentry統合テスト（83ケース）
+# Sentry統合テスト（103 test functions / 223 collected cases）
 uv run pytest tests/unit/test_sentry_init.py -v
 ```
 

@@ -679,6 +679,8 @@ class AsyncGitHubClient:
         """エンドポイントとクエリパラメータからキャッシュキーを生成する。
 
         params が None または空の場合は endpoint をそのまま返す。
+        params={} は httpx の仕様（空クエリ = クエリなし）に従い、
+        params=None と同一のキャッシュキーを生成する。
         params がある場合は ``endpoint?key1=val1&key2=val2`` 形式で返す。
         URLエンコードには ``quote_via=quote`` を使用する（スペースは ``%20``）。
          パラメータはキーでソートされ決定論的なキーを生成する。
@@ -948,7 +950,25 @@ class AsyncGitHubClient:
                     raise RateLimitError(reset_time) from None
                 if status_code == 403:
                     # 防御的パス: 403をhttpx.HTTPStatusErrorとして受信した場合も詳細分析を実施
-                    self._handle_403_response(http_status_response)
+                    remaining_fallback = self._parse_rate_limit_header(
+                        http_status_response.headers,
+                        "X-RateLimit-Remaining",
+                        _RATE_LIMIT_FORBIDDEN_FALLBACK,
+                    )
+                    reset_fallback = (
+                        self._parse_rate_limit_header(
+                            http_status_response.headers,
+                            "X-RateLimit-Reset",
+                            _RATE_LIMIT_RESET_FALLBACK,
+                        )
+                        if remaining_fallback == 0
+                        else None
+                    )
+                    self._handle_403_response(
+                        http_status_response,
+                        rate_remaining=remaining_fallback,
+                        reset_time=reset_fallback,
+                    )
                 else:
                     self._handle_http_status_error(http_status_response, endpoint, method)
 
