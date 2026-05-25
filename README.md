@@ -63,7 +63,7 @@ uv run pytest tests/unit/test_api_client.py --cov=utils --cov=config --cov=model
 ![Docker Demo - 4-stage Multi-stage buildでコンテナビルド。DevOpsスキルを実証](assets/demo-docker.gif)
 
 > **📝 デモ内容**: Docker Multi-stage buildによるコンテナビルド
-> **⏳ Week3対応予定**: docker-compose.yamlによる4環境（dev/test/demo/prod）オーケストレーション
+> **✅ Docker Compose**: 4環境（development / testing / staging / production）オーケストレーション
 
 **何がわかるか**:
 

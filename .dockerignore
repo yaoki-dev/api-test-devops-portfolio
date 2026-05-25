@@ -8,7 +8,7 @@
 .gitattributes
 
 # Python関連（50MB削減）
-__pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 *.so

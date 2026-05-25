@@ -239,10 +239,10 @@ class TestSettingsEnvironmentValidation:
     @pytest.mark.parametrize(
         "short_form",
         [
-            pytest.param("dev", id="short_dev"),
-            pytest.param("test", id="short_test"),
-            pytest.param("demo", id="short_demo"),
-            pytest.param("prod", id="short_prod"),
+            pytest.param("dev", id="short_dev_for_development"),
+            pytest.param("test", id="short_test_for_testing"),
+            pytest.param("demo", id="short_demo_for_staging"),
+            pytest.param("prod", id="short_prod_for_production"),
         ],
     )
     def test_environment_validation_short_forms_raise(self, short_form: str) -> None:
@@ -253,10 +253,15 @@ class TestSettingsEnvironmentValidation:
         本テストはその契約を保護する (PR#372 review 対応 Phase 4)。
 
         Note:
-            docker-compose.yml の app サービスは command 内で短縮形を完全名へ
-            自動マッピングする deprecation phase を持つが、Pydantic Settings 自体は
-            短縮形を依然 reject する。本テストは「直接 python から Settings を
-            instantiate する」シナリオ (CI script, smoke test 等) を検証する。
+            短縮形と完全名の対応 (param ID にも明示):
+                dev  → development
+                test → testing
+                demo → staging  (※ demo のみ命名が非直感的)
+                prod → production
+            docker-compose.yml の app サービスでは過去 deprecation phase の互換マッピングを
+            持っていたが現在は削除済 (PR#372)。短縮形は Pydantic 層で常に reject される。
+            本テストは「直接 python から Settings を instantiate する」シナリオ
+            (CI script, smoke test 等) を検証する。
         """
         with pytest.raises(ValidationError):
             Settings(environment=short_form)  # type: ignore[arg-type]

@@ -11,8 +11,6 @@
 # 変更履歴:
 #   2026-02-17: Python 3.12→3.13 (セキュリティサポート延長)
 #   2026-03-07: Python 3.13→3.14 (プロジェクト全体統一移行 PR#228)
-# 注意: CVE-2025-8869はPEP 706対応Python（3.9.17+/3.10.12+/3.11.4+/3.12+を含む）
-#        では影響を受けない。pip 26.x（>=26,<27 でアップグレード済み）でも修正済み（詳細: .trivyignore参照）
 FROM python:3.14-slim@sha256:c845af9399020c7e562969a13689e929074a10fd057acd1b1fad06a2fb068e97 AS base
 
 WORKDIR /app
@@ -66,10 +64,6 @@ COPY config/ ./config/
 COPY utils/ ./utils/
 COPY models/ ./models/
 
-# 不要ファイル削除（イメージサイズ最適化）
-RUN find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
-    find . -type f -name "*.pyc" -delete 2>/dev/null || true
-
 # 非rootユーザーに切り替え
 USER appuser
 
@@ -99,7 +93,13 @@ RUN chown appuser:appgroup /app
 USER appuser
 
 # 依存関係ファイルコピー (appuser 所有で配置)
+# pytest設定は pyproject.toml の [tool.pytest.ini_options] に統合済 (pytest.ini は不要)
 COPY --chown=appuser:appgroup pyproject.toml uv.lock ./
+
+# dependencies stage の本番依存 .venv をベースにキャッシュ流用 (CI 高速化)
+# 後続 `uv sync` が dev 依存関係を差分追加するため、`pyproject.toml`/`uv.lock` 未変更時の
+# フル再インストールを回避できる
+COPY --chown=appuser:appgroup --from=dependencies /app/.venv /app/.venv
 
 # 全依存関係インストール（devパッケージ含む）
 # --no-install-project: ソース未コピー状態でhatchlingエラー回避（dependencies stageと同様）
@@ -114,9 +114,6 @@ COPY --chown=appuser:appgroup utils/ ./utils/
 COPY --chown=appuser:appgroup models/ ./models/
 COPY --chown=appuser:appgroup tests/ ./tests/
 
-# 不要ファイル削除
-RUN find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
-    find . -type f -name "*.pyc" -delete 2>/dev/null || true
-
 # デフォルトコマンド: テスト実行
-CMD ["pytest", "--cov=.", "--cov-report=term-missing", "-v"]
+# カバレッジ scope は CI 品質ゲート (--cov=utils --cov=config --cov=models) と統一
+CMD ["pytest", "--cov=utils", "--cov=config", "--cov=models", "--cov-report=term-missing", "-v"]

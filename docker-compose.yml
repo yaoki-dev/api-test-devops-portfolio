@@ -27,10 +27,11 @@ services:
       target: runtime
     image: api-test:runtime
     # 4環境切替: ホストの ENVIRONMENT 変数で読込 env ファイルを選択
-    #   ENVIRONMENT=development / testing / staging / production
-    #   ※ 旧短縮形 (dev/test/demo/prod) は Pydantic Environment enum に存在しないため
-    #     ValidationError になるが、deprecation phase として command 内で自動マッピング (下記)
+    #   ENVIRONMENT=development / testing / staging / production の完全形のみ受け付ける
+    #   （Pydantic Environment enum 4値に統一、短縮形 dev/test/demo/prod は ValidationError）
     #   例: ENVIRONMENT=staging docker compose up
+    #   注意: staging/production では SECURITY__API_KEY または SECURITY__JWT_SECRET 未設定で
+    #         ValidationError → restart: on-failure による再起動ループに陥るため、必ず env ファイルに設定すること
     env_file:
       - path: .env.${ENVIRONMENT:-development}
         required: false
@@ -38,21 +39,10 @@ services:
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-development}
     # 設定読込を検証してから常駐。検証失敗時は && 以降に進まず非0終了
-    # 旧短縮形 ENVIRONMENT (dev/test/demo/prod) の deprecation phase 互換マッピング:
-    #   ホストで ENVIRONMENT=dev 等を設定している既存ユーザーが Pydantic ValidationError
-    #   で起動失敗するのを防ぐため、case 文で完全名に変換する。
-    #   将来のリリースで削除予定 (詳細は .env.example の Pydantic 制約セクション参照)。
     command:
       - /bin/sh
       - -c
-      - |
-        case "${ENVIRONMENT:-development}" in
-          dev)  echo "[migration] ENVIRONMENT=dev → development に変換 (短縮形は廃止予定)" >&2; export ENVIRONMENT=development ;;
-          test) echo "[migration] ENVIRONMENT=test → testing に変換 (短縮形は廃止予定)" >&2; export ENVIRONMENT=testing ;;
-          demo) echo "[migration] ENVIRONMENT=demo → staging に変換 (短縮形は廃止予定)" >&2; export ENVIRONMENT=staging ;;
-          prod) echo "[migration] ENVIRONMENT=prod → production に変換 (短縮形は廃止予定)" >&2; export ENVIRONMENT=production ;;
-        esac
-        python -c "from config.settings import settings; print('[startup] config loaded:', settings.environment, settings.project_name, flush=True)" && exec sleep infinity
+      - python -c "from config.settings import settings; print('[startup] config loaded:', settings.environment, settings.project_name, flush=True)" && exec sleep infinity
     # セキュリティ: 権限昇格の禁止（Dockerfile 側で非root化済み）
     security_opt:
       - "no-new-privileges:true"
@@ -85,7 +75,8 @@ services:
     # 環境は testing を明示（.env.testing 未設定でもテストモードを保証。機密ではないため直書き可）
     environment:
       ENVIRONMENT: testing
-    # Dockerfile CMD を上書きし pyproject.toml の addopts を採用（カバレッジ scope 是正）
+    # Dockerfile CMD を上書き。pyproject.toml の addopts (--cov=utils --cov=config --cov=models 等) は継承され、
+    # command 側で -m マーカー (unit/integration のみ、external 除外) を追加適用する
     command: ["pytest", "-m", "(unit or integration) and not external"]
     # カバレッジ成果物を host に永続化（htmlcov / coverage.xml）
     volumes:

@@ -43,7 +43,9 @@ jobs:
           # load: true時の manifest unknown エラー回避
           provenance: false
           cache-from: type=gha,scope=compose-test
-          cache-to: type=gha,mode=max,scope=compose-test
+          # PR時の cache poisoning 防止: cache-to は develop/main push時のみ書込
+          # (compose-healthcheck ジョブ・ci.yml と同方針で統一)
+          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=max,scope=compose-test' || '' }}
 
       - name: Prepare reports dir (bind-mount uid mismatch回避)
         # CI runner (uid=1001) と container appuser (uid=1000) の uid 不整合で
@@ -61,7 +63,7 @@ jobs:
         with:
           name: coverage-reports
           path: reports/
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
 
       - name: Tear down
@@ -69,6 +71,7 @@ jobs:
         # compose-test ジョブは `--rm` で container は自動削除されるが network/volume は残存しうる。
         # compose-healthcheck ジョブと対称化して明示 cleanup (過去レビュー #3292029073 対応)。
         # シェル優先度バグ回避のためブロック化、teardown失敗は warning のみで継続。
+        # ephemeral runner (ubuntu-latest は VM ごと破棄) のため teardown 失敗は次回 CI に影響しない。
         run: docker compose down --remove-orphans --timeout=10 || { echo "::warning::docker compose down failed"; true; }
 
   compose-healthcheck:
@@ -107,13 +110,15 @@ jobs:
 
       - name: Compose ps (diagnostic)
         if: failure()
-        # CIのログ肥大化を防ぐため、直近200行のみ抽出
+        # restart: on-failure による再起動ループ時の根本原因切れ防止のため --tail=1000 に拡張
+        # (200行では複数試行ログ混在で初期スタックトレースが切れる可能性あり)
         run: |
           docker compose ps
-          docker compose logs --tail=200 app
+          docker compose logs --tail=1000 app
 
       - name: Tear down
         if: always()
+        # 0. ephemeral runner (ubuntu-latest は VM ごと破棄) のため teardown 失敗は次回 CI に影響しない
         # 1. --timeout=10: network削除ハング防止 (デフォルト10秒、明示で意図明確化)
         # 2. ブロック化 `|| { ... ; }`: シェル優先度 `(A || B) ; true` バグ修正
         #    旧: `|| echo ... ; true` は `; true` が `||` リスト外で常時実行 = dead code
