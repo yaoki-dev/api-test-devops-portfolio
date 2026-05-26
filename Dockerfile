@@ -83,10 +83,8 @@ RUN pip install --no-cache-dir uv
 # 書込権限を付与する。非再帰 chown のみで十分 (.venv とアプリコードは以降の
 # `--chown=appuser:appgroup` 付き COPY と appuser 権限での `uv sync` で適切な所有に配置)。
 #
-# 旧実装 `RUN chown -R appuser:appgroup /app` は overlayfs copy-up により
-# /app/.venv (300-500MB) を新規 layer へ複製し test image サイズを実質倍化していた。
-# また `.venv` 全体が appuser 書込可能となり RCE 後のライブラリ書換 vector を残していた。
-# 新実装ではこれらを解消する (PR#372 review 対応)。
+# chown /app only (non-recursive): avoids overlayfs copy-up of .venv and keeps
+# dependency files from becoming appuser-writable.
 RUN chown appuser:appgroup /app
 
 # 非rootユーザーに切替 (uv sync 以降は appuser 権限で実行 → .venv も appuser 所有で生成)
@@ -96,7 +94,7 @@ USER appuser
 # pytest設定は pyproject.toml の [tool.pytest.ini_options] に統合済 (pytest.ini は不要)
 COPY --chown=appuser:appgroup pyproject.toml uv.lock ./
 
-# dependencies stage の本番依存 .venv をベースにキャッシュ流用 (CI 高速化)
+# dependencies stage の本番依存 .venv をベースにキャッシュ流用 (コードのみ変更時のCI高速化)
 # 後続 `uv sync` が dev 依存関係を差分追加するため、`pyproject.toml`/`uv.lock` 未変更時の
 # フル再インストールを回避できる
 COPY --chown=appuser:appgroup --from=dependencies /app/.venv /app/.venv

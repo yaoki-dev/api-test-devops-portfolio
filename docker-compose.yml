@@ -51,7 +51,7 @@ services:
     # restart: on-failure — 設定読込失敗(非0終了)時のみ再起動。手動停止では再起動しない。
     # 注意: `docker compose up -d` は exit 0 を返すため、起動成否は `docker compose ps` /
     #       HEALTHCHECK 状態で確認すること（exit code では恒久失敗を検知できない）。
-    restart: on-failure
+    restart: "on-failure:3"
 
   # ---------------------------------------------------------------
   # test: テスト実行専用コンテナ

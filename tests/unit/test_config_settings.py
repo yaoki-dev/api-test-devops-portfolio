@@ -241,7 +241,7 @@ class TestSettingsEnvironmentValidation:
         [
             pytest.param("dev", id="short_dev_for_development"),
             pytest.param("test", id="short_test_for_testing"),
-            pytest.param("demo", id="short_demo_for_staging"),
+            pytest.param("demo", id="invalid_demo_raises"),
             pytest.param("prod", id="short_prod_for_production"),
         ],
     )
@@ -253,13 +253,7 @@ class TestSettingsEnvironmentValidation:
         本テストはその契約を保護する (PR#372 review 対応 Phase 4)。
 
         Note:
-            短縮形と完全名の対応 (param ID にも明示):
-                dev  → development
-                test → testing
-                demo → staging  (※ demo のみ命名が非直感的)
-                prod → production
-            docker-compose.yml の app サービスでは過去 deprecation phase の互換マッピングを
-            持っていたが現在は削除済 (PR#372)。短縮形は Pydantic 層で常に reject される。
+            dev/test/demo/prod は互換マッピングせず、Pydantic層で常に reject される。
             本テストは「直接 python から Settings を instantiate する」シナリオ
             (CI script, smoke test 等) を検証する。
         """
