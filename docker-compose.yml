@@ -58,7 +58,7 @@ services:
   #   - profiles により通常の `docker compose up` では起動しない
   #   - 実行: docker compose --profile test run --rm test
   #   - command: ["pytest"] で pyproject.toml [tool.pytest] addopts を採用
-  #     （Dockerfile test ステージの CMD `pytest --cov=. --cov-report=term-missing -v` を上書きし、対象を utils/config/models に限定）
+  #     （Dockerfile test ステージの CMD `pytest --cov=utils --cov=config --cov=models --cov-report=term-missing -v` を上書き）
   #   - reports/htmlcov, reports/coverage.xml が /app/reports に出力され、host ./reports に永続化
   # ---------------------------------------------------------------
   test:
@@ -75,9 +75,9 @@ services:
     # 環境は testing を明示（.env.testing 未設定でもテストモードを保証。機密ではないため直書き可）
     environment:
       ENVIRONMENT: testing
-    # Dockerfile CMD を上書き。pyproject.toml の addopts (--cov=utils --cov=config --cov=models 等) は継承され、
-    # command 側で -m マーカー (unit/integration のみ、external 除外) を追加適用する
-    command: ["pytest", "-m", "(unit or integration) and not external"]
+    # Dockerfile CMD を上書き。pyproject.toml の addopts (--cov=utils --cov=config --cov=models 等) は継承されるが、
+    # Compose品質ゲートの意図を明示するため coverage fail-under は command 側にも固定する
+    command: ["pytest", "-m", "(unit or integration) and not external", "--cov-fail-under=85"]
     # カバレッジ成果物を host に永続化（htmlcov / coverage.xml）
     volumes:
       - ./reports:/app/reports

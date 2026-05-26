@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 from pydantic import SecretStr, ValidationError
 
 from config.settings import (
@@ -1186,4 +1187,38 @@ class TestAllowedDomainsEnvOverride:
         monkeypatch.delenv("ALLOWED_DOMAINS", raising=False)
         result = _get_allowed_domains()
         assert len(result) >= 7  # デフォルトは7ドメイン以上
-        assert "jsonplaceholder.typicode.com" in result
+        assert {"jsonplaceholder.typicode.com"}.issubset(result)
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            pytest.param("  ", id="whitespace_only"),
+            pytest.param(",", id="comma_only"),
+            pytest.param(" , ", id="blank_entries_only"),
+        ],
+    )
+    def test_allowed_domains_blank_env_entries_return_empty_set(
+        self, monkeypatch: pytest.MonkeyPatch, value: str
+    ) -> None:
+        """空白・空要素のみの ALLOWED_DOMAINS は deny-all (空セット) を返す"""
+        from config.settings import _get_allowed_domains
+
+        monkeypatch.setenv("ALLOWED_DOMAINS", value)
+        result = _get_allowed_domains()
+        assert result == set()
+
+
+class TestDockerComposeContract:
+    """docker-compose.yml の運用契約を軽量に保護する"""
+
+    def test_app_compose_startup_validation_structure(self) -> None:
+        """app service の fail-loud 起動構成 (env_file/restart/command) を YAML レベルで保護する"""
+        compose_path = Path(__file__).resolve().parents[2] / "docker-compose.yml"
+        compose = yaml.safe_load(compose_path.read_text(encoding="utf-8"))
+        app = compose["services"]["app"]
+
+        assert app["env_file"] == [{"path": ".env.${ENVIRONMENT:-development}", "required": False}]
+        assert app["environment"]["ENVIRONMENT"] == "${ENVIRONMENT:-development}"
+        assert app["restart"] == "on-failure:3"
+        assert "from config.settings import settings" in app["command"][-1]
+        assert "&& exec sleep infinity" in app["command"][-1]

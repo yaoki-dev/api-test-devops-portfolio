@@ -36,7 +36,7 @@ def _get_allowed_domains() -> set[str]:
     """
     env_domains = os.environ.get("ALLOWED_DOMAINS", "")
     if env_domains:
-        return set(d.strip() for d in env_domains.split(",") if d.strip())
+        return {d.strip() for d in env_domains.split(",") if d.strip()}
 
     # デフォルト: 本番用 + テスト用ドメイン
     return {
