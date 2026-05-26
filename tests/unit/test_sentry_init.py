@@ -302,6 +302,12 @@ class TestSensitiveKeysCompleteness:
             ("otp", True),
             ("mfa", True),
             ("totp", True),
+            # PR#347 review Q-2: prefix/suffix 非対称設計の契約化
+            # `token` 単独は _SENSITIVE_KEY_PATTERN (prefix `(?:^|[_\d])`,
+            # suffix `(?=[^a-z]|$)`) では match しないが、_COMPACT_SENSITIVE_KEYS
+            # (utils/sentry_init.py:210-212) のアンダースコア除去後完全一致 fallback で
+            # True 判定される。設計意図契約化。
+            ("token", True),
             # True positives: アンダースコア境界で区切られた複合キー → True
             ("otp_count", True),  # noqa: S105
             ("mfa_setup", True),

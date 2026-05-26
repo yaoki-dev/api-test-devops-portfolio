@@ -280,6 +280,11 @@ class AsyncGitHubClient:
                     error_type=type(close_exc).__name__,
                     error_module=type(close_exc).__module__,
                     has_body_exception=has_body_exception,
+                    # PR#347 review SF-2: close_exc が body 例外を上書きしないため
+                    # __context__ チェーンは切断される。代わりに body 例外の型名を
+                    # 同一ログイベント内に記録し、close 失敗と body 例外の対応関係を
+                    # 追跡可能にする (PII 非含: __qualname__ はクラス名のみ)。
+                    body_exception_type=exc_type.__qualname__ if exc_type is not None else None,
                     exc_info=True,  # スタックトレースをログに残す
                 )
                 # body 例外がない場合のみ実装バグとして re-raise。

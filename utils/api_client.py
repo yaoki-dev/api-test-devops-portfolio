@@ -835,49 +835,61 @@ class AsyncAPIClient:
         exc_tb: TracebackType | None,
     ) -> None:
         """非同期コンテキストマネージャーの終了処理"""
-        try:
-            await self.aclose()
-        except (httpx.CloseError, OSError) as close_exc:
-            # 既知のクローズ時例外 — 警告のみ（body 例外を上書きしない）
-            self.logger.warning(
-                "async_api_client_aclose_failed",
-                error_type=type(close_exc).__name__,
-                error_module=type(close_exc).__module__,
-            )
-        except Exception as close_exc:  # noqa: BLE001
-            # 予期しない例外（AttributeError, RuntimeError, ValueError, TypeError 等
-            # の実装バグ可能性）を捕捉。`Exception` 基底のため以下は**意図的に非捕捉**:
-            #   - KeyboardInterrupt / SystemExit: シグナル・interpreter shutdown 由来。
-            #     ユーザー停止/プロセス終了を遅延させずに伝播させる。
-            #   - MemoryError: メモリ枯渇下では fail-fast。ログ出力自体が二次例外を誘発する
-            #     可能性があるため即時伝播させる (recovery 不可能)。
-            #   - asyncio.CancelledError (Py3.8+ は BaseException 派生): cooperative
-            #     cancellation の意図を妨げないため伝播。
-            # 全て `BaseException` 派生で `except Exception` の境界外。
-            has_body_exception = exc_type is not None
-            self.logger.error(
-                "async_api_client_aclose_unexpected_error",
-                error_type=type(close_exc).__name__,
-                error_module=type(close_exc).__module__,
-                has_body_exception=has_body_exception,
-                exc_info=True,  # スタックトレースをログに残す
-            )
-            # body 例外がない場合のみ実装バグとして re-raise。
-            # body 例外がある場合は本質的原因の上書きを防ぐため raise しない。
-            # bare ``raise`` で active exception の traceback を完全保持
-            # （``raise close_exc`` への回帰防止: 余分な frame を追加せず Python idiom）。
-            if not has_body_exception:
-                raise
-        else:
-            # 成功ログを aclose() の外で出力し、logger 例外が close 失敗として
-            # 誤記録されるのを防ぐ（PR#347 review #11-7）。close 成功→log 失敗の
-            # ケースでは例外が ``except Exception`` に到達せずそのまま伝播する。
-            self.logger.info("async_api_client_closed")
+        if self._client:
+            try:
+                await self._client.aclose()
+            except (httpx.CloseError, OSError) as close_exc:
+                # 既知のクローズ時例外 — 警告のみ（body 例外を上書きしない）
+                self.logger.warning(
+                    "async_api_client_aclose_failed",
+                    error_type=type(close_exc).__name__,
+                    error_module=type(close_exc).__module__,
+                )
+            except Exception as close_exc:  # noqa: BLE001
+                # 予期しない例外（AttributeError, RuntimeError, ValueError, TypeError 等
+                # の実装バグ可能性）を捕捉。`Exception` 基底のため以下は**意図的に非捕捉**:
+                #   - KeyboardInterrupt / SystemExit: シグナル・interpreter shutdown 由来。
+                #     ユーザー停止/プロセス終了を遅延させずに伝播させる。
+                #   - MemoryError: メモリ枯渇下では fail-fast。ログ出力自体が二次例外を誘発する
+                #     可能性があるため即時伝播させる (recovery 不可能)。
+                #   - asyncio.CancelledError (Py3.8+ は BaseException 派生): cooperative
+                #     cancellation の意図を妨げないため伝播。
+                # 全て `BaseException` 派生で `except Exception` の境界外。
+                has_body_exception = exc_type is not None
+                self.logger.error(
+                    "async_api_client_aclose_unexpected_error",
+                    error_type=type(close_exc).__name__,
+                    error_module=type(close_exc).__module__,
+                    has_body_exception=has_body_exception,
+                    # PR#347 review SF-2: close_exc が body 例外を上書きしないため
+                    # __context__ チェーンは切断される。代わりに body 例外の型名を
+                    # 同一ログイベント内に記録し、close 失敗と body 例外の対応関係を
+                    # 追跡可能にする (PII 非含: __qualname__ はクラス名のみ)。
+                    body_exception_type=exc_type.__qualname__ if exc_type is not None else None,
+                    exc_info=True,  # スタックトレースをログに残す
+                )
+                # body 例外がない場合のみ実装バグとして re-raise。
+                # body 例外がある場合は本質的原因の上書きを防ぐため raise しない。
+                # bare ``raise`` で active exception の traceback を完全保持
+                # （``raise close_exc`` への回帰防止: 余分な frame を追加せず Python idiom）。
+                if not has_body_exception:
+                    raise
+            else:
+                # aclose() 成功時のみ closed ログを出す。logger.info を try 内に置くと
+                # logger 自体の例外が aclose 失敗として誤検知されるため else 節に分離。
+                # github_client.py / Sync close() と同一パターン (PR#347 Q-1 Codex fix)。
+                self.logger.info("async_api_client_closed")
 
     async def aclose(self) -> None:
-        """クライアントのクローズ"""
+        """クライアントのクローズ
+
+        async with パターンと aclose() 単独呼び出しの両経路で
+        ``async_api_client_closed`` ログを出力し、Sync (``SyncAPIClient.close()``)
+        との observability 対称性を保つ (PR#347 review Q-1)。
+        """
         if self._client:
             await self._client.aclose()
+            self.logger.info("async_api_client_closed")
 
     async def _make_request_with_retry(
         self,

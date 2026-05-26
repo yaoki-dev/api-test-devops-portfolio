@@ -28,6 +28,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - 対応: nullable numeric として log schema を再定義するか、log consumer
       側で `null → 0` 等の変換ルールを適用する.
 
+- **Dependency upgrade**: `sentry-sdk[httpx]` の最小バージョンを
+  `>=2.59.0` → `>=2.60.0,<3.0.0` に引き上げ (PR#347 review D-2).
+  - **変更理由**: `utils/sentry_init.py:_emit_scrub_failure_to_sentry`
+    で使用する `sentry_sdk.new_scope()` API は sentry-sdk 2.x で
+    `push_scope()` から正式置換された推奨 API。`new_scope()` は
+    context manager として scope の lifetime を明示し、recursion guard
+    用 internal tag (`_INTERNAL_TAG_KEY`) の正確な scrub バイパス
+    通知を実現する。
+  - **影響範囲**: `pyproject.toml:33` (依存定義) と
+    `PROJECT_INDEX.md:175` (技術スタック一覧) は更新済。
+    アプリ側 API surface 変更なし (内部実装の更新のみ)。
+  - **利用者対応**: `uv sync` または `uv lock --upgrade` で
+    新しい lockfile を生成すること。
+
+- **Observability contract expansion**: `AsyncAPIClient.aclose()`
+  単独呼出経路でも `async_api_client_closed` ログを出力するよう変更
+  (PR#347 review Q-1).
+  - **変更内容**: 旧仕様では `async with` パターン経由の `__aexit__` else 節
+    完了時のみログ出力。新仕様では `aclose()` 内 `_client.aclose()` 直後で
+    ログ出力 → `async with` / 明示的 `await client.aclose()` の両経路で
+    `async_api_client_closed` イベントが発火する。
+  - **設計意図**: `SyncAPIClient.close()` (utils/api_client.py:395) と
+    observability 対称性を確保。K8s graceful shutdown / debug 用途で
+    `aclose()` を直接呼ぶケース (CLI / バックグラウンドタスク等) の
+    可観測性向上。
+  - **影響範囲**: log consumer (Datadog / Loki / Splunk / CloudWatch 等)
+    で同イベント受信頻度が変化する可能性。`async with` のみ使用していた
+    既存環境では event 数に変化なし。`aclose()` 直接呼出箇所では新規発火。
+  - **互換性**: ログ schema (event 名 `async_api_client_closed`、フィールド
+    なし) は不変。既存 alert rule / dashboard への破壊的影響なし。
+
+- **Observability field addition**: `__aexit__` の `aclose()` 例外パスで
+  `body_exception_type` フィールドを追加 (PR#347 review SF-2).
+  - **対象**: `AsyncAPIClient.__aexit__` (utils/api_client.py:858-870) と
+    `AsyncGitHubClient.__aexit__` (utils/github_client.py:275-290) の
+    `*_aclose_unexpected_error` ログ。
+  - **変更内容**: `body_exception_type=exc_type.__qualname__ if exc_type is not None else None`
+    を追加。`close_exc` が body 例外 `__context__` を上書きしないため切断される
+    例外チェーンを log 内で補完。
+  - **PII 保護**: `__qualname__` はクラス名 (`ValueError`, `RuntimeError` 等)
+    のみで PII を含まない。
+  - **互換性**: 既存フィールド (`error_type`, `error_module`, `has_body_exception`,
+    `exc_info`) は不変。log consumer 側で新規 nullable string field として
+    追加扱いされる。
+
 ### Security
 
 - **Changed (security behavior)**: `utils/sentry_init.py` の機密データ判定を

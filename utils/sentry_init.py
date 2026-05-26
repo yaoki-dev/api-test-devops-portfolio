@@ -432,6 +432,13 @@ def _scrub_exception_field(exception_value: dict[str, Any]) -> dict[str, Any]:  
     PII を含まない FileNotFoundError 等の診断情報も失われる。将来改善する場合は、
     特定キーワードのみをマスクする selective redact へ移行する。
 
+    **values[*].type は意図的に redact しない** (PR#347 review S-1):
+        `type` フィールドは例外クラス名 (`ValueError`, `KeyError` 等) を保持し、
+        通常 PII を含まない。例外分類は Sentry UI / alert routing / metric 集計の
+        primary key として機能するため、redact すると観測性が壊滅的に低下する。
+        ただし将来 `type` に PII 文字列が現れる SDK 拡張 / custom exception
+        命名規則が導入された場合は本方針を再評価する必要がある。
+
     設計トレードオフ (fail-open):
         Sentry SDK の将来バージョンや custom integration により未知の exception
         構造が渡された場合、本関数は破壊せず通過させる（observability 優先）。

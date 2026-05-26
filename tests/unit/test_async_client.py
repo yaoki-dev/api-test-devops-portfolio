@@ -928,7 +928,7 @@ async def test_async_api_client_aexit_aclose_exception_is_suppressed_with_warnin
     client = AsyncAPIClient()
 
     with (
-        patch.object(client, "aclose", new=AsyncMock(side_effect=close_exc)),
+        patch.object(client._client, "aclose", new=AsyncMock(side_effect=close_exc)),
         capture_logs() as log_output,
     ):
         await client.__aexit__(None, None, None)
@@ -952,7 +952,11 @@ async def test_async_api_client_aexit_body_exception_not_overridden_by_close_exc
     client = AsyncAPIClient()
 
     with (
-        patch.object(client, "aclose", new=AsyncMock(side_effect=httpx.CloseError("close-failed"))),
+        patch.object(
+            client._client,
+            "aclose",
+            new=AsyncMock(side_effect=httpx.CloseError("close-failed")),
+        ),
         pytest.raises(ValueError, match="body-error"),
         capture_logs() as log_output,
     ):
@@ -980,7 +984,11 @@ async def test_aexit_unexpected_exception_reraises_when_no_body_exception() -> N
     client = AsyncAPIClient()
 
     with (
-        patch.object(client, "aclose", new=AsyncMock(side_effect=RuntimeError("close-failed"))),
+        patch.object(
+            client._client,
+            "aclose",
+            new=AsyncMock(side_effect=RuntimeError("close-failed")),
+        ),
         pytest.raises(RuntimeError, match="close-failed"),
         capture_logs() as log_output,
     ):
@@ -1012,7 +1020,11 @@ async def test_aexit_unexpected_exception_suppressed_when_body_exception() -> No
     client = AsyncAPIClient()
 
     with (
-        patch.object(client, "aclose", new=AsyncMock(side_effect=RuntimeError("close-failed"))),
+        patch.object(
+            client._client,
+            "aclose",
+            new=AsyncMock(side_effect=RuntimeError("close-failed")),
+        ),
         pytest.raises(ValueError, match="body-error"),
         capture_logs() as log_output,
     ):
@@ -1032,6 +1044,46 @@ async def test_aexit_unexpected_exception_suppressed_when_body_exception() -> No
     failed_event = "async_api_client_aclose_failed"
     warning_logs = [log for log in log_output if log.get("event") == failed_event]
     assert len(warning_logs) == 0
+
+
+async def test_aclose_logger_info_failure_propagates_without_misclassification() -> None:
+    """aclose() 単独呼び出し: logger.info 失敗が close 失敗として誤分類されないことを検証。
+
+    aclose() は try-except を持たないため logger 例外はそのまま caller に propagate し、
+    aclose_unexpected_error には記録されない (Codex Q-1 recommendation: both paths)。
+    """
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(client._client, "aclose", new=AsyncMock()),
+        patch.object(client.logger, "info", side_effect=RuntimeError("logger-failed")),
+        patch.object(client.logger, "error") as mock_error,
+        pytest.raises(RuntimeError, match="logger-failed"),
+    ):
+        await client.aclose()
+
+    mock_error.assert_not_called()
+
+
+async def test_aexit_logger_info_failure_not_misclassified_as_close_failure() -> None:
+    """__aexit__: _client.aclose() 成功後に logger.info が例外を投げても
+    aclose_unexpected_error として誤分類されないことを検証 (Codex Q-1 regression)。
+
+    else 節に logger.info を分離したため、logger 例外は try-except 外から propagate し、
+    close 失敗 (aclose_unexpected_error) として記録されない。
+    """
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(client._client, "aclose", new=AsyncMock()),
+        patch.object(client.logger, "info", side_effect=RuntimeError("logger-failed")),
+        patch.object(client.logger, "error") as mock_error,
+        pytest.raises(RuntimeError, match="logger-failed"),
+    ):
+        await client.__aexit__(None, None, None)
+
+    # close 失敗として誤分類されていない = error ログ（unexpected_error）未呼び出し
+    mock_error.assert_not_called()
 
 
 @respx.mock

@@ -2524,6 +2524,26 @@ def test_rate_limit_error_overflow_fallback() -> None:
 
 
 @pytest.mark.parametrize(
+    "negative_reset_time",
+    [
+        pytest.param(-1, id="negative_one"),
+        pytest.param(-100, id="negative_hundred"),
+        pytest.param(0, id="zero_boundary"),
+    ],
+)
+def test_rate_limit_error_negative_or_zero_reset_time(negative_reset_time: int) -> None:
+    """RateLimitError: reset_time が 0 以下の場合 "unknown" フォールバック (PR#347 review T-1)
+
+    実装 (utils/github_client.py:128-134) は `if reset_time > 0: ... else: reset_str = "unknown"`。
+    負値 / 0 はいずれも else 分岐へ流れ "unknown" メッセージを生成する。
+    境界値カバレッジ確保のための regression gate。
+    """
+    err = RateLimitError(negative_reset_time)
+    assert err.reset_time == negative_reset_time
+    assert "unknown" in str(err)
+
+
+@pytest.mark.parametrize(
     "invalid_value",
     [
         pytest.param(0, id="zero"),
