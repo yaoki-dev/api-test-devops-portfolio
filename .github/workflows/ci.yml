@@ -735,7 +735,7 @@ jobs:
     runs-on: ubuntu-latest
     # Note: Skipped jobs are treated as 'success' by GitHub Actions
     # !cancelled() overrides implicit success() check, allowing execution after success/failure/skipped
-    needs: [pr-validation, pr-trivy-scan, pr-md-quality-check, post-validation, post-trivy-scan, weekly-extended-test, weekly-link-check]
+    needs: [pr-validation, pr-trivy-scan, pr-md-quality-check, post-validation, post-trivy-scan, weekly-extended-test, weekly-link-check, compose-test, compose-healthcheck]
     if: "!cancelled()"
     timeout-minutes: 5
 
@@ -762,6 +762,8 @@ jobs:
           echo "- Post Trivy Scan: ${{ needs.post-trivy-scan.result }}" >> status_report.md
           echo "- Weekly Extended Test: ${{ needs.weekly-extended-test.result }}" >> status_report.md
           echo "- Weekly Link Check: ${{ needs.weekly-link-check.result }}" >> status_report.md
+          echo "- Compose Test (pytest + coverage): ${{ needs.compose-test.result }}" >> status_report.md
+          echo "- Compose Healthcheck: ${{ needs.compose-healthcheck.result }}" >> status_report.md
           echo "" >> status_report.md
           echo "## Triggered By: ${{ github.event_name }}" >> status_report.md
           cat status_report.md

@@ -26,12 +26,14 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Validate compose config
         run: docker compose config --quiet
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
       - name: Build test image
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
@@ -58,12 +60,12 @@ jobs:
         run: docker compose --profile test run --rm test
 
       - name: Upload coverage artifacts
-        if: success()
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-reports
           path: reports/
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
 
       - name: Tear down
@@ -75,18 +77,21 @@ jobs:
         run: docker compose down --remove-orphans --timeout=10 || { echo "::warning::docker compose down failed"; true; }
 
   compose-healthcheck:
+    needs: [compose-test]
     name: Compose app healthcheck
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Validate compose config
         run: docker compose config --quiet
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
       - name: Build app(runtime) image
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
@@ -99,13 +104,13 @@ jobs:
           provenance: false
           # ci.yml と共通スコープにして runtime キャッシュを共有
           cache-from: type=gha,scope=api-test-runtime
-          # PR時の cache poisoning 防止: cache-to は develop/main push時のみ書込
-          # (ci.yml と同 scope のため、PR時の書込抑制も ci.yml と統一する)
-          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=max,scope=api-test-runtime' || '' }}
+          # PR時の cache poisoning 防止: cache-to は ci.yml に一本化し compose-healthcheck では未使用
+          # (並列 push 時の同一 scope への競合書込を回避)
+          cache-to: ""
 
       - name: Start app and wait for healthy
         # Docker Compose 2.2 以降のネイティブ機能に置き換え
-        # タイムアウト根拠: start-period(5s) + interval(30s) * retries(3) = 95s。余裕を持たせて120sに設定。
+        # タイムアウト根拠: start-period(5s) + interval(30s) × retries(3) + timeout(10s) = 105s。余裕を持たせて120sに設定。
         run: docker compose up -d --wait --wait-timeout 120 app
 
       - name: Compose ps (diagnostic)

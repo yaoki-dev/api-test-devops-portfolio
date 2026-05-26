@@ -99,12 +99,13 @@ COPY --chown=appuser:appgroup pyproject.toml uv.lock ./
 # フル再インストールを回避できる
 COPY --chown=appuser:appgroup --from=dependencies /app/.venv /app/.venv
 
+# PATH設定（uv sync 前に設定。uv は絶対パスで実行されるため動作上必須ではないが、
+# 後続の COPY/RUN で .venv/bin が PATH に含まれていることを明示）
+ENV PATH="/app/.venv/bin:$PATH"
+
 # 全依存関係インストール（devパッケージ含む）
 # --no-install-project: ソース未コピー状態でhatchlingエラー回避（dependencies stageと同様）
 RUN uv sync --frozen --no-install-project
-
-# PATH設定
-ENV PATH="/app/.venv/bin:$PATH"
 
 # アプリケーションコード全体をコピー (appuser 所有で配置)
 COPY --chown=appuser:appgroup config/ ./config/

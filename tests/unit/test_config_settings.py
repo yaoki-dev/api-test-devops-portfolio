@@ -242,6 +242,7 @@ class TestSettingsEnvironmentValidation:
             pytest.param("dev", id="short_dev_for_development"),
             pytest.param("test", id="short_test_for_testing"),
             pytest.param("demo", id="invalid_demo_raises"),
+            pytest.param("stg", id="invalid_stg_raises"),
             pytest.param("prod", id="short_prod_for_production"),
         ],
     )
@@ -612,7 +613,9 @@ class TestEnvironmentVariableLoading:
         """ネスト記法（API__BASE_URL）での環境変数読み込み"""
         # Note: DNS解決可能なドメインを使用（example.com系はFail-Closedでブロック）
         monkeypatch.setenv("API__BASE_URL", "https://httpbin.org")
-        monkeypatch.delattr("config.settings._settings", raising=False)
+        import config.settings
+
+        monkeypatch.setattr(config.settings, "_settings", None)
 
         settings = reload_settings()
         assert settings.api.base_url == "https://httpbin.org"
@@ -620,7 +623,9 @@ class TestEnvironmentVariableLoading:
     def test_case_insensitive_environment_variables(self, monkeypatch):
         """大小文字を区別しない環境変数読み込み (case_sensitive=False)"""
         monkeypatch.setenv("project_name", "Test Project")
-        monkeypatch.delattr("config.settings._settings", raising=False)
+        import config.settings
+
+        monkeypatch.setattr(config.settings, "_settings", None)
 
         settings = reload_settings()
         assert settings.project_name == "Test Project"
@@ -628,7 +633,9 @@ class TestEnvironmentVariableLoading:
     def test_debug_mode_from_environment(self, monkeypatch):
         """DEBUG環境変数からのdebugモード設定"""
         monkeypatch.setenv("DEBUG", "false")
-        monkeypatch.delattr("config.settings._settings", raising=False)
+        import config.settings
+
+        monkeypatch.setattr(config.settings, "_settings", None)
 
         settings = reload_settings()
         assert settings.debug is False
@@ -1108,3 +1115,75 @@ class TestResolveHostname(DNSCacheClearMixin):
 
         assert result is None
         assert expected_log_message in caplog.text
+
+
+# ── PR#372 review fixes: boundary value + ALLOWED_DOMAINS tests ──
+
+
+class TestTestConfigBoundaryValues:
+    """TestConfig 数値フィールドの境界値テスト（PR#372 review #7-9）
+
+    SettingsTestConfig フィールド検証:
+    - slow_test_threshold: ge=0.1 (float)
+    - max_concurrent_requests: ge=1, le=50 (int)
+    """
+
+    @pytest.mark.parametrize(
+        ("value", "expected_valid"),
+        [
+            pytest.param(0.09, False, id="slow_test_threshold_below_min"),
+            pytest.param(0.1, True, id="slow_test_threshold_at_min"),
+            pytest.param(5.0, True, id="slow_test_threshold_default"),
+        ],
+    )
+    def test_slow_test_threshold_boundary(self, value: float, expected_valid: bool) -> None:
+        """slow_test_threshold: ge=0.1 境界値検証"""
+        if expected_valid:
+            config = SettingsTestConfig(slow_test_threshold=value)
+            assert config.slow_test_threshold == value
+        else:
+            with pytest.raises(ValidationError):
+                SettingsTestConfig(slow_test_threshold=value)
+
+    @pytest.mark.parametrize(
+        ("value", "expected_valid"),
+        [
+            pytest.param(0, False, id="max_concurrent_below_min"),
+            pytest.param(1, True, id="max_concurrent_at_min"),
+            pytest.param(50, True, id="max_concurrent_at_max"),
+            pytest.param(51, False, id="max_concurrent_above_max"),
+        ],
+    )
+    def test_max_concurrent_requests_boundary(self, value: int, expected_valid: bool) -> None:
+        """max_concurrent_requests: ge=1, le=50 境界値検証"""
+        if expected_valid:
+            config = SettingsTestConfig(max_concurrent_requests=value)
+            assert config.max_concurrent_requests == value
+        else:
+            with pytest.raises(ValidationError):
+                SettingsTestConfig(max_concurrent_requests=value)
+
+
+class TestAllowedDomainsEnvOverride:
+    """ALLOWED_DOMAINS 環境変数 override テスト（PR#372 review #7-8）
+
+    _get_allowed_domains() は環境変数 ALLOWED_DOMAINS を参照し、
+    カンマ区切りで許可ドメインを上書き可能。
+    """
+
+    def test_allowed_domains_env_override(self, monkeypatch):
+        """環境変数 ALLOWED_DOMAINS で許可ドメインを上書き"""
+        from config.settings import _get_allowed_domains
+
+        monkeypatch.setenv("ALLOWED_DOMAINS", "custom.example.com,api.custom.com")
+        result = _get_allowed_domains()
+        assert result == {"custom.example.com", "api.custom.com"}
+
+    def test_allowed_domains_env_empty_returns_default(self, monkeypatch):
+        """環境変数未設定時はデフォルトドメインを返す"""
+        from config.settings import _get_allowed_domains
+
+        monkeypatch.delenv("ALLOWED_DOMAINS", raising=False)
+        result = _get_allowed_domains()
+        assert len(result) >= 7  # デフォルトは7ドメイン以上
+        assert "jsonplaceholder.typicode.com" in result
