@@ -7,7 +7,7 @@
 このプロジェクトは、APIテストとDevOps技術を統合した実践的なポートフォリオです。
 
 [![CI/CD Pipeline](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml/badge.svg)](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/badge/coverage-93.43%25-brightgreen)](https://yuta158.github.io/api-test-portfolio/htmlcov/)
+[![Coverage](https://img.shields.io/badge/coverage-94.59%25-brightgreen)](https://yuta158.github.io/api-test-portfolio/htmlcov/)
 ![Python](https://img.shields.io/badge/Python-3.14-blue)
 [![Docker](https://img.shields.io/badge/docker-multi--stage-blue)](./Dockerfile)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
@@ -16,14 +16,14 @@
 [![Security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 [![Dependencies: safety](https://img.shields.io/badge/dependencies-safety--checked-green.svg)](https://safetycli.com/)
 
-> **Python/Docker/CI/CDを統合したAPIテスト自動化ポートフォリオ。588件のテスト（CI品質ゲート: 575件/93.43%）。**
+> **Python/Docker/CI/CDを統合したAPIテスト自動化ポートフォリオ。1009件のテスト（CI品質ゲート: 996件/94.59%）。**
 
 ## 概要
 
-- **588件のテストスイート**: Unit(549, うちSlow 1件含む) / Integration(31, うちExternal 5件含む) / Performance(5, 週次のみ) / Smoke(3) / E2E(実装予定)
-- **カバレッジ: 93.43%**（unit+integration条件）: 継続的な品質向上
-- **CI実行テスト: 575件**（unit+integration条件, external・performance・smoke除外）
-  - 内訳: Unit 549件 + Integration 26件（31件のうちexternal 5件を除外）
+- **1009件のテストスイート**: Unit(970, うちSlow 1件含む) / Integration(31, うちExternal 5件含む) / Performance(5, 週次のみ) / Smoke(3) / E2E(実装予定)
+- **カバレッジ: 94.59%**（unit+integration条件）: 継続的な品質向上
+- **CI実行テスト: 996件**（unit+integration条件, external・performance・smoke除外）
+  - 内訳: Unit 970件 + Integration 26件（31件のうちexternal 5件を除外）
 - **CI/CD自動化**: GitHub Actions による多段階パイプライン
 - **セキュリティ**: CI/CD品質ゲート（pytest + ruff + mypy + Trivy）
 - **GitHub API統合**: 実務的なAPI統合スキルを証明（Rate Limit管理、ETag活用、非同期処理）
@@ -34,22 +34,22 @@
 
 ### 1. テスト実行
 
-![Test Demo - pytest実行で基本テスト19件合格（全588件中の抽出実行、CI環境での全体カバレッジ: 93.43%）。テスト自動化スキルを実証](assets/demo-test.gif)
+![Test Demo - pytest実行で基本テスト19件合格（全1009件中の抽出実行、CI環境での全体カバレッジ: 94.59%）。テスト自動化スキルを実証](assets/demo-test.gif)
 
-> **📝 デモ内容**: クイック実行例（基本テスト19件、デモ時間短縮のため抽出。全588件は約60秒）
-> **🔍 全588件を今すぐ確認**: [GitHub Actions CI/CD](https://github.com/yuta158/api-test-portfolio/actions) でフルテスト結果＋カバレッジレポートを閲覧
+> **📝 デモ内容**: クイック実行例（基本テスト19件、デモ時間短縮のため抽出。全1009件は約60秒）
+> **🔍 全1009件を今すぐ確認**: [GitHub Actions CI/CD](https://github.com/yuta158/api-test-portfolio/actions) でフルテスト結果＋カバレッジレポートを閲覧
 
 **何がわかるか**:
 
 - pytest + pytest-covによる自動テスト実行
 - カバレッジレポートによる品質可視化
-- テスト実行: 基本19件 ~5秒、全588件 ~60秒
+- テスト実行: 基本19件 ~5秒、全1009件 ~60秒
 
 <details>
-<summary>全テスト実行コマンド（588件、約60秒）</summary>
+<summary>全テスト実行コマンド（1009件、約60秒）</summary>
 
 ```bash
-# 全テスト実行（588件）
+# 全テスト実行（1009件）
 uv run pytest --cov=utils --cov=config --cov=models --cov-report=term -q --color=yes
 
 # クイック実行（unit tests）
@@ -180,7 +180,7 @@ api-test-devops-portfolio/
 ├── config/              # 設定管理（Pydantic Settings）
 ├── utils/               # ユーティリティ（APIクライアント等）
 ├── models/              # データモデル
-├── tests/               # テストスイート（588件）
+├── tests/               # テストスイート（1009件）
 │   ├── unit/            # 単体テスト
 │   ├── integration/     # 統合テスト
 │   ├── performance/     # パフォーマンステスト
@@ -268,10 +268,10 @@ if init_sentry():
 
 | 種別 | 件数 | CI対象 | 備考 |
 |------|------|--------|------|
-| Unit tests | 549件 | ✅ | ビジネスロジック検証（Slow 1件含む） |
+| Unit tests | 970件 | ✅ | ビジネスロジック検証（Slow 1件含む） |
 | Integration tests | 31件（CI対象: 26件） | ✅（external 5件除外） | API統合検証 |
-| **CI合計（カバレッジ計測対象）** | **575件** | | |
-| **カバレッジ** | **93.43%** | | unit+integration条件 |
+| **CI合計（カバレッジ計測対象）** | **996件** | | |
+| **カバレッジ** | **94.59%** | | unit+integration条件 |
 
 **カバレッジ計測対象外テスト**
 
@@ -282,17 +282,17 @@ if init_sentry():
 | Smoke tests | 3件 | カバレッジ計測対象外（--no-covで実行） |
 | E2E tests | 実装予定 | — |
 
-> **合計テスト数（参考）**: 588件（全テスト）/ CI計測対象: 575件
+> **合計テスト数（参考）**: 1009件（全テスト）/ CI計測対象: 996件
 > カバレッジはCI安定性確保のため、決定論的テスト（unit + integration）のみを計測対象としています。
 
 ### テストピラミッド
 
 ```mermaid
 graph TB
-    subgraph "Test Pyramid - 588件（CI対象: 575件）"
+    subgraph "Test Pyramid - 1009件（CI対象: 996件）"
         E2E["🔝 E2E<br/>0件 → 5%目標"]
         Integration["🔗 Integration<br/>31件（CI対象: 26件）→ 25%目標"]
-        Unit["🧱 Unit<br/>549件 → 70%目標"]
+        Unit["🧱 Unit<br/>970件 → 70%目標"]
     end
     E2E --> Integration --> Unit
 
@@ -307,7 +307,7 @@ graph TB
 - **Integration (25%)**: API・DB接続の検証（中速・実環境近似）
 - **E2E (5%)**: クリティカルパスのみ（低速・高信頼）
 
-> **Note**: Slow testsはunit/integrationマーカーを併用のためCI対象(575件)に含む。Performance tests(5件)はweeklyのみ実行（PR CI除外）。External testsはintegration markerを併用のためIntegration(31件)の内数。Smoke tests(3件)のみカバレッジCI対象外（全PRに--no-covで実行）。
+> **Note**: Slow testsはunit/integrationマーカーを併用のためCI対象(996件)に含む。Performance tests(5件)はweeklyのみ実行（PR CI除外）。External testsはintegration markerを併用のためIntegration(31件)の内数。Smoke tests(3件)のみカバレッジCI対象外（全PRに--no-covで実行）。
 
 ### テスト実行特性（CI最適化）
 

@@ -1208,8 +1208,15 @@ class TestAllowedDomainsEnvOverride:
         assert result == set()
 
 
+@pytest.mark.integration
 class TestDockerComposeContract:
-    """docker-compose.yml の運用契約を軽量に保護する"""
+    """docker-compose.yml の運用契約を軽量に保護する.
+
+    Note:
+        本クラスは docker-compose.yml をファイルシステムから読み込むため
+        pyproject.toml marker定義「integration: external dependencies」に整合する
+        @pytest.mark.integration を付与している (PR#372 review #10 対応)。
+    """
 
     def test_app_compose_startup_validation_structure(self) -> None:
         """app service の fail-loud 起動構成 (env_file/restart/command) を YAML レベルで保護する"""
@@ -1222,3 +1229,22 @@ class TestDockerComposeContract:
         assert app["restart"] == "on-failure:3"
         assert "from config.settings import settings" in app["command"][-1]
         assert "&& exec sleep infinity" in app["command"][-1]
+
+    def test_test_service_contract(self) -> None:
+        """test service の運用契約 (profiles/ENVIRONMENT/cov-fail-under) を YAML レベルで保護する.
+
+        保護対象 (PR#372 review #5 対応):
+            - profiles: ["test"] (通常の docker compose up で起動しないこと)
+            - environment.ENVIRONMENT == "testing" (固定)
+            - command に --cov-fail-under=85 が含まれること
+            - command に "(unit or integration) and not external" が含まれること
+        """
+        compose_path = Path(__file__).resolve().parents[2] / "docker-compose.yml"
+        compose = yaml.safe_load(compose_path.read_text(encoding="utf-8"))
+        test_service = compose["services"]["test"]
+
+        assert test_service["profiles"] == ["test"]
+        assert test_service["environment"]["ENVIRONMENT"] == "testing"
+        command = test_service["command"]
+        assert "--cov-fail-under=85" in command
+        assert "(unit or integration) and not external" in command

@@ -63,6 +63,18 @@ jobs:
         if: failure()
         run: docker compose logs --tail=1000 test || true
 
+      - name: Verify coverage artifacts exist
+        # if-no-files-found: warn のサイレント成功を防ぐ。`--no-cov` が誤って追加された
+        # 場合や bind mount 失敗時にここで fail-loud にする (PR#372 review #6 対応)。
+        # 入力は静的なパス文字列のみ、untrusted input は使用しない (command injection safe)。
+        # 注意: パス依存 — pyproject.toml の [tool.coverage] 設定 (reports/coverage.xml /
+        # reports/htmlcov) を変更する場合は本ステップの path も同時更新する必要がある。
+        run: |
+          if [ ! -f reports/coverage.xml ] && [ ! -d reports/htmlcov ]; then
+            echo "::error::カバレッジ成果物が生成されませんでした (reports/coverage.xml または reports/htmlcov が見つかりません)"
+            exit 1
+          fi
+
       - name: Upload coverage artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -91,8 +103,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Validate compose config
-        run: docker compose config --quiet
+      # Validate compose config は compose-test ジョブで実行済み (needs: [compose-test] で保証)
+      # 重複ステップを削除 (PR#372 review #8 対応)
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0

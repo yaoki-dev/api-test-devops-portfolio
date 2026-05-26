@@ -53,6 +53,9 @@ def _get_allowed_domains() -> set[str]:
 
 
 # 許可されたドメインリスト（環境変数で上書き可能）
+# NOTE: モジュール読み込み時に確定する。起動後の環境変数変更（monkeypatch等）は
+# 再起動するまで validate_base_url() に反映されない。テストで動的に変更する場合は
+# _get_allowed_domains() を直接呼ぶか、settings インスタンス生成前に環境変数を設定すること。
 ALLOWED_DOMAINS: set[str] = _get_allowed_domains()
 
 # 危険なプライベートIPレンジ
