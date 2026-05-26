@@ -127,11 +127,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     → ネスト構造で PII が含まれる場合スクラブ漏れ.
   - `_scrub_list_item` ヘルパー追加 (循環参照対策の MAX_SCRUB_DEPTH guard 含む).
 
-- **Changed**: `utils/sentry_init.py` の `_is_sensitive_key` から
-  `@lru_cache(maxsize=512)` を削除.
-  - **変更理由 (KISS)**: SENSITIVE_KEYS は 40 要素で、正規化済み集合は
-    module load 時に一度だけ構築される. 現状の呼び出し規模では cache の
-    memory cost と invalidation complexity を正当化できない.
+- **Changed**: `utils/sentry_init.py` の `_is_sensitive_key` に
+  `@lru_cache(maxsize=512)` を維持.
+  - **維持理由**: SENSITIVE_KEYS は 40 要素だが、キーの正規化処理 (``sub()`` による
+    camelCase / acronym 分割) の計算コストを低減するため cache を適用.
+    コード内コメント (L210-211) と設計判断を一致させる修正.
 
 - **Fixed**: `utils/github_client.py` および `utils/api_client.py` の
   `__aexit__` で `aclose()` 例外を `try/except Exception` で wrap.

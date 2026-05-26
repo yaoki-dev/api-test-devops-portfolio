@@ -912,12 +912,23 @@ async def test_async_context_manager_cleanup_on_exception():
         mock_client_instance.aclose.assert_called_once()
 
 
-async def test_async_api_client_aexit_aclose_exception_is_suppressed_with_warning() -> None:
+@pytest.mark.parametrize(
+    "close_exc,expected_type,expected_module",
+    [
+        (httpx.CloseError("close-failed"), "CloseError", "httpx"),
+        (OSError("connection reset"), "OSError", "builtins"),
+    ],
+)
+async def test_async_api_client_aexit_aclose_exception_is_suppressed_with_warning(
+    close_exc: httpx.CloseError | OSError,
+    expected_type: str,
+    expected_module: str,
+) -> None:
     """__aexit__ で aclose() が例外を投げても警告ログのみ出力する"""
     client = AsyncAPIClient()
 
     with (
-        patch.object(client, "aclose", new=AsyncMock(side_effect=httpx.CloseError("close-failed"))),
+        patch.object(client, "aclose", new=AsyncMock(side_effect=close_exc)),
         capture_logs() as log_output,
     ):
         await client.__aexit__(None, None, None)
@@ -926,8 +937,8 @@ async def test_async_api_client_aexit_aclose_exception_is_suppressed_with_warnin
         log for log in log_output if log.get("event") == "async_api_client_aclose_failed"
     ]
     assert len(warning_logs) == 1
-    assert warning_logs[0]["error_type"] == "CloseError"
-    assert warning_logs[0]["error_module"] == "httpx"
+    assert warning_logs[0]["error_type"] == expected_type
+    assert warning_logs[0]["error_module"] == expected_module
 
 
 async def test_async_api_client_aexit_body_exception_not_overridden_by_close_exception() -> None:

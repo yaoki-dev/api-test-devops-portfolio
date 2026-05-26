@@ -2046,27 +2046,33 @@ def test_update_etag_cache_clears_stale_cache_and_logs_endpoint(
     ],
 )
 def test_check_rate_limit_warning_triggers(remaining: int) -> None:
-    """remaining が _RATE_LIMIT_WARNING_THRESHOLD(10) 未満のとき警告ログを出力する"""
+    """remaining が _RATE_LIMIT_WARNING_THRESHOLD(10) 未満のとき警告ログを出力する
+    戻り値として X-RateLimit-Reset のエポック秒 (int) を返す
+    """
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
     headers = httpx.Headers({"X-RateLimit-Reset": "1700000000"})
     with capture_logs() as logs:
-        client._check_rate_limit_warning(headers, remaining=remaining)
+        result = client._check_rate_limit_warning(headers, remaining=remaining)
     warning_logs = [log for log in logs if log.get("log_level") == "warning"]
     assert len(warning_logs) == 1
     assert warning_logs[0]["remaining"] == remaining
     assert warning_logs[0]["reset_time"] == datetime.fromtimestamp(1700000000, tz=UTC).isoformat()
+    assert result == 1700000000  # PR#347: return value verification
 
 
 def test_check_rate_limit_warning_no_warning_at_boundary() -> None:
-    """remaining=10 (== _RATE_LIMIT_WARNING_THRESHOLD) で警告ログを出力しない"""
+    """remaining=10 (== _RATE_LIMIT_WARNING_THRESHOLD) で警告ログを出力しない
+    戻り値として None を返す
+    """
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
     headers = httpx.Headers({"X-RateLimit-Reset": "1700000000"})
     with capture_logs() as logs:
-        client._check_rate_limit_warning(headers, remaining=10)
+        result = client._check_rate_limit_warning(headers, remaining=10)
     warning_logs = [log for log in logs if log.get("log_level") == "warning"]
     assert len(warning_logs) == 0
     for log in logs:
         assert "remaining" not in log  # threshold以上では remaining フィールドを出力しない
+    assert result is None  # PR#347: return value verification
 
 
 def test_handle_http_status_error_truncates_long_body() -> None:

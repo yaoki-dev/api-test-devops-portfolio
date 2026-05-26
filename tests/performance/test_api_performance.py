@@ -11,13 +11,26 @@ APIパフォーマンステスト - 基盤実装
 import asyncio
 import statistics
 import time
-from typing import Any
+from typing import TypedDict
 
 import psutil
 import pytest
 
 from utils.api_client import APIClientError, AsyncAPIClient
 from utils.logger import get_logger
+
+
+class PerformanceSummary(TypedDict, total=False):
+    """get_summary() の戻り値型（完全な構造は get_summary() の docstring 参照）"""
+
+    total_duration: float
+    request_count: int
+    response_times: dict[str, float]
+    throughput: float
+    memory_usage: dict[str, float]
+    cpu_usage: dict[str, float | None]
+    error: str
+
 
 logger = get_logger(__name__)
 
@@ -69,7 +82,7 @@ class PerformanceMetrics:
         self.memory_usage.append(psutil.Process().memory_info().rss / 1024 / 1024)
         self.cpu_usage.append(psutil.cpu_percent(interval=None))
 
-    def get_summary(self) -> dict[str, Any]:
+    def get_summary(self) -> PerformanceSummary:
         """パフォーマンスサマリー取得"""
         if not self.response_times:
             return {"error": "No response times recorded"}

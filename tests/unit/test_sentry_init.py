@@ -830,23 +830,50 @@ class TestBeforeSend:
         )
         mock_emit.assert_called_once()
 
-    def test_before_send_reraises_memory_error(self) -> None:
-        """MemoryError は scrub 失敗として吸収せず再raiseする"""
+    def test_before_send_drops_event_on_memory_error(self) -> None:
+        """MemoryError は fail-closed で event を drop し None を返す (PR#347 review #6)。
+
+        旧仕様 (raise) では before_send からの例外を Sentry SDK が内部 catch し
+        PII 付き event をそのまま送信し続けるリスクがあるため、return None で
+        安全に遮断する (CWE-391 対策)。失敗事実は _safe_log_warning と
+        _emit_scrub_failure_to_sentry の二経路で観測可能。
+        """
         event = cast(Event, {"request": {"headers": {}}})
         with (
             patch.object(sentry_module, "_scrub_sensitive_data", side_effect=MemoryError()),
-            pytest.raises(MemoryError),
+            patch.object(sentry_module, "_emit_scrub_failure_to_sentry") as mock_emit,
+            patch.object(sentry_module, "_safe_log_warning") as mock_warning,
         ):
-            _before_send(event, {})
+            result = _before_send(event, {})
 
-    def test_before_send_reraises_recursion_error(self) -> None:
-        """RecursionError は scrub 失敗として吸収せず再raiseする"""
+        assert result is None
+        mock_warning.assert_called_once_with(
+            "sentry_before_send_drop_event_system_error",
+            error_type="MemoryError_or_RecursionError",
+            error_module="builtins",
+        )
+        mock_emit.assert_called_once()
+
+    def test_before_send_drops_event_on_recursion_error(self) -> None:
+        """RecursionError は fail-closed で event を drop し None を返す (PR#347 review #6)。
+
+        詳細は test_before_send_drops_event_on_memory_error の docstring 参照。
+        """
         event = cast(Event, {"extra": {"key": "value"}})
         with (
             patch.object(sentry_module, "_scrub_sentry_field", side_effect=RecursionError()),
-            pytest.raises(RecursionError),
+            patch.object(sentry_module, "_emit_scrub_failure_to_sentry") as mock_emit,
+            patch.object(sentry_module, "_safe_log_warning") as mock_warning,
         ):
-            _before_send(event, {})
+            result = _before_send(event, {})
+
+        assert result is None
+        mock_warning.assert_called_once_with(
+            "sentry_before_send_drop_event_system_error",
+            error_type="MemoryError_or_RecursionError",
+            error_module="builtins",
+        )
+        mock_emit.assert_called_once()
 
     def test_before_send_skips_scrub_for_internal_tagged_event(self) -> None:
         """再帰防止: 内部通知 tag が付与された event は scrub をスキップし通過させる。
@@ -1888,3 +1915,12 @@ class TestSentryProcessorBeforeSendChain:
         assert user["ip_address"] == "[REDACTED]"
         assert contexts["auth"]["token"] == "[REDACTED]"  # noqa: S105
         assert contexts["auth"]["role"] == "admin"
+
+
+def test_internal_tag_value_is_valid_hex() -> None:
+    """_INTERNAL_TAG_VALUE が secrets.token_hex(16) で生成された有効な32文字 hex か検証（PR#347）"""
+    import re
+
+    from utils.sentry_init import _INTERNAL_TAG_VALUE
+
+    assert re.fullmatch(r"[0-9a-f]{32}", _INTERNAL_TAG_VALUE) is not None

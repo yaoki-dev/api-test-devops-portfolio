@@ -113,10 +113,6 @@ class GitHubAPIError(APIClientError):
 class _SanitizedJSONDecodeError(Exception):
     """レスポンスbodyを保持しない JSONDecodeError cause。"""
 
-    error_type: str
-    pos: int
-    lineno: int
-
     def __init__(self, error_type: str, pos: int, lineno: int) -> None:
         self.error_type = error_type
         self.pos = pos

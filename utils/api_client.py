@@ -868,12 +868,16 @@ class AsyncAPIClient:
             # （``raise close_exc`` への回帰防止: 余分な frame を追加せず Python idiom）。
             if not has_body_exception:
                 raise
+        else:
+            # 成功ログを aclose() の外で出力し、logger 例外が close 失敗として
+            # 誤記録されるのを防ぐ（PR#347 review #11-7）。close 成功→log 失敗の
+            # ケースでは例外が ``except Exception`` に到達せずそのまま伝播する。
+            self.logger.info("async_api_client_closed")
 
     async def aclose(self) -> None:
         """クライアントのクローズ"""
         if self._client:
             await self._client.aclose()
-            self.logger.info("async_api_client_closed")
 
     async def _make_request_with_retry(
         self,

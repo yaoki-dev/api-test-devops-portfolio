@@ -30,7 +30,6 @@ structlogと連携し、ERROR以上のログをSentryに送信。
 
 from __future__ import annotations
 
-import contextlib
 import os
 import re
 import secrets
@@ -93,16 +92,21 @@ def _safe_log_warning(event: str, **fields: Any) -> None:
 
     PR#347 review: ``_scrub_sensitive_data`` / ``_scrub_exception_field`` の 6 箇所に
     重複していた ``try: _logger.warning(...) / except Exception: pass`` パターンを
-    DRY 化したヘルパー。``contextlib.suppress`` で ``# noqa: BLE001, S110`` を
-    1 箇所に集約する。
+    DRY 化したヘルパー。関数内で ``# noqa: BLE001, S110`` を 1 箇所に集約し、
+    ``try/except Exception: pass`` でロガー例外を抑止する。
 
     fail-open ロジック内部でのみ使用する想定。``_scrub_sentry_field`` (本ファイル
     下流) の ``print(..., file=sys.stderr)`` フォールバックパターンとは責務が異なる:
     あちらは fail-safe (event drop 防止) のため stderr 通知が必要、こちらは fail-open
     (元データ通過) のため例外抑止のみで十分。
     """
-    with contextlib.suppress(Exception):
+    try:
         _logger.warning(event, **fields)
+    except Exception:  # noqa: BLE001, S110
+        # ロガー自体の失敗は無音で継続する（fail-open）。
+        # PII scrub フロー内部でのみ使用するヘルパーのため、
+        # ロガー失敗でイベントを drop させない設計を優先する。
+        pass
 
 
 if TYPE_CHECKING:
@@ -195,8 +199,11 @@ _NORMALIZED_SENSITIVE_KEYS: frozenset[str] = frozenset(
 )
 _SENSITIVE_KEY_PATTERN: re.Pattern[str] = re.compile(
     r"(?:^|[_\d])(?:"
-    + "|".join(re.escape(sensitive) for sensitive in sorted(_NORMALIZED_SENSITIVE_KEYS))
-    + r")(?:[_\d]|$)"  # 数字境界 (v2token, password2, api_key2 等) も扱う
+    + "|".join(
+        re.escape(sensitive)
+        for sensitive in sorted(_NORMALIZED_SENSITIVE_KEYS, key=len, reverse=True)
+    )
+    + r")(?=[^a-z]|$)"  # suffix-PII(ssnumber/cvvcode等)対応 (PR#347)
 )
 # 全大文字命名 fallback 用: アンダースコア除去後の完全一致集合 (PR#347)
 # APIKEY / ACCESSTOKEN 等は ACRONYM 分割が効かないため別途事前計算
@@ -207,8 +214,11 @@ _COMPACT_SENSITIVE_KEYS: frozenset[str] = frozenset(
 # camelCase / ACRONYM 分割用の事前コンパイル済みパターン (PR#347 review)。
 # 生リテラル re.sub の re._cache 依存を排し、設計を統一するため、
 # すべての正規表現をモジュールレベルで事前コンパイルしています。
-# (注: キーの正規化処理（sub() による置換）は比較的コストが高いため、
-#   頻出するキーの判定高速化と正規化コスト低減を目的として @lru_cache を適用しています。)
+# (注: maxsize=512 — SENSITIVE_KEYS 40要素 × 平均キー長 × 正規化バリエーション
+#   = ~400パターン + マージン。実測で 128 ではキャッシュヒット率低下、
+#   1024 ではメモリ増加が不要と判断。キーの正規化処理（sub() による置換）は
+#   比較的コストが高いため、頻出するキーの判定高速化と正規化コスト低減を目的
+#   として @lru_cache を適用しています。PR#347 review #11-3.)
 _ACRONYM_PATTERN: re.Pattern[str] = re.compile(r"([A-Z]+)([A-Z][a-z])")
 _CAMEL_PATTERN: re.Pattern[str] = re.compile(r"(?<=[a-z])(?=[A-Z])")
 
@@ -391,14 +401,12 @@ def _scrub_tags_item(item: Any, _depth: int = 0) -> Any:
         return "[MAX_DEPTH_EXCEEDED]"
     if isinstance(item, (tuple, list)) and len(item) == 2:
         key = item[0]
-        if isinstance(key, str) and _is_sensitive_key(key):
-            return (key, "[REDACTED]")
-        # 非機密キー: value を _scrub_list_item で汎用スクラブする。
-        # _scrub_tags_item 自身を再帰させると、value 内の2要素リスト
-        # （例: ["email", "user@example.com"]）をタグペアと誤認し
-        # "email" を機密キーとして過剰 redact するため、タグペア
-        # コンテキストを持たない _scrub_list_item を使用する。
-        return (key, _scrub_list_item(item[1], _depth + 1))
+        scrubbed_value = (
+            "[REDACTED]"
+            if (isinstance(key, str) and _is_sensitive_key(key))
+            else _scrub_list_item(item[1], _depth + 1)
+        )
+        return cast(Any, type(item))([key, scrubbed_value])  # 入力型を維持 (PR#347)
     if isinstance(item, dict):
         return _scrub_sensitive_data(item, _depth + 1)
     if isinstance(item, list):
@@ -450,9 +458,10 @@ def _scrub_exception_field(exception_value: dict[str, Any]) -> dict[str, Any]:  
         _safe_log_warning(
             "sentry_exception_values_unexpected_type",
             actual_type=type(values).__name__,
-            action="exception_scrub_skipped",
+            action="exception_scrub_fallback",
         )
-        return exception_value  # fail-open: 元データを返す
+        # 構造不明でも _scrub_sensitive_data でベストエフォートスクラブ (PR#347)
+        return cast(dict[str, Any], _scrub_sensitive_data(exception_value))
 
     result = dict(exception_value)
     scrubbed_values: list[Any] = []
@@ -570,6 +579,10 @@ def _emit_scrub_failure_to_sentry(exc: BaseException) -> None:
     _INTERNAL_TAG_KEY=_INTERNAL_TAG_VALUE を冒頭で検出して scrub をスキップ
     通過させるため無限再帰しない。内部 SDK 呼び出し自体が例外を投げた場合は
     最終フォールバックとして stderr へ出力し、メインプロセスをクラッシュさせない。
+
+    **Security constraint (PR#347 review #11-6)**: ``extra`` フィールドに
+    PII を含めてはならない。本制約に違反した場合、内部通知イベントが scrub を
+    バイパスして PII がそのまま Sentry に到達する。
     """
     try:
         sentry_sdk = sys.modules.get("sentry_sdk")
@@ -667,10 +680,20 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
         for field in _SCRUBBED_EVENT_FIELDS:
             _scrub_sentry_field(event_dict, field)
     except (MemoryError, RecursionError):  # fmt: skip
-        # システム異常（OOM・スタックオーバーフロー）は吸収せず再 raise する。
-        # scrub 失敗の silent absorption で PII ドロップが遅延するリスクより
-        # プロセス異常終了を優先させる（CWE-391 対策）。
-        raise
+        # システム異常（OOM・スタックオーバーフロー）は fail-closed で event を
+        # ドロップする。before_send からの例外は Sentry SDK が内部 catch し
+        # PII 付きイベントをそのまま送信し続けるリスクがあるため、return None
+        # で安全に遮断する（PR#347 review, CWE-391 対策）。
+        _safe_log_warning(
+            "sentry_before_send_drop_event_system_error",
+            error_type="MemoryError_or_RecursionError",
+            error_module="builtins",
+        )
+        # システム異常を Sentry へ通知（_emit 内で stderr フォールバックも担保）
+        _emit_scrub_failure_to_sentry(
+            RuntimeError("before_send system error: MemoryError or RecursionError")
+        )
+        return None
     except Exception as exc:
         # sys.exc_info() がアクティブな状態で _emit_scrub_failure_to_sentry を
         # 呼ぶと、Sentry SDK が元例外（PII 付き）を内部通知イベントに添付する

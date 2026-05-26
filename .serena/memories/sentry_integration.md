@@ -1,6 +1,6 @@
 # Sentry統合ガイド
 
-*最終更新: 2025年12月29日*
+*最終更新: 2026年5月26日*
 *用途: Sentry SDK設定・機密データ保護・MCP統合*
 *アクセス頻度: 低（Sentry設定・デバッグ時のみ）*
 
@@ -114,7 +114,7 @@ Sentry MCPサーバーでClaude Codeからエラー調査可能:
 ## テスト
 
 ```bash
-# Sentry統合テスト（103 test functions / 223 collected cases）
+# Sentry統合テスト（105 test functions / 225 collected cases）
 uv run pytest tests/unit/test_sentry_init.py -v
 ```
 
