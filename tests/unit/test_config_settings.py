@@ -240,11 +240,11 @@ class TestSettingsEnvironmentValidation:
     @pytest.mark.parametrize(
         "short_form",
         [
-            pytest.param("dev", id="short_dev_for_development"),
-            pytest.param("test", id="short_test_for_testing"),
+            pytest.param("dev", id="short_dev_raises"),
+            pytest.param("test", id="short_test_raises"),
             pytest.param("demo", id="invalid_demo_raises"),
             pytest.param("stg", id="invalid_stg_raises"),
-            pytest.param("prod", id="short_prod_for_production"),
+            pytest.param("prod", id="short_prod_raises"),
         ],
     )
     def test_environment_validation_short_forms_raise(self, short_form: str) -> None:
@@ -1166,10 +1166,25 @@ class TestTestConfigBoundaryValues:
 
 
 class TestAllowedDomainsEnvOverride:
-    """ALLOWED_DOMAINS 環境変数 override テスト（PR#372 review #7-8）
+    """ALLOWED_DOMAINS 環境変数 override テスト（PR#372 review #7-8 / #5[8] 対応）.
 
     _get_allowed_domains() は環境変数 ALLOWED_DOMAINS を参照し、
     カンマ区切りで許可ドメインを上書き可能。
+
+    重要な制約 (開発者向け注意):
+        モジュールレベル変数 ALLOWED_DOMAINS (config/settings.py L59)
+        は module import 時に _get_allowed_domains() の戻り値で確定する。
+        validate_base_url() は ALLOWED_DOMAINS 変数を参照するため、
+        起動後 (= import 後) の monkeypatch.setenv による環境変数変更は
+        validate_base_url() の挙動に反映されない。
+
+        テストで動的に変更する場合は以下のいずれかを使う:
+        1. _get_allowed_domains() を直接呼ぶ (本クラスの既存テスト方式)
+        2. importlib.reload(config.settings) でモジュール再読み込み
+        3. モジュールインポート前に環境変数を設定 (pytest-env 等)
+
+        本制約の保護テストは test_allowed_domains_override_does_not_affect_validate_base_url
+        を参照 (PR#372 review #3[6] / #5[8] 対応)。
     """
 
     def test_allowed_domains_env_override(self, monkeypatch):
@@ -1207,6 +1222,29 @@ class TestAllowedDomainsEnvOverride:
         result = _get_allowed_domains()
         assert result == set()
 
+    def test_allowed_domains_override_does_not_affect_validate_base_url(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """ALLOWED_DOMAINS 動的変更は validate_base_url() に反映されない契約を保護する.
+
+        PR#372 review #3[6] / #5[8] 対応:
+            config.settings.ALLOWED_DOMAINS は module-level で
+            _get_allowed_domains() の戻り値で確定する (module import 時に1度のみ評価)。
+            validate_base_url() は ALLOWED_DOMAINS を参照するため、
+            起動後の monkeypatch.setenv("ALLOWED_DOMAINS", ...) は反映されない。
+
+            本テストは「monkeypatch で custom ドメインを追加しても、
+            APIConfig(base_url=) のバリデーションで ValidationError が出る」
+            ことを確認し、この重要な制約を退行から保護する。
+        """
+        # custom.example.com を ALLOWED_DOMAINS に追加しても、
+        # モジュールは既に評価済みのため反映されない
+        monkeypatch.setenv("ALLOWED_DOMAINS", "custom.example.com")
+        # validate_base_url() は ALLOWED_DOMAINS 既存値 (import時確定) を参照するため
+        # custom.example.com は許可ドメインに含まれず ValidationError になる
+        with pytest.raises(ValidationError):
+            APIConfig(base_url="https://custom.example.com")
+
 
 @pytest.mark.integration
 class TestDockerComposeContract:
@@ -1218,11 +1256,19 @@ class TestDockerComposeContract:
         @pytest.mark.integration を付与している (PR#372 review #10 対応)。
     """
 
-    def test_app_compose_startup_validation_structure(self) -> None:
-        """app service の fail-loud 起動構成 (env_file/restart/command) を YAML レベルで保護する"""
+    @pytest.fixture
+    def compose_data(self) -> dict[str, Any]:
+        """docker-compose.yml を読み込んで parsed dict を返す共通 fixture.
+
+        PR#372 review #5[9] 対応: 各テストでの compose_path/yaml.safe_load
+        2行重複を解消。パス変更時の修正箇所を1箇所に集約。
+        """
         compose_path = Path(__file__).resolve().parents[2] / "docker-compose.yml"
-        compose = yaml.safe_load(compose_path.read_text(encoding="utf-8"))
-        app = compose["services"]["app"]
+        return yaml.safe_load(compose_path.read_text(encoding="utf-8"))
+
+    def test_app_compose_startup_validation_structure(self, compose_data: dict[str, Any]) -> None:
+        """app service の fail-loud 起動構成 (env_file/restart/command) を YAML レベルで保護する"""
+        app = compose_data["services"]["app"]
 
         assert app["env_file"] == [{"path": ".env.${ENVIRONMENT:-development}", "required": False}]
         assert app["environment"]["ENVIRONMENT"] == "${ENVIRONMENT:-development}"
@@ -1230,7 +1276,7 @@ class TestDockerComposeContract:
         assert "from config.settings import settings" in app["command"][-1]
         assert "&& exec sleep infinity" in app["command"][-1]
 
-    def test_test_service_contract(self) -> None:
+    def test_test_service_contract(self, compose_data: dict[str, Any]) -> None:
         """test service の運用契約 (profiles/ENVIRONMENT/cov-fail-under) を YAML レベルで保護する.
 
         保護対象 (PR#372 review #5 対応):
@@ -1239,9 +1285,7 @@ class TestDockerComposeContract:
             - command に --cov-fail-under=85 が含まれること
             - command に "(unit or integration) and not external" が含まれること
         """
-        compose_path = Path(__file__).resolve().parents[2] / "docker-compose.yml"
-        compose = yaml.safe_load(compose_path.read_text(encoding="utf-8"))
-        test_service = compose["services"]["test"]
+        test_service = compose_data["services"]["test"]
 
         assert test_service["profiles"] == ["test"]
         assert test_service["environment"]["ENVIRONMENT"] == "testing"

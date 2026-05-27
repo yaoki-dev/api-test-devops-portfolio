@@ -53,7 +53,7 @@ jobs:
 
       # mypyをvalidationジョブ内ステップとして統合
       # 設計決定: runner起動コスト~60秒削減 > 並列フィードバック喪失
-      # 根拠: テスト612件・信頼度高、mypy失敗頻度低
+      # 根拠: テスト996件・信頼度高、mypy失敗頻度低 (PR#372 review #5[1] 対応)
       - name: Run mypy check
         run: uv run mypy utils/ config/ models/
 
@@ -379,16 +379,25 @@ jobs:
 
       - name: Show test container logs on failure
         if: failure()
-        run: docker compose logs --tail=1000 test || true
+        # PR#372 review #3[4] 対応: || true で stderr ごとサイレント消失するのを防ぐ。
+        # コンテナ削除済み等でログ取得が失敗した場合に warning を発し根本原因調査の手がかりを残す。
+        run: docker compose logs --tail=1000 test || echo "::warning::テストコンテナログの取得に失敗しました（コンテナが既に削除済みの可能性）"
 
       - name: Verify coverage artifacts exist
         # if-no-files-found: warn のサイレント成功を防ぐ。`--no-cov` が誤って追加された
         # 場合や bind mount 失敗時にここで fail-loud にする。
         # 注意: パス依存 — pyproject.toml の [tool.coverage] 設定 (reports/coverage.xml /
         # reports/htmlcov) を変更する場合は本ステップの path も同時更新する必要がある。
+        # PR#372 review #1 / #5[2] 対応: AND 条件は片方欠落を見逃す (例: pyproject.toml で
+        # --cov-report=xml のみに変更した場合 htmlcov 不在でも通過する)。OR 条件に変更し、
+        # pytest 途中終了で coverage.xml が空生成されるケースも空ファイル検知 (-s) で fail-loud にする。
         run: |
-          if [ ! -f reports/coverage.xml ] && [ ! -d reports/htmlcov ]; then
+          if [ ! -f reports/coverage.xml ] || [ ! -d reports/htmlcov ]; then
             echo "::error::カバレッジ成果物が生成されませんでした (reports/coverage.xml または reports/htmlcov が見つかりません)"
+            exit 1
+          fi
+          if [ ! -s reports/coverage.xml ]; then
+            echo "::error::reports/coverage.xml が空ファイルです（pytest が途中終了した可能性があります）"
             exit 1
           fi
 
@@ -414,7 +423,9 @@ jobs:
     name: Compose app healthcheck
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'))
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # PR#372 review #3[2] 対応: キャッシュミス時 (初回PR等) Build 2-4min + wait-timeout 120s +
+    # teardown で 10分は逼迫する。compose-test (15min) と対称化してキャッシュミス耐性を確保。
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -498,7 +509,7 @@ jobs:
 
       # mypyをvalidationジョブ内ステップとして統合
       # 設計決定: runner起動コスト~60秒削減 > 並列フィードバック喪失
-      # 根拠: テスト612件・信頼度高、mypy失敗頻度低
+      # 根拠: テスト996件・信頼度高、mypy失敗頻度低 (PR#372 review #5[1] 対応)
       - name: Run mypy check
         run: uv run mypy utils/ config/ models/
 
