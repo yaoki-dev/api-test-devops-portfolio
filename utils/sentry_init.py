@@ -109,6 +109,72 @@ def _safe_log_warning(event: str, **fields: Any) -> None:
         pass
 
 
+def _scrub_exception_frame(frame: Any) -> Any:
+    """Sentry exception frame を fail-open でスクラブする。"""
+    if not isinstance(frame, dict):
+        _safe_log_warning(
+            "sentry_exception_frame_unexpected_type",
+            actual_type=type(frame).__name__,
+            action="skip_frame_scrub",
+        )
+        return frame
+
+    scrubbed_frame = dict(frame)
+    frame_vars = scrubbed_frame.get("vars")
+    if isinstance(frame_vars, dict):
+        scrubbed_frame["vars"] = _scrub_sensitive_data(frame_vars)
+    elif frame_vars is not None:
+        _safe_log_warning(
+            "sentry_exception_frame_vars_unexpected_type",
+            actual_type=type(frame_vars).__name__,
+            action="skip_vars_scrub",
+        )
+    return scrubbed_frame
+
+
+def _scrub_exception_stacktrace(stacktrace: dict[str, Any]) -> dict[str, Any]:
+    """Sentry exception stacktrace を fail-open でスクラブする。"""
+    frames = stacktrace.get("frames")
+    if isinstance(frames, list):
+        scrubbed_stacktrace = dict(stacktrace)
+        scrubbed_stacktrace["frames"] = [_scrub_exception_frame(frame) for frame in frames]
+        return scrubbed_stacktrace
+    if frames is not None:
+        _safe_log_warning(
+            "sentry_exception_frames_unexpected_type",
+            actual_type=type(frames).__name__,
+            action="skip_frames_scrub",
+        )
+    return stacktrace
+
+
+def _scrub_exception_value_item(value_item: Any) -> Any:
+    """Sentry exception values[*] を fail-open でスクラブする。"""
+    if not isinstance(value_item, dict):
+        _safe_log_warning(
+            "sentry_exception_value_item_unexpected_type",
+            actual_type=type(value_item).__name__,
+            action="skip_item",
+        )
+        return value_item
+
+    scrubbed_value = dict(value_item)
+    if isinstance(scrubbed_value.get("value"), str):
+        scrubbed_value["value"] = "[REDACTED]"
+
+    stacktrace = scrubbed_value.get("stacktrace")
+    if isinstance(stacktrace, dict):
+        scrubbed_value["stacktrace"] = _scrub_exception_stacktrace(stacktrace)
+    elif stacktrace is not None:
+        _safe_log_warning(
+            "sentry_exception_stacktrace_unexpected_type",
+            actual_type=type(stacktrace).__name__,
+            action="skip_stacktrace_scrub",
+        )
+
+    return scrubbed_value
+
+
 if TYPE_CHECKING:
     from sentry_sdk.types import Event, Hint
 
@@ -418,7 +484,7 @@ def _scrub_tags_item(item: Any, _depth: int = 0) -> Any:
     return item
 
 
-def _scrub_exception_field(exception_value: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
+def _scrub_exception_field(exception_value: dict[str, Any]) -> dict[str, Any]:
     """Sentry exception フィールドを構造検証付きでスクラブする（fail-open）。
 
     Sentry の exception 構造:
@@ -471,63 +537,7 @@ def _scrub_exception_field(exception_value: dict[str, Any]) -> dict[str, Any]:  
         return cast(dict[str, Any], _scrub_sensitive_data(exception_value))
 
     result = dict(exception_value)
-    scrubbed_values: list[Any] = []
-    for val in values:
-        if not isinstance(val, dict):
-            _safe_log_warning(
-                "sentry_exception_value_item_unexpected_type",
-                actual_type=type(val).__name__,
-                action="skip_item",
-            )
-            scrubbed_values.append(val)  # fail-open: そのまま通過
-            continue
-
-        scrubbed_val = dict(val)
-        if isinstance(scrubbed_val.get("value"), str):
-            scrubbed_val["value"] = "[REDACTED]"
-        stacktrace = scrubbed_val.get("stacktrace")
-        if isinstance(stacktrace, dict):
-            frames = stacktrace.get("frames")
-            if isinstance(frames, list):
-                scrubbed_frames: list[Any] = []
-                for frame in frames:
-                    if isinstance(frame, dict):
-                        scrubbed_frame = dict(frame)
-                        frame_vars = scrubbed_frame.get("vars")
-                        if isinstance(frame_vars, dict):
-                            scrubbed_frame["vars"] = _scrub_sensitive_data(frame_vars)
-                        elif frame_vars is not None:
-                            _safe_log_warning(
-                                "sentry_exception_frame_vars_unexpected_type",
-                                actual_type=type(frame_vars).__name__,
-                                action="skip_vars_scrub",
-                            )
-                        scrubbed_frames.append(scrubbed_frame)
-                    else:
-                        _safe_log_warning(
-                            "sentry_exception_frame_unexpected_type",
-                            actual_type=type(frame).__name__,
-                            action="skip_frame_scrub",
-                        )
-                        scrubbed_frames.append(frame)  # fail-open: そのまま通過
-                scrubbed_stacktrace = dict(stacktrace)
-                scrubbed_stacktrace["frames"] = scrubbed_frames
-                scrubbed_val["stacktrace"] = scrubbed_stacktrace
-            elif frames is not None:
-                _safe_log_warning(
-                    "sentry_exception_frames_unexpected_type",
-                    actual_type=type(frames).__name__,
-                    action="skip_frames_scrub",
-                )
-        elif stacktrace is not None:
-            _safe_log_warning(
-                "sentry_exception_stacktrace_unexpected_type",
-                actual_type=type(stacktrace).__name__,
-                action="skip_stacktrace_scrub",
-            )
-        scrubbed_values.append(scrubbed_val)
-
-    result["values"] = scrubbed_values
+    result["values"] = [_scrub_exception_value_item(val) for val in values]
     return result
 
 
@@ -689,17 +699,16 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
     except (MemoryError, RecursionError):  # fmt: skip
         # システム異常（OOM・スタックオーバーフロー）は fail-closed で event を
         # ドロップする。before_send からの例外は Sentry SDK が内部 catch し
-        # PII 付きイベントをそのまま送信し続けるリスクがあるため、return None
-        # で安全に遮断する（PR#347 review, CWE-391 対策）。
-        _safe_log_warning(
-            "sentry_before_send_drop_event_system_error",
-            error_type="MemoryError_or_RecursionError",
-            error_module="builtins",
-        )
-        # システム異常を Sentry へ通知（_emit 内で stderr フォールバックも担保）
-        _emit_scrub_failure_to_sentry(
-            RuntimeError("before_send system error: MemoryError or RecursionError")
-        )
+        # PII 付きイベントをそのまま送信し続けるリスクがあるため、stderr への
+        # 最小通知だけ残して return None で安全に遮断する（CWE-391 対策）。
+        try:
+            print(
+                "[SENTRY_SCRUB_FAILED] before_send system error: MemoryError or RecursionError",
+                file=sys.stderr,
+                flush=True,
+            )
+        except Exception:  # noqa: BLE001, S110
+            pass
         return None
     except Exception as exc:
         # sys.exc_info() がアクティブな状態で _emit_scrub_failure_to_sentry を

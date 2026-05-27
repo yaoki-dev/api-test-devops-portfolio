@@ -836,31 +836,31 @@ class TestBeforeSend:
         )
         mock_emit.assert_called_once()
 
-    def test_before_send_drops_event_on_memory_error(self) -> None:
+    def test_before_send_drops_event_on_memory_error(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         """MemoryError は fail-closed で event を drop し None を返す (PR#347 review #6)。
 
         旧仕様 (raise) では before_send からの例外を Sentry SDK が内部 catch し
-        PII 付き event をそのまま送信し続けるリスクがあるため、return None で
-        安全に遮断する (CWE-391 対策)。失敗事実は _safe_log_warning と
-        _emit_scrub_failure_to_sentry の二経路で観測可能。
+        PII 付き event をそのまま送信し続けるリスクがあるため、stderr の最小通知に
+        留めて return None で安全に遮断する (CWE-391 対策)。
         """
         event = cast(Event, {"request": {"headers": {}}})
         with (
             patch.object(sentry_module, "_scrub_sensitive_data", side_effect=MemoryError()),
             patch.object(sentry_module, "_emit_scrub_failure_to_sentry") as mock_emit,
-            patch.object(sentry_module, "_safe_log_warning") as mock_warning,
         ):
             result = _before_send(event, {})
 
         assert result is None
-        mock_warning.assert_called_once_with(
-            "sentry_before_send_drop_event_system_error",
-            error_type="MemoryError_or_RecursionError",
-            error_module="builtins",
-        )
-        mock_emit.assert_called_once()
+        captured = capsys.readouterr()
+        assert "[SENTRY_SCRUB_FAILED]" in captured.err
+        assert "before_send system error: MemoryError or RecursionError" in captured.err
+        mock_emit.assert_not_called()
 
-    def test_before_send_drops_event_on_recursion_error(self) -> None:
+    def test_before_send_drops_event_on_recursion_error(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         """RecursionError は fail-closed で event を drop し None を返す (PR#347 review #6)。
 
         詳細は test_before_send_drops_event_on_memory_error の docstring 参照。
@@ -869,17 +869,14 @@ class TestBeforeSend:
         with (
             patch.object(sentry_module, "_scrub_sentry_field", side_effect=RecursionError()),
             patch.object(sentry_module, "_emit_scrub_failure_to_sentry") as mock_emit,
-            patch.object(sentry_module, "_safe_log_warning") as mock_warning,
         ):
             result = _before_send(event, {})
 
         assert result is None
-        mock_warning.assert_called_once_with(
-            "sentry_before_send_drop_event_system_error",
-            error_type="MemoryError_or_RecursionError",
-            error_module="builtins",
-        )
-        mock_emit.assert_called_once()
+        captured = capsys.readouterr()
+        assert "[SENTRY_SCRUB_FAILED]" in captured.err
+        assert "before_send system error: MemoryError or RecursionError" in captured.err
+        mock_emit.assert_not_called()
 
     def test_before_send_skips_scrub_for_internal_tagged_event(self) -> None:
         """再帰防止: 内部通知 tag が付与された event は scrub をスキップし通過させる。

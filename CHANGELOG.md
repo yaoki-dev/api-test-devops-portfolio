@@ -29,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       側で `null → 0` 等の変換ルールを適用する.
 
 - **Dependency upgrade**: `sentry-sdk[httpx]` の最小バージョンを
-  `>=2.59.0` → `>=2.60.0,<3.0.0` に引き上げ (PR#347 review D-2).
+  `>=2.58.0` → `>=2.60.0,<3.0.0` に引き上げ (PR#347 review D-2).
   - **変更理由**: `utils/sentry_init.py:_emit_scrub_failure_to_sentry`
     で使用する `sentry_sdk.new_scope()` API は sentry-sdk 2.x で
     `push_scope()` から正式置換された推奨 API。`new_scope()` は

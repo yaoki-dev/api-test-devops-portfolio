@@ -1049,8 +1049,8 @@ async def test_aexit_unexpected_exception_suppressed_when_body_exception() -> No
 async def test_aclose_logger_info_failure_propagates_without_misclassification() -> None:
     """aclose() 単独呼び出し: logger.info 失敗が close 失敗として誤分類されないことを検証。
 
-    aclose() は try-except を持たないため logger 例外はそのまま caller に propagate し、
-    aclose_unexpected_error には記録されない (Codex Q-1 recommendation: both paths)。
+    close 処理は __aexit__ と共通化されるが、logger 例外はそのまま caller に
+    propagate し、aclose_unexpected_error には記録されない (Codex Q-1 recommendation: both paths)。
     """
     client = AsyncAPIClient()
 
@@ -1063,6 +1063,52 @@ async def test_aclose_logger_info_failure_propagates_without_misclassification()
         await client.aclose()
 
     mock_error.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("close_exc", "expected_type", "expected_module"),
+    [
+        (httpx.CloseError("close-failed"), "CloseError", "httpx"),
+        (OSError("close-failed"), "OSError", "builtins"),
+    ],
+)
+async def test_aclose_exception_is_suppressed_with_warning(
+    close_exc: httpx.CloseError | OSError,
+    expected_type: str,
+    expected_module: str,
+) -> None:
+    """aclose() 単独呼び出しでも close 例外は warning のみで抑止する。"""
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(client._client, "aclose", new=AsyncMock(side_effect=close_exc)),
+        capture_logs() as log_output,
+    ):
+        await client.aclose()
+
+    warning_logs = [
+        log for log in log_output if log.get("event") == "async_api_client_aclose_failed"
+    ]
+    assert len(warning_logs) == 1
+    assert warning_logs[0]["error_type"] == expected_type
+    assert warning_logs[0]["error_module"] == expected_module
+    closed_logs = [log for log in log_output if log.get("event") == "async_api_client_closed"]
+    assert len(closed_logs) == 0
+
+
+async def test_aclose_normal_close_logs_info() -> None:
+    """aclose() 単独呼び出し時に async_api_client_closed の info ログが1回出力される。"""
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(client._client, "aclose", new=AsyncMock()),
+        capture_logs() as log_output,
+    ):
+        await client.aclose()
+
+    closed_logs = [log for log in log_output if log.get("event") == "async_api_client_closed"]
+    assert len(closed_logs) == 1
+    assert closed_logs[0]["log_level"] == "info"
 
 
 async def test_aexit_logger_info_failure_not_misclassified_as_close_failure() -> None:

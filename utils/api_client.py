@@ -828,13 +828,8 @@ class AsyncAPIClient:
         """非同期コンテキストマネージャーのエントリー"""
         return self
 
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
-    ) -> None:
-        """非同期コンテキストマネージャーの終了処理"""
+    async def _close_async_client(self, body_exc_type: type[BaseException] | None) -> None:
+        """__aexit__ と aclose() で共有する close 処理."""
         if self._client:
             try:
                 await self._client.aclose()
@@ -855,7 +850,7 @@ class AsyncAPIClient:
                 #   - asyncio.CancelledError (Py3.8+ は BaseException 派生): cooperative
                 #     cancellation の意図を妨げないため伝播。
                 # 全て `BaseException` 派生で `except Exception` の境界外。
-                has_body_exception = exc_type is not None
+                has_body_exception = body_exc_type is not None
                 self.logger.error(
                     "async_api_client_aclose_unexpected_error",
                     error_type=type(close_exc).__name__,
@@ -865,7 +860,9 @@ class AsyncAPIClient:
                     # __context__ チェーンは切断される。代わりに body 例外の型名を
                     # 同一ログイベント内に記録し、close 失敗と body 例外の対応関係を
                     # 追跡可能にする (PII 非含: __qualname__ はクラス名のみ)。
-                    body_exception_type=exc_type.__qualname__ if exc_type is not None else None,
+                    body_exception_type=(
+                        body_exc_type.__qualname__ if body_exc_type is not None else None
+                    ),
                     exc_info=True,  # スタックトレースをログに残す
                 )
                 # body 例外がない場合のみ実装バグとして re-raise。
@@ -880,6 +877,15 @@ class AsyncAPIClient:
                 # github_client.py / Sync close() と同一パターン (PR#347 Q-1 Codex fix)。
                 self.logger.info("async_api_client_closed")
 
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        """非同期コンテキストマネージャーの終了処理"""
+        await self._close_async_client(exc_type)
+
     async def aclose(self) -> None:
         """クライアントのクローズ
 
@@ -887,9 +893,7 @@ class AsyncAPIClient:
         ``async_api_client_closed`` ログを出力し、Sync (``SyncAPIClient.close()``)
         との observability 対称性を保つ (PR#347 review Q-1)。
         """
-        if self._client:
-            await self._client.aclose()
-            self.logger.info("async_api_client_closed")
+        await self._close_async_client(None)
 
     async def _make_request_with_retry(
         self,
