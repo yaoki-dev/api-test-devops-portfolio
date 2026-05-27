@@ -112,6 +112,7 @@ COPY --chown=appuser:appgroup config/ ./config/
 COPY --chown=appuser:appgroup utils/ ./utils/
 COPY --chown=appuser:appgroup models/ ./models/
 COPY --chown=appuser:appgroup tests/ ./tests/
+COPY --chown=appuser:appgroup docker-compose.yml ./
 
 # デフォルトコマンド: テスト実行
 # カバレッジ scope は CI 品質ゲート (--cov=utils --cov=config --cov=models) と統一
