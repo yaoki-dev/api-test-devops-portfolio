@@ -28,7 +28,7 @@ _logger = logging.getLogger(__name__)
 # =============================================================================
 
 
-def _get_allowed_domains() -> set[str]:
+def _get_allowed_domains() -> frozenset[str]:
     """環境変数またはデフォルト値から許可ドメインリストを取得
 
     環境変数 ALLOWED_DOMAINS: カンマ区切りのドメインリスト
@@ -36,20 +36,22 @@ def _get_allowed_domains() -> set[str]:
     """
     env_domains = os.environ.get("ALLOWED_DOMAINS", "")
     if env_domains:
-        return {d.strip() for d in env_domains.split(",") if d.strip()}
+        return frozenset(d.strip() for d in env_domains.split(",") if d.strip())
 
     # デフォルト: 本番用 + テスト用ドメイン
-    return {
-        # 本番用
-        "jsonplaceholder.typicode.com",
-        "api.github.com",
-        "httpbin.org",
-        # テスト用（example.com は RFC 2606 で予約済み）
-        "example.com",
-        "api.example.com",
-        "test.example.com",
-        "test-api.example.com",
-    }
+    return frozenset(
+        {
+            # 本番用
+            "jsonplaceholder.typicode.com",
+            "api.github.com",
+            "httpbin.org",
+            # テスト用（example.com は RFC 2606 で予約済み）
+            "example.com",
+            "api.example.com",
+            "test.example.com",
+            "test-api.example.com",
+        }
+    )
 
 
 # 許可されたドメインリスト（環境変数で上書き可能）
@@ -58,7 +60,7 @@ def _get_allowed_domains() -> set[str]:
 # _get_allowed_domains() を直接呼ぶか、モジュールインポート前に環境変数を設定すること
 # (PR#372 review #5[3] 対応: ALLOWED_DOMAINS は module-level で評価されるため、
 #  settings インスタンス生成タイミングではなく import 前の環境変数設定が必要)。
-ALLOWED_DOMAINS: set[str] = _get_allowed_domains()
+ALLOWED_DOMAINS: frozenset[str] = _get_allowed_domains()
 
 # 危険なプライベートIPレンジ
 PRIVATE_IP_RANGES: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = [

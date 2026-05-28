@@ -34,6 +34,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -53,7 +55,7 @@ jobs:
 
       # mypyをvalidationジョブ内ステップとして統合
       # 設計決定: runner起動コスト~60秒削減 > 並列フィードバック喪失
-      # 根拠: テスト996件・信頼度高、mypy失敗頻度低 (PR#372 review #5[1] 対応)
+      # 根拠: テスト996件・信頼度高、mypy失敗頻度低
       - name: Run mypy check
         run: uv run mypy utils/ config/ models/
 
@@ -100,6 +102,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -180,6 +184,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       # Step 1: Filesystem scan (both develop and main)
       - name: Trivy filesystem scan (dependencies)
@@ -379,7 +385,7 @@ jobs:
 
       - name: Show test container logs on failure
         if: failure()
-        # PR#372 review #3[4] 対応: || true で stderr ごとサイレント消失するのを防ぐ。
+        # || true で stderr ごとサイレント消失するのを防ぐ。
         # コンテナ削除済み等でログ取得が失敗した場合に warning を発し根本原因調査の手がかりを残す。
         run: docker compose logs --tail=1000 test || echo "::warning::テストコンテナログの取得に失敗しました（コンテナが既に削除済みの可能性）"
 
@@ -388,7 +394,7 @@ jobs:
         # 場合や bind mount 失敗時にここで fail-loud にする。
         # 注意: パス依存 — pyproject.toml の [tool.coverage] 設定 (reports/coverage.xml /
         # reports/htmlcov) を変更する場合は本ステップの path も同時更新する必要がある。
-        # PR#372 review #1 / #5[2] 対応: AND 条件は片方欠落を見逃す (例: pyproject.toml で
+        # AND 条件は片方欠落を見逃す (例: pyproject.toml で
         # --cov-report=xml のみに変更した場合 htmlcov 不在でも通過する)。OR 条件に変更し、
         # pytest 途中終了で coverage.xml が空生成されるケースも空ファイル検知 (-s) で fail-loud にする。
         run: |
@@ -423,7 +429,7 @@ jobs:
     name: Compose app healthcheck
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'))
     runs-on: ubuntu-latest
-    # PR#372 review #3[2] 対応: キャッシュミス時 (初回PR等) Build 2-4min + wait-timeout 120s +
+    # キャッシュミス時 (初回PR等) Build 2-4min + wait-timeout 120s +
     # teardown で 10分は逼迫する。compose-test (15min) と対称化してキャッシュミス耐性を確保。
     timeout-minutes: 15
     steps:
@@ -458,12 +464,39 @@ jobs:
         # タイムアウト根拠: start-period(5s) + interval(30s) × retries(3) + timeout(10s) = 105s。余裕を持たせて120sに設定。
         run: docker compose up -d --wait --wait-timeout 120 app
 
+      - name: Verify app is actually healthy (defense-in-depth)
+        # `docker compose up --wait --wait-timeout` 超過時の
+        # exit code は Docker Compose 一部バージョンで 0 になる既知挙動がある
+        # (docker/compose#10596 系)。silent success を防ぐため
+        # docker inspect で Health.Status を明示確認する。
+        # ジョブが healthy 以外の状態で green になるサイレント失敗を防止する。
+        run: |
+          CONTAINER_ID=$(docker compose ps -q app)
+          if [ -z "$CONTAINER_ID" ]; then
+            echo "::error::app コンテナが存在しません (起動失敗)"
+            docker compose ps
+            docker compose logs --tail=1000 app
+            exit 1
+          fi
+          HEALTH=$(docker inspect --format='{{.State.Health.Status}}' "$CONTAINER_ID" 2>/dev/null || echo "unknown")
+          echo "App health status: $HEALTH"
+          if [ "$HEALTH" != "healthy" ]; then
+            echo "::error::app コンテナが healthy ではありません (状態: $HEALTH)"
+            docker compose ps
+            docker compose logs --tail=1000 app
+            exit 1
+          fi
+
       - name: Compose ps (diagnostic)
         if: failure()
         # restart: on-failure による再起動ループ時の根本原因切れ防止のため --tail=1000 に拡張
         # (200行では複数試行ログ混在で初期スタックトレースが切れる可能性あり)
+        # docker compose ps 失敗 (再起動ループ中で
+        # コンテナが瞬間的に不在等) 時に set -e で logs がスキップされる問題を解消。
+        # 既存 `Show test container logs on failure` step (compose-test) の
+        # `|| echo "::warning::..."` パターンと整合させ、診断ログ取得確実性を担保。
         run: |
-          docker compose ps
+          docker compose ps || echo "::warning::docker compose ps failed (container missing during restart loop?)"
           docker compose logs --tail=1000 app
 
       - name: Tear down
@@ -490,6 +523,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -509,7 +544,7 @@ jobs:
 
       # mypyをvalidationジョブ内ステップとして統合
       # 設計決定: runner起動コスト~60秒削減 > 並列フィードバック喪失
-      # 根拠: テスト996件・信頼度高、mypy失敗頻度低 (PR#372 review #5[1] 対応)
+      # 根拠: テスト996件・信頼度高、mypy失敗頻度低
       - name: Run mypy check
         run: uv run mypy utils/ config/ models/
 
@@ -565,6 +600,8 @@ jobs:
     steps:
       - name: Checkout code (Post Trivy Scan)
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       # ===== Stage 1: Filesystem Scan (dependencies) =====
       - name: Trivy filesystem scan (dependencies) (Post Trivy Scan)
@@ -732,6 +769,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -809,6 +848,8 @@ jobs:
     steps:
       - name: Checkout code (Weekly Link Check)
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js (Weekly Link Check)
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0

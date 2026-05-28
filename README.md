@@ -335,7 +335,7 @@ graph TB
 | Weekly Extended Test | Weekly | Performance + External API | 30分 |
 | Weekly Link Check | Weekly | Markdown link check | 15分 |
 | Status Report | 全トリガー | Pipeline結果集約 | 5分 |
-| Compose Verification | Pull Request / Push to main/develop | Docker Compose test + healthcheck | 最大25分（15分 + 10分） |
+| Compose Verification | Pull Request / Push to main/develop | Docker Compose test + healthcheck | 最大30分（15分 + 15分） |
 
 ### Trivy Security Scan（SARIF形式 + 3層検証）
 

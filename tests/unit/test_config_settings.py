@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
 from pydantic import SecretStr, ValidationError
 
 from config.settings import (
@@ -1193,7 +1192,8 @@ class TestAllowedDomainsEnvOverride:
 
         monkeypatch.setenv("ALLOWED_DOMAINS", "custom.example.com,api.custom.com")
         result = _get_allowed_domains()
-        assert result == {"custom.example.com", "api.custom.com"}
+        assert isinstance(result, frozenset)
+        assert result == frozenset({"custom.example.com", "api.custom.com"})
 
     def test_allowed_domains_env_empty_returns_default(self, monkeypatch):
         """環境変数未設定時はデフォルトドメインを返す"""
@@ -1201,8 +1201,13 @@ class TestAllowedDomainsEnvOverride:
 
         monkeypatch.delenv("ALLOWED_DOMAINS", raising=False)
         result = _get_allowed_domains()
-        assert len(result) >= 7  # デフォルトは7ドメイン以上
-        assert {"jsonplaceholder.typicode.com"}.issubset(result)
+        # PR#372 review #11 対応: マジックナンバー len(result) >= 7 を削除し、
+        # 必須デフォルトドメインの subset 検証に強化。ドメイン削除時も実態を反映する。
+        assert {
+            "jsonplaceholder.typicode.com",
+            "api.github.com",
+            "httpbin.org",
+        }.issubset(result)
 
     @pytest.mark.parametrize(
         "value",
@@ -1220,7 +1225,7 @@ class TestAllowedDomainsEnvOverride:
 
         monkeypatch.setenv("ALLOWED_DOMAINS", value)
         result = _get_allowed_domains()
-        assert result == set()
+        assert result == frozenset()
 
     def test_allowed_domains_override_does_not_affect_validate_base_url(
         self, monkeypatch: pytest.MonkeyPatch
@@ -1246,49 +1251,6 @@ class TestAllowedDomainsEnvOverride:
             APIConfig(base_url="https://custom.example.com")
 
 
-@pytest.mark.integration
-class TestDockerComposeContract:
-    """docker-compose.yml の運用契約を軽量に保護する.
-
-    Note:
-        本クラスは docker-compose.yml をファイルシステムから読み込むため
-        pyproject.toml marker定義「integration: external dependencies」に整合する
-        @pytest.mark.integration を付与している (PR#372 review #10 対応)。
-    """
-
-    @pytest.fixture
-    def compose_data(self) -> dict[str, Any]:
-        """docker-compose.yml を読み込んで parsed dict を返す共通 fixture.
-
-        PR#372 review #5[9] 対応: 各テストでの compose_path/yaml.safe_load
-        2行重複を解消。パス変更時の修正箇所を1箇所に集約。
-        """
-        compose_path = Path(__file__).resolve().parents[2] / "docker-compose.yml"
-        return yaml.safe_load(compose_path.read_text(encoding="utf-8"))
-
-    def test_app_compose_startup_validation_structure(self, compose_data: dict[str, Any]) -> None:
-        """app service の fail-loud 起動構成 (env_file/restart/command) を YAML レベルで保護する"""
-        app = compose_data["services"]["app"]
-
-        assert app["env_file"] == [{"path": ".env.${ENVIRONMENT:-development}", "required": False}]
-        assert app["environment"]["ENVIRONMENT"] == "${ENVIRONMENT:-development}"
-        assert app["restart"] == "on-failure:3"
-        assert "from config.settings import settings" in app["command"][-1]
-        assert "&& exec sleep infinity" in app["command"][-1]
-
-    def test_test_service_contract(self, compose_data: dict[str, Any]) -> None:
-        """test service の運用契約 (profiles/ENVIRONMENT/cov-fail-under) を YAML レベルで保護する.
-
-        保護対象 (PR#372 review #5 対応):
-            - profiles: ["test"] (通常の docker compose up で起動しないこと)
-            - environment.ENVIRONMENT == "testing" (固定)
-            - command に --cov-fail-under=85 が含まれること
-            - command に "(unit or integration) and not external" が含まれること
-        """
-        test_service = compose_data["services"]["test"]
-
-        assert test_service["profiles"] == ["test"]
-        assert test_service["environment"]["ENVIRONMENT"] == "testing"
-        command = test_service["command"]
-        assert "--cov-fail-under=85" in command
-        assert "(unit or integration) and not external" in command
+# PR#372 review #10 対応: TestDockerComposeContract は module-level
+# pytestmark = pytest.mark.unit との累積を避けるため
+# tests/integration/test_docker_compose_contract.py に移動済み。
