@@ -39,10 +39,7 @@ services:
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-development}
     # 設定読込を検証してから常駐。検証失敗時は && 以降に進まず非0終了
-    command:
-      - /bin/sh
-      - -c
-      - python -c "from config.settings import settings; print('[startup] config loaded:', settings.environment, settings.project_name, flush=True)" && exec sleep infinity
+    command: ["/bin/sh", "-c", "python -c \"from config.settings import settings; print('[startup] config loaded:', settings.environment, settings.project_name, flush=True)\" && exec sleep infinity"]
     # セキュリティ: 権限昇格の禁止（Dockerfile 側で非root化済み）
     security_opt:
       - "no-new-privileges:true"
@@ -83,11 +80,7 @@ services:
       - ./reports:/app/reports
     security_opt:
       - "no-new-privileges:true"
-    # appuser (uid=1000) を明示 — Dockerfile USER appuser との整合保証
-    # host UID/GID で上書き可能 (Linux local dev で reports/ bind mount EACCES 回避):
-    #   UID=$(id -u) GID=$(id -g) docker compose --profile test run --rm test
-    # CI (GitHub Actions) は事前に `chmod 777 reports` で回避済み (.github/workflows/ci.yml；compose-test)
-    # 注意: root (UID=0) での実行は非推奨。UID/GID 未設定時は appuser (1000:1000) がデフォルト
+    # `UID/GID` はローカル開発での上書き用。未設定時は appuser (1000:1000) を使う。
     user: "${UID:-1000}:${GID:-1000}"
     # PID1 を tini にしてシグナルを適切に伝播（app サービスと対称化）
     init: true

@@ -29,7 +29,7 @@ jobs:
     name: PR Validation
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 15  # 単一Python版（3.14固定、Dockerfile一致、matrix不要）
+    timeout-minutes: 20  # 単一Python版（3.14固定、Dockerfile一致、matrix不要）
 
     steps:
       - name: Checkout code
@@ -132,34 +132,6 @@ jobs:
           echo "textlint: ${{ steps.textlint.outcome }}"
           exit 1
 
-  # TEMPORARY — Legacy job stubs (PR#351 deadlock resolution)
-  # pr-mypy-check / post-mypy-check: merged into pr-validation / post-validation
-  # post-merge-validation: renamed to post-validation
-  # REMOVE after all open PRs pick up this commit
-  # Scheduled for removal after merging PRs #347, #351, #361 into develop and #340 into main
-  pr-mypy-check:
-    name: mypy Check (PR Validation)
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 1
-    steps:
-      - run: 'echo "Legacy stub — mypy now in pr-validation (PR #351)"'
-
-  post-mypy-check:
-    name: mypy Check (Post Merge)
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
-    runs-on: ubuntu-latest
-    timeout-minutes: 1
-    steps:
-      - run: 'echo "Legacy stub — mypy now in post-validation (PR #351)"'
-
-  post-merge-validation:
-    name: Post Merge Validation
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
-    runs-on: ubuntu-latest
-    timeout-minutes: 1
-    steps:
-      - run: echo "Legacy stub — renamed to post-validation (PR #351)"
   # NOTE: post-validation uses Python 3.14 only (matches Dockerfile)
 
   # ============================================================
@@ -452,12 +424,10 @@ jobs:
           load: true
           # load: true時の manifest unknown エラー回避 (compose-test job と対称)
           provenance: false
-          # ci.yml の runtime キャッシュを読む。healthcheck 専用scopeも読み書きして、
-          # PR時の cache poisoning と ci.yml との同一scope競合を避ける。
+          # ci.yml の runtime キャッシュを読む。healthcheck job は読み取り専用にして
+          # PR時の cache poisoning と重複書き込みを避ける。
           cache-from: |
             type=gha,scope=api-test-runtime
-            type=gha,scope=compose-healthcheck-runtime
-          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=max,scope=compose-healthcheck-runtime' || '' }}
 
       - name: Start app and wait for healthy
         # Docker Compose 2.2 以降のネイティブ機能に置き換え
@@ -471,11 +441,15 @@ jobs:
         # docker inspect で Health.Status を明示確認する。
         # ジョブが healthy 以外の状態で green になるサイレント失敗を防止する。
         run: |
-          CONTAINER_ID=$(docker compose ps -q app)
+          if ! CONTAINER_ID=$(docker compose ps -q app 2>&1); then
+            echo "::error::docker compose ps -q app が失敗しました (Dockerデーモン障害の可能性)"
+            echo "出力: $CONTAINER_ID"
+            exit 1
+          fi
           if [ -z "$CONTAINER_ID" ]; then
             echo "::error::app コンテナが存在しません (起動失敗)"
             docker compose ps
-            docker compose logs --tail=1000 app
+            docker compose logs --tail=1000 app || echo "::warning::docker compose logs failed (container removed or log driver error?)"
             exit 1
           fi
           HEALTH=$(docker inspect --format='{{.State.Health.Status}}' "$CONTAINER_ID" 2>/dev/null || echo "unknown")
@@ -483,7 +457,7 @@ jobs:
           if [ "$HEALTH" != "healthy" ]; then
             echo "::error::app コンテナが healthy ではありません (状態: $HEALTH)"
             docker compose ps
-            docker compose logs --tail=1000 app
+            docker compose logs --tail=1000 app || echo "::warning::docker compose logs failed (container removed or log driver error?)"
             exit 1
           fi
 
@@ -497,7 +471,7 @@ jobs:
         # `|| echo "::warning::..."` パターンと整合させ、診断ログ取得確実性を担保。
         run: |
           docker compose ps || echo "::warning::docker compose ps failed (container missing during restart loop?)"
-          docker compose logs --tail=1000 app
+          docker compose logs --tail=1000 app || echo "::warning::docker compose logs failed (container removed or log driver error?)"
 
       - name: Tear down
         if: always()

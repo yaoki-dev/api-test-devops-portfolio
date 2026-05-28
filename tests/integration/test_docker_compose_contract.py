@@ -1,12 +1,4 @@
-"""docker-compose.yml 運用契約テスト.
-
-PR#372 review #10 対応: pytestmark = pytest.mark.unit (module-level) と
-クラスレベル @pytest.mark.integration の累積で `pytest -m unit` 実行時に
-docker-compose.yml 読み込みテストが unit として実行される問題を解消するため、
-tests/unit/test_config_settings.py から tests/integration/ に移動。
-
-本ファイルは module-level pytestmark で integration マーカーを宣言する。
-"""
+"""docker-compose.yml の運用契約テスト."""
 
 from pathlib import Path
 from typing import Any
@@ -41,8 +33,13 @@ class TestDockerComposeContract:
         assert app["env_file"] == [{"path": ".env.${ENVIRONMENT:-development}", "required": False}]
         assert app["environment"]["ENVIRONMENT"] == "${ENVIRONMENT:-development}"
         assert app["restart"] == "on-failure:3"
-        assert "from config.settings import settings" in app["command"][-1]
-        assert "&& exec sleep infinity" in app["command"][-1]
+        command = app["command"]
+        assert isinstance(command, list)
+        assert len(command) == 3
+        assert command[0] == "/bin/sh"
+        assert command[1] == "-c"
+        assert "from config.settings import settings" in command[2]
+        assert "&& exec sleep infinity" in command[2]
 
     def test_test_service_contract(self, compose_data: dict[str, Any]) -> None:
         """test service の運用契約 (profiles/ENVIRONMENT/marker) を YAML レベルで保護する.
@@ -63,4 +60,7 @@ class TestDockerComposeContract:
         assert test_service["profiles"] == ["test"]
         assert test_service["environment"]["ENVIRONMENT"] == "testing"
         command = test_service["command"]
-        assert "(unit or integration) and not external" in command
+        assert isinstance(command, list)
+        assert "-m" in command
+        marker_index = command.index("-m")
+        assert command[marker_index + 1] == "(unit or integration) and not external"

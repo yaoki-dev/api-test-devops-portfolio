@@ -24,6 +24,7 @@
 - **カバレッジ: 94.59%**（unit+integration条件）: 継続的な品質向上
 - **CI実行テスト: 996件**（unit+integration条件, external・performance・smoke除外）
   - 内訳: Unit 970件 + Integration 26件（31件のうちexternal 5件を除外）
+  - 補足: 1009件は全件数、996件は CI でカバレッジ対象にする決定論的テスト数
 - **CI/CD自動化**: GitHub Actions による多段階パイプライン
 - **セキュリティ**: CI/CD品質ゲート（pytest + ruff + mypy + Trivy）
 - **GitHub API統合**: 実務的なAPI統合スキルを証明（Rate Limit管理、ETag活用、非同期処理）

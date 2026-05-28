@@ -112,6 +112,8 @@ COPY --chown=appuser:appgroup config/ ./config/
 COPY --chown=appuser:appgroup utils/ ./utils/
 COPY --chown=appuser:appgroup models/ ./models/
 COPY --chown=appuser:appgroup tests/ ./tests/
+# docker-compose.yml は tests/integration/test_docker_compose_contract.py が
+# request.config.rootdir / "docker-compose.yml" で読み込むため、test ステージへ配置する。
 COPY --chown=appuser:appgroup docker-compose.yml ./
 
 # デフォルトコマンド: テスト実行

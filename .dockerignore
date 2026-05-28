@@ -60,8 +60,8 @@ temp/
 
 # 開発専用ファイル
 docker-compose.override.yml
-.env.local
-.env.*.local
+.env*
+!.env.example
 
 # セキュリティ
 *.pem

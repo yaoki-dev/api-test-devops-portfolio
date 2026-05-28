@@ -1249,8 +1249,3 @@ class TestAllowedDomainsEnvOverride:
         # custom.example.com は許可ドメインに含まれず ValidationError になる
         with pytest.raises(ValidationError):
             APIConfig(base_url="https://custom.example.com")
-
-
-# PR#372 review #10 対応: TestDockerComposeContract は module-level
-# pytestmark = pytest.mark.unit との累積を避けるため
-# tests/integration/test_docker_compose_contract.py に移動済み。
