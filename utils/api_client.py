@@ -856,6 +856,9 @@ class AsyncAPIClient:
                     error_type=type(close_exc).__name__,
                     error_module=type(close_exc).__module__,
                     has_body_exception=has_body_exception,
+                    action=(
+                        "suppressed_due_to_body_exception" if has_body_exception else "re_raised"
+                    ),
                     # PR#347 review SF-2: close_exc が body 例外を上書きしないため
                     # __context__ チェーンは切断される。代わりに body 例外の型名を
                     # 同一ログイベント内に記録し、close 失敗と body 例外の対応関係を

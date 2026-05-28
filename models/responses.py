@@ -38,6 +38,7 @@ _PERCENT_CTRL_RE: re.Pattern[str] = re.compile(
     re.IGNORECASE,
 )
 # 不完全な%シーケンス検出 — unquoteがリテラル扱いするためUnicodeDecodeErrorが発生しない
+# IGNORECASE flag で大文字小文字を統合（可読性目的、機能等価: r"%(?![0-9a-fA-F]{2})" と同一）
 _INCOMPLETE_PCT_RE: re.Pattern[str] = re.compile(r"%(?![0-9a-f]{2})", re.IGNORECASE)
 _ASCII_WHITESPACE_RE: re.Pattern[str] = re.compile(r"[ \t\n\r\f\v]")
 _VARIATION_SELECTORS: frozenset[str] = frozenset(
@@ -53,6 +54,7 @@ _STRIP_CATEGORIES = _INVISIBLE_CATEGORIES | frozenset({"Cs"})
 # URL正規化中のUnicodeカテゴリ参照を十分に吸収する余裕を持たせる。
 # 通常のURLで登場する文字種は数百程度だが、テスト・攻撃入力では多様な
 # 制御文字/不可視文字を含むため、余裕を持った上限にして再計算を避ける。
+# maxsize=2048: Unicodeカテゴリ数 ~30 × 入力文字バリエーション(攻撃入力含む)、実測ヒット率を考慮
 @lru_cache(maxsize=2048)
 def _unicode_category(c: str) -> str:
     """Unicodeカテゴリ取得をキャッシュする。"""

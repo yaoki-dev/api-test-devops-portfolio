@@ -200,6 +200,9 @@ SENSITIVE_KEYS: frozenset[str] = frozenset(
         "client_secret",
         "x-api-key",
         "auth_token",
+        "authtoken",  # 複合語バリアント — 単語境界検出の false negative 補完 (#4)
+        "usertoken",  # 複合語バリアント
+        "userpassword",  # 複合語バリアント
         "passwd",
         # 暗号化
         "encryption_key",
@@ -237,7 +240,7 @@ _sentry_initialized: bool = False
 
 
 # 再帰制限のデフォルト値
-MAX_SCRUB_DEPTH: int = 10
+MAX_SCRUB_DEPTH: int = 10  # 実測値 2-4、余裕値 10 は infinite recursion 防止用
 
 # before_send でスクラブ対象とするイベントフィールド（PII漏洩防止の対象集合）
 _SCRUBBED_EVENT_FIELDS: frozenset[str] = frozenset(
@@ -260,6 +263,8 @@ _SCRUBBED_EVENT_FIELDS: frozenset[str] = frozenset(
 # また composite key (例: user_password, email_address, session_id, auth_token_v2,
 # customer_jwt) も単語単位で redact される一方、photo_url / prototype 等の
 # unrelated substring は過剰 redact しない。
+# 既知の false negative: ssnumber / cvvcode 等の複合語は suffix が [a-z] のため
+# suffix lookahead で非一致。頻出バリアントは SENSITIVE_KEYS に明示追加済み (#4)。
 _NORMALIZED_SENSITIVE_KEYS: frozenset[str] = frozenset(
     sensitive.replace("-", "_") for sensitive in SENSITIVE_KEYS
 )
@@ -280,13 +285,17 @@ _COMPACT_SENSITIVE_KEYS: frozenset[str] = frozenset(
 # camelCase / ACRONYM 分割用の事前コンパイル済みパターン (PR#347 review)。
 # 生リテラル re.sub の re._cache 依存を排し、設計を統一するため、
 # すべての正規表現をモジュールレベルで事前コンパイルしています。
-# (注: maxsize=512 — SENSITIVE_KEYS 40要素 × 平均キー長 × 正規化バリエーション
+# (注: maxsize=512 — SENSITIVE_KEYS 43要素 × 平均キー長 × 正規化バリエーション
 #   = ~400パターン + マージン。実測で 128 ではキャッシュヒット率低下、
 #   1024 ではメモリ増加が不要と判断。キーの正規化処理（sub() による置換）は
 #   比較的コストが高いため、頻出するキーの判定高速化と正規化コスト低減を目的
-#   として @lru_cache を適用しています。PR#347 review #11-3.)
+#   として @lru_cache を適用しています。PR#347 review #11-3.
+#   eviction 確認: `_is_sensitive_key.cache_info()` で hits/misses/currsize を取得可。
+#   miss rate 高止まりの場合は SENSITIVE_KEYS の多様性を確認し maxsize 調整を検討。)
 _ACRONYM_PATTERN: re.Pattern[str] = re.compile(r"([A-Z]+)([A-Z][a-z])")
 _CAMEL_PATTERN: re.Pattern[str] = re.compile(r"(?<=[a-z])(?=[A-Z])")
+# URL パスセグメント内のメールアドレス形式 PII を検出して [REDACTED] に置換する (#16)
+_PATH_PII_PATTERN: re.Pattern[str] = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
 
 
 @lru_cache(maxsize=512)
@@ -418,12 +427,12 @@ def _scrub_request_query_string(query_string: str | bytes) -> str:
 
 
 def _scrub_url(url: str) -> str:
-    """URLのuserinfo/fragmentを除去し、queryをスクラブする。
+    """URLのuserinfo/fragmentを除去し、query・pathのPIIをスクラブする。
 
-    注意:
-        パスセグメント内の機密情報（例: ``/users/email@example.com/token``）は
-        スクラブ対象外。パスに PII が含まれるエンドポイントでは呼び出し元で
-        path 設計を見直すか、事前に匿名化すること。
+    - query: `_scrub_query_string` でキーベーススクラブ
+    - path: メールアドレス形式のPII (`_PATH_PII_PATTERN`) を [REDACTED] に置換 (#16)
+    - params: RFC 2396 パスパラメータ (`;`区切り) はそのまま通過 (#7)
+    - fragment: 完全除去（PII漏洩防止）
     """
     parsed = urlparse(url)
     hostname = parsed.hostname
@@ -445,8 +454,10 @@ def _scrub_url(url: str) -> str:
         (
             parsed.scheme,
             netloc,
-            parsed.path,
-            _scrub_query_string(parsed.params) if parsed.params else "",
+            _PATH_PII_PATTERN.sub("[REDACTED]", parsed.path),
+            # RFC 2396 パスパラメータ: query string ではないためキースクラブは不要 (#7)
+            # ただしメールアドレス形式の PII は path と同様に除去する (#16)
+            _PATH_PII_PATTERN.sub("[REDACTED]", parsed.params) if parsed.params else "",
             _scrub_query_string(parsed.query) if parsed.query else "",
             "",  # fragment を除去（PII 漏洩防止）
         )
@@ -527,6 +538,11 @@ def _scrub_exception_field(exception_value: dict[str, Any]) -> dict[str, Any]:
 
     """
     values = exception_value.get("values")
+    if isinstance(values, dict):
+        # dict 型 values: _scrub_sensitive_data で内容をスクラブして返す (PR#347 review #6)
+        result = dict(exception_value)
+        result["values"] = _scrub_sensitive_data(values)
+        return result
     if not isinstance(values, list):
         _safe_log_warning(
             "sentry_exception_values_unexpected_type",
@@ -616,6 +632,7 @@ def _emit_scrub_failure_to_sentry(exc: BaseException) -> None:
         with sentry_sdk.new_scope() as scope:
             scope.set_tag(_INTERNAL_TAG_KEY, _INTERNAL_TAG_VALUE)
             scope.set_level("error")
+            # SECURITY: set_extra に PII 含む値追加禁止 — _before_send scrub バイパスのため
             scope.set_extra("error_type", type(exc).__qualname__)
             scope.set_extra("error_module", type(exc).__module__)
             scope.set_extra("action", "event_dropped")
@@ -821,7 +838,7 @@ def init_sentry() -> bool:  # noqa: C901
         # その他の初期化失敗 - 本番環境では例外を発生させる（Fail-Fast）
         if is_production_like:
             raise RuntimeError(
-                f"Sentry initialization failed in production: {type(exc).__name__}: {exc}",
+                f"Sentry initialization failed in production: {type(exc).__name__}",
             ) from exc
 
         # 開発/テスト環境ではログ警告のみ

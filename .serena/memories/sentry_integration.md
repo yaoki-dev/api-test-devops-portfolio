@@ -53,18 +53,18 @@ if init_sentry():
 
 ## 機密データ保護
 
-`before_send`フックで以下**40種類**の機密キーを自動スクラブ:
+`before_send`フックで以下**43種類**の機密キーを自動スクラブ:
 
 | カテゴリ | キー | 個数 |
 |---------|------|------|
 | **認証系（基本）** | password, token, secret, api_key, dsn, authorization, cookie, session, credential | 9 |
-| **認証系（拡張）** | bearer, jwt, access_token, refresh_token, private_key, client_secret, x-api-key, auth_token, passwd | 9 |
+| **認証系（拡張）** | bearer, jwt, access_token, refresh_token, private_key, client_secret, x-api-key, auth_token, authtoken, usertoken, userpassword, passwd | 12 |
 | **暗号化** | encryption_key, cipher_key | 2 |
 | **OAuth** | oauth_token | 1 |
 | **二要素認証** | otp, mfa, totp | 3 |
 | **個人情報** | email, ip_address, database_url, ssn, credit_card, cvv, card_number | 7 |
 | **HTTPヘッダー/レスポンス** | body_preview, access_key, proxy-authorization, set-cookie, x-auth-token, csrf_token, x-csrf-token, x-refresh-token, x-access-token | 9 |
-| **合計** | - | **40** |
+| **合計** | - | **43** |
 
 **注記 (個数 baseline)**:
 
@@ -74,7 +74,7 @@ if init_sentry():
 - 本メモリの「29 → 40」表記は **PR#340 review (commits da8c0cb / 255e38f)**
   で追加された `email`, `ip_address`, `body_preview` の **3 件**を含む累積 delta
   (=11件追加、29+11=40)。
-- 起点 PR が異なるため数値表記が一致しない。最終状態は両方とも **40 件**で一致。
+- 起点 PR が異なるため数値表記が一致しない。最終状態は **43 件**（複合語バリアント authtoken / usertoken / userpassword の3件が現在のステージ済PRで追加され40→43）。
 
 **確認元**: `utils/sentry_init.py` (`SENSITIVE_KEYS` frozenset)
 **マッチング方式**: `_is_sensitive_key` は **単語境界マッチ + ハイフン/アンダースコア
@@ -134,5 +134,5 @@ export SENTRY_DEBUG=true
 ```python
 # スクラブ対象キーの確認
 from utils.sentry_init import SENSITIVE_KEYS
-print(len(SENSITIVE_KEYS))  # 40
+print(len(SENSITIVE_KEYS))  # 43
 ```

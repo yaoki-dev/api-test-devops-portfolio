@@ -61,8 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Observability field addition**: `__aexit__` の `aclose()` 例外パスで
   `body_exception_type` フィールドを追加 (PR#347 review SF-2).
-  - **対象**: `AsyncAPIClient.__aexit__` (utils/api_client.py:858-870) と
-    `AsyncGitHubClient.__aexit__` (utils/github_client.py:275-290) の
+  - **対象**: `AsyncAPIClient.__aexit__` および `AsyncGitHubClient.__aexit__` の
     `*_aclose_unexpected_error` ログ。
   - **変更内容**: `body_exception_type=exc_type.__qualname__ if exc_type is not None else None`
     を追加。`close_exc` が body 例外 `__context__` を上書きしないため切断される

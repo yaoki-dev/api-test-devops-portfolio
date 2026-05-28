@@ -162,7 +162,7 @@ class TestSensitiveKeysCompleteness:
         unintended additions/removals to SENSITIVE_KEYS. When adding keys,
         update the count in this test as well.
         """
-        assert len(SENSITIVE_KEYS) == 40
+        assert len(SENSITIVE_KEYS) == 43  # SENSITIVE_KEYS 変更時はここの数値も更新
 
     @pytest.mark.parametrize(
         "key",
@@ -476,11 +476,25 @@ class TestScrubQueryStringAndUrl:
         url = "https://example.com/path?page=2&sort=asc"
         assert _scrub_url(url) == url
 
-    def test_scrub_url_redacts_sensitive_path_params(self) -> None:
-        """URL path params (`;key=value`) 内の機密値も query と同じ基準で redact する。"""
+    def test_scrub_url_path_params_pass_through(self) -> None:
+        """RFC 2396 パスパラメータ (`;key=value`) は query string ではない。
+        scrub せずそのまま通過する (#7)。"""
         result = _scrub_url("https://example.com/path;session_id=secret?sort=asc#frag")
-        assert result == "https://example.com/path;session_id=%5BREDACTED%5D?sort=asc"
-        assert "secret" not in result
+        assert result == "https://example.com/path;session_id=secret?sort=asc"
+
+    def test_scrub_url_redacts_email_in_path(self) -> None:
+        """URL パスセグメント内のメールアドレスを [REDACTED] に置換する (#16)。"""
+        result = _scrub_url("https://example.com/users/user@example.com/profile?sort=asc")
+        assert "user@example.com" not in result
+        assert "[REDACTED]" in result
+        assert "sort=asc" in result  # query は保持
+
+    def test_scrub_url_redacts_email_in_path_params(self) -> None:
+        """RFC 2396 パスパラメータ内のメールアドレスも [REDACTED] に置換する (#16)。"""
+        result = _scrub_url("https://example.com/activate;email=user@example.com?sort=asc")
+        assert "user@example.com" not in result
+        assert "[REDACTED]" in result
+        assert "sort=asc" in result  # query は保持
 
     def test_scrub_url_handles_ipv6_and_invalid_port(self) -> None:
         """IPv6と不正ポートでも例外を出さず処理する"""
@@ -548,6 +562,39 @@ class TestScrubExceptionField:
         result = _scrub_exception_field(exception_value)
 
         assert result["values"][0]["value"] == "[REDACTED]"
+
+    def test_scrub_exception_field_with_dict_values(self) -> None:
+        """values が dict 型の場合も _scrub_sensitive_data でkey-based scrubされる。
+
+        list-path と異なり value フィールドの明示的 [REDACTED] 置換は行わない。
+        _scrub_sensitive_data のキーベース判定に依存する（dict構造では value が
+        キー名として直接出現しないため）。
+        """
+        exception_value = {
+            "values": {
+                "error_1": {"value": "safe_data", "token": "secret_123"},
+                "error_2": {"value": "also_safe", "password": "pw_leak"},
+            },
+        }
+
+        result = _scrub_exception_field(exception_value)
+
+        # 機密キーは [REDACTED] に置換される
+        assert result["values"]["error_1"]["token"] == "[REDACTED]"  # noqa: S105
+        assert result["values"]["error_2"]["password"] == "[REDACTED]"  # noqa: S105
+        # 非機密キー・非機密値はそのまま保持
+        assert result["values"]["error_1"]["value"] == "safe_data"
+        assert result["values"]["error_2"]["value"] == "also_safe"
+        # 元の exception_value は変更されない
+        assert exception_value["values"]["error_1"]["token"] == "secret_123"  # noqa: S105
+
+    def test_scrub_exception_field_with_empty_dict_values(self) -> None:
+        """values が空 dict でも例外なく処理される。"""
+        exception_value: dict[str, Any] = {"values": {}}
+
+        result = _scrub_exception_field(exception_value)
+
+        assert result == {"values": {}}
 
 
 class TestHasInternalTag:
@@ -1927,3 +1974,4 @@ def test_internal_tag_value_is_valid_hex() -> None:
     from utils.sentry_init import _INTERNAL_TAG_VALUE
 
     assert re.fullmatch(r"[0-9a-f]{32}", _INTERNAL_TAG_VALUE) is not None
+    assert len(_INTERNAL_TAG_VALUE) <= 200  # Sentry SDK tag value 上限 200文字以内
