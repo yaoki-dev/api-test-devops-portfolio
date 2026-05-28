@@ -829,7 +829,16 @@ class AsyncAPIClient:
         return self
 
     async def _close_async_client(self, body_exc_type: type[BaseException] | None) -> None:
-        """__aexit__ と aclose() で共有する close 処理."""
+        """``__aexit__`` と ``aclose()`` で共有する close 処理.
+
+        Args:
+            body_exc_type: ``__aexit__`` 経路では context manager の body 内で発生した
+                例外型を渡す (例外無しなら ``None``)。``aclose()`` 直接呼び出し経路では
+                常に ``None`` を渡す。``aclose()`` 失敗時に予期しない close 例外
+                (``Exception`` 派生) を捕捉した際、body 例外の上書き防止のため
+                ``has_body_exception = body_exc_type is not None`` を判定材料として
+                利用する。``None`` の場合のみ実装バグとして bare ``raise`` で再送出する。
+        """
         if self._client:
             try:
                 await self._client.aclose()

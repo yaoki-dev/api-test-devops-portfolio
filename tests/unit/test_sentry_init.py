@@ -1160,7 +1160,12 @@ class TestBeforeSend:
     def test_scrub_sentry_field_logger_failure_is_suppressed(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """logger.warning 失敗時も Sentry イベントを drop せず無音で継続する。"""
+        """logger.warning 失敗時も Sentry イベントを drop せず fail-open で継続する。
+
+        PR#347 review #1: 旧実装は完全 silent (`except Exception: pass`) だったが、
+        ロガー側 RecursionError 等の重大障害が無音化される問題があったため、
+        stderr に最低限の診断 1 行を出力する fail-open に変更。
+        """
         event = cast(Event, {"extra": "not-a-dict"})
 
         with patch.object(
@@ -1173,7 +1178,9 @@ class TestBeforeSend:
         assert result is not None
         assert result["extra"] == {}
         captured = capsys.readouterr()
-        assert captured.err == ""
+        # fail-open: stderr に診断行が出るが Sentry イベントは drop されない
+        assert "_safe_log_warning failed" in captured.err
+        assert "error_type=RuntimeError" in captured.err
 
     def test_before_send_scrubs_exception_stacktrace_vars(self) -> None:
         """exception.values[*].stacktrace.frames[*].vars 内の機密変数がスクラブされる。"""

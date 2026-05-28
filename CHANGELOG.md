@@ -59,6 +59,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **互換性**: ログ schema (event 名 `async_api_client_closed`、フィールド
     なし) は不変。既存 alert rule / dashboard への破壊的影響なし。
 
+- **BREAKING (log event name)**: `utils/github_client.py` の `AsyncGitHubClient`
+  正常クローズ時のログイベント名を自然言語形式 `"AsyncGitHubClient closed"` から
+  structlog 規約 (snake_case) 準拠の `"async_github_client_closed"` に変更
+  (PR#347 review #4-[2]).
+  - **変更理由**: `utils/api_client.py` の `async_api_client_closed` と命名整合を
+    取り、プロジェクト全体の structlog イベント命名規約を統一する。
+  - **対象**: `AsyncGitHubClient.__aexit__` の正常 close ログ (utils/github_client.py:302)。
+  - **影響範囲**: log consumer (Datadog / Loki / Splunk / CloudWatch 等) で
+    旧イベント名 `"AsyncGitHubClient closed"` を grep / filter 設定している場合
+    マッチしなくなる。既存 alert rule / dashboard / log query を
+    `"async_github_client_closed"` に更新すること。
+  - **追従対応**: `tests/unit/test_github_client.py` の対応 assertion (4箇所)
+    を新イベント名に更新済み。
+
+- **Hardened**: `utils/sentry_init.py` の `_safe_log_warning()` ヘルパーを
+  完全サイレント (`except Exception: pass`) から段階的 fail-open に強化
+  (PR#347 review #1)。
+  - **変更内容**:
+    - `RecursionError` / `MemoryError` は再raise (fail-fast、上位で観測可能化)
+    - 通常 `Exception` は stderr に `event` 名 + `error_type` + `error_module`
+      を fallback 通知してから黙過 (fail-open + 最小限の障害可視化)
+    - stderr 自体が壊れた場合のみ完全黙過（真の最終手段）
+  - **背景**: 旧実装はロガー側の `RecursionError` (構造化ログでよく発生する) を
+    完全に隠蔽し、Sentry PII scrub フロー内で起きた重大障害が無音化していた。
+  - **影響**: ログ schema 不変、Sentry イベント送信フロー (`before_send`) の
+    動作不変。stderr に新規 1 行が稀に出力される可能性あり (本質的に障害発生時のみ)。
+
+- **Documented**: `utils/github_client.py` の `_request` 防御的パス
+  (L958+ `if http_status_response is not None`) における 5xx/404/429/403 分岐の
+  unreachable 性を明示するコメント追加 (PR#347 review #4-[10])。
+  - **背景**: `raise_for_status()` が HTTPStatusError を raise する条件下では、
+    5xx/404/429/403 は既に main path (L843/L847/L859/L871) で先行処理済み。
+    防御パスが起動するのは 401/400/405 等の other 4xx (`else` 分岐) のみ。
+  - **コード削除を見送った理由**: テスト (`test_github_client.py` L884/L1597/L2180)
+    が `httpx.HTTPStatusError` 直接 mock 注入で防御パス到達を検証中。
+    削除すると mock-based regression test が破壊されるため、安全網として残置。
+  - **影響**: コードロジック不変、コメントのみ追加。
+
 - **Observability field addition**: `__aexit__` の `aclose()` 例外パスで
   `body_exception_type` フィールドを追加 (PR#347 review SF-2).
   - **対象**: `AsyncAPIClient.__aexit__` および `AsyncGitHubClient.__aexit__` の
@@ -173,7 +211,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Changed**: `utils/sentry_init.py` の `_is_sensitive_key` に
   `@lru_cache(maxsize=512)` を維持.
-  - **維持理由**: SENSITIVE_KEYS は 40 要素だが、キーの正規化処理 (``sub()`` による
+  - **維持理由**: SENSITIVE_KEYS は 43 要素だが、キーの正規化処理 (``sub()`` による
     camelCase / acronym 分割) の計算コストを低減するため cache を適用.
     コード内コメント (L210-211) と設計判断を一致させる修正.
 
@@ -215,6 +253,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **新規テスト**: `test_before_send_skips_scrub_for_list_form_internal_tagged_event`
     で list-form 内部 tag 検出を回帰防止. Red-green TDD で test の effectiveness
     実証済 (revert 時 1 failed, restore 時 127 passed).
+
+- **Fixed**: `utils/github_client.py` の ETagキャッシュキーをエンドポイント単体から
+  クエリパラメータ込みに変更（`_cache_key()` スタティックメソッド追加）。
+  同一エンドポイント・異なるクエリパラメータ（sort/per_page等）のキャッシュが
+  正しく分離されるようになった（`urlencode(sorted_params, quote_via=quote)`）。
 
 ---
 

@@ -299,7 +299,7 @@ class AsyncGitHubClient:
             else:
                 # aclose() 成功時のみ closed ログを出す。logger.info を try 内に置くと
                 # logger 自体の例外が aclose 失敗として誤検知されるため else 節に分離 (PR#347)。
-                self.logger.info("AsyncGitHubClient closed")
+                self.logger.info("async_github_client_closed")
 
     async def get_user(self, username: str) -> dict[str, Any]:
         """ユーザー情報取得
@@ -699,8 +699,17 @@ class AsyncGitHubClient:
         """
         if not params:
             return endpoint
-        sorted_params = sorted((k, str(v)) for k, v in params.items())
-        return f"{endpoint}?{urlencode(sorted_params, quote_via=quote)}"
+        try:
+            sorted_params = sorted((k, str(v)) for k, v in params.items())
+            return f"{endpoint}?{urlencode(sorted_params, quote_via=quote)}"
+        except (TypeError, UnicodeEncodeError) as e:
+            # PR#347 review #4-[8]: 通常パスの try/except 外で実行されるため、
+            # 例外型のみ含む GitHubAPIError に変換して呼び出し元のリトライ/エラー
+            # ハンドリング体系に統合。params 値は PII 含有可能性があるため
+            # ``from None`` で例外チェーンを切断し、エラーメッセージに含めない。
+            raise GitHubAPIError(
+                f"cache_key build failed for endpoint={endpoint!r}: {type(e).__name__}"
+            ) from None
 
     def _enforce_cache_limit(self) -> None:
         """ETag/dataキャッシュを max_cache_entries 以下に保つ。
@@ -850,7 +859,7 @@ class AsyncGitHubClient:
                 if response.status_code == 403:
                     # 注: warning_reset_time は _check_rate_limit_warning が
                     # remaining < _RATE_LIMIT_WARNING_THRESHOLD (=10) のときのみ
-                    # 非 None を返す (utils/github_client.py L37, L429-462)。
+                    # 非 None を返す (utils/github_client.py L75, L440-473)。
                     # 閾値変更時はこの reset_time が常に None になり _handle_403_response
                     # 側の Retry-After ヘッダー fallback パスに倒れる挙動になる。
                     # debug-only ログのため動作影響は限定的だが、依存関係を明示する。
@@ -866,7 +875,20 @@ class AsyncGitHubClient:
                     response.raise_for_status()
 
                 result_json = self._parse_json_response(response, endpoint)
-                self._update_etag_cache(cache_key, response, result_json)
+                # PR#347 review #4-[9]: ETag cache 更新失敗を HTTP 層 unexpected_error
+                # と分離。cache update 失敗はレスポンス返却を阻害してはならず (cache の
+                # 副作用) かつ専用イベントで観測性を確保する。HTTP 層 unexpected_error
+                # は retry/エラー判定の対象だが、本イベントは warning 止まり。
+                try:
+                    self._update_etag_cache(cache_key, response, result_json)
+                except Exception as cache_exc:  # noqa: BLE001
+                    self.logger.warning(
+                        "etag_cache_update_failed",
+                        endpoint=endpoint,
+                        method=method,
+                        error_type=type(cache_exc).__name__,
+                        error_module=type(cache_exc).__module__,
+                    )
 
                 return result_json
 
@@ -936,6 +958,13 @@ class AsyncGitHubClient:
             if http_status_response is not None:
                 # PII漏洩防止: __context__ を None に保つため except 外で処理・raise
                 # (httpx.HTTPStatusError.response は response body + request URL を保持するため)
+                #
+                # PR#347 review #4-[10]: 以下 4 分岐 (5xx/404/429/403) は通常 unreachable。
+                # raise_for_status() (L875 else 分岐) が HTTPStatusError を raise する条件下では、
+                # 5xx/404/429/403 は既に main path (L843/L847/L859/L871) で先行処理済みのため。
+                # ただしテスト (test_github_client.py L884/L1597/L2180) が httpx.HTTPStatusError を
+                # 直接 mock 注入して防御パス到達を検証しているため、安全網として残置する。
+                # 真に reachable なのは else 分岐 (401/400/405 等の other 4xx) のみ。
                 status_code = http_status_response.status_code
                 if status_code >= 500:
                     # 防御的パス: 5xxをhttpx.HTTPStatusErrorとして受信した場合、通常パスと同等に処理

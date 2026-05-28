@@ -703,9 +703,9 @@ async def test_aexit_aclose_known_exception_is_suppressed_with_warning(
     error_logs = [log for log in log_output if log.get("event") == unexpected_event]
     assert len(error_logs) == 0
     # PR#347 review #3-1: else節スキップ検証。aclose() 例外時は __aexit__ の
-    # else 節 (utils/github_client.py L291-292) が実行されず "AsyncGitHubClient closed"
+    # else 節 (utils/github_client.py L291-292) が実行されず "async_github_client_closed"
     # info ログは出力されない設計意図 (test_aexit_normal_close_logs_info L2431 の対照)。
-    closed_logs = [log for log in log_output if log.get("event") == "AsyncGitHubClient closed"]
+    closed_logs = [log for log in log_output if log.get("event") == "async_github_client_closed"]
     assert len(closed_logs) == 0
 
 
@@ -738,9 +738,9 @@ async def test_aexit_aclose_unexpected_exception_reraises_when_no_body_exception
     warning_logs = [log for log in log_output if log.get("event") == "github_client_aclose_failed"]
     assert len(warning_logs) == 0
     # PR#347 review #3-1: else節スキップ検証。aclose() 例外時は __aexit__ の
-    # else 節 (utils/github_client.py L291-292) が実行されず "AsyncGitHubClient closed"
+    # else 節 (utils/github_client.py L291-292) が実行されず "async_github_client_closed"
     # info ログは出力されない設計意図 (test_aexit_normal_close_logs_info L2431 の対照)。
-    closed_logs = [log for log in log_output if log.get("event") == "AsyncGitHubClient closed"]
+    closed_logs = [log for log in log_output if log.get("event") == "async_github_client_closed"]
     assert len(closed_logs) == 0
 
 
@@ -778,9 +778,9 @@ async def test_aexit_body_exception_not_overridden_by_close_exception() -> None:
     warning_logs = [log for log in log_output if log.get("event") == "github_client_aclose_failed"]
     assert len(warning_logs) == 0
     # PR#347 review #3-1: else節スキップ検証。body+close 二重例外時も
-    # else 節 (utils/github_client.py L291-292) は実行されず "AsyncGitHubClient closed"
+    # else 節 (utils/github_client.py L291-292) は実行されず "async_github_client_closed"
     # info ログは出力されない (test_aexit_normal_close_logs_info L2431 の対照)。
-    closed_logs = [log for log in log_output if log.get("event") == "AsyncGitHubClient closed"]
+    closed_logs = [log for log in log_output if log.get("event") == "async_github_client_closed"]
     assert len(closed_logs) == 0
 
 
@@ -2377,6 +2377,21 @@ def test_cache_key_url_encodes_spaces_as_percent20() -> None:
     assert "hello+world" not in key
 
 
+def test_cache_key_encodes_special_chars_in_value() -> None:
+    """``&`` や ``=`` を含むパラメータ値が ``%26`` / ``%3D`` にエンコードされる。
+
+    ``_cache_key()`` は ``quote_via=quote`` を指定しており、urllib.parse.quote は
+    クエリパラメータ区切り記号として予約された ``&`` / ``=`` も percent-encode する。
+    これにより値内に区切り記号が含まれてもキャッシュキー衝突（異なるパラメータの
+    キャッシュエントリが同一キーに丸まる事象）が防止されることを検証する。
+    """
+    key = AsyncGitHubClient._cache_key("/search", {"q": "a&b=c"})
+    assert "%26" in key  # & はエンコードされる
+    assert "%3D" in key  # = はエンコードされる
+    # 生の & / = が値部分に出現しないこと（key/value 区切りの & / = は除外）
+    assert "q=a&b=c" not in key
+
+
 def test_handle_304_response_cache_miss_error_omits_query_params() -> None:
     """304キャッシュミス時のエラーメッセージからクエリパラメータが除去される。
 
@@ -2562,7 +2577,7 @@ def test_async_github_client_max_cache_entries_validation(invalid_value: int) ->
 
 
 async def test_aexit_normal_close_logs_info() -> None:
-    """__aexit__ 正常クローズ時に "AsyncGitHubClient closed" の info ログが1回出力される
+    """__aexit__ 正常クローズ時に "async_github_client_closed" の info ログが1回出力される
 
     aclose() が例外なく完了した場合（else 節）に structlog の info ログが記録されることを
     capture_logs で検証する。
@@ -2571,7 +2586,7 @@ async def test_aexit_normal_close_logs_info() -> None:
         async with AsyncGitHubClient():
             pass  # 正常終了
 
-    closed_logs = [log for log in log_output if log.get("event") == "AsyncGitHubClient closed"]
+    closed_logs = [log for log in log_output if log.get("event") == "async_github_client_closed"]
     assert len(closed_logs) == 1
     assert closed_logs[0]["log_level"] == "info"
 

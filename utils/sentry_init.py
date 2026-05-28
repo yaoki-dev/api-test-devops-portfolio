@@ -23,7 +23,7 @@ structlogと連携し、ERROR以上のログをSentryに送信。
     （SENTRY_DEBUG は将来の拡張用に定義済みだが、現行 init_sentry() では参照しない）
 
 セキュリティ:
-    - before_sendフックで機密データを自動除外（40種類のキーパターン）
+    - before_sendフックで機密データを自動除外（43種類のキーパターン）
     - DSNはSecretStrで管理（config/settings.py）
     - enabled=Falseで完全無効化可能
 """
@@ -102,11 +102,27 @@ def _safe_log_warning(event: str, **fields: Any) -> None:
     """
     try:
         _logger.warning(event, **fields)
-    except Exception:  # noqa: BLE001, S110
-        # ロガー自体の失敗は無音で継続する（fail-open）。
-        # PII scrub フロー内部でのみ使用するヘルパーのため、
-        # ロガー失敗でイベントを drop させない設計を優先する。
-        pass
+    except RecursionError:
+        # 致命的エラーは再raise（fail-fast）。サイレント隠蔽すると
+        # 上位の except Exception でも捕捉されず重大障害が見えなくなる。
+        raise
+    except MemoryError:
+        # 同上 (fail-fast)。tuple 形式 `except (E1, E2):` は ruff format
+        # が括弧を除去して Py2 構文化するため、保守安全のため別行記述。
+        raise
+    except Exception as exc:  # noqa: BLE001
+        # ロガー失敗 → fail-open（イベント drop 防止）だが、
+        # 完全無音は障害を隠蔽するため最低限 stderr に通知する。
+        try:
+            print(
+                f"[sentry_init] _safe_log_warning failed: "
+                f"event={event!r} error_type={type(exc).__name__} "
+                f"error_module={type(exc).__module__}",
+                file=sys.stderr,
+            )
+        except Exception:  # noqa: BLE001, S110
+            # stderr 自体が壊れている場合は本当に何もできない
+            pass
 
 
 def _scrub_exception_frame(frame: Any) -> Any:
