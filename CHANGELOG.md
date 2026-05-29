@@ -132,9 +132,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       当該サービスの credential key 名を SENSITIVE_KEYS に追加する.
     - 詳細は `utils/sentry_init.py` の `SENSITIVE_KEYS` frozenset 定義と
       `_NORMALIZED_SENSITIVE_KEYS` 周辺コメントを参照.
-  - **追加された redact key (32 → 40, +8件)**
+  - **追加された redact key (32 → 43（+11件）)**
     （※ 32 は PR#340 で email/ip_address/body_preview 追加後の件数。
-    　PR#340 前起点では 29 → 40（+11件））:
+    　PR#340 前起点では 29 → 43（+14件））:
     - 認証系: `access_key`
     - HTTP headers: `proxy-authorization`, `set-cookie`, `x-auth-token`,
       `csrf_token`, `x-csrf-token`, `x-refresh-token`, `x-access-token`
@@ -193,6 +193,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     3. 異常な発生率上昇時は SENSITIVE_KEYS / scrub logic の defect 兆候として
        triage. payload 構造を sanitized form でローカル再現し原因特定.
 
+
+- **Added (security)**: `utils/github_client.py` に `_SanitizedJSONDecodeError`
+  カスタム例外クラスを追加.
+  - **目的**: `json.JSONDecodeError` のエラーメッセージに含まれる可能性のある
+    レスポンスボディ断片（PII を含む場合あり）を Sentry / ログに送信しないよう
+    エラーメッセージをサニタイズする。
+  - **実装**: `Exception` を継承し、`error_type`, `pos`, `lineno` のみ保持
+    （レスポンス本文は破棄 — PII非露出）。
+  - **影響範囲**: `github_client.py` 内で JSON パースに失敗した場合、
+    この例外が raise されるようになる。メッセージ形式が変わるため、
+    メッセージ内容に依存する catch ロジックは更新が必要。
 
 - **Changed**: `utils/sentry_init.py` の `init_sentry()` の `except Exception`
   分岐で `warnings.warn` を `_logger.warning("sentry_init_failed", ...)` に変更.

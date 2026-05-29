@@ -80,6 +80,10 @@ except json.JSONDecodeError as e:
 
 **規則**: 階層的例外設計、`from e`でチェーン維持、4xx即失敗/5xxリトライ
 
+**セキュリティ規則**: 例外クラス名には PII（個人識別情報）を含めないこと。
+例: `UserEmailValidationError` のようなクラス名はメールアドレスが例外クラス名に
+露出する可能性がある。`EmailValidationError` や `ValidationError` を使用すること。
+
 ---
 
 ## 6. 非同期処理

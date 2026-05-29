@@ -5,6 +5,7 @@ import pytest
 
 from tests.constants import BASE_URL
 from utils.api_client import (
+    AsyncAPIClient,
     SyncAPIClient,
 )
 
@@ -85,3 +86,31 @@ def test_base_client_close_method():
     # httpx.Client.close() doesn't set _client to None, but it closes the transport.
     # We can't easily assert the underlying httpx client is closed without mocking.
     # For now, just ensure no error is raised.
+
+
+@pytest.mark.asyncio
+async def test_close_async_client_with_none_client_does_not_raise() -> None:
+    """_client が None の場合、_close_async_client は何もせず例外を発生させない（no-op）。
+
+    Fix #13-TC-3: double-close 防止のため _close_async_client に
+    None ガードが実装されていることを検証する。
+    """
+    client = AsyncAPIClient(base_url="https://test.com")
+    # _client を None に強制設定（close 後の状態をシミュレート）
+    client._client = None
+    # None の場合は no-op であり、例外が発生しないことを検証
+    await client._close_async_client(None)
+
+
+@pytest.mark.asyncio
+async def test_make_request_with_retry_raises_when_client_closed() -> None:
+    """close 後（_client=None）に _make_request_with_retry を呼ぶと RuntimeError を送出する。
+
+    PR#347 review fix: 従来は None.request アクセスで AttributeError になっていたが、
+    use-after-close を明示的な RuntimeError として通知する（github_client.py L878 と同一パターン）。
+    """
+    client = AsyncAPIClient(base_url="https://test.com")
+    # close 後の状態をシミュレート（_client を None に強制設定）
+    client._client = None
+    with pytest.raises(RuntimeError, match="Client not initialized"):
+        await client._make_request_with_retry("GET", "/test")

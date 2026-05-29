@@ -780,6 +780,8 @@ class AsyncAPIClient:
     - async/awaitによる並行処理
     """
 
+    _client: httpx.AsyncClient | None  # aclose() 後に None を代入するため明示宣言
+
     def __init__(
         self,
         base_url: str | None = None,
@@ -839,7 +841,7 @@ class AsyncAPIClient:
                 ``has_body_exception = body_exc_type is not None`` を判定材料として
                 利用する。``None`` の場合のみ実装バグとして bare ``raise`` で再送出する。
         """
-        if self._client:
+        if self._client is not None:
             try:
                 await self._client.aclose()
             except (httpx.CloseError, OSError) as close_exc:
@@ -887,6 +889,7 @@ class AsyncAPIClient:
                 # aclose() 成功時のみ closed ログを出す。logger.info を try 内に置くと
                 # logger 自体の例外が aclose 失敗として誤検知されるため else 節に分離。
                 # github_client.py / Sync close() と同一パターン (PR#347 Q-1 Codex fix)。
+                self._client = None  # double-close 防止（_client 型は | None 宣言済み）
                 self.logger.info("async_api_client_closed")
 
     async def __aexit__(
@@ -904,6 +907,10 @@ class AsyncAPIClient:
         async with パターンと aclose() 単独呼び出しの両経路で
         ``async_api_client_closed`` ログを出力し、Sync (``SyncAPIClient.close()``)
         との observability 対称性を保つ (PR#347 review Q-1)。
+
+        Note: When called directly (not via async context manager), unexpected exceptions
+        during close will always re-raise (has_body_exception=False). Use `async with`
+        for exception-suppressing behavior when body exceptions exist.
         """
         await self._close_async_client(None)
 
@@ -936,6 +943,11 @@ class AsyncAPIClient:
             呼び出し元は APIClientError で捕捉すること。
 
         """
+        # close 後の use-after-close を明示エラー化（github_client.py L878 と同一パターン）。
+        # 型注釈 _client: AsyncClient | None に対する None 絞り込みも兼ねる。
+        if self._client is None:
+            raise RuntimeError("Client not initialized. Use 'async with' context.")
+
         last_exception: APIClientError | None = None
 
         for attempt in range(self.retry_count + 1):

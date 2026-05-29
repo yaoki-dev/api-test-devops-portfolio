@@ -1730,9 +1730,9 @@ def test_handle_304_response_cache_hit() -> None:
 def test_update_etag_cache_evicts_oldest_entry_when_limit_exceeded() -> None:
     """ETag/dataキャッシュは max_cache_entries を超えたら古いendpointから削除する"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES, max_cache_entries=2)
-    first_response = httpx.Response(200, headers={"ETag": "etag-1"})
-    second_response = httpx.Response(200, headers={"ETag": "etag-2"})
-    third_response = httpx.Response(200, headers={"ETag": "etag-3"})
+    first_response = httpx.Response(200, headers={"ETag": '"etag-1"'})
+    second_response = httpx.Response(200, headers={"ETag": '"etag-2"'})
+    third_response = httpx.Response(200, headers={"ETag": '"etag-3"'})
 
     client._update_etag_cache("/first", first_response, {"id": 1})
     client._update_etag_cache("/second", second_response, {"id": 2})
@@ -1757,6 +1757,8 @@ def test_enforce_cache_limit_evicts_multiple_entries_when_excess_gt_one() -> Non
 
     assert list(client._etag_cache) == ["/entry-3", "/entry-4"]
     assert list(client._data_cache) == ["/entry-3", "/entry-4"]
+    assert len(client._etag_cache) == client.max_cache_entries
+    assert len(client._data_cache) == client.max_cache_entries
     mock_logger.info.assert_called_once_with(
         "cache_entries_evicted",
         evicted_count=3,
@@ -2048,6 +2050,29 @@ def test_update_etag_cache_clears_stale_cache_and_logs_endpoint(
         client._update_etag_cache(cache_key, response, {"id": 2})
         mock_logger.info.assert_called_once_with("etag_removed", endpoint=expected_logged_endpoint)
 
+    assert cache_key not in client._etag_cache
+    assert cache_key not in client._data_cache
+
+
+def test_update_etag_cache_invalid_etag_evicts_stale_cache() -> None:
+    """無効な形式のETag受信時、既存の stale キャッシュを破棄する（PR#347 review fix）。
+
+    従来は warning ログ後に return するのみで _etag_cache/_data_cache が残存し、
+    次回リクエストで古い ETag による 304 経路で stale データが再利用される恐れがあった。
+    """
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    cache_key = "/repos/octocat/hello"
+    client._etag_cache[cache_key] = '"stale-valid-etag"'
+    client._data_cache[cache_key] = {"id": 1}
+    # 不正形式（前後のダブルクォートなし）の ETag を持つレスポンス
+    response = httpx.Response(200, headers={"ETag": "bad-etag-no-quotes"}, content=b'{"id": 2}')
+
+    with patch.object(client, "logger") as mock_logger:
+        client._update_etag_cache(cache_key, response, {"id": 2})
+        mock_logger.warning.assert_called_once()
+        assert mock_logger.warning.call_args.args[0] == "invalid_etag_format"
+
+    # stale キャッシュが破棄されていること（修正の核心）
     assert cache_key not in client._etag_cache
     assert cache_key not in client._data_cache
 
@@ -2655,3 +2680,95 @@ async def test_check_rate_limit_warning_overflow_reset_time() -> None:
 
     # (2) reset_time フィールドが "unix:{reset_time}" フォールバック形式になること
     assert rate_limit_low_logs[0]["reset_time"] == f"unix:{overflow_reset}"
+
+
+# =============================================================================
+# _cache_key エラーパステスト（Fix #12-Q-9）
+# =============================================================================
+
+
+def test_cache_key_raises_github_api_error_on_type_error() -> None:
+    """_cache_key: シリアライズ不可能なパラメータ値で GitHubAPIError が発生する。"""
+
+    class NonSerializable:
+        def __repr__(self) -> str:
+            raise TypeError("not serializable")
+
+        def __str__(self) -> str:
+            raise TypeError("not serializable")
+
+    with pytest.raises(GitHubAPIError, match="cache_key"):
+        AsyncGitHubClient._cache_key("/repos", {"key": NonSerializable()})
+
+
+def test_cache_key_error_suppresses_cause_for_pii_safety() -> None:
+    """_cache_key: from None により __cause__ が None になり PII 漏洩を防止する。"""
+
+    class NonSerializable:
+        def __repr__(self) -> str:
+            raise TypeError("not serializable")
+
+        def __str__(self) -> str:
+            raise TypeError("not serializable")
+
+    with pytest.raises(GitHubAPIError) as exc_info:
+        AsyncGitHubClient._cache_key("/repos", {"key": NonSerializable()})
+    assert exc_info.value.__cause__ is None  # from None prevents PII leak
+
+
+# =============================================================================
+# _check_rate_limit_warning: 閾値インタラクションテスト（Fix #10-QC-3）
+# =============================================================================
+
+
+def test_check_rate_limit_warning_threshold_interaction() -> None:
+    """_check_rate_limit_warning: remaining < _RATE_LIMIT_WARNING_THRESHOLD(=10) で
+    警告が発生し、reset_time が正しく返ることを確認する。"""
+    from utils.github_client import _RATE_LIMIT_WARNING_THRESHOLD
+
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    # 閾値ちょうど1つ下の値
+    remaining = _RATE_LIMIT_WARNING_THRESHOLD - 1
+    expected_reset_time = 1700000001
+    headers = httpx.Headers({"X-RateLimit-Reset": str(expected_reset_time)})
+
+    with capture_logs() as logs:
+        result = client._check_rate_limit_warning(headers, remaining=remaining)
+
+    warning_logs = [log for log in logs if log.get("event") == "rate_limit_low"]
+    assert len(warning_logs) == 1
+    assert warning_logs[0]["remaining"] == remaining
+    assert result == expected_reset_time  # 有効な Unix タイムスタンプが返る
+    assert result >= 1  # 戻り値 >= 1: 有効な Unix タイムスタンプ
+
+
+# =============================================================================
+# 429 E2E test with warning_reset_time handoff（Fix #15-Q-6）
+# =============================================================================
+
+
+@respx.mock
+async def test_429_uses_warning_reset_time_from_rate_limit_check() -> None:
+    """429 応答受信時に _check_rate_limit_warning が返した warning_reset_time を
+    RateLimitError の reset_time として使用することを検証する。
+
+    フロー:
+    1. X-RateLimit-Remaining=5（閾値未満）→ _check_rate_limit_warning が reset_time を返す
+    2. 429 応答 → warning_reset_time が非 None なので X-RateLimit-Reset の再パースを省略
+    3. RateLimitError(reset_time) が発生
+    """
+    expected_reset_time = 1700000999
+    respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+        429,
+        headers={
+            "X-RateLimit-Remaining": "5",  # < 10 → _check_rate_limit_warning が実行される
+            "X-RateLimit-Reset": str(expected_reset_time),
+        },
+    )
+
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(RateLimitError) as exc_info:
+            await client.get_user("octocat")
+
+    assert exc_info.value.reset_time == expected_reset_time
+    assert exc_info.value.__cause__ is None  # from None で PII 漏洩防止

@@ -20,6 +20,8 @@ from utils.api_client import APIClientError, AsyncAPIClient
 from utils.logger import get_logger
 
 
+# total=False makes all fields optional; in practice only `error` is intentionally optional.
+# Consider using Required[...] / NotRequired[...] (Python 3.11+) for precision.
 class PerformanceSummary(TypedDict, total=False):
     """get_summary() の戻り値型（完全な構造は get_summary() の docstring 参照）"""
 

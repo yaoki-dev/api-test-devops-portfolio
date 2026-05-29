@@ -99,6 +99,10 @@ def _safe_log_warning(event: str, **fields: Any) -> None:
     下流) の ``print(..., file=sys.stderr)`` フォールバックパターンとは責務が異なる:
     あちらは fail-safe (event drop 防止) のため stderr 通知が必要、こちらは fail-open
     (元データ通過) のため例外抑止のみで十分。
+
+    **PII 漏洩防止**: ``event`` 引数は静的な識別子文字列 (例: "sentry_field_type_unexpected")
+    のみを渡すこと。動的なユーザーデータや変数値を直接渡すと、ログ経由で PII が
+    漏洩する。動的な値は ``**fields`` の keyword 引数として渡すこと。
     """
     try:
         _logger.warning(event, **fields)
@@ -117,8 +121,10 @@ def _safe_log_warning(event: str, **fields: Any) -> None:
             print(
                 f"[sentry_init] _safe_log_warning failed: "
                 f"event={event!r} error_type={type(exc).__name__} "
-                f"error_module={type(exc).__module__}",
+                f"error_module={type(exc).__module__} "
+                f"fields_keys={list(fields.keys())}",
                 file=sys.stderr,
+                flush=True,
             )
         except Exception:  # noqa: BLE001, S110
             # stderr 自体が壊れている場合は本当に何もできない
@@ -132,6 +138,7 @@ def _scrub_exception_frame(frame: Any) -> Any:
             "sentry_exception_frame_unexpected_type",
             actual_type=type(frame).__name__,
             action="skip_frame_scrub",
+            pii_leak_risk="HIGH",
         )
         return frame
 
@@ -167,6 +174,8 @@ def _scrub_exception_stacktrace(stacktrace: dict[str, Any]) -> dict[str, Any]:
 def _scrub_exception_value_item(value_item: Any) -> Any:
     """Sentry exception values[*] を fail-open でスクラブする。"""
     if not isinstance(value_item, dict):
+        if isinstance(value_item, (list, tuple)):
+            return type(value_item)(_scrub_list_item(item, _depth=0) for item in value_item)
         _safe_log_warning(
             "sentry_exception_value_item_unexpected_type",
             actual_type=type(value_item).__name__,
@@ -266,8 +275,9 @@ _SCRUBBED_EVENT_FIELDS: frozenset[str] = frozenset(
         "contexts",
         "tags",
         "breadcrumbs",
-        "exception",  # スタックフレームのlocal vars (frames[*].vars) のスクラブ対象 (PR#347)
-        # 注: キー名が _is_sensitive_key で True の場合のみ scrub。非機密キー名の機密値は対象外
+        # values[*].value は _is_sensitive_key の結果に関わらず
+        # 無条件 [REDACTED] 置換（PII漏洩防止のため）
+        "exception",
     }
 )
 
@@ -279,7 +289,7 @@ _SCRUBBED_EVENT_FIELDS: frozenset[str] = frozenset(
 # また composite key (例: user_password, email_address, session_id, auth_token_v2,
 # customer_jwt) も単語単位で redact される一方、photo_url / prototype 等の
 # unrelated substring は過剰 redact しない。
-# 既知の false negative: ssnumber / cvvcode 等の複合語は suffix が [a-z] のため
+# 既知の false negative: ssnumber / cvvcode / foopassword 等の複合語は suffix が [a-z] のため
 # suffix lookahead で非一致。頻出バリアントは SENSITIVE_KEYS に明示追加済み (#4)。
 _NORMALIZED_SENSITIVE_KEYS: frozenset[str] = frozenset(
     sensitive.replace("-", "_") for sensitive in SENSITIVE_KEYS
@@ -301,19 +311,14 @@ _COMPACT_SENSITIVE_KEYS: frozenset[str] = frozenset(
 # camelCase / ACRONYM 分割用の事前コンパイル済みパターン (PR#347 review)。
 # 生リテラル re.sub の re._cache 依存を排し、設計を統一するため、
 # すべての正規表現をモジュールレベルで事前コンパイルしています。
-# (注: maxsize=512 — SENSITIVE_KEYS 43要素 × 平均キー長 × 正規化バリエーション
-#   = ~400パターン + マージン。実測で 128 ではキャッシュヒット率低下、
-#   1024 ではメモリ増加が不要と判断。キーの正規化処理（sub() による置換）は
-#   比較的コストが高いため、頻出するキーの判定高速化と正規化コスト低減を目的
-#   として @lru_cache を適用しています。PR#347 review #11-3.
-#   eviction 確認: `_is_sensitive_key.cache_info()` で hits/misses/currsize を取得可。
-#   miss rate 高止まりの場合は SENSITIVE_KEYS の多様性を確認し maxsize 調整を検討。)
 _ACRONYM_PATTERN: re.Pattern[str] = re.compile(r"([A-Z]+)([A-Z][a-z])")
 _CAMEL_PATTERN: re.Pattern[str] = re.compile(r"(?<=[a-z])(?=[A-Z])")
 # URL パスセグメント内のメールアドレス形式 PII を検出して [REDACTED] に置換する (#16)
 _PATH_PII_PATTERN: re.Pattern[str] = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
 
 
+# maxsize=512 — Sentry イベントが持つユニークキー名は典型的に 50〜200 程度。
+# 512 はその 2〜10 倍のマージン。SENSITIVE_KEYS の要素数 (43) とは無関係。
 @lru_cache(maxsize=512)
 def _is_sensitive_key(key: str) -> bool:
     """機密キーかどうかを判定する（単語境界一致 + ハイフン/アンダースコア正規化）。
@@ -447,7 +452,8 @@ def _scrub_url(url: str) -> str:
 
     - query: `_scrub_query_string` でキーベーススクラブ
     - path: メールアドレス形式のPII (`_PATH_PII_PATTERN`) を [REDACTED] に置換 (#16)
-    - params: RFC 2396 パスパラメータ (`;`区切り) はそのまま通過 (#7)
+    - params: RFC 2396 パスパラメータ (`;key=value` 形式) はキースクラブを意図的に行わない (#7)
+              ただしメールアドレス形式の PII は path 同様に除去する (#16)
     - fragment: 完全除去（PII漏洩防止）
     """
     parsed = urlparse(url)
@@ -499,7 +505,8 @@ def _scrub_tags_item(item: Any, _depth: int = 0) -> Any:
             if (isinstance(key, str) and _is_sensitive_key(key))
             else _scrub_list_item(item[1], _depth + 1)
         )
-        return cast(Any, type(item))([key, scrubbed_value])  # 入力型を維持 (PR#347)
+        # type(item) は tuple/list 両対応の汎用ファクトリ（意図的な動的構築）
+        return cast(Any, type(item))([key, scrubbed_value])
     if isinstance(item, dict):
         return _scrub_sensitive_data(item, _depth + 1)
     if isinstance(item, list):
@@ -597,6 +604,8 @@ def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
             else:
                 event_dict[field] = _scrub_sensitive_data(value)
         elif isinstance(value, list):
+            # exception が list 形式の場合、values[*].value REDACTED と
+            # stackframe scrub は未適用 (Sentry SDK 通常形式は dict)
             # field 単位 dispatch: tags は Sentry spec 上 list[tuple[str, str]]
             # （JSON経由で list[list[str, str]] にもなり得る）なので tag pair として処理。
             # 加えて非標準だが custom before_send hook 等で生じうる list[dict] / list[list]
@@ -610,8 +619,11 @@ def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
             else:
                 event_dict[field] = [_scrub_list_item(item, _depth=0) for item in value]
         else:
-            # dict/list以外はスクラブ不可能。空dictに置換して安全サイドに倒す。
-            event_dict[field] = {}
+            # dict/list以外はスクラブ不可能。
+            # exception フィールドを {} に置換すると Sentry のイベント構造が破壊されるため
+            # fail-open（元の値を保持）とする。他フィールドは安全サイドに倒して空dictに置換。
+            if field != "exception":
+                event_dict[field] = {}
             _safe_log_warning(
                 "sentry_field_type_unexpected",
                 field=field,
@@ -628,6 +640,12 @@ def _emit_scrub_failure_to_sentry(exc: BaseException) -> None:
     _INTERNAL_TAG_KEY=_INTERNAL_TAG_VALUE を冒頭で検出して scrub をスキップ
     通過させるため無限再帰しない。内部 SDK 呼び出し自体が例外を投げた場合は
     最終フォールバックとして stderr へ出力し、メインプロセスをクラッシュさせない。
+
+    **SDK バージョン制約 (PR#347 review #10-SF-3)**:
+        再帰防止ガード（_INTERNAL_TAG_KEY による scrub スキップ）は Sentry SDK 2.x
+        の内部動作（``Scope._apply_tags_to_event``）に依存する。
+        pyproject.toml の ``sentry-sdk<3.0.0`` 制約により 3.x 以降の
+        内部変更から保護している。3.x へ移行する際は本ガードの動作を再検証すること。
 
     **Security constraint (PR#347 review #11-6)**: ``extra`` フィールドに
     PII を含めてはならない。本制約に違反した場合、内部通知イベントが scrub を
@@ -687,25 +705,23 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
         return event
 
     scrub_exc: Exception | None = None
+    # cast は実行時 no-op（型システム専用）— try 外に置いても動作変化なし
+    event_dict = cast(dict[str, Any], event)
     try:
         # リクエストデータのスクラブ。成功時だけ event["request"] を差し替える。
         # _scrub_sensitive_data / _scrub_query_string / _scrub_url は全て non-destructive で
         # 新しいオブジェクトを返すため、top-level dict の shallow copy で十分。
         # 元 request の non-mutation 契約は既存テスト
         # ``test_before_send_fail_closed_without_partial_request_mutation`` で継続検証。
-        event_dict = cast(dict[str, Any], event)
         if "request" in event_dict:
             request = event_dict["request"]
             if isinstance(request, dict):
                 scrubbed_request = dict(request)
-                if "headers" in scrubbed_request:
-                    scrubbed_request["headers"] = _scrub_sensitive_data(scrubbed_request["headers"])
-                if "data" in scrubbed_request:
-                    scrubbed_request["data"] = _scrub_sensitive_data(scrubbed_request["data"])
-                if "cookies" in scrubbed_request:
-                    scrubbed_request["cookies"] = _scrub_sensitive_data(scrubbed_request["cookies"])
-                if "env" in scrubbed_request:
-                    scrubbed_request["env"] = _scrub_sensitive_data(scrubbed_request["env"])
+                for req_field in ("headers", "data", "cookies", "env"):
+                    if req_field in scrubbed_request:
+                        scrubbed_request[req_field] = _scrub_sensitive_data(
+                            scrubbed_request[req_field]
+                        )
                 if "query_string" in scrubbed_request and isinstance(
                     scrubbed_request["query_string"], (str, bytes)
                 ):
@@ -755,6 +771,15 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
             error_type=type(scrub_exc).__qualname__,
             error_module=type(scrub_exc).__module__,
         )
+        try:
+            _logger.error(
+                "sentry_before_send_drop_event",
+                error_type=type(scrub_exc).__qualname__,
+                error_module=type(scrub_exc).__module__,
+                event_id=event_dict.get("event_id"),
+            )
+        except Exception:  # noqa: BLE001, S110
+            pass
         _emit_scrub_failure_to_sentry(scrub_exc)
         return None
 

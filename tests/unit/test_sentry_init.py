@@ -1982,3 +1982,56 @@ def test_internal_tag_value_is_valid_hex() -> None:
 
     assert re.fullmatch(r"[0-9a-f]{32}", _INTERNAL_TAG_VALUE) is not None
     assert len(_INTERNAL_TAG_VALUE) <= 200  # Sentry SDK tag value 上限 200文字以内
+
+
+class TestSafeLogWarning:
+    """_safe_log_warning のエラーハンドリングテスト (#11-B-5 / #13-TC-2 / #14)"""
+
+    def test_recursion_error_is_reraised(self) -> None:
+        """RecursionError は fail-fast で再 raise される。"""
+        with patch.object(sentry_module._logger, "warning", side_effect=RecursionError()):
+            with pytest.raises(RecursionError):
+                sentry_module._safe_log_warning("test_event")
+
+    def test_memory_error_is_reraised(self) -> None:
+        """MemoryError は fail-fast で再 raise される。"""
+        with patch.object(sentry_module._logger, "warning", side_effect=MemoryError()):
+            with pytest.raises(MemoryError):
+                sentry_module._safe_log_warning("test_event")
+
+    def test_regular_exception_is_suppressed_with_stderr_fallback(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """RuntimeError 等の通常例外は抑止され、stderr にフォールバック出力される。"""
+        with patch.object(sentry_module._logger, "warning", side_effect=RuntimeError("log fail")):
+            # raise されない（fail-open）
+            sentry_module._safe_log_warning("test_event")
+        captured = capsys.readouterr()
+        assert "_safe_log_warning failed" in captured.err
+        assert "RuntimeError" in captured.err
+
+
+class TestScrubUrlIpv6:
+    """_scrub_url IPv6 関連テスト (#12-Q-10)"""
+
+    def test_scrub_url_handles_ipv6_without_port(self) -> None:
+        """IPv6 アドレス（ポートなし）を含む URL でも例外を出さず token をスクラブする。"""
+        url = "http://[::1]/path?token=abc"
+        result = _scrub_url(url)
+        assert "[::1]" in result  # netloc 保持
+        assert "abc" not in result  # token 値スクラブ済み
+
+
+class TestIsSensitiveKeyPatternContract:
+    """_SENSITIVE_KEY_PATTERN / _is_sensitive_key の仕様契約テスト (#13-GC-2)"""
+
+    def test_is_sensitive_key_token_standalone_not_matched_by_pattern(self) -> None:
+        """ "token" 単独は _SENSITIVE_KEY_PATTERN の suffix lookahead で非一致。
+        ただし _COMPACT_SENSITIVE_KEYS の完全一致 fallback で True になる（設計意図）。
+        """
+        # compact fallback により True — パターン非一致だが compact 一致
+        assert _is_sensitive_key("token") is True
+
+    def test_is_sensitive_key_access_token_matched(self) -> None:
+        """ "access_token" は _SENSITIVE_KEY_PATTERN の単語境界で一致する。"""
+        assert _is_sensitive_key("access_token") is True

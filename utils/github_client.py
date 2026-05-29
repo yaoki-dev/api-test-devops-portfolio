@@ -29,6 +29,8 @@ from utils.logger import get_logger
 GITHUB_USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$")
 # GitHub repository名仕様: 1-100文字、英数字・ドット・ハイフン・アンダースコア
 GITHUB_REPO_PATTERN = re.compile(r"^[a-zA-Z0-9._-]{1,100}$")
+# ETag形式バリデーション（RFC 7232準拠: W/"..." または "..."）
+_ETAG_PATTERN: re.Pattern[str] = re.compile(r'^(?:W/)?"[^"\r\n\\]*"$')
 
 
 def validate_github_username(username: str) -> None:
@@ -123,7 +125,7 @@ class _SanitizedJSONDecodeError(Exception):
 class RateLimitError(GitHubAPIError):
     """Rate Limit超過エラー（403/429）"""
 
-    def __init__(self, reset_time: int):
+    def __init__(self, reset_time: int) -> None:
         self.reset_time = reset_time
         if reset_time > 0:
             try:
@@ -260,7 +262,11 @@ class AsyncGitHubClient:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        """非同期コンテキストマネージャーの終了処理"""
+        """非同期コンテキストマネージャーの終了処理
+
+        # AsyncGitHubClient は AsyncAPIClient の _close_async_client() ヘルパーを継承しないため、
+        # __aexit__ に close ロジックをインラインで実装
+        """
         if self._client:
             try:
                 await self._client.aclose()
@@ -454,6 +460,7 @@ class AsyncGitHubClient:
             返却値は呼び出し元で Rate Limit エラー処理用 reset_time としても使用される。
         """
         if remaining < _RATE_LIMIT_WARNING_THRESHOLD:
+            # 戻り値 >= 1: 有効な Unix タイムスタンプ（rate limit warning 発生時）
             reset_time = self._parse_rate_limit_header(
                 response_headers, "X-RateLimit-Reset", _RATE_LIMIT_RESET_FALLBACK
             )
@@ -660,6 +667,7 @@ class AsyncGitHubClient:
                 else None
             )
             self._handle_403_response(response, rate_remaining=remaining, reset_time=reset_time_403)
+            raise AssertionError("unreachable: _handle_403_response is NoReturn")
 
         # ログレベル別出力先
         # warning(401) → LOG__LEVEL=ERROR未満の全設定でstdoutに出力（デフォルトINFO含む）
@@ -690,15 +698,32 @@ class AsyncGitHubClient:
         """ETagとデータキャッシュを同時更新する。
 
         asyncio シングルスレッド環境のため競合は発生しない。
-        dataを先に書き込みETagを後に書き込む。例外発生時は「dataあり/ETagなし」の
-        一時状態になりうるが、ETagなしなら次回は通常リクエスト（304非使用）となり
-        安全に回復する。「ETagあり/dataなし」はETagが最後に書き込まれるため物理的に発生しない。
+
+        2フェーズ構成:
+          Phase 1: _enforce_cache_limit() を呼び出してエントリ数が上限を超えた場合に退避。
+          Phase 2: ETag と data を同時保存。dataを先に書き込みETagを後に書き込む。
+
+        例外発生時は「dataあり/ETagなし」の一時状態になりうるが、ETagなしなら次回は
+        通常リクエスト（304非使用）となり安全に回復する。
+        「ETagあり/dataなし」はETagが最後に書き込まれるため物理的に発生しない。
         """
         if "ETag" in response.headers:
+            etag = response.headers["ETag"]
+            # ETag形式バリデーション（RFC 7232準拠: W/"..." または "..."）
+            if not _ETAG_PATTERN.match(etag):
+                self.logger.warning(
+                    "invalid_etag_format",
+                    endpoint=cache_key.split("?")[0],
+                    etag_prefix=etag[:20] if len(etag) > 20 else etag,
+                )
+                # 無効ETag受信時は既存キャッシュを破棄（次回リクエストで304再利用を防止）
+                self._etag_cache.pop(cache_key, None)
+                self._data_cache.pop(cache_key, None)
+                return
             self._etag_cache.pop(cache_key, None)
             self._data_cache.pop(cache_key, None)
             self._data_cache[cache_key] = result_json
-            self._etag_cache[cache_key] = response.headers["ETag"]
+            self._etag_cache[cache_key] = etag
             self._enforce_cache_limit()
         else:
             if cache_key in self._etag_cache or cache_key in self._data_cache:
@@ -751,8 +776,18 @@ class AsyncGitHubClient:
         Invariant 判定は ``dict.keys()`` の集合等価比較 (defense-in-depth)。
         ``len`` だけでは「同件数だがキー集合が異なる」状態 (例: 1 件抜けて 1 件余分) を
         検出できないため、set-equality でキー差異も検出する。
+
+        Note: After clearing both caches (invariant violation), all subsequent requests will
+        hit the API without cache, potentially causing rate limit spikes in the short term.
         """
-        if self._etag_cache.keys() != self._data_cache.keys():
+        # O(1) fast path before O(n) set comparison:
+        # サイズが異なれば invariant 違反確定
+        # （同件数だがキー集合が異なる場合は下記 set-equality で検出）。
+        invariant_violated = (
+            len(self._etag_cache) != len(self._data_cache)
+            or self._etag_cache.keys() != self._data_cache.keys()
+        )
+        if invariant_violated:
             # PII漏洩防止 (PR#347 review #3-2): キーパスは GitHub API endpoint
             # (例: /users/octocat, /repos/owner/name) を含み、SENSITIVE_KEYS の
             # redact 対象外。logger.error → Sentry 送信時のログ肥大・PII露出を
@@ -869,7 +904,7 @@ class AsyncGitHubClient:
                     return self._handle_304_response(cache_key)
 
                 if response.status_code == 404:
-                    raise NotFoundError(f"Resource not found: {endpoint}")
+                    raise NotFoundError(f"Resource not found: {endpoint}") from None
 
                 # 通常パス: raise_for_status()より前に429を検出してRateLimitErrorに変換
                 if response.status_code == 429:
