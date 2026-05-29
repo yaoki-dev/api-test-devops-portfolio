@@ -77,6 +77,10 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 FROM base AS test
 
 # uv インストール (root権限が必要: グローバル site-packages 配置)
+# Note: test ステージは FROM base AS test で base から直接分岐するため、
+# FROM base AS dependencies で生成された uv レイヤーを継承しない。
+# 独立インストールは設計上必要（runtime ステージに uv が漏れないよう
+# dependencies と test を別ブランチで構成する意図的設計）。
 RUN pip install --no-cache-dir uv
 
 # pytest-cov が cwd (/app) に .coverage SQLite DB を書くため、appuser に WORKDIR

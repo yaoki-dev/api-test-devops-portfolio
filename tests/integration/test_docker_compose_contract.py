@@ -24,7 +24,21 @@ class TestDockerComposeContract:
         テストファイルの移動に影響されない。
         """
         compose_path = Path(request.config.rootdir) / "docker-compose.yml"
-        return yaml.safe_load(compose_path.read_text(encoding="utf-8"))
+        if not compose_path.exists():
+            pytest.fail(
+                f"docker-compose.yml が見つかりません: {compose_path}"
+                f" (rootdir: {request.config.rootdir})"
+            )
+        try:
+            data = yaml.safe_load(compose_path.read_text(encoding="utf-8"))
+        except yaml.YAMLError as e:
+            pytest.fail(f"docker-compose.yml のYAMLパースに失敗しました: {e}")
+            raise  # unreachable: pytest.fail は常にraiseする。型チェッカー向け
+        if not isinstance(data, dict) or "services" not in data:
+            pytest.fail(
+                f"docker-compose.yml の構造が不正です (servicesキーなし): type={type(data)}"
+            )
+        return data
 
     def test_app_compose_startup_validation_structure(self, compose_data: dict[str, Any]) -> None:
         """app service の fail-loud 起動構成 (env_file/restart/command) を YAML レベルで保護する"""
@@ -64,3 +78,21 @@ class TestDockerComposeContract:
         assert "-m" in command
         marker_index = command.index("-m")
         assert command[marker_index + 1] == "(unit or integration) and not external"
+
+    def test_test_service_security_contract(self, compose_data: dict[str, Any]) -> None:
+        """test service の権限昇格防止設定 (security_opt/init) を YAML レベルで保護する."""
+        test_service = compose_data["services"]["test"]
+        assert "no-new-privileges:true" in test_service["security_opt"]
+        assert test_service["init"] is True
+
+    def test_app_service_security_contract(self, compose_data: dict[str, Any]) -> None:
+        """app service の権限昇格防止設定 (security_opt/init) を YAML レベルで保護する."""
+        app = compose_data["services"]["app"]
+        assert "no-new-privileges:true" in app["security_opt"]
+        assert app["init"] is True
+
+    def test_test_service_volumes_contract(self, compose_data: dict[str, Any]) -> None:
+        """test service のカバレッジ成果物永続化 (volumes) を YAML レベルで保護する."""
+        test_service = compose_data["services"]["test"]
+        volumes = test_service.get("volumes", [])
+        assert "./reports:/app/reports" in volumes

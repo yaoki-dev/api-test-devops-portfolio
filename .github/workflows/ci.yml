@@ -428,10 +428,11 @@ jobs:
           # PR時の cache poisoning と重複書き込みを避ける。
           cache-from: |
             type=gha,scope=api-test-runtime
+            type=gha,scope=compose-test
 
       - name: Start app and wait for healthy
         # Docker Compose 2.2 以降のネイティブ機能に置き換え
-        # タイムアウト根拠: start-period(5s) + interval(30s) × retries(3) + timeout(10s) = 105s。余裕を持たせて120sに設定。
+        # タイムアウト根拠: start-period(5s) + timeout(10s) + (interval(30s)+timeout(10s)) × (retries-1)(2) = 5+10+80 = 95s。余裕を持たせて120sに設定。
         run: docker compose up -d --wait --wait-timeout 120 app
 
       - name: Verify app is actually healthy (defense-in-depth)
@@ -441,9 +442,9 @@ jobs:
         # docker inspect で Health.Status を明示確認する。
         # ジョブが healthy 以外の状態で green になるサイレント失敗を防止する。
         run: |
-          if ! CONTAINER_ID=$(docker compose ps -q app 2>&1); then
+          if ! CONTAINER_ID=$(docker compose ps -q app); then
             echo "::error::docker compose ps -q app が失敗しました (Dockerデーモン障害の可能性)"
-            echo "出力: $CONTAINER_ID"
+            docker compose ps -q app 2>&1 || true
             exit 1
           fi
           if [ -z "$CONTAINER_ID" ]; then
@@ -452,7 +453,10 @@ jobs:
             docker compose logs --tail=1000 app || echo "::warning::docker compose logs failed (container removed or log driver error?)"
             exit 1
           fi
-          HEALTH=$(docker inspect --format='{{.State.Health.Status}}' "$CONTAINER_ID" 2>/dev/null || echo "unknown")
+          if ! HEALTH=$(docker inspect --format='{{.State.Health.Status}}' "$CONTAINER_ID" 2>&1); then
+            echo "::error::docker inspect 失敗 (出力: $HEALTH, CONTAINER_ID: $CONTAINER_ID)"
+            exit 1
+          fi
           echo "App health status: $HEALTH"
           if [ "$HEALTH" != "healthy" ]; then
             echo "::error::app コンテナが healthy ではありません (状態: $HEALTH)"
