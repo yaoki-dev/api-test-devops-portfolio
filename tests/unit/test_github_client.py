@@ -924,29 +924,23 @@ async def test_httpx_status_error_5xx_defensive_path(
 
 @respx.mock
 async def test_httpx_status_error_403_defensive_path() -> None:
-    """httpx.HTTPStatusError（403）防御的コードパスの検証
+    """403レスポンス（Rate Limit超過）が RateLimitError に変換されることの検証
 
-    防御的パス: 403をhttpx.HTTPStatusErrorとして受信した場合も
-    _handle_403_response() を経由してRateLimitErrorを発生させる。
+    通常パス: respx.respond(403) で 403 レスポンスを返し、
+    _handle_http_status_error → _handle_403_response 経由で RateLimitError が発生する。
 
     検証項目:
-    - httpx.HTTPStatusError(403)がRateLimitErrorに変換されること
-    - reset_time属性が正しく設定されること
+    - 403 + RateLimitヘッダーありで RateLimitError が発生すること
+    - reset_time 属性が正しく設定されること
     - リクエストが1回のみ実行されること
     """
-    request = httpx.Request("GET", f"{GITHUB_API_BASE_URL}/users/octocat")
-    response_403 = httpx.Response(
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         403,
         headers={
             "X-RateLimit-Remaining": "0",
             "X-RateLimit-Reset": "1640000000",
         },
-        request=request,
     )
-    error_403 = httpx.HTTPStatusError("403 Forbidden", request=request, response=response_403)
-
-    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
-    route.side_effect = [error_403]
 
     async with AsyncGitHubClient() as client:
         with pytest.raises(RateLimitError) as exc_info:
@@ -1530,12 +1524,16 @@ def test_redact_body_preview_deterministic() -> None:
 
 
 def test_handle_http_status_error_uses_debug_for_other_4xx() -> None:
-    """_handle_http_status_error: 401以外の4xxでは debug ログを使う"""
+    """_handle_http_status_error: 401以外の other 4xx (400) では debug ログを使う
+
+    リファクタ後: 404/429/403 は専用例外に変換されるため、ログパスの検証は
+    400 (Bad Request) 等の other 4xx で実施する。
+    """
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
     mock_request = httpx.Request("GET", "https://api.github.com/test")
-    mock_response = httpx.Response(404, request=mock_request)
+    mock_response = httpx.Response(400, request=mock_request)
     with patch.object(client, "logger") as mock_logger:
-        with pytest.raises(GitHubAPIError, match=r"^HTTP 404 error$") as exc_info:
+        with pytest.raises(GitHubAPIError, match=r"^HTTP 400 error$") as exc_info:
             client._handle_http_status_error(mock_response, "/test", "GET")
         assert exc_info.value.__cause__ is None
         # PII保護回帰テスト: __context__ に HTTPStatusError(response) が残存しないことを継続検証。
@@ -1544,12 +1542,28 @@ def test_handle_http_status_error_uses_debug_for_other_4xx() -> None:
         assert exc_info.value.__context__ is None
         mock_logger.debug.assert_called_once_with(
             "http_status_error",
-            status_code=404,
+            status_code=400,
             endpoint="/test",
             method="GET",
             body_preview=_redact_body_preview(""),
         )
         mock_logger.warning.assert_not_called()
+
+
+def test_handle_http_status_error_404_raises_not_found_error() -> None:
+    """_handle_http_status_error: 404 は NotFoundError に変換される
+
+    リファクタ後: _handle_http_status_error が 404 を識別し NotFoundError を raise する。
+    """
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    mock_request = httpx.Request("GET", "https://api.github.com/test")
+    mock_response = httpx.Response(404, request=mock_request)
+
+    with pytest.raises(NotFoundError, match="Resource not found: /test") as exc_info:
+        client._handle_http_status_error(mock_response, "/test", "GET")
+
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
 
 
 def test_handle_http_status_error_uses_warning_for_401() -> None:
@@ -2137,20 +2151,22 @@ def test_handle_http_status_error_with_invalid_bytes() -> None:
         client._handle_http_status_error(response, "/test", "GET")
 
 
-def test_429_handled_as_github_api_error_not_rate_limit_error() -> None:
-    """_handle_http_status_error単体では429をGitHubAPIErrorとして扱う（メソッド直接呼び出し確認）
+def test_429_handled_as_rate_limit_error_via_handle_http_status_error() -> None:
+    """_handle_http_status_error直接呼び出しで429がRateLimitErrorに変換されることの確認
 
-    _handle_http_status_errorは汎用4xxハンドラのため429を識別しない。
-    実際の429→RateLimitError変換は_requestレベルで行う（test_429_response_raises_rate_limit_error参照）。
+    リファクタ後: _handle_http_status_errorが429→RateLimitErrorの変換を担う。
+    X-RateLimit-Resetヘッダーなしの場合は reset_time=0（フォールバック）。
     """
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
     request = httpx.Request("GET", "https://api.github.com/test")
     response = httpx.Response(429, request=request)
 
-    with pytest.raises(GitHubAPIError, match=r"^HTTP 429 error$") as exc_info:
+    with pytest.raises(RateLimitError) as exc_info:
         client._handle_http_status_error(response, "/test", "GET")
 
-    assert not isinstance(exc_info.value, RateLimitError)
+    assert exc_info.value.reset_time == 0
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
 
 
 @respx.mock
@@ -2175,23 +2191,20 @@ async def test_429_response_raises_rate_limit_error() -> None:
 
 @respx.mock
 async def test_httpx_status_error_429_defensive_path() -> None:
-    """httpx.HTTPStatusError（429）防御的コードパスの検証
+    """429レスポンスが RateLimitError に変換されることの検証
 
-    防御的パス: 429をhttpx.HTTPStatusErrorとして受信した場合も
-    RateLimitErrorに変換される。
+    通常パス: respx.respond(429) で 429 レスポンスを返し、
+    _handle_http_status_error 経由で RateLimitError が発生する。
+
+    検証項目:
+    - 429 + X-RateLimit-Reset ヘッダーありで RateLimitError が発生すること
+    - reset_time 属性が正しく設定されること
+    - リクエストが1回のみ実行されること
     """
-    request = httpx.Request("GET", f"{GITHUB_API_BASE_URL}/users/octocat")
-    response_429 = httpx.Response(
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         429,
         headers={"X-RateLimit-Reset": "1640000000"},
-        request=request,
     )
-    error_429 = httpx.HTTPStatusError(
-        "429 Too Many Requests", request=request, response=response_429
-    )
-
-    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
-    route.side_effect = [error_429]
 
     async with AsyncGitHubClient() as client:
         with pytest.raises(RateLimitError) as exc_info:

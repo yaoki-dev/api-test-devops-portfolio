@@ -84,7 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **背景**: 旧実装はロガー側の `RecursionError` (構造化ログでよく発生する) を
     完全に隠蔽し、Sentry PII scrub フロー内で起きた重大障害が無音化していた。
   - **影響**: ログ schema 不変、Sentry イベント送信フロー (`before_send`) の
-    動作不変。stderr に新規 1 行が稀に出力される可能性あり (本質的に障害発生時のみ)。
+    動作不変。stderr へ新規 1 行が稀に出力される可能性あり (障害発生時のみ)。
 
 - **Documented**: `utils/github_client.py` の `_request` 防御的パス
   (L958+ `if http_status_response is not None`) における 5xx/404/429/403 分岐の

@@ -616,13 +616,14 @@ class AsyncGitHubClient:
         endpoint: str,
         method: str,
     ) -> NoReturn:
-        """4xxエラーを GitHubAPIError に変換して raise する。
+        """HTTPエラーレスポンスを適切な例外に変換して raise する。
 
-        通常フローでは 5xx は _handle_5xx_response() で先に処理済みのため 4xx のみが渡る。
-        httpx.HTTPStatusError として直接 5xx が発生した場合も、同一の except ブロック内で
-        status_code >= 500 を判定して _handle_5xx_response() へ分岐させるため、
-        通常はこのメソッドへ 5xx は到達しない。ただし実装は status_code に依存しないため、
-        5xx が直接渡された場合も安全に GitHubAPIError へ変換する（防御的安全網）。
+        404/429/403 は専用例外 (NotFoundError/RateLimitError/GitHubAPIError) に変換し、
+        それ以外の 4xx/5xx は GitHubAPIError に変換する。
+
+        通常フローでは 404/429/403/5xx は _request の main path で先行処理済みのため、
+        本メソッドは主に httpx.HTTPStatusError defensive path (except 外) から呼ばれる。
+        401/400/405 等の other 4xx はこのメソッドのみで処理される。
 
         設計上の制約: `from None` を使用し __cause__ を None に設定する。
         理由: 全 PII 回避パス（timeout/unexpected/NotFound/RateLimit/JSONDecode）と統一し、
@@ -633,6 +634,33 @@ class AsyncGitHubClient:
         response/endpoint/method を直接受け取る理由: 呼び出し元が except 外で呼ぶことで
         __context__ に PII含有オブジェクトが残存しないよう設計（PII漏洩防止）。
         """
+        status_code = response.status_code
+
+        # 404: NotFoundError に変換（通常パスと等価）
+        if status_code == 404:
+            raise NotFoundError(f"Resource not found: {endpoint}") from None
+
+        # 429: RateLimitError に変換（通常パスと等価）
+        if status_code == 429:
+            reset_time = self._parse_rate_limit_header(
+                response.headers, "X-RateLimit-Reset", _RATE_LIMIT_RESET_FALLBACK
+            )
+            raise RateLimitError(reset_time) from None
+
+        # 403: Rate Limit超過 vs その他 403 を詳細分析して raise（通常パスと等価）
+        if status_code == 403:
+            remaining = self._parse_rate_limit_header(
+                response.headers, "X-RateLimit-Remaining", _RATE_LIMIT_FORBIDDEN_FALLBACK
+            )
+            reset_time_403 = (
+                self._parse_rate_limit_header(
+                    response.headers, "X-RateLimit-Reset", _RATE_LIMIT_RESET_FALLBACK
+                )
+                if remaining == 0
+                else None
+            )
+            self._handle_403_response(response, rate_remaining=remaining, reset_time=reset_time_403)
+
         # ログレベル別出力先
         # warning(401) → LOG__LEVEL=ERROR未満の全設定でstdoutに出力（デフォルトINFO含む）
         # debug(404等) → LOG__LEVEL=DEBUGの場合のみstdoutに出力
@@ -642,16 +670,16 @@ class AsyncGitHubClient:
             response.encoding or "utf-8",
             errors="replace",
         )
-        # 401 (Unauthorized) は認証エラーのため warning、404/422 等の想定内4xx は debug に抑制
-        log_fn = self.logger.warning if response.status_code == 401 else self.logger.debug
+        # 401 (Unauthorized) は認証エラーのため warning、その他の想定内エラーは debug に抑制
+        log_fn = self.logger.warning if status_code == 401 else self.logger.debug
         log_fn(
             "http_status_error",
-            status_code=response.status_code,
+            status_code=status_code,
             endpoint=endpoint,
             method=method,
             body_preview=_redact_body_preview(body_preview_raw),
         )
-        raise GitHubAPIError(f"HTTP {response.status_code} error") from None
+        raise GitHubAPIError(f"HTTP {status_code} error") from None
 
     def _update_etag_cache(
         self,
@@ -959,51 +987,13 @@ class AsyncGitHubClient:
                 # PII漏洩防止: __context__ を None に保つため except 外で処理・raise
                 # (httpx.HTTPStatusError.response は response body + request URL を保持するため)
                 #
-                # PR#347 review #4-[10]: 以下 4 分岐 (5xx/404/429/403) は通常 unreachable。
-                # raise_for_status() (L875 else 分岐) が HTTPStatusError を raise する条件下では、
-                # 5xx/404/429/403 は既に main path (L843/L847/L859/L871) で先行処理済みのため。
-                # ただしテスト (test_github_client.py L884/L1597/L2180) が httpx.HTTPStatusError を
-                # 直接 mock 注入して防御パス到達を検証しているため、安全網として残置する。
-                # 真に reachable なのは else 分岐 (401/400/405 等の other 4xx) のみ。
-                status_code = http_status_response.status_code
-                if status_code >= 500:
+                # PR#347 review #4-[10]: 5xx のみ _handle_5xx_response でリトライ制御が必要なため
+                # 個別分岐を維持。404/429/403/その他 は _handle_http_status_error に一本化。
+                if http_status_response.status_code >= 500:
                     # 防御的パス: 5xxをhttpx.HTTPStatusErrorとして受信した場合、通常パスと同等に処理
                     await self._handle_5xx_response(http_status_response, attempt, endpoint, method)
                     continue
-                if status_code == 404:
-                    # 防御的パス: 404も通常パスと同じ NotFoundError に揃える
-                    raise NotFoundError(f"Resource not found: {endpoint}") from None
-                if status_code == 429:
-                    # 防御的パス: 429をhttpx.HTTPStatusErrorとして受信した場合もRateLimitErrorに変換
-                    reset_time = self._parse_rate_limit_header(
-                        http_status_response.headers,
-                        "X-RateLimit-Reset",
-                        _RATE_LIMIT_RESET_FALLBACK,
-                    )
-                    raise RateLimitError(reset_time) from None
-                if status_code == 403:
-                    # 防御的パス: 403をhttpx.HTTPStatusErrorとして受信した場合も詳細分析を実施
-                    remaining_fallback = self._parse_rate_limit_header(
-                        http_status_response.headers,
-                        "X-RateLimit-Remaining",
-                        _RATE_LIMIT_FORBIDDEN_FALLBACK,
-                    )
-                    reset_fallback = (
-                        self._parse_rate_limit_header(
-                            http_status_response.headers,
-                            "X-RateLimit-Reset",
-                            _RATE_LIMIT_RESET_FALLBACK,
-                        )
-                        if remaining_fallback == 0
-                        else None
-                    )
-                    self._handle_403_response(
-                        http_status_response,
-                        rate_remaining=remaining_fallback,
-                        reset_time=reset_fallback,
-                    )
-                else:
-                    self._handle_http_status_error(http_status_response, endpoint, method)
+                self._handle_http_status_error(http_status_response, endpoint, method)
 
             if retry_error_message is not None:
                 # PII漏洩防止 (__context__): active exception context の外で raise して
