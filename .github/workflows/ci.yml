@@ -346,11 +346,13 @@ jobs:
           cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=max,scope=compose-test' || '' }}
 
       - name: Prepare reports dir (bind-mount uid mismatch回避)
-        # CI runner (uid=1001) と container appuser (uid=1000) の uid 不整合で
-        # bind mount への書込が EACCES になるのを回避。CI環境は ephemeral のため 777 で問題なし。
+        # CI runner と container appuser の uid/gid を同期し、bind mount への書込を
+        # world-writable にせず 755 で成立させる。
         run: |
+          echo "UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "GID=$(id -g)" >> "$GITHUB_ENV"
           mkdir -p reports
-          chmod 777 reports
+          chmod 755 reports
 
       - name: Run pytest in test container
         run: docker compose --profile test run --rm test
@@ -442,15 +444,22 @@ jobs:
         # docker inspect で Health.Status を明示確認する。
         # ジョブが healthy 以外の状態で green になるサイレント失敗を防止する。
         run: |
-          if ! CONTAINER_ID=$(docker compose ps -q app); then
-            echo "::error::docker compose ps -q app が失敗しました (Dockerデーモン障害の可能性)"
-            docker compose ps -q app 2>&1 || true
-            exit 1
-          fi
-          if [ -z "$CONTAINER_ID" ]; then
+          mapfile -t CONTAINER_IDS < <(docker compose ps -q app)
+          if [ "${#CONTAINER_IDS[@]}" -eq 0 ]; then
             echo "::error::app コンテナが存在しません (起動失敗)"
             docker compose ps
             docker compose logs --tail=1000 app || echo "::warning::docker compose logs failed (container removed or log driver error?)"
+            exit 1
+          fi
+          if [ "${#CONTAINER_IDS[@]}" -gt 1 ]; then
+            echo "::error::docker compose ps -q app が複数IDを返しました: ${CONTAINER_IDS[*]}"
+            docker compose ps
+            exit 1
+          fi
+          CONTAINER_ID="${CONTAINER_IDS[0]}"
+          if [ -z "$CONTAINER_ID" ]; then
+            echo "::error::docker compose ps -q app が失敗しました (Dockerデーモン障害の可能性)"
+            docker compose ps -q app 2>&1 || true
             exit 1
           fi
           if ! HEALTH=$(docker inspect --format='{{.State.Health.Status}}' "$CONTAINER_ID" 2>&1); then

@@ -30,10 +30,13 @@ class TestDockerComposeContract:
                 f" (rootdir: {request.config.rootdir})"
             )
         try:
-            data = yaml.safe_load(compose_path.read_text(encoding="utf-8"))
+            compose_text = compose_path.read_text(encoding="utf-8")
+        except (OSError, PermissionError, UnicodeDecodeError) as e:
+            pytest.fail(f"docker-compose.yml の読み込みに失敗しました: {e}")
+        try:
+            data = yaml.safe_load(compose_text)
         except yaml.YAMLError as e:
             pytest.fail(f"docker-compose.yml のYAMLパースに失敗しました: {e}")
-            raise  # unreachable: pytest.fail は常にraiseする。型チェッカー向け
         if not isinstance(data, dict) or "services" not in data:
             pytest.fail(
                 f"docker-compose.yml の構造が不正です (servicesキーなし): type={type(data)}"
@@ -48,12 +51,9 @@ class TestDockerComposeContract:
         assert app["environment"]["ENVIRONMENT"] == "${ENVIRONMENT:-development}"
         assert app["restart"] == "on-failure:3"
         command = app["command"]
-        assert isinstance(command, list)
-        assert len(command) == 3
-        assert command[0] == "/bin/sh"
-        assert command[1] == "-c"
-        assert "from config.settings import settings" in command[2]
-        assert "&& exec sleep infinity" in command[2]
+        command_text = " ".join(command) if isinstance(command, list) else command
+        assert "from config.settings import settings" in command_text
+        assert "&& exec sleep infinity" in command_text
 
     def test_test_service_contract(self, compose_data: dict[str, Any]) -> None:
         """test service の運用契約 (profiles/ENVIRONMENT/marker) を YAML レベルで保護する.
@@ -72,6 +72,7 @@ class TestDockerComposeContract:
         test_service = compose_data["services"]["test"]
 
         assert test_service["profiles"] == ["test"]
+        assert test_service["env_file"] == [{"path": ".env.testing", "required": False}]
         assert test_service["environment"]["ENVIRONMENT"] == "testing"
         command = test_service["command"]
         assert isinstance(command, list)

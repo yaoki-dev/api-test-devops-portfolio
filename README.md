@@ -328,7 +328,7 @@ graph TB
 
 | Stage | トリガー | テスト内容 | timeout |
 |-------|---------|-----------|---------|
-| PR Validation | Pull Request | mypy + Unit + Integration + smoke | 15分 |
+| PR Validation | Pull Request | mypy + Unit + Integration + smoke | 20分 |
 | PR Markdown Quality Check | Pull Request| markdownlint && textlint | 5分 |
 | PR Trivy scan | Pull Request | Trivy脆弱性スキャン | 20分 |
 | Post Validation | Push to main/develop | mypy + Smoke + e2e | 15分 |

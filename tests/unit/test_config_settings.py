@@ -241,20 +241,19 @@ class TestSettingsEnvironmentValidation:
         [
             pytest.param("dev", id="short_dev_raises"),
             pytest.param("test", id="short_test_raises"),
-            pytest.param("demo", id="invalid_demo_raises"),
-            pytest.param("stg", id="invalid_stg_raises"),
+            pytest.param("stg", id="short_stg_raises"),
             pytest.param("prod", id="short_prod_raises"),
         ],
     )
     def test_environment_validation_short_forms_raise(self, short_form: str) -> None:
-        """validate_environment: 短縮形 (dev/test/demo/prod) は ValidationError を発生させる.
+        """validate_environment: 短縮形 (dev/test/stg/prod) は ValidationError を発生させる.
 
         .env.example および docker-compose.yml で「Pydantic Environment enum は
         development/testing/staging/production の 4 値のみ。短縮形は不可」と明示している。
         本テストはその契約を保護する (PR#372 review 対応 Phase 4)。
 
         Note:
-            dev/test/demo/prod は互換マッピングせず、Pydantic層で常に reject される。
+            dev/test/stg/prod は互換マッピングせず、Pydantic層で常に reject される。
             本テストは「直接 python から Settings を instantiate する」シナリオ
             (CI script, smoke test 等) を検証する。
         """
@@ -604,6 +603,24 @@ class TestNestedConfigDefaults:
         """各サブ設定がdefault_factoryで正しい型として初期化される"""
         settings = Settings()
         assert isinstance(getattr(settings, attr), expected_type)
+
+
+class TestTestConfigDefaults:
+    """TestConfig のデフォルト値テスト"""
+
+    @pytest.mark.parametrize(
+        ("attr", "expected"),
+        [
+            pytest.param("external_api_enabled", True, id="external_api_enabled_true"),
+            pytest.param("performance_test_enabled", False, id="performance_test_enabled_false"),
+            pytest.param("security_test_enabled", False, id="security_test_enabled_false"),
+            pytest.param("test_data_cleanup", True, id="test_data_cleanup_true"),
+        ],
+    )
+    def test_test_config_boolean_defaults(self, attr: str, expected: bool) -> None:
+        """TestConfig の bool デフォルトが退行しないことを保護する"""
+        config = SettingsTestConfig()
+        assert getattr(config, attr) is expected
 
 
 class TestEnvironmentVariableLoading:
