@@ -349,28 +349,34 @@ jobs:
         # CI runner と container appuser の uid/gid を同期し、bind mount への書込を
         # world-writable にせず 755 で成立させる。
         run: |
-          echo "UID=$(id -u)" >> "$GITHUB_ENV"
-          echo "GID=$(id -g)" >> "$GITHUB_ENV"
+          echo "DOCKER_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "DOCKER_GID=$(id -g)" >> "$GITHUB_ENV"
           mkdir -p reports
           chmod 755 reports
 
       - name: Run pytest in test container
-        run: docker compose --profile test run --rm test
+        run: |
+          set -o pipefail
+          docker compose --profile test run --rm test 2>&1 | tee reports/compose-test-output.log
 
-      - name: Show test container logs on failure
+      - name: Show pytest output on failure
         if: failure()
-        # || true で stderr ごとサイレント消失するのを防ぐ。
-        # コンテナ削除済み等でログ取得が失敗した場合に warning を発し根本原因調査の手がかりを残す。
-        run: docker compose logs --tail=1000 test || echo "::warning::テストコンテナログの取得に失敗しました（コンテナが既に削除済みの可能性）"
+        # `run --rm` は終了後に container を削除するため、compose logs ではなく
+        # 実行時 stdout/stderr を保存したファイルを再表示する。
+        run: |
+          if [ -s reports/compose-test-output.log ]; then
+            tail -1000 reports/compose-test-output.log
+          else
+            echo "::warning::pytest 出力ログが保存されていません"
+          fi
 
       - name: Verify coverage artifacts exist
         # if-no-files-found: warn のサイレント成功を防ぐ。`--no-cov` が誤って追加された
         # 場合や bind mount 失敗時にここで fail-loud にする。
         # 注意: パス依存 — pyproject.toml の [tool.coverage] 設定 (reports/coverage.xml /
         # reports/htmlcov) を変更する場合は本ステップの path も同時更新する必要がある。
-        # AND 条件は片方欠落を見逃す (例: pyproject.toml で
-        # --cov-report=xml のみに変更した場合 htmlcov 不在でも通過する)。OR 条件に変更し、
-        # pytest 途中終了で coverage.xml が空生成されるケースも空ファイル検知 (-s) で fail-loud にする。
+        # 検証ロジック: `! -f coverage.xml || ! -d htmlcov` で片方欠落でも fail-loud。
+        # pytest 途中終了で coverage.xml が空生成されるケースも空ファイル検知 (-s) で失敗させる。
         run: |
           if [ ! -f reports/coverage.xml ] || [ ! -d reports/htmlcov ]; then
             echo "::error::カバレッジ成果物が生成されませんでした (reports/coverage.xml または reports/htmlcov が見つかりません)"
@@ -403,6 +409,8 @@ jobs:
     name: Compose app healthcheck
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'))
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     # キャッシュミス時 (初回PR等) Build 2-4min + wait-timeout 120s +
     # teardown で 10分は逼迫する。compose-test (15min) と対称化してキャッシュミス耐性を確保。
     timeout-minutes: 15
@@ -431,11 +439,13 @@ jobs:
           cache-from: |
             type=gha,scope=api-test-runtime
             type=gha,scope=compose-test
+          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=max,scope=api-test-runtime' || '' }}
 
       - name: Start app and wait for healthy
         # Docker Compose 2.2 以降のネイティブ機能に置き換え
         # タイムアウト根拠: start-period(5s) + timeout(10s) + (interval(30s)+timeout(10s)) × (retries-1)(2) = 5+10+80 = 95s。余裕を持たせて120sに設定。
-        run: docker compose up -d --wait --wait-timeout 120 app
+        # GNU timeout で compose 側の wait-timeout exit code 不保証にも上限を設ける。
+        run: timeout 150s docker compose up -d --wait --wait-timeout 120 app
 
       - name: Verify app is actually healthy (defense-in-depth)
         # `docker compose up --wait --wait-timeout` 超過時の
@@ -444,22 +454,11 @@ jobs:
         # docker inspect で Health.Status を明示確認する。
         # ジョブが healthy 以外の状態で green になるサイレント失敗を防止する。
         run: |
-          mapfile -t CONTAINER_IDS < <(docker compose ps -q app)
-          if [ "${#CONTAINER_IDS[@]}" -eq 0 ]; then
+          CONTAINER_ID=$(docker compose ps -q app | head -n 1)
+          if [ -z "$CONTAINER_ID" ]; then
             echo "::error::app コンテナが存在しません (起動失敗)"
             docker compose ps
             docker compose logs --tail=1000 app || echo "::warning::docker compose logs failed (container removed or log driver error?)"
-            exit 1
-          fi
-          if [ "${#CONTAINER_IDS[@]}" -gt 1 ]; then
-            echo "::error::docker compose ps -q app が複数IDを返しました: ${CONTAINER_IDS[*]}"
-            docker compose ps
-            exit 1
-          fi
-          CONTAINER_ID="${CONTAINER_IDS[0]}"
-          if [ -z "$CONTAINER_ID" ]; then
-            echo "::error::docker compose ps -q app が失敗しました (Dockerデーモン障害の可能性)"
-            docker compose ps -q app 2>&1 || true
             exit 1
           fi
           if ! HEALTH=$(docker inspect --format='{{.State.Health.Status}}' "$CONTAINER_ID" 2>&1); then

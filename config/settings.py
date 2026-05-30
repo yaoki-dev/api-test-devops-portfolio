@@ -36,8 +36,8 @@ def _get_allowed_domains() -> frozenset[str]:
     空白のみの値は空集合を返す（deny-all）。
     """
     env_domains = os.environ.get("ALLOWED_DOMAINS", "")
-    if env_domains:
-        # 余分な空白は除去する。空白のみなら空集合になり、deny-all を維持する。
+    if "ALLOWED_DOMAINS" in os.environ:
+        # 余分な空白は除去する。空文字列・空白のみなら空集合になり、deny-all を維持する。
         return frozenset(d.strip() for d in env_domains.split(",") if d.strip())
 
     # デフォルト: 本番用 + テスト用ドメイン
@@ -60,12 +60,12 @@ def _get_allowed_domains() -> frozenset[str]:
 # NOTE: モジュール読み込み時に確定する。起動後の環境変数変更（monkeypatch等）は
 # 再起動するまで validate_base_url() に反映されない。テストで動的に変更する場合は
 # _get_allowed_domains() を直接呼ぶか、モジュールインポート前に環境変数を設定すること
-# (PR#372 review #5[3] 対応: ALLOWED_DOMAINS は module-level で評価されるため、
-#  settings インスタンス生成タイミングではなく import 前の環境変数設定が必要)。
+# ALLOWED_DOMAINS は module-level で評価されるため、settings インスタンス生成タイミングではなく
+# import 前の環境変数設定が必要。
 ALLOWED_DOMAINS: frozenset[str] = _get_allowed_domains()
 
 # 危険なプライベートIPレンジ
-PRIVATE_IP_RANGES: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = [
+PRIVATE_IP_RANGES: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] = (
     ipaddress.ip_network("10.0.0.0/8"),
     ipaddress.ip_network("172.16.0.0/12"),
     ipaddress.ip_network("192.168.0.0/16"),
@@ -74,7 +74,7 @@ PRIVATE_IP_RANGES: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = [
     ipaddress.ip_network("::1/128"),  # IPv6 loopback
     ipaddress.ip_network("fc00::/7"),  # IPv6 private
     ipaddress.ip_network("fe80::/10"),  # IPv6 link-local
-]
+)
 
 
 def _check_ip_private(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:

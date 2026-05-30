@@ -47,6 +47,7 @@ class TestDockerComposeContract:
         """app service の fail-loud 起動構成 (env_file/restart/command) を YAML レベルで保護する"""
         app = compose_data["services"]["app"]
 
+        assert app["build"]["target"] == "runtime"
         assert app["env_file"] == [{"path": ".env.${ENVIRONMENT:-development}", "required": False}]
         assert app["environment"]["ENVIRONMENT"] == "${ENVIRONMENT:-development}"
         assert app["restart"] == "on-failure:3"
@@ -58,10 +59,12 @@ class TestDockerComposeContract:
     def test_test_service_contract(self, compose_data: dict[str, Any]) -> None:
         """test service の運用契約 (profiles/ENVIRONMENT/marker) を YAML レベルで保護する.
 
-        保護対象 (PR#372 review #5 対応):
+        保護対象:
+            - build.target == "test" (pytest/cov 依存を含む test stage を使うこと)
             - profiles: ["test"] (通常の docker compose up で起動しないこと)
             - environment.ENVIRONMENT == "testing" (固定)
             - command に "(unit or integration) and not external" marker が含まれること
+            - user は DOCKER_UID/DOCKER_GID で host 書込権限と同期すること
 
         Note:
             --cov-fail-under=85 の検証は削除した。
@@ -71,9 +74,11 @@ class TestDockerComposeContract:
         """
         test_service = compose_data["services"]["test"]
 
+        assert test_service["build"]["target"] == "test"
         assert test_service["profiles"] == ["test"]
         assert test_service["env_file"] == [{"path": ".env.testing", "required": False}]
         assert test_service["environment"]["ENVIRONMENT"] == "testing"
+        assert test_service["user"] == "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
         command = test_service["command"]
         assert isinstance(command, list)
         assert "-m" in command

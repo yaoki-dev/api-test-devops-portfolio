@@ -28,7 +28,7 @@ services:
     image: api-test:runtime
     # 4環境切替: ホストの ENVIRONMENT 変数で読込 env ファイルを選択
     #   ENVIRONMENT=development / testing / staging / production の完全形のみ受け付ける
-    #   （Pydantic Environment enum 4値に統一、短縮形 dev/test/demo/prod は ValidationError）
+    #   （Pydantic Environment enum 4値に統一、短縮形 dev/test/stg/prod は ValidationError）
     #   例: ENVIRONMENT=staging docker compose up
     #   注意: staging/production では SECURITY__API_KEY または SECURITY__JWT_SECRET 未設定で
     #         ValidationError → restart: on-failure による再起動ループに陥るため、必ず env ファイルに設定すること
@@ -72,6 +72,8 @@ services:
     # 環境は testing を明示（.env.testing 未設定でもテストモードを保証。機密ではないため直書き可）
     environment:
       ENVIRONMENT: testing
+      # SQLite中間DBをUID非依存の書込可能領域 /temp へ逃がす
+      COVERAGE_FILE: /tmp/.coverage
     # Dockerfile CMD を上書き。pyproject.toml の addopts (--cov=utils --cov=config --cov=models 等)
     # および --cov-fail-under=85 は継承されるため、command 側では重複指定しない
     command: ["pytest", "-m", "(unit or integration) and not external"]
@@ -80,7 +82,8 @@ services:
       - ./reports:/app/reports
     security_opt:
       - "no-new-privileges:true"
-    # `UID/GID` はローカル開発での上書き用。未設定時は appuser (1000:1000) を使う。
-    user: "${UID:-1000}:${GID:-1000}"
+    # `DOCKER_UID/DOCKER_GID` はローカル開発での上書き用。未設定時は appuser (1000:1000) を使う。
+    # bash の readonly 変数 UID との衝突を避けるため、専用変数名を使う。
+    user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
     # PID1 を tini にしてシグナルを適切に伝播（app サービスと対称化）
     init: true

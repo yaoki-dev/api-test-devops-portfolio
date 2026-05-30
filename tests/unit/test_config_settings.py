@@ -250,7 +250,7 @@ class TestSettingsEnvironmentValidation:
 
         .env.example および docker-compose.yml で「Pydantic Environment enum は
         development/testing/staging/production の 4 値のみ。短縮形は不可」と明示している。
-        本テストはその契約を保護する (PR#372 review 対応 Phase 4)。
+        本テストはその契約を保護する。
 
         Note:
             dev/test/stg/prod は互換マッピングせず、Pydantic層で常に reject される。
@@ -1134,11 +1134,11 @@ class TestResolveHostname(DNSCacheClearMixin):
         assert expected_log_message in caplog.text
 
 
-# ── PR#372 review fixes: boundary value + ALLOWED_DOMAINS tests ──
+# ── Boundary value + ALLOWED_DOMAINS tests ──
 
 
 class TestTestConfigBoundaryValues:
-    """TestConfig 数値フィールドの境界値テスト（PR#372 review #7-9）
+    """TestConfig 数値フィールドの境界値テスト.
 
     SettingsTestConfig フィールド検証:
     - slow_test_threshold: ge=0.1 (float)
@@ -1182,7 +1182,7 @@ class TestTestConfigBoundaryValues:
 
 
 class TestAllowedDomainsEnvOverride:
-    """ALLOWED_DOMAINS 環境変数 override テスト（PR#372 review #7-8 / #5[8] 対応）.
+    """ALLOWED_DOMAINS 環境変数 override テスト.
 
     _get_allowed_domains() は環境変数 ALLOWED_DOMAINS を参照し、
     カンマ区切りで許可ドメインを上書き可能。
@@ -1200,7 +1200,7 @@ class TestAllowedDomainsEnvOverride:
         3. モジュールインポート前に環境変数を設定 (pytest-env 等)
 
         本制約の保護テストは test_allowed_domains_override_does_not_affect_validate_base_url
-        を参照 (PR#372 review #3[6] / #5[8] 対応)。
+        を参照。
     """
 
     def test_allowed_domains_env_override(self, monkeypatch):
@@ -1218,8 +1218,7 @@ class TestAllowedDomainsEnvOverride:
 
         monkeypatch.delenv("ALLOWED_DOMAINS", raising=False)
         result = _get_allowed_domains()
-        # PR#372 review #11 対応: マジックナンバー len(result) >= 7 を削除し、
-        # 必須デフォルトドメインの subset 検証に強化。ドメイン削除時も実態を反映する。
+        # マジックナンバー len(result) >= 7 を避け、必須デフォルトドメインの subset を検証する。
         assert {
             "jsonplaceholder.typicode.com",
             "api.github.com",
@@ -1249,15 +1248,12 @@ class TestAllowedDomainsEnvOverride:
     ) -> None:
         """ALLOWED_DOMAINS 動的変更は validate_base_url() に反映されない契約を保護する.
 
-        PR#372 review #3[6] / #5[8] 対応:
-            config.settings.ALLOWED_DOMAINS は module-level で
-            _get_allowed_domains() の戻り値で確定する (module import 時に1度のみ評価)。
-            validate_base_url() は ALLOWED_DOMAINS を参照するため、
-            起動後の monkeypatch.setenv("ALLOWED_DOMAINS", ...) は反映されない。
+        config.settings.ALLOWED_DOMAINS は module-level で _get_allowed_domains() の戻り値で
+        確定する (module import 時に1度のみ評価)。validate_base_url() は ALLOWED_DOMAINS を
+        参照するため、起動後の monkeypatch.setenv("ALLOWED_DOMAINS", ...) は反映されない。
 
-            本テストは「monkeypatch で custom ドメインを追加しても、
-            APIConfig(base_url=) のバリデーションで ValidationError が出る」
-            ことを確認し、この重要な制約を退行から保護する。
+        本テストは「monkeypatch で custom ドメインを追加しても、APIConfig(base_url=) の
+        バリデーションで ValidationError が出る」ことを確認し、この重要な制約を退行から保護する。
         """
         # custom.example.com を ALLOWED_DOMAINS に追加しても、
         # モジュールは既に評価済みのため反映されない

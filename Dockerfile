@@ -86,9 +86,6 @@ RUN pip install --no-cache-dir uv
 # pytest-cov が cwd (/app) に .coverage SQLite DB を書くため、appuser に WORKDIR
 # 書込権限を付与する。非再帰 chown のみで十分 (.venv とアプリコードは以降の
 # `--chown=appuser:appgroup` 付き COPY と appuser 権限での `uv sync` で適切な所有に配置)。
-#
-# chown /app only (non-recursive): avoids overlayfs copy-up of .venv and keeps
-# dependency files from becoming appuser-writable.
 RUN chown appuser:appgroup /app
 
 # 非rootユーザーに切替 (uv sync 以降は appuser 権限で実行 → .venv も appuser 所有で生成)
