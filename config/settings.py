@@ -35,8 +35,8 @@ def _get_allowed_domains() -> frozenset[str]:
     例: ALLOWED_DOMAINS=api.example.com,api.test.com
     空白のみの値は空集合を返す（deny-all）。
     """
-    env_domains = os.environ.get("ALLOWED_DOMAINS", "")
     if "ALLOWED_DOMAINS" in os.environ:
+        env_domains = os.environ["ALLOWED_DOMAINS"]
         # 余分な空白は除去する。空文字列・空白のみなら空集合になり、deny-all を維持する。
         return frozenset(d.strip() for d in env_domains.split(",") if d.strip())
 

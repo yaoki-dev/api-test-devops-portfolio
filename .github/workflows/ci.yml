@@ -340,7 +340,9 @@ jobs:
           load: true
           # load: true時の manifest unknown エラー回避
           provenance: false
-          cache-from: type=gha,scope=compose-test
+          cache-from: |
+            type=gha,scope=api-test-runtime
+            type=gha,scope=compose-test
           # PR時の cache poisoning 防止: cache-to は develop/main push時のみ書込
           # (post-trivy-scan・ci.yml 他ジョブと同方針で統一)
           cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=max,scope=compose-test' || '' }}
@@ -402,7 +404,12 @@ jobs:
         # compose-healthcheck ジョブと対称化して明示 cleanup。
         # teardown失敗は warning のみで継続。
         # ephemeral runner (ubuntu-latest は VM ごと破棄) のため teardown 失敗は次回 CI に影響しない。
-        run: docker compose down --remove-orphans --timeout=10 || { echo "::warning::docker compose down failed"; true; }
+        run: |
+          docker compose down --remove-orphans --timeout=10 || {
+            echo "::warning::docker compose down failed"
+            docker compose ps || true
+            true
+          }
 
   compose-healthcheck:
     needs: [compose-test]
@@ -445,7 +452,7 @@ jobs:
         # Docker Compose 2.2 以降のネイティブ機能に置き換え
         # タイムアウト根拠: start-period(5s) + timeout(10s) + (interval(30s)+timeout(10s)) × (retries-1)(2) = 5+10+80 = 95s。余裕を持たせて120sに設定。
         # GNU timeout で compose 側の wait-timeout exit code 不保証にも上限を設ける。
-        run: timeout 150s docker compose up -d --wait --wait-timeout 120 app
+        run: timeout 150s docker compose up -d --wait --wait-timeout 120 --no-build app
 
       - name: Verify app is actually healthy (defense-in-depth)
         # `docker compose up --wait --wait-timeout` 超過時の
@@ -491,7 +498,12 @@ jobs:
         # 1. --timeout=10: コンテナ停止猶予秒数 (SIGTERMからSIGKILLまで。デフォルト10秒)
         # 2. ブロック化 `|| { ... ; }`: シェル優先度 `(A || B) ; true` バグ修正
         # 3. exit 0 維持 — teardown failure はwarning通知のみで後続ジョブをブロックしない
-        run: docker compose down --remove-orphans --timeout=10 || { echo "::warning::docker compose down failed"; true; }
+        run: |
+          docker compose down --remove-orphans --timeout=10 || {
+            echo "::warning::docker compose down failed"
+            docker compose ps || true
+            true
+          }
 
   # ============================================================
   # Stage 3: Post Validation

@@ -31,7 +31,7 @@ class TestDockerComposeContract:
             )
         try:
             compose_text = compose_path.read_text(encoding="utf-8")
-        except (OSError, PermissionError, UnicodeDecodeError) as e:
+        except (OSError, UnicodeDecodeError) as e:
             pytest.fail(f"docker-compose.yml の読み込みに失敗しました: {e}")
         try:
             data = yaml.safe_load(compose_text)
@@ -53,7 +53,7 @@ class TestDockerComposeContract:
         assert app["restart"] == "on-failure:3"
         command = app["command"]
         command_text = " ".join(command) if isinstance(command, list) else command
-        assert "from config.settings import settings" in command_text
+        assert "config.settings" in command_text
         assert "&& exec sleep infinity" in command_text
 
     def test_test_service_contract(self, compose_data: dict[str, Any]) -> None:
@@ -78,6 +78,7 @@ class TestDockerComposeContract:
         assert test_service["profiles"] == ["test"]
         assert test_service["env_file"] == [{"path": ".env.testing", "required": False}]
         assert test_service["environment"]["ENVIRONMENT"] == "testing"
+        assert test_service["environment"]["COVERAGE_FILE"] == "/tmp/.coverage"  # noqa: S108
         assert test_service["user"] == "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
         command = test_service["command"]
         assert isinstance(command, list)

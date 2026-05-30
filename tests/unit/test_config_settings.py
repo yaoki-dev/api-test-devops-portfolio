@@ -1218,6 +1218,7 @@ class TestAllowedDomainsEnvOverride:
 
         monkeypatch.delenv("ALLOWED_DOMAINS", raising=False)
         result = _get_allowed_domains()
+        assert isinstance(result, frozenset)
         # マジックナンバー len(result) >= 7 を避け、必須デフォルトドメインの subset を検証する。
         assert {
             "jsonplaceholder.typicode.com",
