@@ -1,0 +1,89 @@
+# docker-compose.yml
+# APIテスト + DevOps ポートフォリオ用 Compose 構成
+#
+# このプロジェクトは常駐サーバーを持たない「外部APIクライアント + テスト」構成のため、
+# Compose は以下の2つの役割に絞っている:
+#   1. app  : runtime イメージを起動し、設定読込(HEALTHCHECK)を継続検証する常駐デモ
+#              ホストの ENVIRONMENT 変数で 4 環境を切替（development / testing / staging / production）
+#              例: ENVIRONMENT=staging docker compose up
+#   2. test : test ステージで pytest を実行する隔離環境（profiles でデフォルト起動から除外）
+#
+# 設計方針:
+#   - 機密情報は compose に直書きせず .env.<environment> から一括注入（required: false で未存在でも起動可）
+#     .env.<environment> は gitignore 対象（.env.example のみコミット）
+#   - サーバーが無いため ports は公開しない（リッスンするプロセスが存在しない）
+#   - ネットワーク/ボリュームはデフォルトのまま（カスタム定義は不要）
+
+services:
+  # ---------------------------------------------------------------
+  # app: 本番相当 runtime イメージの起動デモ
+  #   - Dockerfile runtime ステージの HEALTHCHECK（設定読込検証）を継承
+  #   - 起動時に設定読込を1回検証してログ出力 → 失敗時は非0終了して restart で可視化（fail-loud）
+  #   - 成功後は sleep infinity で常駐し、HEALTHCHECK が継続的に healthy を判定
+  # ---------------------------------------------------------------
+  app:
+    build:
+      context: .
+      target: runtime
+    image: api-test:runtime
+    # 4環境切替: ホストの ENVIRONMENT 変数で読込 env ファイルを選択
+    #   ENVIRONMENT=development / testing / staging / production の完全形のみ受け付ける
+    #   （Pydantic Environment enum 4値に統一、短縮形 dev/test/stg/prod は ValidationError）
+    #   例: ENVIRONMENT=staging docker compose up
+    #   注意: staging/production では SECURITY__API_KEY または SECURITY__JWT_SECRET 未設定で
+    #         ValidationError → restart: on-failure による再起動ループに陥るため、必ず env ファイルに設定すること
+    env_file:
+      - path: .env.${ENVIRONMENT:-development}
+        required: false
+    # 選択環境を container にも反映（env ファイル未存在でも Pydantic environment が一致）
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+    # 設定読込を検証してから常駐。検証失敗時は && 以降に進まず非0終了
+    command: ["/bin/sh", "-c", "python -c \"from config.settings import settings; print('[startup] config loaded:', settings.environment, settings.project_name, flush=True)\" && exec sleep infinity"]
+    # セキュリティ: 権限昇格の禁止（Dockerfile 側で非root化済み）
+    security_opt:
+      - "no-new-privileges:true"
+    # PID1 を tini にしてシグナルを適切に伝播（クリーンな停止）
+    init: true
+    # restart: on-failure — 設定読込失敗(非0終了)時のみ再起動。手動停止では再起動しない。
+    # 注意: `docker compose up -d` は exit 0 を返すため、起動成否は `docker compose ps` /
+    #       HEALTHCHECK 状態で確認すること（exit code では恒久失敗を検知できない）。
+    restart: "on-failure:3"
+
+  # ---------------------------------------------------------------
+  # test: テスト実行専用コンテナ
+  #   - profiles により通常の `docker compose up` では起動しない
+  #   - 実行: docker compose --profile test run --rm test
+  #   - command: ["pytest"] で pyproject.toml [tool.pytest] addopts を採用
+  #     （Dockerfile test ステージの CMD `pytest --cov=utils --cov=config --cov=models --cov-report=term-missing -v` を上書き）
+  #   - reports/htmlcov, reports/coverage.xml が /app/reports に出力され、host ./reports に永続化
+  # ---------------------------------------------------------------
+  test:
+    build:
+      context: .
+      target: test
+    image: api-test:test
+    profiles:
+      - test
+    # テスト用機密情報は .env.testing から読込（未存在でも起動可、Pydantic Environment値と一致）
+    env_file:
+      - path: .env.testing
+        required: false
+    # 環境は testing を明示（.env.testing 未設定でもテストモードを保証。機密ではないため直書き可）
+    environment:
+      ENVIRONMENT: testing
+      # SQLite中間DBをUID非依存の書込可能領域 /temp へ逃がす
+      COVERAGE_FILE: /tmp/.coverage
+    # Dockerfile CMD を上書き。pyproject.toml の addopts (--cov=utils --cov=config --cov=models 等)
+    # および --cov-fail-under=85 は継承されるため、command 側では重複指定しない
+    command: ["pytest", "-m", "(unit or integration) and not external"]
+    # カバレッジ成果物を host に永続化（htmlcov / coverage.xml）
+    volumes:
+      - ./reports:/app/reports
+    security_opt:
+      - "no-new-privileges:true"
+    # `DOCKER_UID/DOCKER_GID` はローカル開発での上書き用。未設定時は appuser (1000:1000) を使う。
+    # bash の readonly 変数 UID との衝突を避けるため、専用変数名を使う。
+    user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
+    # PID1 を tini にしてシグナルを適切に伝播（app サービスと対称化）
+    init: true

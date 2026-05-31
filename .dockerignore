@@ -8,7 +8,7 @@
 .gitattributes
 
 # Python関連（50MB削減）
-__pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 *.so
@@ -60,8 +60,8 @@ temp/
 
 # 開発専用ファイル
 docker-compose.override.yml
-.env.local
-.env.*.local
+.env*
+!.env.example
 
 # セキュリティ
 *.pem

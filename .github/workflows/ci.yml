@@ -29,11 +29,13 @@ jobs:
     name: PR Validation
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 15  # 単一Python版（3.14固定、Dockerfile一致、matrix不要）
+    timeout-minutes: 20  # 単一Python版（3.14固定、Dockerfile一致、matrix不要）
 
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -53,7 +55,7 @@ jobs:
 
       # mypyをvalidationジョブ内ステップとして統合
       # 設計決定: runner起動コスト~60秒削減 > 並列フィードバック喪失
-      # 根拠: テスト612件・信頼度高、mypy失敗頻度低
+      # 根拠: テスト996件・信頼度高、mypy失敗頻度低
       - name: Run mypy check
         run: uv run mypy utils/ config/ models/
 
@@ -100,6 +102,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -128,34 +132,6 @@ jobs:
           echo "textlint: ${{ steps.textlint.outcome }}"
           exit 1
 
-  # TEMPORARY — Legacy job stubs (PR#351 deadlock resolution)
-  # pr-mypy-check / post-mypy-check: merged into pr-validation / post-validation
-  # post-merge-validation: renamed to post-validation
-  # REMOVE after all open PRs pick up this commit
-  # Scheduled for removal after merging PRs #347, #351, #361 into develop and #340 into main
-  pr-mypy-check:
-    name: mypy Check (PR Validation)
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 1
-    steps:
-      - run: 'echo "Legacy stub — mypy now in pr-validation (PR #351)"'
-
-  post-mypy-check:
-    name: mypy Check (Post Merge)
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
-    runs-on: ubuntu-latest
-    timeout-minutes: 1
-    steps:
-      - run: 'echo "Legacy stub — mypy now in post-validation (PR #351)"'
-
-  post-merge-validation:
-    name: Post Merge Validation
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
-    runs-on: ubuntu-latest
-    timeout-minutes: 1
-    steps:
-      - run: echo "Legacy stub — renamed to post-validation (PR #351)"
   # NOTE: post-validation uses Python 3.14 only (matches Dockerfile)
 
   # ============================================================
@@ -180,6 +156,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       # Step 1: Filesystem scan (both develop and main)
       - name: Trivy filesystem scan (dependencies)
@@ -332,7 +310,205 @@ jobs:
         run: docker rmi security-scan:${{ github.sha }} || true
 
   # ============================================================
-  # Stage 2: Post Validation
+  # Stage 2: Docker Compose Verification
+  # Triggers: pull_request + push (develop, main)
+  # Tests: Compose test profile (pytest + coverage) → Compose app healthcheck
+  # ============================================================
+  compose-test:
+    name: Compose test profile (pytest + coverage)
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Validate compose config
+        run: docker compose config --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: Build test image
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: .
+          target: test
+          tags: api-test:test
+          load: true
+          # load: true時の manifest unknown エラー回避
+          provenance: false
+          cache-from: |
+            type=gha,scope=api-test-runtime
+            type=gha,scope=compose-test
+          # PR時の cache poisoning 防止: cache-to は develop/main push時のみ書込
+          # (post-trivy-scan・ci.yml 他ジョブと同方針で統一)
+          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=max,scope=compose-test' || '' }}
+
+      - name: Prepare reports dir (bind-mount uid mismatch回避)
+        # CI runner と container appuser の uid/gid を同期し、bind mount への書込を
+        # world-writable にせず 755 で成立させる。
+        run: |
+          echo "DOCKER_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "DOCKER_GID=$(id -g)" >> "$GITHUB_ENV"
+          mkdir -p reports
+          chmod 755 reports
+
+      - name: Run pytest in test container
+        run: |
+          set -o pipefail
+          docker compose --profile test run --rm test 2>&1 | tee reports/compose-test-output.log
+
+      - name: Show pytest output on failure
+        if: failure()
+        # `run --rm` は終了後に container を削除するため、compose logs ではなく
+        # 実行時 stdout/stderr を保存したファイルを再表示する。
+        run: |
+          if [ -s reports/compose-test-output.log ]; then
+            tail -1000 reports/compose-test-output.log
+          else
+            echo "::warning::pytest 出力ログが保存されていません"
+          fi
+
+      - name: Verify coverage artifacts exist
+        # if-no-files-found: warn のサイレント成功を防ぐ。`--no-cov` が誤って追加された
+        # 場合や bind mount 失敗時にここで fail-loud にする。
+        # 注意: パス依存 — pyproject.toml の [tool.coverage] 設定 (reports/coverage.xml /
+        # reports/htmlcov) を変更する場合は本ステップの path も同時更新する必要がある。
+        # 検証ロジック: `! -f coverage.xml || ! -d htmlcov` で片方欠落でも fail-loud。
+        # pytest 途中終了で coverage.xml が空生成されるケースも空ファイル検知 (-s) で失敗させる。
+        run: |
+          if [ ! -f reports/coverage.xml ] || [ ! -d reports/htmlcov ]; then
+            echo "::error::カバレッジ成果物が生成されませんでした (reports/coverage.xml または reports/htmlcov が見つかりません)"
+            exit 1
+          fi
+          if [ ! -s reports/coverage.xml ]; then
+            echo "::error::reports/coverage.xml が空ファイルです（pytest が途中終了した可能性があります）"
+            exit 1
+          fi
+
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-reports
+          path: reports/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Tear down
+        if: always()
+        # compose-test ジョブは `--rm` で container は自動削除されるが network/volume は残存しうる。
+        # compose-healthcheck ジョブと対称化して明示 cleanup。
+        # teardown失敗は warning のみで継続。
+        # ephemeral runner (ubuntu-latest は VM ごと破棄) のため teardown 失敗は次回 CI に影響しない。
+        run: |
+          docker compose down --remove-orphans --timeout=10 || {
+            echo "::warning::docker compose down failed"
+            docker compose ps || true
+            true
+          }
+
+  compose-healthcheck:
+    needs: [compose-test]
+    name: Compose app healthcheck
+    # 起動ゲートは needs:[compose-test] が継承する。compose-test が if 条件で skip
+    # された場合、依存チェーンに沿って本ジョブも自動 skip されるため、compose-test と
+    # 同一の if: 条件をここで重複指定する必要はない（DRY）。
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # キャッシュミス時 (初回PR等) Build 2-4min + wait-timeout 120s +
+    # teardown で 10分は逼迫する。compose-test (15min) と対称化してキャッシュミス耐性を確保。
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      # Validate compose config は compose-test ジョブで実行済み (needs: [compose-test] で保証)
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: Build app(runtime) image
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: .
+          target: runtime
+          tags: api-test:runtime
+          load: true
+          # load: true時の manifest unknown エラー回避 (compose-test job と対称)
+          provenance: false
+          # ci.yml の runtime キャッシュを読む。healthcheck job は読み取り専用にして
+          # PR時の cache poisoning と重複書き込みを避ける。
+          cache-from: |
+            type=gha,scope=api-test-runtime
+            type=gha,scope=compose-test
+          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=max,scope=api-test-runtime' || '' }}
+
+      - name: Start app and wait for healthy
+        # Docker Compose 2.2 以降のネイティブ機能に置き換え
+        # タイムアウト根拠: start-period(5s) + timeout(10s) + (interval(30s)+timeout(10s)) × (retries-1)(2) = 5+10+80 = 95s。余裕を持たせて120sに設定。
+        # GNU timeout で compose 側の wait-timeout exit code 不保証にも上限を設ける。
+        run: timeout 150s docker compose up -d --wait --wait-timeout 120 --no-build app
+
+      - name: Verify app is actually healthy (defense-in-depth)
+        # `docker compose up --wait --wait-timeout` 超過時の
+        # exit code は Docker Compose 一部バージョンで 0 になる既知挙動がある
+        # (docker/compose#10596 系)。silent success を防ぐため
+        # docker inspect で Health.Status を明示確認する。
+        # ジョブが healthy 以外の状態で green になるサイレント失敗を防止する。
+        run: |
+          CONTAINER_ID=$(docker compose ps -q app | head -n 1)
+          if [ -z "$CONTAINER_ID" ]; then
+            echo "::error::app コンテナが存在しません (起動失敗)"
+            docker compose ps
+            docker compose logs --tail=1000 app || echo "::warning::docker compose logs failed (container removed or log driver error?)"
+            exit 1
+          fi
+          if ! HEALTH=$(docker inspect --format='{{.State.Health.Status}}' "$CONTAINER_ID" 2>&1); then
+            echo "::error::docker inspect 失敗 (出力: $HEALTH, CONTAINER_ID: $CONTAINER_ID)"
+            exit 1
+          fi
+          echo "App health status: $HEALTH"
+          if [ "$HEALTH" != "healthy" ]; then
+            echo "::error::app コンテナが healthy ではありません (状態: $HEALTH)"
+            docker compose ps
+            docker compose logs --tail=1000 app || echo "::warning::docker compose logs failed (container removed or log driver error?)"
+            exit 1
+          fi
+
+      - name: Compose ps (diagnostic)
+        if: failure()
+        # restart: on-failure による再起動ループ時の根本原因切れ防止のため --tail=1000 に拡張
+        # (200行では複数試行ログ混在で初期スタックトレースが切れる可能性あり)
+        # docker compose ps 失敗 (再起動ループ中で
+        # コンテナが瞬間的に不在等) 時に set -e で logs がスキップされる問題を解消。
+        # 既存 `Show test container logs on failure` step (compose-test) の
+        # `|| echo "::warning::..."` パターンと整合させ、診断ログ取得確実性を担保。
+        run: |
+          docker compose ps || echo "::warning::docker compose ps failed (container missing during restart loop?)"
+          docker compose logs --tail=1000 app || echo "::warning::docker compose logs failed (container removed or log driver error?)"
+
+      - name: Tear down
+        if: always()
+        # 0. ephemeral runner (ubuntu-latest は VM ごと破棄) のため teardown 失敗は次回 CI に影響しない
+        # 1. --timeout=10: コンテナ停止猶予秒数 (SIGTERMからSIGKILLまで。デフォルト10秒)
+        # 2. ブロック化 `|| { ... ; }`: シェル優先度 `(A || B) ; true` バグ修正
+        # 3. exit 0 維持 — teardown failure はwarning通知のみで後続ジョブをブロックしない
+        run: |
+          docker compose down --remove-orphans --timeout=10 || {
+            echo "::warning::docker compose down failed"
+            docker compose ps || true
+            true
+          }
+
+  # ============================================================
+  # Stage 3: Post Validation
   # Triggers: push to main or develop
   # Tests: Smoke + e2e
   # ============================================================
@@ -347,6 +523,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -366,7 +544,7 @@ jobs:
 
       # mypyをvalidationジョブ内ステップとして統合
       # 設計決定: runner起動コスト~60秒削減 > 並列フィードバック喪失
-      # 根拠: テスト612件・信頼度高、mypy失敗頻度低
+      # 根拠: テスト996件・信頼度高、mypy失敗頻度低
       - name: Run mypy check
         run: uv run mypy utils/ config/ models/
 
@@ -404,7 +582,7 @@ jobs:
           if-no-files-found: warn
 
   # ============================================================
-  # Stage 2.1: Post Trivy Security Scan
+  # Stage 3.1: Post Trivy Security Scan
   # Triggers: push to main or develop
   # Strategy: fs scan (dependencies) + image scan (Docker image)
   #   following pr-trivy-scan pattern for consistency
@@ -422,6 +600,8 @@ jobs:
     steps:
       - name: Checkout code (Post Trivy Scan)
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       # ===== Stage 1: Filesystem Scan (dependencies) =====
       - name: Trivy filesystem scan (dependencies) (Post Trivy Scan)
@@ -496,8 +676,11 @@ jobs:
           target: runtime
           tags: ${{ steps.image-tag.outputs.tag }}
           load: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=api-test-runtime
+          # PR時の cache poisoning 防止: cache-to は develop/main push時のみ書込
+          # (PR branch contributor が tainted base layer を `api-test-runtime` scope に
+          #  注入し trunk CI が consume する same-repo poisoning vector を遮断)
+          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=max,scope=api-test-runtime' || '' }}
 
       - name: Fail if Docker build failed (security gate)
         if: |
@@ -570,7 +753,7 @@ jobs:
         run: docker rmi ${{ steps.image-tag.outputs.tag }} || true
 
   # ============================================================
-  # Stage 3: Weekly Extended Tests (< 30 min)
+  # Stage 4: Weekly Extended Tests (< 30 min)
   # Triggers: schedule (Sunday 00:00 UTC)
   # Tests: Performance + External API + Full Coverage
   # Note: Security は PR 毎の静的解析（gitleaks, ruff(S)）で代用
@@ -586,6 +769,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -647,7 +832,7 @@ jobs:
             coverage.json
 
   # ============================================================
-  # Stage 3.1: Weekly Link Check
+  # Stage 4.1: Weekly Link Check
   # Role: Detailed log collection — runs all files with continue-on-error
   #   and saves results as artifact (does not fail the workflow)
   # Counterpart: markdown-link-check.yml acts as gate check (fails on broken links)
@@ -663,6 +848,8 @@ jobs:
     steps:
       - name: Checkout code (Weekly Link Check)
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js (Weekly Link Check)
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -732,7 +919,7 @@ jobs:
     runs-on: ubuntu-latest
     # Note: Skipped jobs are treated as 'success' by GitHub Actions
     # !cancelled() overrides implicit success() check, allowing execution after success/failure/skipped
-    needs: [pr-validation, pr-trivy-scan, pr-md-quality-check, post-validation, post-trivy-scan, weekly-extended-test, weekly-link-check]
+    needs: [pr-validation, pr-trivy-scan, pr-md-quality-check, post-validation, post-trivy-scan, weekly-extended-test, weekly-link-check, compose-test, compose-healthcheck]
     if: "!cancelled()"
     timeout-minutes: 5
 
@@ -759,6 +946,8 @@ jobs:
           echo "- Post Trivy Scan: ${{ needs.post-trivy-scan.result }}" >> status_report.md
           echo "- Weekly Extended Test: ${{ needs.weekly-extended-test.result }}" >> status_report.md
           echo "- Weekly Link Check: ${{ needs.weekly-link-check.result }}" >> status_report.md
+          echo "- Compose Test (pytest + coverage): ${{ needs.compose-test.result }}" >> status_report.md
+          echo "- Compose Healthcheck: ${{ needs.compose-healthcheck.result }}" >> status_report.md
           echo "" >> status_report.md
           echo "## Triggered By: ${{ github.event_name }}" >> status_report.md
           cat status_report.md
