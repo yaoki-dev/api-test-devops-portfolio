@@ -784,6 +784,45 @@ async def test_aexit_body_exception_not_overridden_by_close_exception() -> None:
     assert len(closed_logs) == 0
 
 
+@pytest.mark.parametrize(
+    "fatal_exc",
+    [MemoryError("OOM"), RecursionError("maximum recursion depth exceeded")],
+)
+async def test_aexit_fatal_close_exception_propagates_even_with_body_exception(
+    fatal_exc: MemoryError | RecursionError,
+) -> None:
+    """__aexit__ で body 例外併発時でも aclose() の MemoryError / RecursionError は
+    握りつぶさず fail-fast で伝播する。
+
+    両者は ``Exception`` 派生（MemoryError は ``Exception`` 直系、RecursionError は
+    ``RuntimeError`` 派生）のため ``except Exception`` の has_body_exception 抑制ロジックに
+    捕捉されうるが、専用 except 句で先取りし即時 re-raise する設計
+    （api_client._close_async_client / sentry_init と同一方針）。
+    ``test_aexit_body_exception_not_overridden_by_close_exception``（RuntimeError は
+    body 例外保護のため抑制）と対になり、「fatal のみ has_body_exception を貫いて伝播する」
+    不変条件を固定する回帰防止テスト。fix 除去時に RED 化する。
+    """
+    client = AsyncGitHubClient()
+
+    with pytest.raises(type(fatal_exc)), capture_logs() as log_output:
+        async with client:
+            # __aenter__ で初期化された _client を AsyncMock に差し替えて aclose() を fatal 化。
+            client._client = AsyncMock()
+            client._client.aclose = AsyncMock(side_effect=fatal_exc)
+            raise ValueError("body-error")
+
+    # 専用 except 句が except Exception より先に re-raise するため、
+    # unexpected_error（error ログ）も known-exception warning も記録されない。
+    unexpected_event = "github_client_aclose_unexpected_error"
+    error_logs = [log for log in log_output if log.get("event") == unexpected_event]
+    assert len(error_logs) == 0
+    warning_logs = [log for log in log_output if log.get("event") == "github_client_aclose_failed"]
+    assert len(warning_logs) == 0
+    # aclose 失敗のため else 節（closed ログ）は未到達。
+    closed_logs = [log for log in log_output if log.get("event") == "async_github_client_closed"]
+    assert len(closed_logs) == 0
+
+
 async def test_request_without_context_manager():
     """コンテキストマネージャー未使用時にRuntimeError発生"""
     client = AsyncGitHubClient()
@@ -1742,6 +1781,37 @@ def test_update_etag_cache_evicts_oldest_entry_when_limit_exceeded() -> None:
     assert "/first" not in client._data_cache
     assert list(client._etag_cache) == ["/second", "/third"]
     assert list(client._data_cache) == ["/second", "/third"]
+
+
+def test_update_etag_cache_refreshes_existing_entry_before_eviction() -> None:
+    """既存キー更新時は挿入順を更新し、直近更新エントリを削除しない。"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES, max_cache_entries=2)
+
+    client._update_etag_cache(
+        "/first",
+        httpx.Response(200, headers={"ETag": '"etag-1"'}),
+        {"id": 1},
+    )
+    client._update_etag_cache(
+        "/second",
+        httpx.Response(200, headers={"ETag": '"etag-2"'}),
+        {"id": 2},
+    )
+    client._update_etag_cache(
+        "/first",
+        httpx.Response(200, headers={"ETag": '"etag-1b"'}),
+        {"id": 10},
+    )
+    client._update_etag_cache(
+        "/third",
+        httpx.Response(200, headers={"ETag": '"etag-3"'}),
+        {"id": 3},
+    )
+
+    assert list(client._etag_cache) == ["/first", "/third"]
+    assert list(client._data_cache) == ["/first", "/third"]
+    assert client._etag_cache["/first"] == '"etag-1b"'
+    assert client._data_cache["/first"] == {"id": 10}
 
 
 def test_enforce_cache_limit_evicts_multiple_entries_when_excess_gt_one() -> None:

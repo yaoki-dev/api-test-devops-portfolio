@@ -1,11 +1,4 @@
-"""同期・非同期HTTPAPIクライアント
-
-学習目標:
-- HTTPクライアントの設計パターン
-- エラーハンドリング戦略
-- リトライロジックの実装
-- 設定管理との統合
-"""
+"""同期・非同期HTTPAPIクライアント"""
 
 import asyncio
 import json
@@ -323,13 +316,7 @@ def _classify_error(
 
 
 class SyncAPIClient:
-    """基本的な同期HTTPクライアント
-
-    学習目標:
-    - クライアント設計の基本パターン
-    - 設定との統合方法
-    - エラーハンドリングの実装
-    """
+    """基本的な同期HTTPクライアント"""
 
     def __init__(
         self,
@@ -569,13 +556,7 @@ class SyncAPIClient:
 
 
 class SyncJSONPlaceholderClient(SyncAPIClient):
-    """JSONPlaceholder API専用クライアント
-
-    学習目標:
-    - 特化型クライアントの設計
-    - APIスキーマとの統合
-    - 便利メソッドの実装
-    """
+    """JSONPlaceholder API専用クライアント"""
 
     # Posts API
     def get_posts(
@@ -772,13 +753,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
 
 
 class AsyncAPIClient:
-    """非同期HTTPクライアント
-
-    学習目標:
-    - 非同期プログラミングパターン
-    - httpx.AsyncClientの活用
-    - async/awaitによる並行処理
-    """
+    """非同期HTTPクライアント"""
 
     _client: httpx.AsyncClient | None  # aclose() 後に None を代入するため明示宣言
 
@@ -830,7 +805,12 @@ class AsyncAPIClient:
         """非同期コンテキストマネージャーのエントリー"""
         return self
 
-    async def _close_async_client(self, body_exc_type: type[BaseException] | None) -> None:
+    async def _close_async_client(
+        self,
+        body_exc_type: type[BaseException] | None,
+        *,
+        suppress_unexpected: bool = False,
+    ) -> None:
         """``__aexit__`` と ``aclose()`` で共有する close 処理.
 
         Args:
@@ -840,6 +820,11 @@ class AsyncAPIClient:
                 (``Exception`` 派生) を捕捉した際、body 例外の上書き防止のため
                 ``has_body_exception = body_exc_type is not None`` を判定材料として
                 利用する。``None`` の場合のみ実装バグとして bare ``raise`` で再送出する。
+            suppress_unexpected: ``True`` の場合、予期しない close 例外を warning ログ
+                のみ記録して握りつぶす (re-raise しない)。``aclose()`` 直接呼び出し経路
+                で ``True`` を渡すことで finally ブロック等での安全な呼び出しを保証する。
+                ``__aexit__`` 経路では ``False`` (デフォルト) のまま ``has_body_exception``
+                ロジックによる従来の re-raise 判定を維持する。
         """
         if self._client is not None:
             try:
@@ -851,40 +836,63 @@ class AsyncAPIClient:
                     error_type=type(close_exc).__name__,
                     error_module=type(close_exc).__module__,
                 )
+            except RecursionError:
+                # RecursionError も Exception 派生のため、再raise しないと下流の
+                # except Exception に捕捉されサイレント隠蔽される
+                # （github_client / sentry_init と同一方針）。
+                # 致命的エラーとして必ず再raise（fail-fast）。
+                raise
+            except MemoryError:
+                # MemoryError も Exception 派生のため、再raise しないと下流の
+                # except Exception に捕捉されサイレント隠蔽される。
+                # 致命的エラーとして必ず再raise（fail-fast）。
+                raise
             except Exception as close_exc:  # noqa: BLE001
-                # 予期しない例外（AttributeError, RuntimeError, ValueError, TypeError 等
-                # の実装バグ可能性）を捕捉。`Exception` 基底のため以下は**意図的に非捕捉**:
-                #   - KeyboardInterrupt / SystemExit: シグナル・interpreter shutdown 由来。
-                #     ユーザー停止/プロセス終了を遅延させずに伝播させる。
-                #   - MemoryError: メモリ枯渇下では fail-fast。ログ出力自体が二次例外を誘発する
-                #     可能性があるため即時伝播させる (recovery 不可能)。
-                #   - asyncio.CancelledError (Py3.8+ は BaseException 派生): cooperative
-                #     cancellation の意図を妨げないため伝播。
-                # 全て `BaseException` 派生で `except Exception` の境界外。
+                # 予期しない例外（AttributeError, RuntimeError, ValueError, TypeError 等の
+                # 実装バグ可能性）を捕捉。以下は本句より先に処理済み / 境界外:
+                #   - RecursionError / MemoryError: 上の専用句で先取り捕捉し
+                #     即時 re-raise（fail-fast）。
+                #   - KeyboardInterrupt / SystemExit / asyncio.CancelledError は
+                #     BaseException 直系で `except Exception` の境界外。
+                #     ユーザー停止/プロセス終了/cancellation を妨げない。
                 has_body_exception = body_exc_type is not None
-                self.logger.error(
-                    "async_api_client_aclose_unexpected_error",
-                    error_type=type(close_exc).__name__,
-                    error_module=type(close_exc).__module__,
-                    has_body_exception=has_body_exception,
-                    action=(
-                        "suppressed_due_to_body_exception" if has_body_exception else "re_raised"
-                    ),
+                if suppress_unexpected:
+                    # aclose() 直接呼び出し経路: finally ブロック等での安全な呼び出しを保証するため
+                    # 予期しない例外を握りつぶし、warning ログのみ記録する。
+                    # suppress_unexpected=True は has_body_exception より優先して評価する。
+                    self.logger.warning(
+                        "async_api_client_aclose_unexpected_error_suppressed",
+                        error_type=type(close_exc).__name__,
+                        error_module=type(close_exc).__module__,
+                        exc_info=True,  # スタックトレースをログに残す
+                    )
+                else:
+                    # __aexit__ 経路（context manager）: 従来の has_body_exception ロジックを維持。
                     # PR#347 review SF-2: close_exc が body 例外を上書きしないため
                     # __context__ チェーンは切断される。代わりに body 例外の型名を
                     # 同一ログイベント内に記録し、close 失敗と body 例外の対応関係を
                     # 追跡可能にする (PII 非含: __qualname__ はクラス名のみ)。
-                    body_exception_type=(
-                        body_exc_type.__qualname__ if body_exc_type is not None else None
-                    ),
-                    exc_info=True,  # スタックトレースをログに残す
-                )
-                # body 例外がない場合のみ実装バグとして re-raise。
-                # body 例外がある場合は本質的原因の上書きを防ぐため raise しない。
-                # bare ``raise`` で active exception の traceback を完全保持
-                # （``raise close_exc`` への回帰防止: 余分な frame を追加せず Python idiom）。
-                if not has_body_exception:
-                    raise
+                    self.logger.error(
+                        "async_api_client_aclose_unexpected_error",
+                        error_type=type(close_exc).__name__,
+                        error_module=type(close_exc).__module__,
+                        has_body_exception=has_body_exception,
+                        action=(
+                            "suppressed_due_to_body_exception"
+                            if has_body_exception
+                            else "re_raised"
+                        ),
+                        body_exception_type=(
+                            body_exc_type.__qualname__ if body_exc_type is not None else None
+                        ),
+                        exc_info=True,  # スタックトレースをログに残す
+                    )
+                    # body 例外がない場合のみ実装バグとして re-raise。
+                    # body 例外がある場合は本質的原因の上書きを防ぐため raise しない。
+                    # bare ``raise`` で active exception の traceback を完全保持
+                    # （``raise close_exc`` への回帰防止: 余分な frame を追加せず Python idiom）。
+                    if not has_body_exception:
+                        raise
             else:
                 # aclose() 成功時のみ closed ログを出す。logger.info を try 内に置くと
                 # logger 自体の例外が aclose 失敗として誤検知されるため else 節に分離。
@@ -908,11 +916,13 @@ class AsyncAPIClient:
         ``async_api_client_closed`` ログを出力し、Sync (``SyncAPIClient.close()``)
         との observability 対称性を保つ (PR#347 review Q-1)。
 
-        Note: When called directly (not via async context manager), unexpected exceptions
-        during close will always re-raise (has_body_exception=False). Use `async with`
-        for exception-suppressing behavior when body exceptions exist.
+        Note: 直接呼び出し時 (async context manager 経由でない場合)、予期しない close 例外は
+        warning ログ記録の上で抑制される (re-raise しない)。これにより finally ブロックでの
+        安全な呼び出しを保証し、アプリクラッシュリスクを回避する。
+        async with 経由では body 例外保護ロジック (has_body_exception) が適用され、
+        body 例外がない場合のみ close 例外を re-raise する従来の挙動を維持する。
         """
-        await self._close_async_client(None)
+        await self._close_async_client(None, suppress_unexpected=True)
 
     async def _make_request_with_retry(
         self,
@@ -1100,13 +1110,7 @@ class AsyncAPIClient:
 
 
 class AsyncJSONPlaceholderClient(AsyncAPIClient):
-    """JSONPlaceholder API専用非同期クライアント
-
-    学習目標:
-    - 非同期API操作の実践
-    - 並行処理による効率化
-    - async/awaitパターンの理解
-    """
+    """JSONPlaceholder API専用非同期クライアント"""
 
     # Posts API
     async def get_posts(
@@ -1397,11 +1401,6 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             ``error_type`` のみ記録する（``_classify_error()`` は経由せず
             直接 ``logger.warning`` を呼び出す）。
 
-        学習ポイント:
-        - Readiness Probe: コンテナがトラフィックを受け入れ可能か確認
-        - Liveness Probe: コンテナが正常に動作しているか確認
-        - 軽量クエリ（_limit=1）でサーバー負荷を最小化
-
         Example:
             >>> async with AsyncJSONPlaceholderClient() as client:
             ...     if await client.health_check():
@@ -1441,11 +1440,6 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         Returns:
             list[dict]: 取得成功したユーザー情報リスト
                        （取得失敗したIDはスキップ、warningログ出力）
-
-        学習ポイント:
-        - asyncio.Semaphore: 同時実行数を制限するロック機構
-        - Rate Limit対策: 外部APIへの過剰リクエスト防止
-        - Graceful degradation: 一部失敗しても残りの結果を返す
 
         Example:
             >>> async with AsyncJSONPlaceholderClient() as client:
