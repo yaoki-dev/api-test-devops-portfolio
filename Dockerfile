@@ -81,7 +81,7 @@ FROM base AS test
 # FROM base AS dependencies で生成された uv レイヤーを継承しない。
 # 独立インストールは設計上必要（runtime ステージに uv が漏れないよう
 # dependencies と test を別ブランチで構成する意図的設計）。
-RUN pip install --no-cache-dir "uv>=0.11.17,<0.12"
+RUN pip install --no-cache-dir "uv==0.11.17"
 
 # pytest-cov が cwd (/app) に .coverage SQLite DB を書くため、appuser に WORKDIR
 # 書込権限を付与する。非再帰 chown のみで十分 (.venv とアプリコードは以降の
