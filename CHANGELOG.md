@@ -16,9 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   および `utils/github_client.py` の `AsyncGitHubClient.__aexit__` close 処理
   で `MemoryError` / `RecursionError` が `except Exception` に捕捉され
   サイレント隠蔽される問題を修正。
-  - **背景**: 旧コメントは「`MemoryError` は `except Exception` の境界外」と
-    記述していたが、`MemoryError` は `Exception` 直系・`RecursionError` は
-    `RuntimeError` 派生のため実際には `except Exception` が捕捉していた。特に
+  - **背景**: 旧コメントにおいて「`MemoryError` は `except Exception` の境界外」と
+    記述していた。しかし、`MemoryError` が `Exception` 直系・`RecursionError` が
+    `RuntimeError` 派生のため、実際に `except Exception` が捕捉していた。特に
     `suppress_unexpected=True` 経路 (`aclose()` 直接呼出) では warning ログのみ
     記録して握りつぶし、回復不能エラーが上位に伝播しなかった。
   - **変更内容**: `except Exception` の前に `except RecursionError: raise` /
