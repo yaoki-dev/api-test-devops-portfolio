@@ -38,7 +38,17 @@ def _get_allowed_domains() -> frozenset[str]:
     if "ALLOWED_DOMAINS" in os.environ:
         env_domains = os.environ["ALLOWED_DOMAINS"]
         # 余分な空白は除去する。空文字列・空白のみなら空集合になり、deny-all を維持する。
-        return frozenset(d.strip() for d in env_domains.split(",") if d.strip())
+        domains = frozenset(d.strip() for d in env_domains.split(",") if d.strip())
+        if not domains:
+            # deny-all (全ドメイン拒否) は設定ミスの可能性が高いため起動時に警告する。
+            # 空の許可リストは全 validate_base_url() を失敗させるため、サイレントな
+            # 許可リスト空化 (例: .env の `ALLOWED_DOMAINS=`) を早期検出可能にする。
+            _logger.warning(
+                "ALLOWED_DOMAINS が空のため全ドメインを拒否します (deny-all)。"
+                " SSRF 許可リストが意図せず空になっていないか確認してください。 raw value=%r",
+                env_domains[:200],
+            )
+        return domains
 
     # デフォルト: 本番用 + テスト用ドメイン
     return frozenset(

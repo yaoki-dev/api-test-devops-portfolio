@@ -1229,6 +1229,7 @@ class TestAllowedDomainsEnvOverride:
     @pytest.mark.parametrize(
         "value",
         [
+            pytest.param("", id="empty_string"),
             pytest.param("  ", id="whitespace_only"),
             pytest.param(",", id="comma_only"),
             pytest.param(" , ", id="blank_entries_only"),
