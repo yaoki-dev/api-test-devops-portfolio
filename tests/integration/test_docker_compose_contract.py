@@ -1,6 +1,5 @@
 """docker-compose.yml の運用契約テスト."""
 
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -19,28 +18,15 @@ class TestDockerComposeContract:
     def compose_data(self, request: pytest.FixtureRequest) -> dict[str, Any]:
         """docker-compose.yml を読み込んで parsed dict を返す共通 fixture.
 
-        各テストでの compose_path/yaml.safe_load 2行重複を解消。
-        pytest rootdir (pyproject.toml で確定) 基準でパス解決するため、
-        テストファイルの移動に影響されない。
+        pytest rootpath (pyproject.toml で確定) 基準でパス解決するため、
+        テストファイルの移動に影響されない。ファイル不在は FileNotFoundError、
+        YAML パース失敗は yaml.YAMLError として pytest が自動レポートする。
         """
-        compose_path = Path(request.config.rootdir) / "docker-compose.yml"
-        if not compose_path.exists():
-            pytest.fail(
-                f"docker-compose.yml が見つかりません: {compose_path}"
-                f" (rootdir: {request.config.rootdir})"
-            )
-        try:
-            compose_text = compose_path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError) as e:
-            pytest.fail(f"docker-compose.yml の読み込みに失敗しました: {e}")
-        try:
-            data = yaml.safe_load(compose_text)
-        except yaml.YAMLError as e:
-            pytest.fail(f"docker-compose.yml のYAMLパースに失敗しました: {e}")
-        if not isinstance(data, dict) or "services" not in data:
-            pytest.fail(
-                f"docker-compose.yml の構造が不正です (servicesキーなし): type={type(data)}"
-            )
+        compose_path = request.config.rootpath / "docker-compose.yml"
+        data = yaml.safe_load(compose_path.read_text(encoding="utf-8"))
+        assert isinstance(data, dict) and "services" in data, (
+            f"docker-compose.yml の構造が不正: type={type(data)}, path={compose_path}"
+        )
         return data
 
     def test_app_compose_startup_validation_structure(self, compose_data: dict[str, Any]) -> None:
@@ -80,11 +66,7 @@ class TestDockerComposeContract:
         assert test_service["environment"]["ENVIRONMENT"] == "testing"
         assert test_service["environment"]["COVERAGE_FILE"] == "/tmp/.coverage"  # noqa: S108
         assert test_service["user"] == "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
-        command = test_service["command"]
-        assert isinstance(command, list)
-        assert "-m" in command
-        marker_index = command.index("-m")
-        assert command[marker_index + 1] == "(unit or integration) and not external"
+        assert test_service["command"] == ["pytest", "-m", "(unit or integration) and not external"]
 
     def test_test_service_security_contract(self, compose_data: dict[str, Any]) -> None:
         """test service の権限昇格防止設定 (security_opt/init) を YAML レベルで保護する."""

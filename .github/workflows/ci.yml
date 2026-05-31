@@ -414,7 +414,9 @@ jobs:
   compose-healthcheck:
     needs: [compose-test]
     name: Compose app healthcheck
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'))
+    # 起動ゲートは needs:[compose-test] が継承する。compose-test が if 条件で skip
+    # された場合、依存チェーンに沿って本ジョブも自動 skip されるため、compose-test と
+    # 同一の if: 条件をここで重複指定する必要はない（DRY）。
     runs-on: ubuntu-latest
     permissions:
       contents: read
