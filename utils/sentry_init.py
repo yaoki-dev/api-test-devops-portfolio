@@ -107,12 +107,16 @@ def _safe_log_warning(event: str, **fields: Any) -> None:
     try:
         _logger.warning(event, **fields)
     except RecursionError:
-        # 致命的エラーは再raise（fail-fast）。サイレント隠蔽すると
-        # 上位の except Exception でも捕捉されず重大障害が見えなくなる。
+        # RecursionError は Exception 派生のため、再raise しないと下流の
+        # except Exception に捕捉されサイレント隠蔽される。
+        # 致命的エラーとして必ず再raise（fail-fast）。
         raise
     except MemoryError:
-        # 同上 (fail-fast)。tuple 形式 `except (E1, E2):` は ruff format
-        # が括弧を除去して Py2 構文化するため、保守安全のため別行記述。
+        # MemoryError も Exception 派生のため、再raise しないと下流の
+        # except Exception に捕捉されサイレント隠蔽される。
+        # 致命的エラーとして必ず再raise（fail-fast）。
+        # tuple 形式 `except (E1, E2):` は ruff format が括弧を除去して
+        # Py2 構文化するため、保守安全のため別行記述。
         raise
     except Exception as exc:  # noqa: BLE001
         # ロガー失敗 → fail-open（イベント drop 防止）だが、
@@ -267,7 +271,8 @@ _sentry_initialized: bool = False
 # 再帰制限のデフォルト値
 MAX_SCRUB_DEPTH: int = 10  # 実測値 2-4、余裕値 10 は infinite recursion 防止用
 
-# before_send でスクラブ対象とするイベントフィールド（PII漏洩防止の対象集合）
+# before_send / before_send_transaction でスクラブ対象とするイベントフィールド
+# （PII漏洩防止の対象集合）。error / transaction 双方が同一 _before_send を通る。
 _SCRUBBED_EVENT_FIELDS: frozenset[str] = frozenset(
     {
         "extra",
@@ -275,6 +280,10 @@ _SCRUBBED_EVENT_FIELDS: frozenset[str] = frozenset(
         "contexts",
         "tags",
         "breadcrumbs",
+        # transaction イベント固有の子span配列（spans[*].data/description/tags）を
+        # スクラブする。before_send_transaction 経路でのみ実在し、error イベントには
+        # 当該キーが無いため _scrub_sentry_field の `if field in event_dict` で安全スキップ。
+        "spans",
         # values[*].value は _is_sensitive_key の結果に関わらず
         # 無条件 [REDACTED] 置換（PII漏洩防止のため）
         "exception",
@@ -360,7 +369,10 @@ def _is_sensitive_key(key: str) -> bool:
 
 
 def _scrub_list_item(item: Any, _depth: int) -> Any:
-    """list要素を深さ上限を守ってスクラブする（汎用 element scrubber）。
+    """tags 以外のフィールド（breadcrumbs / extra / contexts 等）向けの汎用 list 要素スクラブ。
+    tags 専用の ``_scrub_tags_item`` と異なり、list[2] を (key, value) ペアとして扱わない
+    ため、breadcrumbs 内の2要素 list を誤って tag pair 判定して過剰 redact するリスクがない。
+    ``_scrub_sentry_field`` が field!="tags" の場合に本関数を呼ぶこと。
 
     tags 専用の (key, value) ペア判定は ``_scrub_sentry_field`` の field 単位
     dispatch に集約し、本関数では tuple のみを tag pair として扱う
@@ -386,6 +398,29 @@ def _scrub_list_item(item: Any, _depth: int) -> Any:
     if isinstance(item, list):
         return [_scrub_list_item(child, _depth + 1) for child in item]
     return item
+
+
+def _scrub_span_item(item: Any, _depth: int) -> Any:
+    """Sentry transaction span の単一要素をスクラブする。"""
+    if _depth >= MAX_SCRUB_DEPTH:
+        _safe_log_warning("scrub_max_depth_exceeded", depth=_depth, max=MAX_SCRUB_DEPTH)
+        return "[MAX_DEPTH_EXCEEDED]"
+    if not isinstance(item, dict):
+        return _scrub_list_item(item, _depth)
+
+    scrubbed = _scrub_sensitive_data(item, _depth + 1)
+    description = scrubbed.get("description")
+    if isinstance(description, str):
+        method, separator, target = description.partition(" ")
+        value_to_scrub = target if separator else description
+        if "?" in value_to_scrub or "#" in value_to_scrub:
+            scrubbed_description = _scrub_url(value_to_scrub)
+        else:
+            scrubbed_description = _PATH_PII_PATTERN.sub("[REDACTED]", value_to_scrub)
+        scrubbed["description"] = (
+            f"{method} {scrubbed_description}" if separator else scrubbed_description
+        )
+    return scrubbed
 
 
 def _scrub_sensitive_data(data: Any, _depth: int = 0) -> Any:
@@ -487,7 +522,9 @@ def _scrub_url(url: str) -> str:
 
 
 def _scrub_tags_item(item: Any, _depth: int = 0) -> Any:
-    """tags フィールド要素を Sentry spec + defense-in-depth でスクラブする。
+    """tags フィールド専用の要素スクラブ。``_scrub_list_item`` との違いは (key, value)
+    ペア判定を list[2] にも拡張している点で、``_scrub_sentry_field`` が field=="tags"
+    の場合のみ本関数を呼ぶ。tags 以外のフィールドには ``_scrub_list_item`` を使用すること。
 
     Sentry SDK 仕様: tags は ``dict[str, str]`` または ``list[tuple[str, str]]``。
     JSON roundtrip で tuple が list 化されるため list[2] も tag pair として扱う。
@@ -616,24 +653,43 @@ def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
             # しない（PR #347 review: KP-003 / T3 対応）。
             if field == "tags":
                 event_dict[field] = [_scrub_tags_item(item, _depth=0) for item in value]
+            elif field == "spans":
+                event_dict[field] = [_scrub_span_item(item, _depth=0) for item in value]
             else:
                 event_dict[field] = [_scrub_list_item(item, _depth=0) for item in value]
         else:
-            # dict/list以外はスクラブ不可能。
-            # exception フィールドを {} に置換すると Sentry のイベント構造が破壊されるため
-            # fail-open（元の値を保持）とする。他フィールドは安全サイドに倒して空dictに置換。
-            if field != "exception":
+            # dict/list以外はスクラブ不可能なため、安全サイドに倒して置換する（fail-closed）。
+            # exception フィールドは Sentry exception interface 仕様に準拠した
+            # 無害なプレースホルダ構造へ置換し PII 素通りを防ぐ（PR#347 review #10）。
+            # 他フィールドは空 dict に置換する。
+            if field == "exception":
+                event_dict[field] = {
+                    "values": [
+                        {
+                            "type": "ScrubbedException",
+                            "value": "[REDACTED: unscrubable exception structure]",
+                        }
+                    ]
+                }
+                _safe_log_warning(
+                    "sentry_field_type_unexpected",
+                    field=field,
+                    actual_type=type(value).__name__,
+                    action="replaced_with_safe_placeholder",
+                    event_id=event_dict.get("event_id"),
+                )
+            else:
                 event_dict[field] = {}
-            _safe_log_warning(
-                "sentry_field_type_unexpected",
-                field=field,
-                actual_type=type(value).__name__,
-                action="replaced_with_empty_dict",
-                event_id=event_dict.get("event_id"),
-            )
+                _safe_log_warning(
+                    "sentry_field_type_unexpected",
+                    field=field,
+                    actual_type=type(value).__name__,
+                    action="replaced_with_empty_dict",
+                    event_id=event_dict.get("event_id"),
+                )
 
 
-def _emit_scrub_failure_to_sentry(exc: BaseException) -> None:
+def _emit_scrub_failure_to_sentry(exc: BaseException, event_id: str | None = None) -> None:
     """scrub 失敗を内部識別 tag 付きで Sentry へ通知する（fail-safe）。
 
     sentry_sdk.capture_message は再度 _before_send を通るが、付与した
@@ -670,6 +726,9 @@ def _emit_scrub_failure_to_sentry(exc: BaseException) -> None:
             scope.set_extra("error_type", type(exc).__qualname__)
             scope.set_extra("error_module", type(exc).__module__)
             scope.set_extra("action", "event_dropped")
+            # event_id は UUID 形式のため PII ではない（PR#347 review #12/#28）
+            if event_id is not None:
+                scope.set_extra("event_id", event_id)
             scope.capture_message("sentry_scrub_failed", level="error")
     except Exception as inner_exc:  # noqa: BLE001
         # Sentry 通知自体が失敗 → stderr へ最終フォールバック
@@ -766,11 +825,6 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
         scrub_exc = exc
 
     if scrub_exc is not None:
-        _safe_log_warning(
-            "sentry_before_send_drop_event",
-            error_type=type(scrub_exc).__qualname__,
-            error_module=type(scrub_exc).__module__,
-        )
         try:
             _logger.error(
                 "sentry_before_send_drop_event",
@@ -778,9 +832,14 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
                 error_module=type(scrub_exc).__module__,
                 event_id=event_dict.get("event_id"),
             )
-        except Exception:  # noqa: BLE001, S110
-            pass
-        _emit_scrub_failure_to_sentry(scrub_exc)
+        except Exception:  # noqa: BLE001
+            # ロガー自体が失敗した場合のフォールバック（_safe_log_warningはフォールバック専用）
+            _safe_log_warning(
+                "sentry_before_send_drop_event",
+                error_type=type(scrub_exc).__qualname__,
+                error_module=type(scrub_exc).__module__,
+            )
+        _emit_scrub_failure_to_sentry(scrub_exc, event_id=event_dict.get("event_id"))
         return None
 
     return event
@@ -839,6 +898,9 @@ def init_sentry() -> bool:  # noqa: C901
             profiles_sample_rate=sentry_config.profiles_sample_rate,
             send_default_pii=sentry_config.send_default_pii,
             before_send=_before_send,
+            # transaction イベントは before_send を通らない（SDK仕様）。同一 scrub 経路へ
+            # 配線し、span data / WSGI-ASGI 由来の request を PII スクラブする（PR#347 review）。
+            before_send_transaction=_before_send,
         )
 
         _sentry_initialized = True

@@ -63,7 +63,7 @@ uv run pytest tests/unit/test_api_client.py --cov=utils --cov=config --cov=model
 ![Docker Demo - 4-stage Multi-stage buildでコンテナビルド。DevOpsスキルを実証](assets/demo-docker.gif)
 
 > **📝 デモ内容**: Docker Multi-stage buildによるコンテナビルド
-> **⏳ Week3対応予定**: docker-compose.yamlによる4環境（dev/test/demo/prod）オーケストレーション
+> **✅ Docker Compose**: 4環境（development / testing / staging / production）オーケストレーション
 
 **何がわかるか**:
 
@@ -342,7 +342,7 @@ graph TB
 
 | Stage | トリガー | テスト内容 | timeout |
 |-------|---------|-----------|---------|
-| PR Validation | Pull Request | mypy + Unit + Integration + smoke | 15分 |
+| PR Validation | Pull Request | mypy + Unit + Integration + smoke | 20分 |
 | PR Markdown Quality Check | Pull Request| markdownlint && textlint | 5分 |
 | PR Trivy scan | Pull Request | Trivy脆弱性スキャン | 20分 |
 | Post Validation | Push to main/develop | mypy + Smoke + e2e | 15分 |
@@ -350,6 +350,7 @@ graph TB
 | Weekly Extended Test | Weekly | Performance + External API | 30分 |
 | Weekly Link Check | Weekly | Markdown link check | 15分 |
 | Status Report | 全トリガー | Pipeline結果集約 | 5分 |
+| Compose Verification | Pull Request / Push to main/develop | Docker Compose test + healthcheck | 最大30分（15分 → 15分、直列） |
 
 ### Trivy Security Scan（SARIF形式 + 3層検証）
 

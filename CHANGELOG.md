@@ -30,6 +30,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **影響範囲**: マーカー別実測件数を README テストサマリーへ再同期
     (Smoke 3→2、Integration 31→33、総数 1,098→1,210 等)。
     本変更はテスト再編のみで `utils/` / `config/` / `models/` の挙動変更なし。
+- **Fixed (fail-fast)**: `utils/api_client.py` の
+  `AsyncAPIClient._close_async_client` (`aclose()` / `__aexit__` 共有 close 処理)
+  および `utils/github_client.py` の `AsyncGitHubClient.__aexit__` close 処理
+  で `MemoryError` / `RecursionError` が `except Exception` に捕捉され
+  サイレント隠蔽される問題を修正。
+  - **背景**: 旧コメントにおいて「`MemoryError` は `except Exception` の境界外」と
+    記述していた。しかし、`MemoryError` が `Exception` 直系・`RecursionError` が
+    `RuntimeError` 派生のため、実際に `except Exception` が捕捉していた。特に
+    `suppress_unexpected=True` 経路 (`aclose()` 直接呼出) では warning ログのみ
+    記録して握りつぶし、回復不能エラーが上位に伝播しなかった。
+  - **変更内容**: `except Exception` の前に `except RecursionError: raise` /
+    `except MemoryError: raise` を追加し fail-fast 化。コメントを実装へ整合。
+    `utils/github_client.py` (`_update_etag_cache`) / `utils/sentry_init.py`
+    (`_safe_log_warning`) の broad-except cleanup と同一方針で、close/cleanup
+    例外ハンドリングを統一。`ASYNC_FATAL_EXCEPTIONS` は `RecursionError` を
+    含まずかつ retry/health 文脈専用のため本 site では不採用 (broad-except
+    境界の Exception 派生 fatal のみを明示再 raise)。
+  - **影響**: ログ schema 不変。メモリ枯渇 / スタック枯渇が `aclose()` /
+    `__aexit__` から正しく伝播するようになる (上位で観測可能化)。`RuntimeError`
+    等の通常例外の suppress 挙動は不変。
+  - **テスト**: `tests/unit/test_async_client.py` および
+    `tests/unit/test_github_client.py` に `MemoryError` / `RecursionError`
+    伝播の回帰防止テストを追加。github_client は `__aexit__` body 例外併発下での
+    fatal 伝播を Red-Green で実証。
 
 - **BREAKING (observability)**: `tests/performance/test_api_performance.py` の
   `PerformanceMetrics.get_summary()` が返す `cpu_usage.start_percent` の型を
@@ -85,7 +109,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (PR#347 review #4-[2]).
   - **変更理由**: `utils/api_client.py` の `async_api_client_closed` と命名整合を
     取り、プロジェクト全体の structlog イベント命名規約を統一する。
-  - **対象**: `AsyncGitHubClient.__aexit__` の正常 close ログ (utils/github_client.py:302)。
+  - **対象**: `AsyncGitHubClient.__aexit__` の正常 close ログ (utils/github_client.py:308)。
   - **影響範囲**: log consumer (Datadog / Loki / Splunk / CloudWatch 等) で
     旧イベント名 `"AsyncGitHubClient closed"` を grep / filter 設定している場合
     マッチしなくなる。既存 alert rule / dashboard / log query を
@@ -158,6 +182,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - 認証系: `access_key`
     - HTTP headers: `proxy-authorization`, `set-cookie`, `x-auth-token`,
       `csrf_token`, `x-csrf-token`, `x-refresh-token`, `x-access-token`
+    - 複合語バリアント: `authtoken`, `usertoken`, `userpassword`
   - **追加されたスクラブ対象フィールド (4 → 6)**: `breadcrumbs` および `exception` を
     `_SCRUBBED_EVENT_FIELDS` に追加.
     - `breadcrumbs`: ブレッドクラム内の機密キーを redact.
@@ -195,7 +220,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     失敗の事実は二経路で観測可能 (両者は fail-closed パスで同時発火):
     (a) Sentry: `sentry_scrub_failed` message event (error レベル,
     `capture_message` 経由). Sentry SDK 未ロード時は stderr にフォールバック.
-    (b) structlog: `sentry_before_send_drop_event` warning log
+    (b) structlog: `sentry_before_send_drop_event` error log（ロガー障害時のみ warning フォールバック）
     (`error_type` / `error_module` を構造化フィールドとして記録).
     成功時の挙動は不変 (`event["request"]` の dict identity は変わる).
     Sentry SDK は event 全体を serialize して送信するため、本実装変更が観測可能な
@@ -208,7 +233,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     1. Sentry 側: `sentry_scrub_failed` message event (error レベル) の発生率を
        Sentry で metric 化. SDK 未ロード時の stderr fallback はコンテナログで確認.
     2. log aggregator 側 (Datadog / Loki / CloudWatch 等):
-       `sentry_before_send_drop_event` warning log の `error_type` /
+       `sentry_before_send_drop_event` error log（ロガー障害時のみ warning フォールバック）の `error_type` /
        `error_module` 分布を集計し、特定例外型の偏在で defect 兆候を早期検知.
     3. 異常な発生率上昇時は SENSITIVE_KEYS / scrub logic の defect 兆候として
        triage. payload 構造を sanitized form でローカル再現し原因特定.

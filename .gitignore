@@ -101,7 +101,10 @@ docs/search_index.json
 docs/text.md
 
 # Environment variables
-.env
+# .env*: per-environment files (.env.development/.env.testing/.env.staging/.env.production/.env.local 等) を一括で ignore
+# !.env.example: コミット対象のプレースホルダーテンプレートのみ追跡
+.env*
+!.env.example
 
 # Claude MCP auto-generated files (claude-mem)
 # Excludes all CLAUDE.md in subdirectories, preserves root CLAUDE.md
@@ -154,3 +157,6 @@ graphify-out/
 
 # Understand Anything - knowledge graph artifacts (auto-generated, reproducible)
 .understand-anything/
+
+# opencode
+opencode-studio

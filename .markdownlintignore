@@ -3,3 +3,4 @@ graphify-out/**
 claudedocs/**
 .venv/**
 node_modules
+opencode-studio/**

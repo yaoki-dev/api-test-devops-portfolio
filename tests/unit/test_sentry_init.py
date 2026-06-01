@@ -214,6 +214,10 @@ class TestSensitiveKeysCompleteness:
             "csrf_token",
             "x-refresh-token",
             "x-access-token",
+            # 複合語バリアント (単語境界検出のfalse negative補完)
+            "authtoken",
+            "usertoken",
+            "userpassword",
         ],
     )
     def test_expected_keys_present(self, key: str) -> None:
@@ -447,6 +451,7 @@ class TestScrubbedEventFieldsCompleteness:
                 "contexts",
                 "tags",
                 "breadcrumbs",
+                "spans",
                 "exception",
             }
         )
@@ -865,17 +870,77 @@ class TestBeforeSend:
         mock_emit.assert_called_once()
 
     def test_before_send_fail_closed_when_scrub_url_raises(self) -> None:
-        """_scrub_url が例外を発生させた場合も fail-closed でイベントをdropする。"""
+        """_scrub_url が例外を発生させた場合も fail-closed でイベントをdropする。
+
+        drop ログは _logger.error 一本化で event_id を付与する (PR#347 review #12)。
+        _safe_log_warning はロガー障害時のフォールバック専用のため通常は呼ばれない。
+        """
         event = cast(Event, {"request": {"url": "https://example.com/path?token=abc"}})
 
         with (
             patch.object(sentry_module, "_scrub_url", side_effect=RuntimeError("url-scrub-boom")),
             patch.object(sentry_module, "_emit_scrub_failure_to_sentry") as mock_emit,
+            patch.object(sentry_module, "_logger") as mock_logger,
             patch.object(sentry_module, "_safe_log_warning") as mock_warning,
         ):
             result = _before_send(event, {})
 
         assert result is None
+        mock_logger.error.assert_called_once_with(
+            "sentry_before_send_drop_event",
+            error_type="RuntimeError",
+            error_module="builtins",
+            event_id=None,
+        )
+        mock_warning.assert_not_called()
+        mock_emit.assert_called_once()
+
+    def test_before_send_passes_event_id_to_scrub_failure_notification(self) -> None:
+        """scrub 失敗時に event_id を内部通知へ渡す。"""
+        event = cast(
+            Event,
+            {
+                "event_id": "evt-789",
+                "request": {"url": "https://example.com/path?token=abc"},
+            },
+        )
+
+        with (
+            patch.object(sentry_module, "_scrub_url", side_effect=RuntimeError("boom")),
+            patch.object(sentry_module, "_emit_scrub_failure_to_sentry") as mock_emit,
+        ):
+            result = _before_send(event, {})
+
+        assert result is None
+        mock_emit.assert_called_once()
+        assert isinstance(mock_emit.call_args.args[0], RuntimeError)
+        assert mock_emit.call_args.kwargs == {"event_id": "evt-789"}
+
+    def test_before_send_secondary_fallback_when_logger_error_raises(self) -> None:
+        """scrub 失敗ログ出力中に _logger.error 自体が例外を投げた場合、二次 fallback の
+        _safe_log_warning へ fall through し、event は drop (None) される。
+
+        既存 ``test_before_send_fail_closed_when_scrub_url_raises`` は _logger.error 正常系
+        (mock_warning.assert_not_called()) のみカバーする。本テストはロガー障害時の
+        二次 fallback 分岐 (sentry_init.py) を明示的に回帰検証する。
+        一次 _logger.error は event_id を付与するが、フォールバック _safe_log_warning は
+        event_id を渡さない (PR#347 review: フォールバックはロガー障害時専用)。
+        """
+        event = cast(Event, {"request": {"url": "https://example.com/path?token=abc"}})
+
+        with (
+            patch.object(sentry_module, "_scrub_url", side_effect=RuntimeError("url-scrub-boom")),
+            patch.object(sentry_module, "_emit_scrub_failure_to_sentry") as mock_emit,
+            patch.object(sentry_module, "_logger") as mock_logger,
+            patch.object(sentry_module, "_safe_log_warning") as mock_warning,
+        ):
+            mock_logger.error.side_effect = RuntimeError("logger-error-boom")
+            result = _before_send(event, {})
+
+        assert result is None
+        # 一次ログ (_logger.error) が試行されて失敗 → 二次 fallback へ遷移
+        mock_logger.error.assert_called_once()
+        # 二次 fallback は event_id なしで scrub_exc の型情報のみ記録
         mock_warning.assert_called_once_with(
             "sentry_before_send_drop_event",
             error_type="RuntimeError",
@@ -924,6 +989,25 @@ class TestBeforeSend:
         assert "[SENTRY_SCRUB_FAILED]" in captured.err
         assert "before_send system error: MemoryError or RecursionError" in captured.err
         mock_emit.assert_not_called()
+
+    def test_before_send_exception_scalar_replaced_with_safe_placeholder(self) -> None:
+        """scalar exception は Sentry 仕様準拠の安全な placeholder に置換する。"""
+        event = cast(Event, {"event_id": "evt-exc", "exception": "raw secret token=abc"})
+
+        with patch.object(sentry_module._logger, "warning") as mock_warning:
+            result_dict = self._call_before_send(event)
+
+        assert result_dict["exception"] == {
+            "values": [
+                {
+                    "type": "ScrubbedException",
+                    "value": "[REDACTED: unscrubable exception structure]",
+                }
+            ]
+        }
+        mock_warning.assert_called_once()
+        assert mock_warning.call_args.kwargs["action"] == "replaced_with_safe_placeholder"
+        assert mock_warning.call_args.kwargs["event_id"] == "evt-exc"
 
     def test_before_send_skips_scrub_for_internal_tagged_event(self) -> None:
         """再帰防止: 内部通知 tag が付与された event は scrub をスキップし通過させる。
@@ -995,6 +1079,22 @@ class TestBeforeSend:
         )
         mock_scope.set_level.assert_called_once_with("error")
         mock_scope.capture_message.assert_called_once_with("sentry_scrub_failed", level="error")
+
+    def test_emit_scrub_failure_to_sentry_sets_event_id_extra(self) -> None:
+        """_emit_scrub_failure_to_sentry は event_id を extra に付与する。"""
+        mock_scope = MagicMock()
+        mock_scope.__enter__ = MagicMock(return_value=mock_scope)
+        mock_scope.__exit__ = MagicMock(return_value=False)
+        mock_sdk = MagicMock()
+        mock_sdk.new_scope = MagicMock(return_value=mock_scope)
+
+        with patch.dict(sys.modules, {"sentry_sdk": mock_sdk}):
+            sentry_module._emit_scrub_failure_to_sentry(
+                RuntimeError("scrub-boom"),
+                event_id="evt-789",
+            )
+
+        mock_scope.set_extra.assert_any_call("event_id", "evt-789")
 
     def test_emit_scrub_failure_falls_back_to_stderr_on_inner_exception(
         self, capsys: pytest.CaptureFixture[str]
@@ -1405,6 +1505,243 @@ class TestBeforeSend:
         assert result[1][1] == ("token", "[REDACTED]")
         assert result[1][2] == ("safe", "ok")
 
+    @pytest.mark.parametrize(
+        "container_type",
+        [list, tuple],
+        ids=["list", "tuple"],
+    )
+    def test_scrub_exception_value_item_list_tuple_redacts_nested_sensitive(
+        self, container_type: type
+    ) -> None:
+        """_scrub_exception_value_item の list/tuple分岐: ネストした機密データを再帰スクラブする。
+
+        value_item が list/tuple の場合、各要素を _scrub_list_item(_depth=0) で再帰スクラブする。
+        dict要素内の機密キー値は [REDACTED] 化され、非機密値は保持される。
+        (sentry_init.py L181: isinstance(value_item,(list,tuple)) 分岐)
+        """
+        # ネストdictに機密キー「token」と非機密キー「safe」を混在させる
+        sensitive_item = {"token": "secret_value", "safe": "keep_this"}
+        value_item = container_type([sensitive_item])
+
+        result = sentry_module._scrub_exception_value_item(value_item)
+
+        # 戻り値は同じ型 (list → list, tuple → tuple)
+        assert type(result) is container_type
+        # 機密キーはスクラブされている
+        assert result[0]["token"] == "[REDACTED]"  # noqa: S105
+        # 非機密キーは保持されている
+        assert result[0]["safe"] == "keep_this"
+
+    @pytest.mark.parametrize(
+        "container_type",
+        [list, tuple],
+        ids=["list", "tuple"],
+    )
+    def test_scrub_exception_value_item_list_tuple_preserves_non_sensitive(
+        self, container_type: type
+    ) -> None:
+        """_scrub_exception_value_item の list/tuple分岐: 非機密値は保持される。
+
+        機密キーを含まない dict 要素の値はそのまま保持され、
+        過剰スクラブ（false positive）が発生しないことを検証する。
+        """
+        non_sensitive_item = {"user_id": 42, "name": "Alice"}
+        value_item = container_type([non_sensitive_item])
+
+        result = sentry_module._scrub_exception_value_item(value_item)
+
+        assert type(result) is container_type
+        assert result[0]["user_id"] == 42
+        assert result[0]["name"] == "Alice"
+
+
+class TestBeforeSendTransaction:
+    """transaction イベント（before_send_transaction 経路）の scrub テスト。
+
+    transaction は error と異なり top-level ``spans`` (list[dict]) を持つ
+    (Sentry transaction payload spec)。``before_send_transaction=_before_send``
+    配線により error と同一 scrub 経路を通り、span 内の機密キーが REDACT される
+    ことを検証する（PR#347 review）。
+    """
+
+    def _call_before_send(self, event: Event) -> dict[str, Any]:
+        result = _before_send(event, {})
+        assert result is not None, "_before_send が None を返しました（イベントが破棄されました）"
+        return cast(dict[str, Any], result)
+
+    def test_transaction_spans_sensitive_keys_redacted(self) -> None:
+        """transaction の span data 内の機密キーが REDACT される。"""
+        event = cast(
+            Event,
+            {
+                "type": "transaction",
+                "transaction": "/api/users",
+                "spans": [
+                    {
+                        "op": "http.client",
+                        "description": "GET /api/token",
+                        "data": {
+                            "auth_token": "secret-span-a",  # noqa: S106
+                            "status_code": 200,
+                        },
+                    },
+                    {
+                        "op": "db.query",
+                        "data": {"password": "secret-span-b", "rows": 5},  # noqa: S106
+                    },
+                ],
+            },
+        )
+        result_dict = self._call_before_send(event)
+        assert result_dict["spans"][0]["data"]["auth_token"] == "[REDACTED]"  # noqa: S105
+        assert result_dict["spans"][1]["data"]["password"] == "[REDACTED]"  # noqa: S105
+        # 非機密のデバッグ情報は保持される
+        assert result_dict["spans"][0]["data"]["status_code"] == 200
+        assert result_dict["spans"][1]["data"]["rows"] == 5
+        assert result_dict["spans"][0]["op"] == "http.client"
+
+    def test_transaction_span_description_query_string_redacted(self) -> None:
+        """transaction span description の query PII を REDACT する。"""
+        event = cast(
+            Event,
+            {
+                "type": "transaction",
+                "spans": [
+                    {
+                        "op": "http.client",
+                        "description": (
+                            "GET https://api.example.com/users/jane@example.com"
+                            "?token=secret123&safe=1#secret-fragment"
+                        ),
+                        "data": {},
+                    }
+                ],
+            },
+        )
+
+        result_dict = self._call_before_send(event)
+
+        description = result_dict["spans"][0]["description"]
+        assert "secret123" not in description
+        assert "jane@example.com" not in description
+        assert "secret-fragment" not in description
+        assert "token=%5BREDACTED%5D" in description
+        assert "safe=1" in description
+
+    def test_transaction_internal_tag_skips_scrub_no_recursion(self) -> None:
+        """内部通知タグ付き transaction は scrub をスキップ通過する（再帰防止）。
+
+        ``tags`` は base Event の top-level 属性であり transaction にも継承されるため
+        (Sentry event payload spec)、``_has_internal_tag`` が transaction-shaped event
+        でも発火し、before_send_transaction 経由の無限再帰を遮断する。
+        """
+        event = cast(
+            Event,
+            {
+                "type": "transaction",
+                "tags": {
+                    sentry_module._INTERNAL_TAG_KEY: sentry_module._INTERNAL_TAG_VALUE,
+                },
+                "spans": [{"op": "db", "data": {"password": "not-scrubbed"}}],  # noqa: S106
+            },
+        )
+        result_dict = self._call_before_send(event)
+        # スキップ通過のため span は scrub されず原形のまま（再帰防止ガードの証明）
+        assert result_dict["spans"][0]["data"]["password"] == "not-scrubbed"  # noqa: S105
+
+    def test_error_event_without_spans_unaffected(self) -> None:
+        """spans を持たない error イベントは "spans" 追加の影響を受けない（回帰防止）。"""
+        event = cast(
+            Event,
+            {"request": {"headers": {"Cookie": "session=abc123"}}},
+        )
+        result_dict = self._call_before_send(event)
+        assert "spans" not in result_dict
+        assert result_dict["request"]["headers"]["Cookie"] == "[REDACTED]"
+
+    def test_transaction_request_field_scrubbed_via_transaction_path(self) -> None:
+        """transaction の top-level ``request`` も before_send_transaction 経路で scrub される。
+
+        WSGI/ASGI 統合では transaction イベントにも ``request`` (headers/query_string/url)
+        が付与される (Sentry公式)。span data より auth header 等の実 PII を含みやすいため、
+        新規配線した before_send_transaction=_before_send 経路で request 既存 scrub ロジック
+        (L745-770) が transaction-shaped event でも発火することを経験的に検証する。
+        """
+        event = cast(
+            Event,
+            {
+                "type": "transaction",
+                "transaction": "/api/users",
+                "request": {
+                    "headers": {"Authorization": "Bearer secret-xyz"},
+                    "query_string": "token=leak123&page=2",
+                    "url": "https://api.example.com/users?token=leak123",
+                },
+                "spans": [{"op": "http", "data": {"api_key": "sk-secret"}}],  # noqa: S106
+            },
+        )
+        result_dict = self._call_before_send(event)
+        # request の auth header が REDACT される
+        assert result_dict["request"]["headers"]["Authorization"] == "[REDACTED]"
+        # query_string 内のトークンが scrub される（_scrub_request_query_string 経路）
+        assert "leak123" not in result_dict["request"]["query_string"]
+        # url のクエリトークンが scrub される（_scrub_url 経路）
+        assert "leak123" not in result_dict["request"]["url"]
+        # span data も同時に scrub される
+        assert result_dict["spans"][0]["data"]["api_key"] == "[REDACTED]"  # noqa: S105
+
+    def test_transaction_structurally_valid_after_scrub(self) -> None:
+        """scrub 後も transaction が構造的に有効なまま（Relay の silent drop 防止）。
+
+        ``_before_send`` は ``contexts`` / ``spans`` を in-place scrub するため、
+        transaction 必須フィールド（``type`` / ``start_timestamp`` /
+        ``contexts.trace`` の ``trace_id`` / ``span_id``）が破壊されないことを保証する。
+        これらは ``_is_sensitive_key`` 非該当のため REDACT されず原形を保つべき。
+        破壊されると Relay が transaction を無言ドロップし、性能監視が機能しなくなる。
+        """
+        event = cast(
+            Event,
+            {
+                "type": "transaction",
+                "transaction": "/api/users",
+                "start_timestamp": 1588601261.481961,
+                "timestamp": 1588601261.488901,
+                "contexts": {
+                    "trace": {
+                        "trace_id": "1e57b752bc6e4544bbaa246cd1d05dee",
+                        "span_id": "b01b9f6349558cd1",
+                        "op": "http.server",
+                        # 機密キーは scrub されるが trace 構造は保持される
+                        "data": {"auth_token": "secret"},  # noqa: S106
+                    },
+                },
+                "spans": [
+                    {
+                        "op": "db",
+                        "span_id": "aaaa1111bbbb2222",
+                        "trace_id": "1e57b752bc6e4544bbaa246cd1d05dee",
+                        "data": {"password": "secret"},  # noqa: S106
+                    }
+                ],
+            },
+        )
+        result_dict = self._call_before_send(event)
+        # 必須トップレベルフィールドが保持される
+        assert result_dict["type"] == "transaction"
+        assert result_dict["start_timestamp"] == 1588601261.481961
+        # contexts.trace の識別子が破壊されない（非機密キーは原形保持）
+        trace = result_dict["contexts"]["trace"]
+        assert trace["trace_id"] == "1e57b752bc6e4544bbaa246cd1d05dee"
+        assert trace["span_id"] == "b01b9f6349558cd1"
+        assert trace["op"] == "http.server"
+        # trace.data 内の機密キーは scrub される
+        assert trace["data"]["auth_token"] == "[REDACTED]"  # noqa: S105
+        # spans は依然 list で識別子が保持される
+        assert isinstance(result_dict["spans"], list)
+        assert result_dict["spans"][0]["span_id"] == "aaaa1111bbbb2222"
+        assert result_dict["spans"][0]["trace_id"] == "1e57b752bc6e4544bbaa246cd1d05dee"
+        assert result_dict["spans"][0]["data"]["password"] == "[REDACTED]"  # noqa: S105
+
 
 class TestInitSentry:
     """Sentry初期化のテスト"""
@@ -1456,6 +1793,33 @@ class TestInitSentry:
 
         assert result is True
         mock_sdk_init.assert_called_once()
+
+    @patch("utils.sentry_init.get_settings")
+    @patch("sentry_sdk.init")
+    def test_init_wires_before_send_to_both_error_and_transaction(
+        self, mock_sdk_init: MagicMock, mock_settings: MagicMock
+    ) -> None:
+        """error / transaction 双方の scrub フックが _before_send に配線される。
+
+        before_send_transaction を省略すると transaction イベントの span / request が
+        custom scrub をバイパスする（PR#347 review）。本テストは将来の refactor で
+        配線が外れた場合のサイレント退行を検出する sentinel。
+        """
+        mock_settings.return_value.sentry.enabled = True
+        mock_settings.return_value.sentry.dsn = SecretStr(
+            "https://abc123@o456.ingest.us.sentry.io/789",
+        )
+        mock_settings.return_value.sentry.environment = "testing"
+        mock_settings.return_value.sentry.traces_sample_rate = 0.1
+        mock_settings.return_value.sentry.profiles_sample_rate = 0.1
+        mock_settings.return_value.sentry.send_default_pii = False
+        mock_settings.return_value.environment.value = "testing"
+
+        assert init_sentry() is True
+
+        call_kwargs = mock_sdk_init.call_args.kwargs
+        assert call_kwargs["before_send"] is _before_send
+        assert call_kwargs["before_send_transaction"] is _before_send
 
     @patch("utils.sentry_init.get_settings")
     @patch("sentry_sdk.init")

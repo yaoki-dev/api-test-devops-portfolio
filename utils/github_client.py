@@ -278,8 +278,20 @@ class AsyncGitHubClient:
                     error_type=type(close_exc).__name__,
                     error_module=type(close_exc).__module__,
                 )
+            except RecursionError:
+                # RecursionError も Exception 派生のため、再raise しないと下流の
+                # except Exception に has_body_exception=True 時捕捉されサイレント隠蔽される
+                # （api_client._close_async_client / sentry_init と同一方針）。
+                # 致命的エラーとして必ず再raise（fail-fast）。
+                raise
+            except MemoryError:
+                # MemoryError も Exception 派生のため、再raise しないと下流の
+                # except Exception に捕捉されサイレント隠蔽される。
+                # 致命的エラーとして必ず再raise（fail-fast）。
+                raise
             except Exception as close_exc:  # noqa: BLE001
-                # 予期しない例外（AttributeError, RuntimeError 等の実装バグ可能性）
+                # 予期しない例外（AttributeError, RuntimeError 等の実装バグ可能性）。
+                # RecursionError / MemoryError は上の専用句で先取り済み（fail-fast）。
                 has_body_exception = exc_type is not None
                 self.logger.error(
                     "github_client_aclose_unexpected_error",
@@ -306,6 +318,10 @@ class AsyncGitHubClient:
                 # aclose() 成功時のみ closed ログを出す。logger.info を try 内に置くと
                 # logger 自体の例外が aclose 失敗として誤検知されるため else 節に分離 (PR#347)。
                 self.logger.info("async_github_client_closed")
+                # ダブルクローズ防止: AsyncAPIClient._close_async_client と同一パターン。
+                # aclose() 成功後に None をセットし、再 __aexit__ 時の if self._client ガードで
+                # 空振りさせる（冪等性確保）。
+                self._client = None
 
     async def get_user(self, username: str) -> dict[str, Any]:
         """ユーザー情報取得
@@ -700,8 +716,8 @@ class AsyncGitHubClient:
         asyncio シングルスレッド環境のため競合は発生しない。
 
         2フェーズ構成:
-          Phase 1: _enforce_cache_limit() を呼び出してエントリ数が上限を超えた場合に退避。
-          Phase 2: ETag と data を同時保存。dataを先に書き込みETagを後に書き込む。
+          Phase 1: 既存キーを削除して挿入順を更新し、data→ETag の順で保存。
+          Phase 2: _enforce_cache_limit() を呼び出してエントリ数が上限を超えた場合に退避。
 
         例外発生時は「dataあり/ETagなし」の一時状態になりうるが、ETagなしなら次回は
         通常リクエスト（304非使用）となり安全に回復する。
@@ -944,6 +960,16 @@ class AsyncGitHubClient:
                 # は retry/エラー判定の対象だが、本イベントは warning 止まり。
                 try:
                     self._update_etag_cache(cache_key, response, result_json)
+                except RecursionError:
+                    # RecursionError も Exception 派生のため、再raise しないと下流の
+                    # except Exception に捕捉されサイレント隠蔽される（sentry_init と同一方針）。
+                    # 致命的エラーとして必ず再raise（fail-fast）。
+                    raise
+                except MemoryError:
+                    # MemoryError は Exception 派生のため、再raise しないと下流の
+                    # except Exception に捕捉されサイレント隠蔽される。
+                    # 致命的エラーとして必ず再raise（fail-fast）。
+                    raise
                 except Exception as cache_exc:  # noqa: BLE001
                     self.logger.warning(
                         "etag_cache_update_failed",

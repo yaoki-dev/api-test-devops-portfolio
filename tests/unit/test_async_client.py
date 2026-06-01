@@ -1111,6 +1111,78 @@ async def test_aclose_normal_close_logs_info() -> None:
     assert closed_logs[0]["log_level"] == "info"
 
 
+async def test_aclose_unexpected_exception_suppressed_with_warning() -> None:
+    """aclose() 単独呼び出しで予期しない例外 (RuntimeError) は warning ログのみで抑止される。
+
+    既存の ``test_aclose_exception_is_suppressed_with_warning`` は CloseError/OSError で
+    第1 except 分岐 (async_api_client_aclose_failed) をヒットするのに対し、本テストは
+    ``except Exception`` 第2分岐 (suppress_unexpected=True パス /
+    async_api_client_aclose_unexpected_error_suppressed) を明示的にカバーする回帰防止テスト。
+    aclose() は finally ブロック等での安全な呼び出しを保証するため、実装バグ起因の
+    予期しない例外も re-raise せず握りつぶす設計 (PR#347 review SF-2)。
+    """
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(
+            client._client,
+            "aclose",
+            new=AsyncMock(side_effect=RuntimeError("unexpected-boom")),
+        ),
+        capture_logs() as log_output,
+    ):
+        await client.aclose()  # 例外が伝播しないこと（伝播すればこのテストは失敗する）
+
+    suppressed_logs = [
+        log
+        for log in log_output
+        if log.get("event") == "async_api_client_aclose_unexpected_error_suppressed"
+    ]
+    assert len(suppressed_logs) == 1
+    assert suppressed_logs[0]["error_type"] == "RuntimeError"
+    assert suppressed_logs[0]["error_module"] == "builtins"
+    # aclose 失敗のため else 節 (closed ログ) は未到達
+    closed_logs = [log for log in log_output if log.get("event") == "async_api_client_closed"]
+    assert len(closed_logs) == 0
+
+
+@pytest.mark.parametrize(
+    "fatal_exc",
+    [MemoryError("OOM"), RecursionError("maximum recursion depth exceeded")],
+)
+async def test_aclose_fatal_exception_propagates_not_suppressed(
+    fatal_exc: MemoryError | RecursionError,
+) -> None:
+    """aclose() 単独呼出 (suppress_unexpected=True 経路) でも MemoryError /
+    RecursionError は握りつぶさず fail-fast で伝播する。
+
+    両者は ``Exception`` 派生 (MemoryError は ``Exception`` 直系、RecursionError は
+    ``RuntimeError`` 派生) のため ``except Exception`` に捕捉されうるが、専用 except 句で
+    先取りし即時 re-raise する設計 (github_client / sentry_init と同一方針)。
+    ``test_aclose_unexpected_exception_suppressed_with_warning`` (RuntimeError は
+    suppress) と対になり、「fatal のみ選択的に伝播」する不変条件を固定する回帰防止テスト。
+    """
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(client._client, "aclose", new=AsyncMock(side_effect=fatal_exc)),
+        pytest.raises(type(fatal_exc)),
+        capture_logs() as log_output,
+    ):
+        await client.aclose()  # 専用 except 句で即時 re-raise されること
+
+    # 専用句が except Exception より先に re-raise するため suppress ログは出ない
+    suppressed_logs = [
+        log
+        for log in log_output
+        if log.get("event") == "async_api_client_aclose_unexpected_error_suppressed"
+    ]
+    assert len(suppressed_logs) == 0
+    # aclose 失敗のため closed ログも未到達
+    closed_logs = [log for log in log_output if log.get("event") == "async_api_client_closed"]
+    assert len(closed_logs) == 0
+
+
 async def test_aexit_logger_info_failure_not_misclassified_as_close_failure() -> None:
     """__aexit__: _client.aclose() 成功後に logger.info が例外を投げても
     aclose_unexpected_error として誤分類されないことを検証 (Codex Q-1 regression)。

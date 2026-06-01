@@ -68,10 +68,10 @@
       - Store result as **WORKTREE_ROOT** for this session ("non-empty" = contains at least one non-whitespace character after stripping trailing newlines; whitespace-only output is treated as empty).
         (post-compact context reload: re-verify by re-running BOTH:
           (1) **FIRST — recall check (before any git command)**: Can you recall a WORKTREE_ROOT value established earlier in this session (before this reload)? If you CANNOT actively recall such a value in your current context (context loss confirmed) → **STOP immediately + report to user** ("WORKTREE_ROOT not recoverable after context reload — please restart session"). (design rationale: with total context loss, there is no reference point to verify the current directory belongs to the correct project; running git rev-parse fresh could silently accept a wrong WORKTREE_ROOT from a different project — STOP forces deliberate user re-orientation) Only if the prior value IS present in active context: run `git rev-parse --show-toplevel` — if command fails (non-zero exit code) or output is empty → **STOP + report to user**; if result differs from recalled WORKTREE_ROOT → **STOP + report to user**
-          (2) `git worktree list --porcelain` pipeline — full table evaluation required (same as session start) — NOT skippable on reload **when (1) succeeds**)
-    - Run `git worktree list --porcelain` (via pipeline) and check result:
+          (2) `rtk proxy git worktree list --porcelain` pipeline — full table evaluation required (same as session start) — NOT skippable on reload **when (1) succeeds**)
+    - Run `rtk proxy git worktree list --porcelain` (via pipeline) and check result:
 
-      | `git worktree list --porcelain` (parsed) Result | Action |
+      | `rtk proxy git worktree list --porcelain` (parsed) Result | Action |
       |--------------------------------------------------|--------|
       | Command failed (non-zero exit code) | **STOP** + report to user |
       | Empty / Unparseable | **STOP** + report to user |
@@ -81,13 +81,13 @@
 
       > **Scope confirmation handling (2+ entries only)**: provide explicit choices ("Approve and continue" / "Reject and stop"). If the user specifies a different worktree path, STOP and restart the session in the intended worktree.
       > **Evaluation order (required)**: Evaluate table rows top to bottom (check WORKTREE_ROOT containment before entry count): ① command failed → STOP ② empty/Unparseable → STOP ③ WORKTREE_ROOT containment check (if not found, STOP + mismatch report regardless of entry count) ④ entry count check (1 or 2+ entries)
-      > **Note on pipeline exit codes**: `grep` returning exit 1 due to 0 matches is NOT "command failed" — treat as empty output (→ STOP at ②). Only treat as "command failed" when `git worktree list` itself returns non-zero exit code.
-      > **Pipeline exit code caveat**: The pipeline `git worktree list --porcelain | grep ... | sed ...` exit code reflects `sed`'s exit, NOT `git`'s — meaning `git worktree list` failure is invisible to the pipeline exit code regardless of stdout content. **Mandatory (no exceptions)**: Always run `git worktree list --porcelain` as a standalone command first and verify its exit code independently (non-zero → STOP immediately); proceed to the pipeline only if exit code is 0.
-      > **WORKTREE_ROOT confirmation**: First confirm WORKTREE_ROOT is non-empty (if empty: **STOP**). If non-empty: `git worktree list --porcelain | grep "^worktree " | sed 's/^worktree //' | grep -Fx "${WORKTREE_ROOT}"` (`-F`: literal string, `-x`: full-line match — prevents `/project` matching `/project-extra`; supports paths with spaces and detached HEAD state)
-      > **"Unparseable" definition**: output of `git worktree list --porcelain | grep "^worktree " | sed 's/^worktree //'` is empty, OR any extracted line does not start with `/` (not an absolute path; empty lines are excluded from this check) — unified to porcelain format (same pipeline as WORKTREE_ROOT confirmation command above)
+      > **Note on pipeline exit codes**: `grep` returning exit 1 due to 0 matches is NOT "command failed" — treat as empty output (→ STOP at ②). Only treat as "command failed" when `rtk proxy git worktree list --porcelain` itself returns non-zero exit code.
+      > **Pipeline exit code caveat**: The pipeline `rtk proxy git worktree list --porcelain | grep ... | sed ...` exit code reflects `sed`'s exit, NOT `rtk proxy`'s — meaning `git worktree list` failure is invisible to the pipeline exit code regardless of stdout content. **Mandatory (no exceptions)**: Always run `rtk proxy git worktree list --porcelain` as a standalone command first and verify its exit code independently (non-zero → STOP immediately); proceed to the pipeline only if exit code is 0.
+      > **WORKTREE_ROOT confirmation**: First confirm WORKTREE_ROOT is non-empty (if empty: **STOP**). If non-empty: `rtk proxy git worktree list --porcelain | grep "^worktree " | sed 's/^worktree //' | sed "s#^~#${HOME}#" | grep -Fx "${WORKTREE_ROOT}"` (`-F`: literal string, `-x`: full-line match — prevents `/project` matching `/project-extra`; supports paths with spaces and detached HEAD state; normalize `~` to `${HOME}` before comparison)
+      > **"Unparseable" definition**: output of `rtk proxy git worktree list --porcelain | grep "^worktree " | sed 's/^worktree //'` is empty, OR any extracted line does not start with `/` or `~` (path must be absolute or `$HOME`-relative; empty lines are excluded from this check) — unified to porcelain format (same pipeline as WORKTREE_ROOT confirmation command above; normalize `~` to `${HOME}` before validation)
       > **When WORKTREE_ROOT not found** (user manual execution — AI autonomous execution prohibited): `git rev-parse --is-inside-work-tree` (true → user re-confirms correct WORKTREE_ROOT then restart session / false → navigate to correct project directory then restart session. ⚠️ `git init` prohibited — risk of destroying existing repository)
-      > **AI report content on mismatch (required)**: ① result of `git rev-parse --show-toplevel` (value stored at session start) ② raw output of `git worktree list` (all lines) ③ candidate causes: symbolic link resolution difference / path mapping difference in CI/Docker environment
-      > **Stderr warnings**: `git worktree list --porcelain` may output warnings to stderr (e.g., "warning: gitdir file points to non-existent location") for broken worktree entries while still returning exit 0. These broken entries still appear in stdout and may match WORKTREE_ROOT. If stderr output is detected alongside worktree list output, report the warnings to the user and await explicit acknowledgment before proceeding with boundary checks (acknowledgment = any user response; closed-list confirmation — Rule 15 common definition — is NOT required here — warnings are informational, not error recovery).
+      > **AI report content on mismatch (required)**: ① result of `git rev-parse --show-toplevel` (value stored at session start) ② raw output of `rtk proxy git worktree list` (all lines) ③ candidate causes: symbolic link resolution difference / path mapping difference in CI/Docker environment
+      > **Stderr warnings**: `rtk proxy git worktree list --porcelain` may output warnings to stderr (e.g., "warning: gitdir file points to non-existent location") for broken worktree entries while still returning exit 0. These broken entries still appear in stdout and may match WORKTREE_ROOT. If stderr output is detected alongside worktree list output, report the warnings to the user and await explicit acknowledgment before proceeding with boundary checks (acknowledgment = any user response; closed-list confirmation — Rule 15 common definition — is NOT required here — warnings are informational, not error recovery).
 
     - For files outside WORKTREE_ROOT:
       - Autonomous edit: **NEVER**
@@ -151,11 +151,11 @@ APIテスト + DevOps統合学習ポートフォリオ。時給4000-4500円レ�
 
 - Python 3.14
 - httpx (Sync + Async HTTP client)
-- pytest (893+テスト、カバレッジ85%目標)
+- pytest (996件テスト・CI条件、カバレッジ85%目標)
 - Pydantic Settings (型安全な設定管理)
 - structlog (構造化ログ)
 - Docker (Multi-stage builds)
-- docker-compose (4環境: dev/test/demo/prod)
+- docker-compose (4環境: development/testing/staging/production)
 - GitHub Actions (CI/CD自動化)
 
 <!-- preserve-on-compact: Serena Memory System -->
