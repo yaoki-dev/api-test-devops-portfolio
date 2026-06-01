@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       の 2 件構成へ整理。
   - **設計方針**: smoke = 外部 API 最小疎通 + 設定ロード生存確認に限定。
   - **影響範囲**: マーカー別実測件数を README テストサマリーへ再同期
-    (Smoke 3→2、Integration 31→33、総数 1,098→1,210 等)。
+    (Smoke 3→2、Integration 31→33、Unit 1,058→1,168、Performance 6→7、総数 1,098→1,210)。
     本変更はテスト再編のみで `utils/` / `config/` / `models/` の挙動変更なし。
 - **Fixed (fail-fast)**: `utils/api_client.py` の
   `AsyncAPIClient._close_async_client` (`aclose()` / `__aexit__` 共有 close 処理)
