@@ -32,22 +32,32 @@ def test_get_produces_structured_logs() -> None:
     """
     mock_get_route(f"{BASE_URL}/posts/1", None, {"id": 1})
 
-    original_config = structlog.get_config()
+    # structlog のグローバル設定をテスト用に DEBUG へ再構成する。
+    # 終了時は reset_defaults() で全状態を builtin デフォルトへ確実にリセットする。
+    # get_config() の保存→configure(**original) 復元はシャロウコピー由来で
+    # processors 等のミュータブル参照を共有するため復元が不完全になりうる
+    # （structlog 公式も reset_defaults() をテスト用クリーンアップとして推奨）。
+    # utils.logger.get_logger() は is_configured() が False のとき遅延再構成するため、
+    # reset 後に他テストが get_logger() を呼べば production 設定が自動復元される。
+    structlog.configure(
+        wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG),
+        cache_logger_on_first_use=False,
+    )
     try:
-        structlog.configure(
-            wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG),
-            cache_logger_on_first_use=False,
-        )
         with structlog.testing.capture_logs() as logs:
             with SyncAPIClient() as client:
                 response = client.get("/posts/1")
     finally:
-        structlog.configure(**original_config)
+        structlog.reset_defaults()
 
     assert response.status_code == 200
 
     events = [entry["event"] for entry in logs]
-    assert "request_start" in events
+    assert "request_start" in events, (
+        f"request_start ログエントリが見つかりません。記録されたイベント: {events}\n"
+        "hint: structlog の wrapper_class 再構成が SyncAPIClient の"
+        "ロガーに適用されているか確認してください"
+    )
 
     success = next(
         (entry for entry in logs if entry["event"] == "request_success"),
