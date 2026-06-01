@@ -43,16 +43,16 @@ Issues = "https://github.com/yourusername/api-test-devops-portfolio/issues"
 dev = [
     # テスト
     "pytest>=9.0.3",
-    "pytest-asyncio>=1.1.0",
+    "pytest-asyncio>=1.4.0",
     "pytest-cov>=4.1.0",
     "pytest-xdist>=3.5.0",
     "respx>=0.23.1",            # httpx用モックライブラリ
     "socksio>=1.0.0",           # SOCKS5 proxy support for httpx
     # 品質管理
-    "ruff>=0.15.14,<0.16",       # pre-commit frozen: v0.15.11（.pre-commit-config.yaml参照）
+    "ruff>=0.15.15,<0.16",       # pre-commit frozen: v0.15.11（.pre-commit-config.yaml参照）
     "mypy>=2.1.0,<3.0.0",
     "bandit>=1.8.6",
-    "safety>=3.6.0",
+    "safety>=3.8.1",
     # 開発サポート
     "pre-commit>=4.6.0",
 ]
