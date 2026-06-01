@@ -74,7 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     完了時のみログ出力。新仕様では `aclose()` 内 `_client.aclose()` 直後で
     ログ出力 → `async with` / 明示的 `await client.aclose()` の両経路で
     `async_api_client_closed` イベントが発火する。
-  - **設計意図**: `SyncAPIClient.close()` (utils/api_client.py:379) と
+  - **設計意図**: `SyncAPIClient.close()` (utils/api_client.py) と
     observability 対称性を確保。K8s graceful shutdown / debug 用途で
     `aclose()` を直接呼ぶケース (CLI / バックグラウンドタスク等) の
     可観測性向上。
@@ -90,7 +90,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (PR#347 review #4-[2]).
   - **変更理由**: `utils/api_client.py` の `async_api_client_closed` と命名整合を
     取り、プロジェクト全体の structlog イベント命名規約を統一する。
-  - **対象**: `AsyncGitHubClient.__aexit__` の正常 close ログ (utils/github_client.py:318)。
+  - **対象**: `AsyncGitHubClient.__aexit__` の正常 close ログ (utils/github_client.py)。
   - **影響範囲**: log consumer (Datadog / Loki / Splunk / CloudWatch 等) で
     旧イベント名 `"AsyncGitHubClient closed"` を grep / filter 設定している場合
     マッチしなくなる。既存 alert rule / dashboard / log query を
