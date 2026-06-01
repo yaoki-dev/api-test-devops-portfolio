@@ -834,6 +834,34 @@ async def test_request_without_context_manager():
     assert "async with" in str(exc_info.value)
 
 
+@pytest.mark.parametrize(
+    "fatal_exc",
+    [
+        pytest.param(MemoryError("OOM"), id="memory_error"),
+        pytest.param(RecursionError("maximum recursion depth exceeded"), id="recursion_error"),
+    ],
+)
+@respx.mock
+async def test_request_etag_cache_fatal_exception_propagates(
+    fatal_exc: MemoryError | RecursionError,
+) -> None:
+    """_update_etag_cache の fatal 例外は GitHubAPIError に変換せず伝播する。"""
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+        status_code=200,
+        json={"login": "octocat"},
+        headers={"ETag": '"etag-value"'},
+    )
+
+    async with AsyncGitHubClient() as client:
+        with (
+            patch.object(client, "_update_etag_cache", side_effect=fatal_exc),
+            pytest.raises(type(fatal_exc)),
+        ):
+            await client.get_user("octocat")
+
+    assert route.call_count == 1
+
+
 @respx.mock
 async def test_httpx_status_error_4xx():
     """httpx.HTTPStatusError（4xx）処理の検証"""
@@ -2808,6 +2836,20 @@ def test_cache_key_raises_github_api_error_on_type_error() -> None:
 
     with pytest.raises(GitHubAPIError, match="cache_key"):
         AsyncGitHubClient._cache_key("/repos", {"key": NonSerializable()})
+
+
+def test_cache_key_raises_github_api_error_on_unicode_encode_error() -> None:
+    """_cache_key: UnicodeEncodeError も PII-safe な GitHubAPIError に変換する。"""
+
+    class NonEncodable:
+        def __str__(self) -> str:
+            raise UnicodeEncodeError("ascii", "秘密", 0, 1, "not encodable")
+
+    with pytest.raises(GitHubAPIError, match="UnicodeEncodeError") as exc_info:
+        AsyncGitHubClient._cache_key("/repos", {"key": NonEncodable()})
+
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__suppress_context__ is True
 
 
 def test_cache_key_error_suppresses_cause_for_pii_safety() -> None:

@@ -300,6 +300,24 @@ class TestSensitiveKeysCompleteness:
         )
 
     @pytest.mark.parametrize(
+        "known_false_negative",
+        [
+            "foopassword",
+            "mypassword",
+            "oldpassword",
+            "ssnumber",
+            "cvvcode",
+        ],
+    )
+    def test_sensitive_key_false_negatives_documented(self, known_false_negative: str) -> None:
+        """単語境界設計の既知 false negative を契約化する。
+
+        substring 一致へ戻すと `prototype` / `photo_url` 等の false positive が再発するため、
+        連結語の頻出パターンは SENSITIVE_KEYS へ明示追加する方針を維持する。
+        """
+        assert _is_sensitive_key(known_false_negative) is False
+
+    @pytest.mark.parametrize(
         ("key", "expected"),
         [
             # True positives: 短縮語そのもの → True
@@ -1546,6 +1564,20 @@ class TestBeforeSend:
         assert type(result) is container_type
         assert result[0]["user_id"] == 42
         assert result[0]["name"] == "Alice"
+
+    def test_scrub_exception_value_item_scalar_logs_warning(self) -> None:
+        """_scrub_exception_value_item: 非 container 型は警告後に fail-open する。"""
+        value_item = 42
+
+        with patch.object(sentry_module, "_safe_log_warning") as mock_warning:
+            result = sentry_module._scrub_exception_value_item(value_item)
+
+        assert result == value_item
+        mock_warning.assert_called_once_with(
+            "sentry_exception_value_item_unexpected_type",
+            actual_type="int",
+            action="skip_item",
+        )
 
 
 class TestBeforeSendTransaction:

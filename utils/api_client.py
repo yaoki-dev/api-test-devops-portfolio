@@ -20,6 +20,7 @@ ASYNC_FATAL_EXCEPTIONS: tuple[type[BaseException], ...] = (
     KeyboardInterrupt,
     SystemExit,
     MemoryError,
+    RecursionError,
     asyncio.CancelledError,
 )
 

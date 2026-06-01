@@ -337,6 +337,7 @@ class AsyncGitHubClient:
             GitHubServerError: 5xxエラー（リトライ上限後）
             GitHubAPIError: タイムアウト・NetworkError・RemoteProtocolError
                             リトライ上限後の最終失敗、または不正なレスポンス型
+                            パラメータシリアライズ失敗（リトライなし）
 
         Example:
             >>> async with AsyncGitHubClient() as client:
@@ -373,6 +374,7 @@ class AsyncGitHubClient:
             GitHubServerError: 5xxエラー（リトライ上限後）
             GitHubAPIError: タイムアウト・NetworkError・RemoteProtocolError
                             リトライ上限後の最終失敗、または不正なレスポンス型
+                            パラメータシリアライズ失敗（リトライなし）
 
         Example:
             >>> repos = await client.get_repos("octocat", sort="updated")
