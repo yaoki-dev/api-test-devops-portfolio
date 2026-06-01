@@ -26,8 +26,8 @@ def test_get_produces_structured_logs() -> None:
     リクエスト開始・成功イベントを endpoint 付きで記録すること。
 
     request_start / request_success は DEBUG レベルで出力されるため、
-    既定の filtering level（INFO）では破棄される。テスト中のみ DEBUG へ
-    再構成して capture し、終了後に元の structlog 設定へ復元する。
+    テスト中のみ DEBUG へ再構成して capture し、
+    終了後に元の structlog 設定へ復元する。
     実API不要・決定論的（respx で HTTP 層を差し替え）。
     """
     mock_get_route(f"{BASE_URL}/posts/1", None, {"id": 1})
@@ -48,8 +48,13 @@ def test_get_produces_structured_logs() -> None:
 
     events = [entry["event"] for entry in logs]
     assert "request_start" in events
-    assert "request_success" in events
 
-    success = next(entry for entry in logs if entry["event"] == "request_success")
+    success = next(
+        (entry for entry in logs if entry["event"] == "request_success"),
+        None,
+    )
+    assert success is not None, (
+        f"request_success ログエントリが見つかりません。記録されたイベント: {events}"
+    )
     assert success["endpoint"] == "/posts/1"
     assert success["status_code"] == 200

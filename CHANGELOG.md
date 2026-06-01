@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `test_api_404_raises_http_error` → 新規
       `tests/integration/test_api_client_integration.py`
       (`SyncAPIClient` + `APIHTTPError`、`pytestmark=integration`)。
-    - `test_api_request_produces_logs` → 新規
+    - `test_get_produces_structured_logs` → 新規
       `tests/unit/test_api_client_logging.py`
       (respx モックで決定論化、実 API 非依存)。
     - `tests/test_smoke.py` は `test_api_request_succeeds` (実 API 疎通) と
