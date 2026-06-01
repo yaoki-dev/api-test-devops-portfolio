@@ -68,13 +68,15 @@ if init_sentry():
 
 **注記 (個数 baseline)**:
 
-- `CHANGELOG.md` の「32 → 40」表記は **PR#347 単体の delta** (=8件追加)。
-  追加キー: `access_key`, `proxy-authorization`, `set-cookie`, `x-auth-token`,
-  `csrf_token`, `x-csrf-token`, `x-refresh-token`, `x-access-token`。
-- 本メモリの「29 → 40」表記は **PR#340 review (commits da8c0cb / 255e38f)**
-  で追加された `email`, `ip_address`, `body_preview` の **3 件**を含む累積 delta
-  (=11件追加、29+11=40)。
-- 起点 PR が異なるため数値表記が一致しない。最終状態は **43 件**（複合語バリアント authtoken / usertoken / userpassword の3件が現在のステージ済PRで追加され40→43）。
+- `CHANGELOG.md` の「32 → 43（+11件）」表記が最終状態と一致する。
+  起点 32 は **PR#340 で `email` / `ip_address` / `body_preview` 追加後の件数**。
+  PR#340 前起点では **29 → 43（+14件）**。
+- 現ステージ済 PR で追加された **11 件** の内訳（CHANGELOG.md と同一）:
+  - 認証系 1 件: `access_key`
+  - HTTP ヘッダー 7 件: `proxy-authorization`, `set-cookie`, `x-auth-token`,
+    `csrf_token`, `x-csrf-token`, `x-refresh-token`, `x-access-token`
+  - 複合語バリアント 3 件: `authtoken`, `usertoken`, `userpassword`
+- 最終状態は **43 件**（32 + 11、上記内訳テーブル合計と一致）。
 
 **確認元**: `utils/sentry_init.py` (`SENSITIVE_KEYS` frozenset)
 **マッチング方式**: `_is_sensitive_key` は **単語境界マッチ + ハイフン/アンダースコア
@@ -124,8 +126,13 @@ uv run pytest tests/unit/test_sentry_init.py -v
 
 ### Sentry初期化失敗時
 
+初期化失敗時の警告は `SENTRY_DEBUG` に依存せず **常時** `_logger.warning` で出力される
+（本番監視対応, PR#347 #3/#7）。`SENTRY_DEBUG` は `utils/logger.py` の
+`_is_sentry_debug_enabled()` が消費する環境変数で、有効化すると Sentry 関連の
+追加診断（送信失敗の詳細・ImportError 等）を stderr へ出力する:
+
 ```bash
-# デバッグモード有効化
+# 追加の Sentry 診断を stderr へ出力（初期化失敗警告自体は常時出力される）
 export SENTRY_DEBUG=true
 ```
 

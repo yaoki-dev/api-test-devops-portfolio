@@ -19,8 +19,7 @@ structlogと連携し、ERROR以上のログをSentryに送信。
         logger.info("Sentry monitoring enabled")
 
 デバッグ:
-    初期化失敗時は SENTRY_DEBUG の値に関わらず warning ログを常時出力する。
-    （SENTRY_DEBUG は将来の拡張用に定義済みだが、現行 init_sentry() では参照しない）
+    初期化失敗時は warning ログを常時出力する（本番監視対応）。
 
 セキュリティ:
     - before_sendフックで機密データを自動除外（43種類のキーパターン）
@@ -30,7 +29,6 @@ structlogと連携し、ERROR以上のログをSentryに送信。
 
 from __future__ import annotations
 
-import os
 import re
 import secrets
 import sys
@@ -81,9 +79,6 @@ def _has_internal_tag(tags: Any) -> bool:
     return False
 
 
-# デバッグモード（環境変数で有効化）
-SENTRY_DEBUG: bool = os.environ.get("SENTRY_DEBUG", "").lower() in ("true", "1", "yes")
-
 _logger = get_logger(__name__)
 
 
@@ -126,7 +121,9 @@ def _safe_log_warning(event: str, **fields: Any) -> None:
                 f"[sentry_init] _safe_log_warning failed: "
                 f"event={event!r} error_type={type(exc).__name__} "
                 f"error_module={type(exc).__module__} "
-                f"fields_keys={list(fields.keys())}",
+                # fields のキー名は呼び出し元によっては機密語を含みうるため件数のみ出力する
+                # （event 名で呼び出し箇所は特定可能, PR#347 review SF-3）。
+                f"fields_count={len(fields)}",
                 file=sys.stderr,
                 flush=True,
             )
@@ -624,7 +621,7 @@ def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
     list型の場合は (key, value) ペア形式の tags と dict/list 要素形式の
     breadcrumbs の両方をスクラブし、非PII のデバッグ情報（リクエストID等）は
     保持する（Sentry SDK 仕様: tags は ``list[tuple[str, str]]`` 形式も許容）。
-    上記以外の型の場合は空dictに置換し（安全サイド）、SENTRY_DEBUG の値に関わらず
+    上記以外の型の場合は空dictに置換し（安全サイド）、
     logger.warning を常時出力する（本番監視対応）。
     _scrub_sensitive_data の内部 non-dict ガードと二重防御を構成する。
 

@@ -1190,12 +1190,8 @@ class TestBeforeSend:
         result = sentry_module._scrub_tags_item(("token", "secret"), _depth=MAX_SCRUB_DEPTH)
         assert result == "[MAX_DEPTH_EXCEEDED]"
 
-    def test_scrub_sentry_field_non_dict_logs_warning(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_scrub_sentry_field_non_dict_logs_warning(self) -> None:
         """非dict型フィールドは空dict置換 + logger.warning を常時出力."""
-        # _scrub_sentry_field は SENTRY_DEBUG に関わらず logger.warning を出力する
-        monkeypatch.setattr(sentry_module, "SENTRY_DEBUG", True)
         event = cast(Event, {"extra": "not-a-dict"})
 
         with patch.object(sentry_module._logger, "warning") as mock_warning:
@@ -1210,11 +1206,8 @@ class TestBeforeSend:
         assert call_kwargs["action"] == "replaced_with_empty_dict"
         assert call_kwargs["event_id"] is None
 
-    def test_scrub_sentry_field_non_dict_logs_warning_regardless_of_debug(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """SENTRY_DEBUG=False時も logger.warning は常時出力（本番監視対応）."""
-        monkeypatch.setattr(sentry_module, "SENTRY_DEBUG", False)
+    def test_scrub_sentry_field_non_dict_contexts_logs_warning(self) -> None:
+        """非dict型 contexts フィールドも空dict置換 + logger.warning を常時出力（本番監視対応）."""
         event = cast(Event, {"contexts": 123})
 
         with patch.object(sentry_module._logger, "warning") as mock_warning:
@@ -1896,8 +1889,8 @@ class TestSentryState:
         assert is_sentry_initialized() is True
 
 
-class TestSentryDebugMode:
-    """デバッグモード（SENTRY_DEBUG）のテスト"""
+class TestInvalidDsnWarning:
+    """無効DSN/SDK例外時の init_sentry 警告挙動のテスト（警告は常時発火）"""
 
     def setup_method(self) -> None:
         """各テスト前に状態リセット"""
@@ -1907,20 +1900,17 @@ class TestSentryDebugMode:
         """各テスト後に状態リセット"""
         reset_sentry_state()
 
-    @patch.dict("os.environ", {"SENTRY_DEBUG": "true"})
     @patch("utils.sentry_init.get_settings")
-    def test_invalid_dsn_warning_with_debug(self, mock_settings: MagicMock) -> None:
-        """無効なDSNでSENTRY_DEBUG=trueの場合はSDK例外の警告が出る
+    def test_invalid_dsn_logs_warning_with_error_details(self, mock_settings: MagicMock) -> None:
+        """無効なDSNは SDK 例外として捕捉され _logger.warning を常時発火する
 
         Note: DSN_PATTERN削除後、DSN検証はSDKに委任。
         SDKがBadDsn例外を投げると、except節でキャッチされ _logger.warning を出力。
         非本番環境のみ（本番環境ではRuntimeError発生）。
-        warnings.warn → _logger.warning に変更（filterwarnings('error') 環境での DSN 漏洩防止）
+        警告は SENTRY_DEBUG に依存せず常時出力される
+        （warnings.warn → _logger.warning, filterwarnings('error') 環境での DSN 漏洩防止）。
         """
-        # SENTRY_DEBUGを再読み込み（モジュールレベル変数）
         import utils.sentry_init as sentry_module
-
-        sentry_module.SENTRY_DEBUG = True
 
         mock_settings.return_value.sentry.enabled = True
         mock_settings.return_value.sentry.dsn = SecretStr("invalid-dsn")
@@ -1937,30 +1927,6 @@ class TestSentryDebugMode:
             # BadDsn は sentry_sdk.utils に定義されている
             assert call_kwargs[1]["error_module"] == "sentry_sdk.utils"
             assert call_kwargs[1]["error_type"] == "BadDsn"
-
-        # クリーンアップ
-        sentry_module.SENTRY_DEBUG = False
-
-    @patch("utils.sentry_init.get_settings")
-    def test_invalid_dsn_no_warning_without_debug(self, mock_settings: MagicMock) -> None:
-        """Invalid DSN always triggers _logger.warning regardless of SENTRY_DEBUG"""
-        import utils.sentry_init as sentry_module
-
-        sentry_module.SENTRY_DEBUG = False
-
-        mock_settings.return_value.sentry.enabled = True
-        mock_settings.return_value.sentry.dsn = SecretStr("invalid-dsn")
-        mock_settings.return_value.is_production_like.return_value = False
-
-        with patch.object(sentry_module._logger, "warning") as mock_warn:
-            result = init_sentry()
-
-            assert result is False
-            mock_warn.assert_called_once_with(
-                "sentry_init_failed",
-                error_type="BadDsn",
-                error_module="sentry_sdk.utils",
-            )
 
 
 class TestSdkExceptionHandling:
@@ -2023,20 +1989,17 @@ class TestSdkExceptionHandling:
         assert result is False
         assert is_sentry_initialized() is False
 
-    @patch.dict("os.environ", {"SENTRY_DEBUG": "true"})
     @patch("utils.sentry_init.get_settings")
     @patch("sentry_sdk.init", side_effect=ConnectionError("Network error"))
-    def test_sdk_init_exception_warning_with_debug(
+    def test_sdk_init_exception_logs_warning(
         self,
         mock_sdk_init: MagicMock,
         mock_settings: MagicMock,
     ) -> None:
-        """SDK例外時にSENTRY_DEBUG=trueなら _logger.warning が出る（非本番環境）
+        """SDK例外時は _logger.warning が常時出る（非本番環境, SENTRY_DEBUG 非依存）
         warnings.warn → _logger.warning に変更（filterwarnings('error') 環境での DSN 漏洩防止）
         """
         import utils.sentry_init as sentry_module
-
-        sentry_module.SENTRY_DEBUG = True
 
         mock_settings.return_value.sentry.enabled = True
         mock_settings.return_value.sentry.dsn = SecretStr(
@@ -2059,8 +2022,6 @@ class TestSdkExceptionHandling:
             assert call_kwargs[0][0] == "sentry_init_failed"
             assert call_kwargs[1]["error_type"] == "ConnectionError"
             assert call_kwargs[1]["error_module"] == "builtins"
-
-        sentry_module.SENTRY_DEBUG = False
 
     @patch("utils.sentry_init.get_settings")
     @patch("sentry_sdk.init", side_effect=ValueError("Invalid configuration"))
@@ -2399,3 +2360,40 @@ class TestIsSensitiveKeyPatternContract:
     def test_is_sensitive_key_access_token_matched(self) -> None:
         """ "access_token" は _SENSITIVE_KEY_PATTERN の単語境界で一致する。"""
         assert _is_sensitive_key("access_token") is True
+
+    @pytest.mark.parametrize("key", ["authtoken", "usertoken", "userpassword"])
+    def test_is_sensitive_key_registered_compound_variants_matched(self, key: str) -> None:
+        """SENSITIVE_KEYS に明示登録した複合語バリアントは redact される (#4)。
+
+        単語境界パターンの suffix lookahead では捕捉できない複合語を補完するため、
+        頻出バリアントを SENSITIVE_KEYS に直接登録している。compact fallback
+        （アンダースコア除去後の完全一致）で True になる契約を固定する。
+        """
+        assert _is_sensitive_key(key) is True
+
+    @pytest.mark.parametrize(
+        "key",
+        ["myusertoken", "prefixauthtoken", "xusertoken", "xuserpassword"],
+    )
+    def test_is_sensitive_key_arbitrary_prefixed_keys_not_over_redacted(self, key: str) -> None:
+        """任意の prefix を付けた非ヘッダーキーは過剰 redact しない（false positive 防止）。
+
+        compact fallback は substring ではなく完全一致のため、`myusertoken` 等の
+        セパレータなし複合語は SENSITIVE_KEYS に一致せず保持される。
+        （注: `x-user-token` のようにハイフン/アンダースコア区切りで `token` 語を含む形式は
+        単語境界マッチで redact される。ここで検証するのは区切りなしの任意複合語のみ。）
+        これにより `_is_sensitive_key` が無関係なキーを巻き込んで過剰 redact する退行を検出する。
+        """
+        assert _is_sensitive_key(key) is False
+
+    @pytest.mark.parametrize(
+        "key",
+        ["x-auth-token", "X-Auth-Token", "x-access-token", "x-csrf-token", "x-refresh-token"],
+    )
+    def test_is_sensitive_key_http_auth_header_variants_matched(self, key: str) -> None:
+        """実在する ``X-*`` 認証系 HTTP ヘッダーは大小・ハイフン正規化後に redact される。
+
+        SENSITIVE_KEYS には標準 HTTP 認証ヘッダーのみ登録する方針。これらが
+        正規化（lower 化 + ハイフン→アンダースコア）後に確実に一致する契約を固定する。
+        """
+        assert _is_sensitive_key(key) is True

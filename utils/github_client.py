@@ -262,11 +262,9 @@ class AsyncGitHubClient:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        """非同期コンテキストマネージャーの終了処理
-
+        """非同期コンテキストマネージャーの終了処理。"""
         # AsyncGitHubClient は AsyncAPIClient の _close_async_client() ヘルパーを継承しないため、
-        # __aexit__ に close ロジックをインラインで実装
-        """
+        # __aexit__ に close ロジックをインラインで実装する。
         if self._client:
             try:
                 await self._client.aclose()
@@ -715,9 +713,10 @@ class AsyncGitHubClient:
 
         asyncio シングルスレッド環境のため競合は発生しない。
 
-        2フェーズ構成:
-          Phase 1: 既存キーを削除して挿入順を更新し、data→ETag の順で保存。
-          Phase 2: _enforce_cache_limit() を呼び出してエントリ数が上限を超えた場合に退避。
+        挿入順序（挿入前退避方式）:
+          1. 既存キーを both dict から削除して挿入順を更新する。
+          2. _enforce_cache_limit(reserve=1) で挿入前に退避し、新規 1 件分の余地を確保する。
+          3. data→ETag の順で保存する（挿入後も上限を超えない, PR#347 review #9）。
 
         例外発生時は「dataあり/ETagなし」の一時状態になりうるが、ETagなしなら次回は
         通常リクエスト（304非使用）となり安全に回復する。
@@ -738,9 +737,12 @@ class AsyncGitHubClient:
                 return
             self._etag_cache.pop(cache_key, None)
             self._data_cache.pop(cache_key, None)
+            # 挿入前に reserve=1 で退避し、挿入後もエントリ数が max_cache_entries を
+            # 超えないようにする。挿入後 enforce では瞬間的に max+1 件になるため、
+            # 新規エントリ 1 件分の余地を空けてから挿入する (PR#347 review #9)。
+            self._enforce_cache_limit(reserve=1)
             self._data_cache[cache_key] = result_json
             self._etag_cache[cache_key] = etag
-            self._enforce_cache_limit()
         else:
             if cache_key in self._etag_cache or cache_key in self._data_cache:
                 self.logger.info("etag_removed", endpoint=cache_key.split("?")[0])
@@ -780,8 +782,15 @@ class AsyncGitHubClient:
                 f"cache_key build failed for endpoint={endpoint!r}: {type(e).__name__}"
             ) from None
 
-    def _enforce_cache_limit(self) -> None:
-        """ETag/dataキャッシュを max_cache_entries 以下に保つ。
+    def _enforce_cache_limit(self, reserve: int = 0) -> None:
+        """ETag/dataキャッシュを ``max_cache_entries - reserve`` 以下に保つ。
+
+        Args:
+            reserve: 直後に挿入する新規エントリ数の予約枠（デフォルト 0）。
+                ``_update_etag_cache`` は挿入前に ``reserve=1`` で呼び出すことで、
+                挿入後もエントリ数が ``max_cache_entries`` を超えない（瞬間的な
+                max+1 を防止, PR#347 review #9）。``max_cache_entries >= 1``
+                かつ ``reserve in (0, 1)`` のため退避目標は常に 0 以上。
 
         _update_etag_cache は _etag_cache と _data_cache を常にペアで書き込むため、
         _etag_cache のみを基準に古いエントリを削除すれば両キャッシュの整合性が保たれる。
@@ -835,7 +844,7 @@ class AsyncGitHubClient:
             self._etag_cache.clear()
             self._data_cache.clear()
             return  # clear() によりサイズ 0 → max_cache_entries 制限は達成済み（while ループ不要）
-        excess = len(self._etag_cache) - self.max_cache_entries
+        excess = len(self._etag_cache) - (self.max_cache_entries - reserve)
         if excess > 0:
             # 削除件数を事前計算し islice でまとめて取得（毎反復 len() 再計算を回避, PR#347）。
             keys_to_evict = list(itertools.islice(self._etag_cache, excess))

@@ -1838,6 +1838,45 @@ def test_enforce_cache_limit_evicts_multiple_entries_when_excess_gt_one() -> Non
     mock_logger.error.assert_not_called()
 
 
+def test_update_etag_cache_enforces_limit_before_insert_with_reserve() -> None:
+    """_update_etag_cache は挿入前に reserve=1 で退避する（瞬間 max+1 防止, PR#347 #9）。
+
+    max+1 は呼び出し中の過渡状態のため返却後のサイズでは観測できない。代わりに
+    _enforce_cache_limit 呼び出し時点を捕捉し、(a) reserve=1 が渡ること、(b) その時点で
+    新規キーが未挿入＝挿入前に enforce が走ることを検証する。挿入後 enforce（reserve なし）
+    に戻すと両アサーションが失敗する true lock-in。
+    """
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES, max_cache_entries=2)
+    # キャッシュを max まで充填する
+    for index in range(2):
+        client._etag_cache[f"/old-{index}"] = f"etag-{index}"
+        client._data_cache[f"/old-{index}"] = {"id": index}
+
+    captured: dict[str, object] = {}
+    original_enforce = client._enforce_cache_limit
+
+    def spy(reserve: int = 0) -> None:
+        captured["reserve"] = reserve
+        captured["new_key_present_at_call"] = "/new" in client._etag_cache
+        original_enforce(reserve)
+
+    response = httpx.Response(
+        200,
+        headers={"ETag": '"new-etag"'},
+        request=httpx.Request("GET", "https://api.github.com/new"),
+    )
+    with patch.object(client, "_enforce_cache_limit", side_effect=spy):
+        client._update_etag_cache("/new", response, {"id": 99})
+
+    # 新規 1 件分を予約して挿入前に退避する
+    assert captured["reserve"] == 1
+    # enforce 呼び出し時点で新規キーは未挿入（= 挿入前 enforce）
+    assert captured["new_key_present_at_call"] is False
+    # 最終的にエントリ数は max を超えない
+    assert len(client._etag_cache) == client.max_cache_entries
+    assert len(client._data_cache) == client.max_cache_entries
+
+
 def test_enforce_cache_limit_invariant_violation_clears_both_caches() -> None:
     """invariant違反検出時は logger.error + 両キャッシュ clear で safe-fallback する。
 
