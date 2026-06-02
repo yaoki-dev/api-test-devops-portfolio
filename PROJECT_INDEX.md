@@ -172,7 +172,7 @@ uv run pytest -m "not slow"      # 高速テストのみ
 - **structlog** (>=23.1.0): 構造化ログ
 - **pydantic** (>=2.0.0): データバリデーション
 - **pydantic-settings** (>=2.0.0): 型安全な設定管理
-- **sentry-sdk[httpx]** (>=2.60.0,<3.0.0): エラー監視（httpx統合）
+- **sentry-sdk[httpx]** (>=2.61.0,<3.0.0): エラー監視（httpx統合）
 - **psutil** (>=6.1.1): システムメトリクス
 - **pyyaml** (>=6.0): YAML設定ファイル読み込み
 

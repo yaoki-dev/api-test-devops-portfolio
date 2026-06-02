@@ -5,7 +5,7 @@ structlogと連携し、ERROR以上のログをSentryに送信。
 
 依存関係:
     - config/settings.py: SentryConfig（DSN、有効化フラグ等）
-    - sentry-sdk[httpx] >= 2.60.0: before_send / new_scope APIを使用
+    - sentry-sdk[httpx] >= 2.61.0: before_send / new_scope APIを使用
 
 初期化タイミング:
     アプリケーション起動時、ログ設定後に一度だけ呼び出し。
@@ -300,6 +300,9 @@ _SCRUBBED_EVENT_FIELDS: frozenset[str] = frozenset(
 _NORMALIZED_SENSITIVE_KEYS: frozenset[str] = frozenset(
     sensitive.replace("-", "_") for sensitive in SENSITIVE_KEYS
 )
+# プレフィックス境界 `(?:^|[_\d])` はハイフンを含まないが、入力キーは _is_sensitive_key の
+# ステップ4 (`key_norm.lower().replace("-", "_")`) でハイフンがアンダースコアへ正規化済みのため、
+# `x-auth-token` → `x_auth_token` として `_` 境界で正しくマッチする (PR#347 review Q-4)。
 _SENSITIVE_KEY_PATTERN: re.Pattern[str] = re.compile(
     r"(?:^|[_\d])(?:"
     + "|".join(
@@ -333,7 +336,8 @@ def _is_sensitive_key(key: str) -> bool:
         1. ACRONYMWord → ACRONYM_Word 変換（`APIKey` → `API_Key`）
         2. camelCase → snake_case 変換（`accessToken` → `access_Token`）
         3. key を lower-case 化
-        4. ハイフン (``-``) をアンダースコア (``_``) へ正規化
+        4. ハイフン (``-``) およびドット (``.``) をアンダースコア (``_``) へ正規化
+           （`database.url` → `database_url`、`x-auth-token` → `x_auth_token`）
         5. ``_NORMALIZED_SENSITIVE_KEYS`` の各要素を単語境界で検索
         6. 全大文字命名 fallback: アンダースコア除去後の完全一致
            （`APIKEY` → `apikey` == `api_key` compact → True）
@@ -727,6 +731,15 @@ def _emit_scrub_failure_to_sentry(exc: BaseException, event_id: str | None = Non
             if event_id is not None:
                 scope.set_extra("event_id", event_id)
             scope.capture_message("sentry_scrub_failed", level="error")
+    except RecursionError:
+        # RecursionError も Exception 派生のため、再raise しないと下流の
+        # except Exception に捕捉されサイレント隠蔽される（他5箇所と同一方針）。
+        # before_send から伝播しても Sentry SDK は capture_internal_exceptions で
+        # 捕捉し event を破棄するため fail-closed（PII 非送信）は維持される。
+        raise
+    except MemoryError:
+        # MemoryError も同様に fail-fast。OOM を握り潰さず即座に伝播させる。
+        raise
     except Exception as inner_exc:  # noqa: BLE001
         # Sentry 通知自体が失敗 → stderr へ最終フォールバック
         print(
@@ -760,6 +773,10 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
     if _has_internal_tag(event.get("tags")):
         return event
 
+    # scrub_exc は except 句で捕捉した例外を try ブロックの外へ持ち出すための変数。
+    # _emit_scrub_failure_to_sentry を except コンテキスト外で呼ぶことで sys.exc_info() が
+    # アクティブな状態を避け、Sentry SDK が元例外(PII 付き)を内部通知イベントに添付する
+    # 事故を防ぐ (fail-closed 防御, PR#347 review S-4。詳細は下方 `except Exception` 節を参照)。
     scrub_exc: Exception | None = None
     # cast は実行時 no-op（型システム専用）— try 外に置いても動作変化なし
     event_dict = cast(dict[str, Any], event)

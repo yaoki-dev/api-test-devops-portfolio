@@ -54,7 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       側で `null → 0` 等の変換ルールを適用する.
 
 - **Dependency upgrade**: `sentry-sdk[httpx]` の最小バージョンを
-  `>=2.58.0` → `>=2.60.0,<3.0.0` に引き上げ (PR#347 review D-2).
+  `>=2.58.0` → `>=2.61.0,<3.0.0` に引き上げ (PR#347 review D-2).
   - **変更理由**: `utils/sentry_init.py:_emit_scrub_failure_to_sentry`
     で使用する `sentry_sdk.new_scope()` API は sentry-sdk 2.x で
     `push_scope()` から正式置換された推奨 API。`new_scope()` は
@@ -164,10 +164,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - HTTP headers: `proxy-authorization`, `set-cookie`, `x-auth-token`,
       `csrf_token`, `x-csrf-token`, `x-refresh-token`, `x-access-token`
     - 複合語バリアント: `authtoken`, `usertoken`, `userpassword`
-  - **追加されたスクラブ対象フィールド (4 → 6)**: `breadcrumbs` および `exception` を
-    `_SCRUBBED_EVENT_FIELDS` に追加.
+  - **追加されたスクラブ対象フィールド (4 → 7)**: `breadcrumbs`、`exception`、`spans` を
+    `_SCRUBBED_EVENT_FIELDS` に追加. あわせて `before_send_transaction=_before_send` を
+    設定し、transaction イベント（`before_send` を通らない SDK 仕様）にも同一スクラブ経路を適用.
     - `breadcrumbs`: ブレッドクラム内の機密キーを redact.
     - `exception`: スタックフレームの local vars (`frames[*].vars`) 経由の PII 漏洩防止.
+    - `spans`: transaction イベントの子 span 配列 (`spans[*].data`/`description`/`tags`) 内の
+      URL クエリパラメータ・PII を redact（`before_send_transaction` 経路でのみ実在）.
   - **意図的に追加しなかった variant (KISS + threat model 駆動)**:
     実証検索 (grep / ast-grep / serena) で payload 経路不在を確認した上で
     以下を SENSITIVE_KEYS から除外. dead config を生まない方針.

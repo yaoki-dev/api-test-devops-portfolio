@@ -735,7 +735,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         try:
             response = self.get("/users", params={"_limit": 1})
             return response.status_code == 200
-        except (KeyboardInterrupt, SystemExit, MemoryError):  # fmt: skip
+        except (KeyboardInterrupt, SystemExit, MemoryError, RecursionError):  # fmt: skip
             # システム例外は再発生（K8s OOMKilled検知、graceful shutdown対応）
             raise
         except APIClientError as e:

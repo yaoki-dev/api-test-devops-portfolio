@@ -2429,3 +2429,120 @@ class TestIsSensitiveKeyPatternContract:
         正規化（lower 化 + ハイフン→アンダースコア）後に確実に一致する契約を固定する。
         """
         assert _is_sensitive_key(key) is True
+
+
+class TestScrubSpanItem:
+    """_scrub_span_item の直接単体テスト（T-2）。
+
+    _before_send 経由の間接テストではカバーされないエッジケースを
+    直接呼び出しで検証する。
+    """
+
+    def test_non_dict_input_list_delegates_to_scrub_list_item(self) -> None:
+        """(a) 非dict入力（list）は _scrub_list_item に委譲される。
+
+        平坦な文字列リストは機密キーコンテキストを持たないためそのまま保持される。
+        """
+        result = sentry_module._scrub_span_item(["foo", "bar"], _depth=0)
+        assert result == ["foo", "bar"]
+
+    def test_non_dict_scalar_delegates_to_scrub_list_item(self) -> None:
+        """(a) 非dict入力（scalar）は _scrub_list_item に委譲され、そのまま返る。"""
+        result = sentry_module._scrub_span_item("plain-string", _depth=0)
+        assert result == "plain-string"
+
+    def test_max_depth_exceeded_returns_sentinel(self) -> None:
+        """(b) _depth >= MAX_SCRUB_DEPTH のとき "[MAX_DEPTH_EXCEEDED]" を返す。"""
+        result = sentry_module._scrub_span_item(
+            {"description": "GET /path"}, _depth=MAX_SCRUB_DEPTH
+        )
+        assert result == "[MAX_DEPTH_EXCEEDED]"
+
+    def test_description_without_space_and_query_scrubs_whole_via_scrub_url(self) -> None:
+        """(c) descriptionにスペースなし + '?' → 全体を _scrub_url で処理しmethod prefixなし。
+
+        "https://api.example.com/users?token=x" はスペースで分割されないため
+        value_to_scrub = description 全体。'?' を含むので _scrub_url 経路。
+        クエリの token 値が除去され、スキームとホストは保持される。
+        """
+        item = {"description": "https://api.example.com/users?token=x"}
+        result = sentry_module._scrub_span_item(item, _depth=0)
+
+        result_description = result["description"]
+        assert result_description.startswith("https://")
+        assert "token=x" not in result_description
+
+    def test_description_with_space_and_query_scrubs_via_scrub_url_preserves_method(self) -> None:
+        """(d) description が "GET /path?token=secret" 形式 → _scrub_url 経路でmethod保持。
+
+        スペースで分割後 method="GET", target="/path?token=secret"。
+        '?' を含むので _scrub_url が呼ばれ、クエリがスクラブされる。
+        "GET " プレフィックスは保持される。
+        """
+        item = {"description": "GET /path?token=secret"}
+        result = sentry_module._scrub_span_item(item, _depth=0)
+
+        result_description = result["description"]
+        assert result_description.startswith("GET ")
+        assert "secret" not in result_description
+
+    def test_description_path_email_pii_redacted_via_path_pii_pattern(self) -> None:
+        """(e) description のpath内メールPII → _PATH_PII_PATTERN で [REDACTED] 置換。
+
+        "GET /users/foo@example.com/profile" はスペースで分割後
+        target="/users/foo@example.com/profile"。'?' も '#' も含まないため
+        _PATH_PII_PATTERN.sub("[REDACTED]", ...) 経路。
+        メールアドレスが [REDACTED] に置換され、"GET " プレフィックスと残りのパスは保持。
+        """
+        item = {"description": "GET /users/foo@example.com/profile"}
+        result = sentry_module._scrub_span_item(item, _depth=0)
+
+        result_description = result["description"]
+        assert result_description.startswith("GET ")
+        assert "foo@example.com" not in result_description
+        assert "[REDACTED]" in result_description
+        assert "/profile" in result_description
+
+
+class TestBeforeSendLoggerEventId:
+    """_before_send の scrub 失敗時に _logger.error へ event_id が渡ることの検証（T-3）。"""
+
+    def test_before_send_logger_error_receives_event_id(self) -> None:
+        """scrub 失敗時に _logger.error へ event_id kwarg が正しく渡される。
+
+        既存テスト test_before_send_passes_event_id_to_scrub_failure_notification は
+        _emit_scrub_failure_to_sentry への event_id 渡しを検証するが、
+        _logger.error への event_id 渡しは未検証。本テストはその空白を埋める。
+
+        既存テスト (L916) と同一の失敗誘発方法（_scrub_url を RuntimeError で差し替え）を
+        使用し、_logger.error の call_args_list から "sentry_before_send_drop_event"
+        エントリを特定して event_id kwarg を検証する。
+        """
+        event = cast(
+            Event,
+            {
+                "event_id": "evt-logger-check-001",
+                "request": {"url": "https://example.com/path?token=abc"},
+            },
+        )
+
+        with (
+            patch.object(sentry_module, "_scrub_url", side_effect=RuntimeError("scrub-boom")),
+            patch.object(sentry_module, "_emit_scrub_failure_to_sentry"),
+            patch.object(sentry_module, "_logger") as mock_logger,
+        ):
+            result = _before_send(event, {})
+
+        assert result is None
+
+        # _logger.error の呼び出しから "sentry_before_send_drop_event" エントリを特定
+        drop_event_calls = [
+            call
+            for call in mock_logger.error.call_args_list
+            if call.args and call.args[0] == "sentry_before_send_drop_event"
+        ]
+        assert len(drop_event_calls) == 1, (
+            f"'sentry_before_send_drop_event' の _logger.error 呼び出しが1件期待されるが "
+            f"{len(drop_event_calls)} 件: {mock_logger.error.call_args_list}"
+        )
+        assert drop_event_calls[0].kwargs.get("event_id") == "evt-logger-check-001"

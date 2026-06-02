@@ -27,6 +27,7 @@ from utils.github_client import (
     _redact_body_preview,
     _SanitizedJSONDecodeError,
     validate_github_repo,
+    validate_github_username,
 )
 
 pytestmark = pytest.mark.unit
@@ -1122,6 +1123,23 @@ async def test_response_not_read_propagates_without_unexpected_wrapper():
 # =============================================================================
 # セキュリティ改善テスト（OWASP A03:2021対策）
 # =============================================================================
+
+
+@pytest.mark.parametrize(
+    "username",
+    [
+        pytest.param("octocat", id="simple_name"),
+        pytest.param("user-name", id="hyphen"),
+        pytest.param("a", id="single_char"),
+        pytest.param("a" * 39, id="max_length"),  # 上限（39文字）
+        pytest.param("1user", id="leading_digit"),
+        pytest.param("user123", id="digits_in_name"),
+        pytest.param("MyUser", id="uppercase"),
+    ],
+)
+def test_username_validation_valid(username: str) -> None:
+    """有効なユーザー名でValueError未発生を確認"""
+    validate_github_username(username)
 
 
 async def test_username_validation_invalid():

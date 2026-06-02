@@ -265,7 +265,10 @@ class AsyncGitHubClient:
         """非同期コンテキストマネージャーの終了処理。"""
         # AsyncGitHubClient は AsyncAPIClient の _close_async_client() ヘルパーを継承しないため、
         # __aexit__ に close ロジックをインラインで実装する。
-        if self._client:
+        # AsyncAPIClient._close_async_client() と同一の `is not None` 明示比較で統一
+        # （型安全規約・PR#347 review Q-1）。httpx.AsyncClient は __bool__/__len__ 未定義の
+        # ため truthy 判定と等価だが、None 比較を明示して意図を明確化する。
+        if self._client is not None:
             try:
                 await self._client.aclose()
             except (httpx.CloseError, OSError) as close_exc:  # fmt: skip
@@ -317,8 +320,8 @@ class AsyncGitHubClient:
                 # logger 自体の例外が aclose 失敗として誤検知されるため else 節に分離 (PR#347)。
                 self.logger.info("async_github_client_closed")
                 # ダブルクローズ防止: AsyncAPIClient._close_async_client と同一パターン。
-                # aclose() 成功後に None をセットし、再 __aexit__ 時の if self._client ガードで
-                # 空振りさせる（冪等性確保）。
+                # aclose() 成功後に None をセットし、再 __aexit__ 時の
+                # `if self._client is not None` ガードで空振りさせる（冪等性確保）。
                 self._client = None
 
     async def get_user(self, username: str) -> dict[str, Any]:
