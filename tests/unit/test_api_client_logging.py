@@ -39,11 +39,11 @@ def test_get_produces_structured_logs() -> None:
     # （structlog 公式も reset_defaults() をテスト用クリーンアップとして推奨）。
     # utils.logger.get_logger() は is_configured() が False のとき遅延再構成するため、
     # reset 後に他テストが get_logger() を呼べば production 設定が自動復元される。
-    structlog.configure(
-        wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG),
-        cache_logger_on_first_use=False,
-    )
     try:
+        structlog.configure(
+            wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG),
+            cache_logger_on_first_use=False,
+        )
         with structlog.testing.capture_logs() as logs:
             with SyncAPIClient() as client:
                 response = client.get("/posts/1")

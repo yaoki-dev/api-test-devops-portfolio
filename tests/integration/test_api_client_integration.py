@@ -11,6 +11,7 @@ import pytest
 from utils.api_client import (
     APIConnectionError,
     APIHTTPError,
+    APIRetryError,
     APITimeoutError,
     SyncAPIClient,
 )
@@ -38,7 +39,7 @@ def test_api_404_raises_http_error() -> None:
             with pytest.raises(APIHTTPError) as exc_info:
                 client.get("/posts/999999")
         assert exc_info.value.status_code == 404
-    except (APIConnectionError, APITimeoutError) as exc:
+    except (APIConnectionError, APITimeoutError, APIRetryError) as exc:
         pytest.skip(
             "JSONPlaceholder への接続に失敗したため 404 契約検証を skip します"
             f"（ネットワーク障害が原因であり 404 契約バグではありません）: {exc}"
