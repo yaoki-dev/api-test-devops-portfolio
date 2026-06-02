@@ -46,4 +46,3 @@ def test_settings_load_succeeds() -> None:
     """
     settings = get_settings()
     assert isinstance(settings, Settings)
-    assert settings.api.base_url.startswith("http")

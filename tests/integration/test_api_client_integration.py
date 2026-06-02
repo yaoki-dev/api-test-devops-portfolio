@@ -16,12 +16,9 @@ from utils.api_client import (
     SyncAPIClient,
 )
 
-# Module-level marker: このファイルの全テストは統合テスト。external は付与しない
-# （毎 PR CI で実行する）。
-# 理由: JSONPlaceholder は本プロジェクトのテスト用基準 API であり、
-# tests/integration/test_basic.py 等が同 API への 404 検証を plain integration として
-# 既に毎 PR 実行している。ここに external を付けると既存 integration 群と非対称になるため
-# 整合を優先する。external は GitHub API 等（認証・レート制限を伴う依存）に限定する。
+# Module-level marker: 全テストを統合テストとして毎 PR CI で実行する。
+# external は付与しない（JSONPlaceholder は基準 API で、既存 integration 群と整合させるため。
+# external は GitHub API 等の認証・レート制限を伴う依存に限定）。
 pytestmark = pytest.mark.integration
 
 
@@ -38,7 +35,7 @@ def test_api_404_raises_http_error() -> None:
         with SyncAPIClient() as client:
             with pytest.raises(APIHTTPError) as exc_info:
                 client.get("/posts/999999")
-        assert exc_info.value.status_code == 404
+            assert exc_info.value.status_code == 404
     except (APIConnectionError, APITimeoutError, APIRetryError) as exc:
         pytest.skip(
             "JSONPlaceholder への接続に失敗したため 404 契約検証を skip します"
