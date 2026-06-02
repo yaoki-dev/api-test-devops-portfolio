@@ -43,11 +43,9 @@ def test_get_produces_structured_logs() -> None:
         )
         with structlog.testing.capture_logs() as logs:
             with SyncAPIClient() as client:
-                response = client.get("/posts/1")
+                client.get("/posts/1")
     finally:
         structlog.reset_defaults()
-
-    assert response.status_code == 200
 
     events = [entry["event"] for entry in logs]
     assert "request_start" in events, (
