@@ -270,7 +270,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Changed**: `utils/sentry_init.py` の `_is_sensitive_key` に
   `@lru_cache(maxsize=512)` を維持.
-  - **維持理由**: SENSITIVE_KEYS は 43 要素だが、キーの正規化処理 (``sub()`` による
+  - **維持理由**: SENSITIVE_KEYS は 44 要素だが、キーの正規化処理 (``sub()`` による
     camelCase / acronym 分割) の計算コストを低減するため cache を適用.
     コード内コメント (L210-211) と設計判断を一致させる修正.
 

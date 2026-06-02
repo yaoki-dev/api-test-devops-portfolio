@@ -800,15 +800,24 @@ async def test_async_bulk_create_users_multiple_cancelled_errors_logged() -> Non
         assert all(isinstance(e, asyncio.CancelledError) for e in exc_info.value.exceptions)
 
 
-async def test_async_bulk_create_users_memory_error_propagates() -> None:
-    """MemoryError が gather 後に再発生されることを確認
+@pytest.mark.parametrize(
+    "fatal_exc",
+    [MemoryError("OOM"), RecursionError("max depth")],
+)
+async def test_async_bulk_create_users_fatal_exception_propagates(
+    fatal_exc: BaseException,
+) -> None:
+    """MemoryError / RecursionError が gather 後に再発生されることを確認
 
-    bulk_create_users は asyncio.CancelledError だけでなく MemoryError も
-    fatal_exceptions として収集して再発生させる（OOM 保護）。
+    bulk_create_users は asyncio.CancelledError だけでなく ASYNC_FATAL_EXCEPTIONS
+    （MemoryError / RecursionError 等）も fatal_exceptions として収集して再発生させる
+    （OOM / スタック枯渇保護）。_close_async_client の
+    test_aclose_fatal_exception_propagates_not_suppressed が parametrize で
+    両方をカバーしているため、設計の一貫性を保つよう本テストも parametrize 化する。
 
-    実装の isinstance チェック対象4種:
+    実装の isinstance チェック対象（ASYNC_FATAL_EXCEPTIONS）:
     - asyncio.CancelledError: test_async_bulk_create_users_cancelled_error_propagates でカバー
-    - MemoryError: 本テストでカバー
+    - MemoryError / RecursionError: 本テストでカバー
     - KeyboardInterrupt: pytest がシグナルとして処理するため unit test 内での再現が困難。
       pytest.raises(KeyboardInterrupt) を使っても pytest 自体のシグナルハンドラが先に捕捉する。
     - SystemExit: 同様の理由で unit test での再現が困難。
@@ -818,9 +827,9 @@ async def test_async_bulk_create_users_memory_error_propagates() -> None:
         "create_user",
         new_callable=AsyncMock,
     ) as mock_create:
-        mock_create.side_effect = MemoryError("OOM")
+        mock_create.side_effect = fatal_exc
         async with AsyncJSONPlaceholderClient() as client:
-            with pytest.raises(MemoryError):
+            with pytest.raises(type(fatal_exc)):
                 await client.bulk_create_users([{"name": "A"}])
 
 

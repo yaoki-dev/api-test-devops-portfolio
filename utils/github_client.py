@@ -905,7 +905,7 @@ class AsyncGitHubClient:
             なお、ヘッダー自体が未設定（None）の場合は
             warningを出力せずフォールバック値を返す。
         """  # noqa: E501
-        if not self._client:
+        if self._client is None:
             raise RuntimeError("Client not initialized. Use 'async with' context.")
 
         cache_key = self._cache_key(endpoint, params)

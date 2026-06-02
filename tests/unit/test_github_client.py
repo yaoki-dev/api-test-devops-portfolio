@@ -2611,6 +2611,46 @@ def test_cache_key_encodes_special_chars_in_value() -> None:
     assert "q=a&b=c" not in key
 
 
+def test_cache_key_non_ascii_key_is_percent_encoded() -> None:
+    """非ASCIIキー名が UTF-8 percent-encode される。
+
+    型シグネチャ ``dict[str, str | int]`` は非ASCIIキー名を許容する。
+    ``_cache_key()`` は ``quote_via=quote`` を指定しており、urllib.parse.quote
+    は非ASCII文字を UTF-8 バイト列の percent-encode に変換する（生のマルチバイト
+    文字をキャッシュキーに残さない）。キャッシュキーの一意性・安全性の境界値検証。
+    """
+    key = AsyncGitHubClient._cache_key("/search", {"クエリ": "value"})
+    # "クエリ" は UTF-8 で %E3%82%AF%E3%82%A8%E3%83%AA に変換される
+    assert key == "/search?%E3%82%AF%E3%82%A8%E3%83%AA=value"
+    # 生の非ASCII文字がキーに残らないこと
+    assert "クエリ" not in key
+
+
+def test_cache_key_non_ascii_value_is_percent_encoded() -> None:
+    """非ASCIIパラメータ値が UTF-8 percent-encode される。
+
+    値側の日本語・絵文字も quote_via=quote により UTF-8 バイト列へ
+    percent-encode され、生のマルチバイト文字がキャッシュキーに残らないことを検証。
+    """
+    key_jp = AsyncGitHubClient._cache_key("/search", {"q": "こんにちは"})
+    assert key_jp == "/search?q=%E3%81%93%E3%82%93%E3%81%AB%E3%81%A1%E3%81%AF"
+    assert "こんにちは" not in key_jp
+
+    key_emoji = AsyncGitHubClient._cache_key("/search", {"q": "🎉"})
+    assert key_emoji == "/search?q=%F0%9F%8E%89"
+
+
+def test_cache_key_non_ascii_keys_are_deterministic() -> None:
+    """非ASCIIキー名でもソートにより決定論的なキャッシュキーを生成する。
+
+    パラメータ順序が異なっても同一キーになること（キャッシュ一意性保証）を
+    非ASCIIキーで検証する。
+    """
+    key1 = AsyncGitHubClient._cache_key("/s", {"あ": "1", "い": "2"})
+    key2 = AsyncGitHubClient._cache_key("/s", {"い": "2", "あ": "1"})
+    assert key1 == key2
+
+
 def test_handle_304_response_cache_miss_error_omits_query_params() -> None:
     """304キャッシュミス時のエラーメッセージからクエリパラメータが除去される。
 

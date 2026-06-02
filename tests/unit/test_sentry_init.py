@@ -620,6 +620,28 @@ class TestScrubExceptionField:
 
         assert result == {"values": {}}
 
+    def test_scrub_exception_field_without_values_key_no_warning(self) -> None:
+        """ "values" キー未存在は Sentry 仕様上の有効構造のため WARNING を出さない。
+
+        Sentry exception interface は values を必須としない
+        (getsentry/sentry interfaces/exception.py: get_path(data, "values",
+        default=[]) で空リスト扱い)。誤検知 WARNING を抑制しつつ、他キーは
+        ベストエフォートで機密スクラブを継続することを検証する (PR#347 review #8)。
+        """
+        exception_value: dict[str, Any] = {"type": "ValueError", "token": "secret_xyz"}  # noqa: S106
+
+        with patch("utils.sentry_init._safe_log_warning") as mock_warn:
+            result = _scrub_exception_field(exception_value)
+
+        # "values" キー未存在は正常構造のため WARNING は出力されない
+        mock_warn.assert_not_called()
+        # 機密キーはベストエフォートでスクラブされる
+        assert result["token"] == "[REDACTED]"  # noqa: S105
+        # 非機密キーは保持される
+        assert result["type"] == "ValueError"
+        # 元の exception_value は変更されない
+        assert exception_value["token"] == "secret_xyz"  # noqa: S105
+
 
 class TestHasInternalTag:
     """_has_internal_tag ヘルパーの defensive branch coverage テスト。

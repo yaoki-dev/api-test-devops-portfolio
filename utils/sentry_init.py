@@ -620,7 +620,15 @@ def _scrub_exception_field(exception_value: dict[str, Any]) -> dict[str, Any]:
         result = dict(exception_value)
         result["values"] = _scrub_sensitive_data(values)
         return result
+    if values is None:
+        # "values" キー未存在は Sentry exception interface 仕様上の有効な構造
+        # (getsentry/sentry interfaces/exception.py: get_path(data, "values",
+        # default=[]) で空リスト扱い、Relay schema でも values は必須でない)。
+        # よって誤検知 WARNING を出さずに、他キーをベストエフォートスクラブして返す
+        # (PR#347 review #8: 正常構造に対するログノイズ抑制)。
+        return cast(dict[str, Any], _scrub_sensitive_data(exception_value))
     if not isinstance(values, list):
+        # str / int 等、None でも list/dict でもない真に予期しない型のみ WARNING。
         _safe_log_warning(
             "sentry_exception_values_unexpected_type",
             actual_type=type(values).__name__,
