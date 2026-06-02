@@ -45,10 +45,10 @@ class TestScrubSensitiveData:
 
     def test_scrub_password_field(self) -> None:
         """パスワードフィールドがREDACTEDされる"""
-        data = {"password": "dummy", "username": "user"}
+        data = {"password": "dummy", "display_name": "user"}
         result = _scrub_sensitive_data(data)
         assert result["password"] == "[REDACTED]"  # noqa: S105
-        assert result["username"] == "user"
+        assert result["display_name"] == "user"
 
     def test_scrub_nested_dict(self) -> None:
         """ネストされた辞書内の機密データもスクラブ"""
@@ -162,7 +162,7 @@ class TestSensitiveKeysCompleteness:
         unintended additions/removals to SENSITIVE_KEYS. When adding keys,
         update the count in this test as well.
         """
-        assert len(SENSITIVE_KEYS) == 43  # SENSITIVE_KEYS 変更時はここの数値も更新
+        assert len(SENSITIVE_KEYS) == 44  # SENSITIVE_KEYS 変更時はここの数値も更新
 
     @pytest.mark.parametrize(
         "key",
@@ -199,6 +199,7 @@ class TestSensitiveKeysCompleteness:
             # 個人情報
             "email",
             "ip_address",
+            "username",
             "database_url",
             "ssn",
             "credit_card",
@@ -711,7 +712,21 @@ class TestBeforeSend:
         event = cast(Event, {"request": {"data": {"password": "secret", "username": "user"}}})
         result_dict = self._call_before_send(event)
         assert result_dict["request"]["data"]["password"] == "[REDACTED]"  # noqa: S105
-        assert result_dict["request"]["data"]["username"] == "user"
+        assert result_dict["request"]["data"]["username"] == "[REDACTED]"
+
+    def test_scrub_request_data_non_dict_replaced_with_redacted(self) -> None:
+        """request.data が非dict/listの場合、PII素通りを防ぐため fail-closed にする。"""
+        event = cast(Event, {"request": {"data": "password=secret&token=abc"}})
+
+        with patch.object(sentry_module._logger, "warning") as mock_warning:
+            result_dict = self._call_before_send(event)
+
+        assert result_dict["request"]["data"] == "[REDACTED]"
+        mock_warning.assert_called_once()
+        assert mock_warning.call_args.args == ("sentry_request_field_type_unexpected",)
+        call_kwargs = mock_warning.call_args[1]
+        assert call_kwargs["actual_type"] == "str"
+        assert call_kwargs["action"] == "replaced_with_redacted"
 
     def test_scrub_extra_data(self) -> None:
         """extraデータがスクラブされる"""
