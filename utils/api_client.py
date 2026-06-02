@@ -23,6 +23,12 @@ ASYNC_FATAL_EXCEPTIONS: tuple[type[BaseException], ...] = (
     RecursionError,
     asyncio.CancelledError,
 )
+SYNC_FATAL_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    KeyboardInterrupt,
+    SystemExit,
+    MemoryError,
+    RecursionError,
+)
 
 
 def exponential_backoff_with_jitter(
@@ -735,7 +741,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         try:
             response = self.get("/users", params={"_limit": 1})
             return response.status_code == 200
-        except (KeyboardInterrupt, SystemExit, MemoryError, RecursionError):  # fmt: skip
+        except SYNC_FATAL_EXCEPTIONS:
             # システム例外は再発生（K8s OOMKilled検知、graceful shutdown対応）
             raise
         except APIClientError as e:
@@ -821,7 +827,7 @@ class AsyncAPIClient:
                 (``Exception`` 派生) を捕捉した際、body 例外の上書き防止のため
                 ``has_body_exception = body_exc_type is not None`` を判定材料として
                 利用する。``None`` の場合のみ実装バグとして bare ``raise`` で再送出する。
-            suppress_unexpected: ``True`` の場合、予期しない close 例外を warning ログ
+            suppress_unexpected: ``True`` の場合、予期しない close 例外を error ログ
                 のみ記録して握りつぶす (re-raise しない)。``aclose()`` 直接呼び出し経路
                 で ``True`` を渡すことで finally ブロック等での安全な呼び出しを保証する。
                 ``__aexit__`` 経路では ``False`` (デフォルト) のまま ``has_body_exception``
@@ -859,9 +865,9 @@ class AsyncAPIClient:
                 has_body_exception = body_exc_type is not None
                 if suppress_unexpected:
                     # aclose() 直接呼び出し経路: finally ブロック等での安全な呼び出しを保証するため
-                    # 予期しない例外を握りつぶし、warning ログのみ記録する。
+                    # 予期しない例外を握りつぶし、error ログで本番監視対象にする。
                     # suppress_unexpected=True は has_body_exception より優先して評価する。
-                    self.logger.warning(
+                    self.logger.error(
                         "async_api_client_aclose_unexpected_error_suppressed",
                         error_type=type(close_exc).__name__,
                         error_module=type(close_exc).__module__,
@@ -918,7 +924,7 @@ class AsyncAPIClient:
         との observability 対称性を保つ (PR#347 review Q-1)。
 
         Note: 直接呼び出し時 (async context manager 経由でない場合)、予期しない close 例外は
-        warning ログ記録の上で抑制される (re-raise しない)。これにより finally ブロックでの
+        error ログ記録の上で抑制される (re-raise しない)。これにより finally ブロックでの
         安全な呼び出しを保証し、アプリクラッシュリスクを回避する。
         async with 経由では body 例外保護ロジック (has_body_exception) が適用され、
         body 例外がない場合のみ close 例外を re-raise する従来の挙動を維持する。

@@ -763,7 +763,7 @@ class AsyncGitHubClient:
         params=None と同一のキャッシュキーを生成する。
         params がある場合は ``endpoint?key1=val1&key2=val2`` 形式で返す。
         URLエンコードには ``quote_via=quote`` を使用する（スペースは ``%20``）。
-         パラメータはキーでソートされ決定論的なキーを生成する。
+        パラメータはキーでソートされ決定論的なキーを生成する。
 
         Args:
             endpoint: APIエンドポイントパス（例: ``/users/octocat/repos``）。
@@ -971,7 +971,7 @@ class AsyncGitHubClient:
                 # PR#347 review #4-[9]: ETag cache 更新失敗を HTTP 層 unexpected_error
                 # と分離。cache update 失敗はレスポンス返却を阻害してはならず (cache の
                 # 副作用) かつ専用イベントで観測性を確保する。HTTP 層 unexpected_error
-                # は retry/エラー判定の対象だが、本イベントは warning 止まり。
+                # は retry/エラー判定の対象だが、本イベントは error ログで監視対象にする。
                 try:
                     self._update_etag_cache(cache_key, response, result_json)
                 except RecursionError:
@@ -985,7 +985,7 @@ class AsyncGitHubClient:
                     # 致命的エラーとして必ず再raise（fail-fast）。
                     raise
                 except Exception as cache_exc:  # noqa: BLE001
-                    self.logger.warning(
+                    self.logger.error(
                         "etag_cache_update_failed",
                         endpoint=endpoint,
                         method=method,

@@ -53,7 +53,7 @@ if init_sentry():
 
 ## 機密データ保護
 
-`before_send`フックで以下**43種類**の機密キーを自動スクラブ:
+`before_send`フックで以下**44種類**の機密キーを自動スクラブ:
 
 | カテゴリ | キー | 個数 |
 |---------|------|------|
@@ -62,9 +62,9 @@ if init_sentry():
 | **暗号化** | encryption_key, cipher_key | 2 |
 | **OAuth** | oauth_token | 1 |
 | **二要素認証** | otp, mfa, totp | 3 |
-| **個人情報** | email, ip_address, database_url, ssn, credit_card, cvv, card_number | 7 |
+| **個人情報** | email, ip_address, username, database_url, ssn, credit_card, cvv, card_number | 8 |
 | **HTTPヘッダー/レスポンス** | body_preview, access_key, proxy-authorization, set-cookie, x-auth-token, csrf_token, x-csrf-token, x-refresh-token, x-access-token | 9 |
-| **合計** | - | **43** |
+| **合計** | - | **44** |
 
 **注記 (個数 baseline)**:
 
@@ -76,7 +76,7 @@ if init_sentry():
   - HTTP ヘッダー 7 件: `proxy-authorization`, `set-cookie`, `x-auth-token`,
     `csrf_token`, `x-csrf-token`, `x-refresh-token`, `x-access-token`
   - 複合語バリアント 3 件: `authtoken`, `usertoken`, `userpassword`
-- 最終状態は **43 件**（32 + 11、上記内訳テーブル合計と一致）。
+- PR#347 review follow-up で `username` を追加し、最終状態は **44 件**。
 
 **確認元**: `utils/sentry_init.py` (`SENSITIVE_KEYS` frozenset)
 **マッチング方式**: `_is_sensitive_key` は **単語境界マッチ + ハイフン/アンダースコア
@@ -116,7 +116,7 @@ Sentry MCPサーバーでClaude Codeからエラー調査可能:
 ## テスト
 
 ```bash
-# Sentry統合テスト（106 test functions / 225 collected cases）
+# Sentry統合テスト（141 test functions / 281 collected cases）
 uv run pytest tests/unit/test_sentry_init.py -v
 ```
 
@@ -141,5 +141,5 @@ export SENTRY_DEBUG=true
 ```python
 # スクラブ対象キーの確認
 from utils.sentry_init import SENSITIVE_KEYS
-print(len(SENSITIVE_KEYS))  # 43
+print(len(SENSITIVE_KEYS))  # 44
 ```

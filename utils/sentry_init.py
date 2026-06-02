@@ -22,7 +22,7 @@ structlogと連携し、ERROR以上のログをSentryに送信。
     初期化失敗時は warning ログを常時出力する（本番監視対応）。
 
 セキュリティ:
-    - before_sendフックで機密データを自動除外（43種類のキーパターン）
+    - before_sendフックで機密データを自動除外（44種類のキーパターン）
     - DSNはSecretStrで管理（config/settings.py）
     - enabled=Falseで完全無効化可能
 """
@@ -242,6 +242,7 @@ SENSITIVE_KEYS: frozenset[str] = frozenset(
         # 個人情報
         "email",  # GDPR/個人情報保護法: メールアドレスは個人識別情報
         "ip_address",  # Sentry user.ip_address は個人識別情報として扱う
+        "username",  # Sentry user.username は個人識別情報として扱う
         "database_url",
         "ssn",
         "credit_card",
@@ -327,7 +328,7 @@ _PATH_PII_PATTERN: re.Pattern[str] = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.
 
 
 # maxsize=512 — Sentry イベントが持つユニークキー名は典型的に 50〜200 程度。
-# 512 はその 2〜10 倍のマージン。SENSITIVE_KEYS の要素数 (43) とは無関係。
+# 512 はその 2〜10 倍のマージン。SENSITIVE_KEYS の要素数 (44) とは無関係。
 @lru_cache(maxsize=512)
 def _is_sensitive_key(key: str) -> bool:
     """機密キーかどうかを判定する（単語境界一致 + ハイフン/アンダースコア正規化）。
@@ -465,6 +466,21 @@ def _scrub_sensitive_data(data: Any, _depth: int = 0) -> Any:
         else:
             result[key] = value
     return result
+
+
+def _scrub_request_field(value: Any) -> Any:
+    """Sentry request.* フィールドを fail-closed でスクラブする。"""
+    if isinstance(value, dict):
+        return _scrub_sensitive_data(value)
+    if isinstance(value, list):
+        return [_scrub_list_item(item, _depth=0) for item in value]
+
+    _safe_log_warning(
+        "sentry_request_field_type_unexpected",
+        actual_type=type(value).__name__,
+        action="replaced_with_redacted",
+    )
+    return "[REDACTED]"
 
 
 def _scrub_query_string(query_string: str) -> str:
@@ -792,7 +808,7 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
                 scrubbed_request = dict(request)
                 for req_field in ("headers", "data", "cookies", "env"):
                     if req_field in scrubbed_request:
-                        scrubbed_request[req_field] = _scrub_sensitive_data(
+                        scrubbed_request[req_field] = _scrub_request_field(
                             scrubbed_request[req_field]
                         )
                 if "query_string" in scrubbed_request and isinstance(

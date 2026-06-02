@@ -864,6 +864,32 @@ async def test_request_etag_cache_fatal_exception_propagates(
 
 
 @respx.mock
+async def test_request_etag_cache_non_fatal_exception_logs_error_and_returns_response() -> None:
+    """_update_etag_cache の non-fatal 例外はerrorログを残し、正常レスポンスを返す。"""
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+        status_code=200,
+        json={"login": "octocat"},
+        headers={"ETag": '"etag-value"'},
+    )
+
+    async with AsyncGitHubClient() as client:
+        with (
+            patch.object(client, "_update_etag_cache", side_effect=RuntimeError("cache failed")),
+            capture_logs() as logs,
+        ):
+            result = await client.get_user("octocat")
+
+    assert result == {"login": "octocat"}
+    assert route.call_count == 1
+    error_logs = [log for log in logs if log.get("event") == "etag_cache_update_failed"]
+    assert len(error_logs) == 1
+    assert error_logs[0]["log_level"] == "error"
+    assert error_logs[0]["error_type"] == "RuntimeError"
+    assert error_logs[0]["method"] == "GET"
+    assert error_logs[0]["endpoint"] == "/users/octocat"
+
+
+@respx.mock
 async def test_httpx_status_error_4xx():
     """httpx.HTTPStatusError（4xx）処理の検証"""
     # 401 Unauthorized: respxでステータスコードを返す

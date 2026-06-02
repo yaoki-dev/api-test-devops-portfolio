@@ -1,7 +1,8 @@
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
+from structlog.testing import capture_logs
 
 from tests.constants import BASE_URL
 from utils.api_client import (
@@ -100,6 +101,26 @@ async def test_close_async_client_with_none_client_does_not_raise() -> None:
     client._client = None
     # None の場合は no-op であり、例外が発生しないことを検証
     await client._close_async_client(None)
+
+
+@pytest.mark.asyncio
+async def test_aclose_unexpected_error_suppressed_logs_error() -> None:
+    """aclose() 直接呼び出し時の予期しないclose例外はerrorログで監視対象にする。"""
+    client = AsyncAPIClient(base_url="https://test.com")
+    client._client = AsyncMock()
+    client._client.aclose = AsyncMock(side_effect=RuntimeError("close-failed"))
+
+    with capture_logs() as logs:
+        await client.aclose()
+
+    error_logs = [
+        log
+        for log in logs
+        if log.get("event") == "async_api_client_aclose_unexpected_error_suppressed"
+    ]
+    assert len(error_logs) == 1
+    assert error_logs[0]["log_level"] == "error"
+    assert error_logs[0]["error_type"] == "RuntimeError"
 
 
 @pytest.mark.asyncio
