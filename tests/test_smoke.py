@@ -1,15 +1,20 @@
-"""Smoke Tests (Issues #81, #82, #83)
+"""Smoke Tests (Issue #81)
 
-真のSmoke Test: 外部API（JSONPlaceholder）への疎通確認。
-デプロイ後に「システムが動作している」ことを証明する。
+真のSmoke Test: デプロイ後の最小生存確認。
+- 外部API（JSONPlaceholder）への疎通確認
+- 設定ロード（get_settings）の健全性確認
+
+責務外のテスト（404例外契約検証・ログ内省）は移設済み:
+- 404例外契約 → tests/integration/test_api_client_integration.py（Issue #82）
+- ログ出力検証 → tests/unit/test_api_client_logging.py（Issue #83）
 """
 
-import logging
 from collections.abc import Generator
 
 import pytest
 
-from utils.api_client import APIHTTPError, SyncAPIClient
+from config.settings import Settings, get_settings
+from utils.api_client import SyncAPIClient
 
 
 @pytest.fixture(scope="class")
@@ -31,28 +36,13 @@ class TestSmoke:
         response = api_client.get("/posts/1")
         assert response.status_code == 200
 
-    def test_api_404_raises_http_error(self, api_client: SyncAPIClient) -> None:
-        """#82: 存在しないリソースでAPIHTTPErrorが発生する
 
-        検証: 404レスポンスで適切な例外が発生
-        """
-        with pytest.raises(APIHTTPError) as exc_info:
-            api_client.get("/posts/999999")
-        assert exc_info.value.status_code == 404
+@pytest.mark.smoke
+def test_settings_load_succeeds() -> None:
+    """設定ロードが例外なく完了する
 
-    def test_api_request_produces_logs(
-        self,
-        api_client: SyncAPIClient,
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        """#83: API呼び出し時にログが出力される
-
-        検証: リクエスト実行でAPIリクエストに関連するログが生成される
-        """
-        with caplog.at_level(logging.DEBUG):
-            api_client.get("/posts/1")
-        # API呼び出しに関連するログが存在することを検証（HTTPステータス or エンドポイント）
-        assert any(
-            "200" in record.message or "posts" in record.message.lower()
-            for record in caplog.records
-        ), "API request log not found in captured logs"
+    検証: get_settings() が Settings インスタンスを返す = 設定系の生存確認。
+    network不要・高速・決定論的（Pydantic検証/.env読込が通ること）。
+    """
+    settings = get_settings()
+    assert isinstance(settings, Settings)

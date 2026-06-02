@@ -11,6 +11,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **テスト構成**: Smoke テストを「デプロイ後の最小生存確認」へ純化
+  (Issue #81 / #82 / #83)。
+  - **背景**: `tests/test_smoke.py` の 3 テスト中 2 件が smoke の責務
+    (外部 API 最小疎通) を超えていた。404 例外契約検証は公開契約の
+    ブラックボックステスト、ログ出力検証は内省的でスコープ超過。
+  - **移設内容**:
+    - `test_api_404_raises_http_error` → 新規
+      `tests/integration/test_api_client_integration.py`
+      (`SyncAPIClient` + `APIHTTPError`、`pytestmark=integration`)。
+    - `test_get_produces_structured_logs` → 新規
+      `tests/unit/test_api_client_logging.py`
+      (respx モックで決定論化、実 API 非依存)。
+    - `tests/test_smoke.py` は `test_api_request_succeeds` (実 API 疎通) と
+      新規 `test_settings_load_succeeds` (`get_settings()` 健全性、network 不要)
+      の 2 件構成へ整理。
+  - **設計方針**: smoke = 外部 API 最小疎通 + 設定ロード生存確認に限定。
+  - **影響範囲**: マーカー別実測件数を README テストサマリーへ再同期
+    (Smoke 3→2、Integration 31→37、Unit 1,058→1,216、Performance 6→7、総数 1,098→1,262)。
+    本変更はテスト再編のみで `utils/` / `config/` / `models/` の挙動変更なし。
 - **Fixed (fail-fast)**: `utils/api_client.py` の
   `AsyncAPIClient._close_async_client` (`aclose()` / `__aexit__` 共有 close 処理)
   および `utils/github_client.py` の `AsyncGitHubClient.__aexit__` close 処理
