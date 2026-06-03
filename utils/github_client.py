@@ -21,6 +21,11 @@ import httpx
 from utils.api_client import ASYNC_FATAL_EXCEPTIONS, APIClientError, exponential_backoff_with_jitter
 from utils.logger import get_logger
 
+# モジュールレベル logger: ``@staticmethod`` (例: ``_cache_key``) など
+# ``self.logger`` を参照できない経路で構造化ログを出力するために使用する
+# （structlog のため同名 logger を返し、インスタンス側 ``self.logger`` と一貫。PR#347 #2-6）。
+_module_logger = get_logger(__name__)
+
 # =============================================================================
 # 入力バリデーション（OWASP A03:2021 - Injection対策）
 # =============================================================================
@@ -685,8 +690,11 @@ class AsyncGitHubClient:
                 if remaining == 0
                 else None
             )
+            # _handle_403_response は NoReturn（全経路で必ず raise）のため後続は到達不能。
+            # 防御 assert は置かず NoReturn 型契約に委ねる（mypy が非 raise 経路を静的に
+            # 検出するため契約違反は型検査で捕捉される）。同関数を呼ぶ警告経路と防御
+            # パターンを統一する（PR#347 #2-7: 旧 `raise AssertionError("unreachable")` 削除）。
             self._handle_403_response(response, rate_remaining=remaining, reset_time=reset_time_403)
-            raise AssertionError("unreachable: _handle_403_response is NoReturn")
 
         # ログレベル別出力先
         # warning(401) → LOG__LEVEL=ERROR未満の全設定でstdoutに出力（デフォルトINFO含む）
@@ -783,6 +791,13 @@ class AsyncGitHubClient:
             # 例外型のみ含む GitHubAPIError に変換して呼び出し元のリトライ/エラー
             # ハンドリング体系に統合。params 値は PII 含有可能性があるため
             # ``from None`` で例外チェーンを切断し、エラーメッセージに含めない。
+            # 観測可能性のため endpoint と例外型のみを構造化ログに記録する。
+            # params の値は記録しない（PII 非露出。PR#347 #2-6）。
+            _module_logger.warning(
+                "cache_key_build_failed",
+                endpoint=endpoint,
+                error_type=type(e).__name__,
+            )
             raise GitHubAPIError(
                 f"cache_key build failed for endpoint={endpoint!r}: {type(e).__name__}"
             ) from None

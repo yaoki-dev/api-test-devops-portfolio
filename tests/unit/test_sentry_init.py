@@ -690,6 +690,129 @@ class TestHasInternalTag:
         assert sentry_module._has_internal_tag(non_match_value) is False
 
 
+class TestScrubExceptionFailOpenBranches:
+    """_scrub_exception_frame / _scrub_exception_stacktrace の fail-open 警告分岐の直接テスト。
+
+    これらの分岐 (frame 非 dict / frame_vars 非 dict・None / frames 非 list・None) は
+    従来 _before_send 経由の統合テストでしか到達せず、PII 漏洩防止に関わる重要パスのため
+    直接ユニットテストで個別に検証する (PR#347 review #2-8)。
+    """
+
+    def test_frame_not_dict_returns_input_and_warns_high_risk(self) -> None:
+        """frame が dict でない場合: 入力を破壊せず返し、HIGH リスク警告を出す (fail-open)。"""
+        with patch.object(sentry_module, "_safe_log_warning") as mock_warn:
+            result = sentry_module._scrub_exception_frame("not-a-frame")
+
+        assert result == "not-a-frame"
+        mock_warn.assert_called_once()
+        assert mock_warn.call_args.args[0] == "sentry_exception_frame_unexpected_type"
+        assert mock_warn.call_args.kwargs.get("pii_leak_risk") == "HIGH"
+
+    def test_frame_vars_unexpected_type_skips_scrub_and_warns(self) -> None:
+        """frame['vars'] が dict/None 以外: vars を素通しし警告を出す (scrub スキップ)。"""
+        frame = {"function": "handler", "vars": "not-a-dict"}
+        with patch.object(sentry_module, "_safe_log_warning") as mock_warn:
+            result = sentry_module._scrub_exception_frame(frame)
+
+        assert result["vars"] == "not-a-dict"
+        mock_warn.assert_called_once()
+        assert mock_warn.call_args.args[0] == "sentry_exception_frame_vars_unexpected_type"
+
+    def test_frame_vars_none_no_warning(self) -> None:
+        """frame['vars'] が None (正常: vars 欠如): 警告を出さず frame を返す (誤検知防止)。"""
+        frame = {"function": "handler"}
+        with patch.object(sentry_module, "_safe_log_warning") as mock_warn:
+            result = sentry_module._scrub_exception_frame(frame)
+
+        assert result == {"function": "handler"}
+        mock_warn.assert_not_called()
+
+    def test_frame_vars_dict_is_scrubbed(self) -> None:
+        """frame['vars'] が dict (正常): 機密キーを [REDACTED] にスクラブし非機密は保持する。"""
+        frame = {"vars": {"password": "secret", "user_input": "safe_value"}}
+        result = sentry_module._scrub_exception_frame(frame)
+
+        assert result["vars"]["password"] == "[REDACTED]"  # noqa: S105
+        assert result["vars"]["user_input"] == "safe_value"
+
+    def test_frames_unexpected_type_returns_input_and_warns(self) -> None:
+        """stacktrace['frames'] が list/None 以外: stacktrace を素通しし警告を出す (fail-open)。"""
+        stacktrace = {"frames": "not-a-list"}
+        with patch.object(sentry_module, "_safe_log_warning") as mock_warn:
+            result = sentry_module._scrub_exception_stacktrace(stacktrace)
+
+        assert result == {"frames": "not-a-list"}
+        mock_warn.assert_called_once()
+        assert mock_warn.call_args.args[0] == "sentry_exception_frames_unexpected_type"
+
+    def test_frames_none_no_warning(self) -> None:
+        """stacktrace['frames'] が None (正常: frames 欠如): 警告を出さず stacktrace を返す。"""
+        stacktrace = {"registers": {"rax": "0x0"}}
+        with patch.object(sentry_module, "_safe_log_warning") as mock_warn:
+            result = sentry_module._scrub_exception_stacktrace(stacktrace)
+
+        assert result == {"registers": {"rax": "0x0"}}
+        mock_warn.assert_not_called()
+
+
+class TestScrubSentryFieldExceptionAsList:
+    """#1 blocker: exception フィールドが list 形式でも PII がスクラブされることを検証する。
+
+    Sentry 標準形は dict だが custom before_send 等で list 形態が生じうる。dict 要素は
+    exception 専用スクラブで values[*].value REDACTION と stackframe vars scrub を適用し、
+    非 dict 要素は汎用 _scrub_list_item で再帰スクラブする (PR#347 #1 blocker +
+    codex adversarial review: dispatch 全分岐で素通しゼロ・defense-in-depth 一貫性)。
+    """
+
+    def test_exception_as_list_redacts_value_and_scrubs_frame_vars(self) -> None:
+        """exception が list 形式: values[*].value を [REDACTED] にし frame vars を scrub する。"""
+        event_dict: dict[str, Any] = {
+            "exception": [
+                {
+                    "type": "ValueError",
+                    "value": "password=hunter2 in message",
+                    "stacktrace": {"frames": [{"vars": {"api_key": "sk-secret"}}]},
+                }
+            ]
+        }
+        sentry_module._scrub_sentry_field(event_dict, "exception")
+
+        item = event_dict["exception"][0]
+        assert item["value"] == "[REDACTED]"  # 例外メッセージ全体を redact
+        assert item["type"] == "ValueError"  # type は観測性のため保持
+        assert item["stacktrace"]["frames"][0]["vars"]["api_key"] == "[REDACTED]"
+
+    def test_exception_as_list_scalar_item_preserved(self) -> None:
+        """list 内の scalar 要素は _scrub_list_item 経由でも原形保持し、クラッシュしない。
+
+        scalar(str/int)はキーコンテキストを持たないため _scrub_list_item は
+        redact せず原形を返す(キーベース scrub の仕様限界)。素通しではなく
+        汎用スクラバを通過した結果の不変であることを担保する。
+        """
+        event_dict: dict[str, Any] = {"exception": ["not-a-dict", 42]}
+        sentry_module._scrub_sentry_field(event_dict, "exception")
+
+        assert event_dict["exception"] == ["not-a-dict", 42]
+
+    def test_exception_as_list_nested_container_item_is_scrubbed(self) -> None:
+        """list 内の非 dict コンテナ(list/tuple)に内包された機密キーも再帰スクラブされる。
+
+        codex adversarial review 指摘の defense-in-depth 穴を塞ぐ: 旧実装は非 dict 要素を
+        素通し(原形保持)していたため、custom before_send が exception を
+        list[list[dict]] 形態で生成した場合に内側の PII が漏洩しえた。
+        _scrub_list_item への委譲により、tags/spans 等の他 list 分岐と同様に
+        ネスト機密キーを redact する。
+        """
+        event_dict: dict[str, Any] = {
+            "exception": [["context", {"password": "hunter2"}]],  # noqa: S106
+        }
+        sentry_module._scrub_sentry_field(event_dict, "exception")
+
+        nested = event_dict["exception"][0]
+        assert nested[0] == "context"  # 非機密 scalar は保持
+        assert nested[1]["password"] == "[REDACTED]"  # noqa: S105  # ネスト機密キーは redact
+
+
 class TestBeforeSend:
     """Sentry送信前フックのテスト"""
 

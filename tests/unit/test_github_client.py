@@ -2951,6 +2951,58 @@ def test_cache_key_error_suppresses_cause_for_pii_safety() -> None:
     assert exc_info.value.__cause__ is None  # from None prevents PII leak
 
 
+def test_cache_key_build_failure_logs_endpoint_and_error_type_without_pii() -> None:
+    """#2-6: _cache_key 失敗時に endpoint と error_type のみ構造化ログに記録し、
+    param 値 (PII 含有可能性) はログ引数に含めないことを検証する。"""
+
+    class NonSerializable:
+        def __str__(self) -> str:
+            raise TypeError("not serializable")
+
+    with (
+        patch("utils.github_client._module_logger") as mock_logger,
+        pytest.raises(GitHubAPIError),
+    ):
+        AsyncGitHubClient._cache_key("/repos", {"secret_param": NonSerializable()})
+
+    mock_logger.warning.assert_called_once()
+    log_call = mock_logger.warning.call_args
+    assert log_call.args[0] == "cache_key_build_failed"
+    assert log_call.kwargs["endpoint"] == "/repos"
+    assert log_call.kwargs["error_type"] == "TypeError"
+    # PII-safe: param キー名・値はログ引数に含めない
+    assert "secret_param" not in str(log_call.kwargs)
+
+
+def test_cache_key_unicode_encode_error_logs_endpoint_and_error_type_without_pii() -> None:
+    """#2-6 + codex review: _cache_key の UnicodeEncodeError 経路でも endpoint と
+    error_type のみ構造化ログに記録し、param 値・例外内の非 ASCII PII を含めないことを検証する。
+
+    TypeError 版 (上記) と対をなし、both error branches のログ契約を網羅する。
+    UnicodeEncodeError は例外メッセージに非 ASCII payload (ここでは "秘密") を保持するため、
+    それがログ引数へ漏れないことも確認する。
+    """
+
+    class NonEncodable:
+        def __str__(self) -> str:
+            raise UnicodeEncodeError("ascii", "秘密", 0, 1, "not encodable")
+
+    with (
+        patch("utils.github_client._module_logger") as mock_logger,
+        pytest.raises(GitHubAPIError),
+    ):
+        AsyncGitHubClient._cache_key("/repos", {"secret_param": NonEncodable()})
+
+    mock_logger.warning.assert_called_once()
+    log_call = mock_logger.warning.call_args
+    assert log_call.args[0] == "cache_key_build_failed"
+    assert log_call.kwargs["endpoint"] == "/repos"
+    assert log_call.kwargs["error_type"] == "UnicodeEncodeError"
+    # PII-safe: param キー名・値・例外内の非 ASCII payload をログ引数に含めない
+    assert "secret_param" not in str(log_call.kwargs)
+    assert "秘密" not in str(log_call.kwargs)
+
+
 # =============================================================================
 # _check_rate_limit_warning: 閾値インタラクションテスト（Fix #10-QC-3）
 # =============================================================================

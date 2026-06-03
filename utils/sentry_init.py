@@ -101,17 +101,13 @@ def _safe_log_warning(event: str, **fields: Any) -> None:
     """
     try:
         _logger.warning(event, **fields)
-    except RecursionError:
-        # RecursionError は Exception 派生のため、再raise しないと下流の
-        # except Exception に捕捉されサイレント隠蔽される。
+    except (MemoryError, RecursionError):  # fmt: skip
+        # MemoryError / RecursionError は Exception 派生のため、再raise しないと
+        # 下流の except Exception に捕捉されサイレント隠蔽される。
         # 致命的エラーとして必ず再raise（fail-fast）。
-        raise
-    except MemoryError:
-        # MemoryError も Exception 派生のため、再raise しないと下流の
-        # except Exception に捕捉されサイレント隠蔽される。
-        # 致命的エラーとして必ず再raise（fail-fast）。
-        # tuple 形式 `except (E1, E2):` は ruff format が括弧を除去して
-        # Py2 構文化するため、保守安全のため別行記述。
+        # `# fmt: skip`: ruff format はタプル括弧を除去するが、Python 3.14 (PEP 758)
+        # では括弧なし `except A, B:` も有効な構文（旧 Py2 binding ではない）。
+        # 可読性のため括弧付きタプルを保持する（utils/ 全体で統一の規約。PR#347 #2-2）。
         raise
     except Exception as exc:  # noqa: BLE001
         # ロガー失敗 → fail-open（イベント drop 防止）だが、
@@ -304,6 +300,10 @@ _NORMALIZED_SENSITIVE_KEYS: frozenset[str] = frozenset(
 # プレフィックス境界 `(?:^|[_\d])` はハイフンを含まないが、入力キーは _is_sensitive_key の
 # ステップ4 (`key_norm.lower().replace("-", "_")`) でハイフンがアンダースコアへ正規化済みのため、
 # `x-auth-token` → `x_auth_token` として `_` 境界で正しくマッチする (PR#347 review Q-4)。
+# 左境界 `[_\d]` は数字を含むが小文字英字を含まないため非対称: `v2token` → True
+# （数字 `2` が左境界）/ `footoken` → False（小文字 `o` は境界外）。これは単語先頭の
+# 機密語のみを検出し、複合語中の偶発的な部分一致を避ける意図的設計（テストで担保。
+# PR#347 review #2-5）。
 _SENSITIVE_KEY_PATTERN: re.Pattern[str] = re.compile(
     r"(?:^|[_\d])(?:"
     + "|".join(
@@ -645,12 +645,17 @@ def _scrub_exception_field(exception_value: dict[str, Any]) -> dict[str, Any]:
 def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
     """Sentryイベントの単一フィールドをスクラブする（_before_send 専用）。
 
-    dict型の場合は _scrub_sensitive_data() で再帰的にスクラブする。
-    list型の場合は (key, value) ペア形式の tags と dict/list 要素形式の
-    breadcrumbs の両方をスクラブし、非PII のデバッグ情報（リクエストID等）は
-    保持する（Sentry SDK 仕様: tags は ``list[tuple[str, str]]`` 形式も許容）。
-    上記以外の型の場合は空dictに置換し（安全サイド）、
-    logger.warning を常時出力する（本番監視対応）。
+    dict型の場合は _scrub_sensitive_data() で再帰的にスクラブする
+    （``exception`` は _scrub_exception_field で values[*].value REDACTION と
+    stackframe scrub を適用）。
+    list型の場合は field 単位で dispatch する: ``exception`` は各要素へ
+    _scrub_exception_value_item を適用し（defense-in-depth）、``tags`` は
+    (key, value) ペア形式、その他（breadcrumbs 等）は dict/list 要素形式として
+    スクラブする。非PII のデバッグ情報（リクエストID等）は保持する
+    （Sentry SDK 仕様: tags は ``list[tuple[str, str]]`` 形式も許容）。
+    上記以外の型の場合は安全サイドに置換する（fail-closed）: ``exception`` は
+    Sentry exception interface 準拠の無害なプレースホルダ（``ScrubbedException``）へ、
+    それ以外は空dictへ置換し、logger.warning を常時出力する（本番監視対応）。
     _scrub_sensitive_data の内部 non-dict ガードと二重防御を構成する。
 
     Args:
@@ -666,8 +671,6 @@ def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
             else:
                 event_dict[field] = _scrub_sensitive_data(value)
         elif isinstance(value, list):
-            # exception が list 形式の場合、values[*].value REDACTED と
-            # stackframe scrub は未適用 (Sentry SDK 通常形式は dict)
             # field 単位 dispatch: tags は Sentry spec 上 list[tuple[str, str]]
             # （JSON経由で list[list[str, str]] にもなり得る）なので tag pair として処理。
             # 加えて非標準だが custom before_send hook 等で生じうる list[dict] / list[list]
@@ -676,7 +679,23 @@ def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
             # 他フィールド（breadcrumbs/contexts/extra/user）は汎用要素として
             # 処理し、list[2] with str[0] の偶発的 tag-pair 誤判定で過剰 redact
             # しない（PR #347 review: KP-003 / T3 対応）。
-            if field == "tags":
+            if field == "exception":
+                # exception が list 形式（Sentry 標準は dict だが custom before_send
+                # 等で生じうる）でも values[*].value の REDACTION と stackframe vars
+                # scrub を適用し、PII（例外メッセージ・frame 変数）の素通りを防ぐ
+                # （PR#347 #1 blocker: defense-in-depth）。
+                # dict 要素は exception 専用スクラブ、非 dict 要素（custom hook が
+                # 生成しうる list/tuple/scalar）は汎用 _scrub_list_item で再帰スクラブ
+                # する。これにより tags/spans/その他（L697）の list 分岐と同様に
+                # 「全分岐で非 dict 要素も再帰スクラブ・素通しゼロ」を満たし、dispatch の
+                # 一貫性を保つ（PR#347 codex adversarial review: fail-open 非対称の解消）。
+                event_dict[field] = [
+                    _scrub_exception_value_item(item)
+                    if isinstance(item, dict)
+                    else _scrub_list_item(item, _depth=0)
+                    for item in value
+                ]
+            elif field == "tags":
                 event_dict[field] = [_scrub_tags_item(item, _depth=0) for item in value]
             elif field == "spans":
                 event_dict[field] = [_scrub_span_item(item, _depth=0) for item in value]
