@@ -68,15 +68,16 @@ if init_sentry():
 
 **注記 (個数 baseline)**:
 
-- `CHANGELOG.md` の「32 → 43（+11件）」表記が最終状態と一致する。
+- `CHANGELOG.md` の「32 → 44（+12件）」表記が最終状態と一致する。
   起点 32 は **PR#340 で `email` / `ip_address` / `body_preview` 追加後の件数**。
-  PR#340 前起点では **29 → 43（+14件）**。
-- 現ステージ済 PR で追加された **11 件** の内訳（CHANGELOG.md と同一）:
+  PR#340 前起点では **29 → 44（+15件）**。
+- 現ステージ済 PR で追加された **12 件** の内訳（CHANGELOG.md と同一）:
   - 認証系 1 件: `access_key`
   - HTTP ヘッダー 7 件: `proxy-authorization`, `set-cookie`, `x-auth-token`,
     `csrf_token`, `x-csrf-token`, `x-refresh-token`, `x-access-token`
   - 複合語バリアント 3 件: `authtoken`, `usertoken`, `userpassword`
-- PR#347 review follow-up で `username` を追加し、最終状態は **44 件**。
+  - 個人情報 1 件: `username`（PR#347 review follow-up で追加）
+- 最終状態は **44 件**（`utils/sentry_init.py` 実装・`test_sentry_init.py::assert len(SENSITIVE_KEYS) == 44` と一致）。
 
 **確認元**: `utils/sentry_init.py` (`SENSITIVE_KEYS` frozenset)
 **マッチング方式**: `_is_sensitive_key` は **単語境界マッチ + ハイフン/アンダースコア
@@ -116,7 +117,7 @@ Sentry MCPサーバーでClaude Codeからエラー調査可能:
 ## テスト
 
 ```bash
-# Sentry統合テスト（141 test functions / 281 collected cases）
+# Sentry統合テスト（151 test functions / 291 collected cases）
 uv run pytest tests/unit/test_sentry_init.py -v
 ```
 

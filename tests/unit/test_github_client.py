@@ -2173,6 +2173,31 @@ def test_parse_json_response_invalid_json_uses_sanitized_cause() -> None:
     assert isinstance(decode_logs[0]["error_lineno"], int)
 
 
+def test_sanitized_jsondecodeerror_str_contains_no_response_body() -> None:
+    """_SanitizedJSONDecodeError.__str__() は型・位置情報のみで body を含まない（PR#347 T-2）。
+
+    現状の PII 漏洩防止は __cause__ チェーン切断（__context__=None）に依存するが、
+    __str__ 出力自体が response body を構造的に保持しないことを直接検証し、
+    将来のフォーマット変更による回帰を検出する。colno は PR#347 Q-3 で追加した診断情報。
+    """
+    cause = _SanitizedJSONDecodeError(
+        "json.JSONDecodeError",
+        pos=42,
+        lineno=3,
+        colno=7,
+    )
+
+    rendered = str(cause)
+    # 型・位置情報のみが厳密に含まれる（body 由来の文字列を混入させる余地がない）
+    assert rendered == "json.JSONDecodeError: pos=42, lineno=3, colno=7"
+    assert cause.pos == 42
+    assert cause.lineno == 3
+    assert cause.colno == 7  # PR#347 Q-3: 診断用 colno を保持
+    # 仮にレスポンス body 由来の機密文字列があっても __str__ には現れない
+    assert "password" not in rendered
+    assert "token" not in rendered
+
+
 def test_parse_json_response_unexpected_parse_error_propagates() -> None:
     """_parse_json_response: JSONDecodeError以外のパース例外は呼び出し元へ伝播"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)

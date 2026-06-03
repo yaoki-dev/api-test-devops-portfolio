@@ -11,6 +11,7 @@ import hashlib
 import itertools
 import json
 import re
+import sys
 from datetime import UTC, datetime
 from types import TracebackType
 from typing import Any, NoReturn, Self, cast
@@ -120,11 +121,12 @@ class GitHubAPIError(APIClientError):
 class _SanitizedJSONDecodeError(Exception):
     """レスポンスbodyを保持しない JSONDecodeError cause。"""
 
-    def __init__(self, error_type: str, pos: int, lineno: int) -> None:
+    def __init__(self, error_type: str, pos: int, lineno: int, colno: int) -> None:
         self.error_type = error_type
         self.pos = pos
         self.lineno = lineno
-        super().__init__(f"{error_type}: pos={pos}, lineno={lineno}")
+        self.colno = colno
+        super().__init__(f"{error_type}: pos={pos}, lineno={lineno}, colno={colno}")
 
 
 class RateLimitError(GitHubAPIError):
@@ -299,21 +301,35 @@ class AsyncGitHubClient:
                 # 予期しない例外（AttributeError, RuntimeError 等の実装バグ可能性）。
                 # RecursionError / MemoryError は上の専用句で先取り済み（fail-fast）。
                 has_body_exception = exc_type is not None
-                self.logger.error(
-                    "github_client_aclose_unexpected_error",
-                    error_type=type(close_exc).__name__,
-                    error_module=type(close_exc).__module__,
-                    has_body_exception=has_body_exception,
-                    action=(
-                        "suppressed_due_to_body_exception" if has_body_exception else "re_raised"
-                    ),
-                    # PR#347 review SF-2: close_exc が body 例外を上書きしないため
-                    # __context__ チェーンは切断される。代わりに body 例外の型名を
-                    # 同一ログイベント内に記録し、close 失敗と body 例外の対応関係を
-                    # 追跡可能にする (PII 非含: __qualname__ はクラス名のみ)。
-                    body_exception_type=exc_type.__qualname__ if exc_type is not None else None,
-                    exc_info=True,  # スタックトレースをログに残す
-                )
+                try:
+                    self.logger.error(
+                        "github_client_aclose_unexpected_error",
+                        error_type=type(close_exc).__name__,
+                        error_module=type(close_exc).__module__,
+                        has_body_exception=has_body_exception,
+                        action=(
+                            "suppressed_due_to_body_exception"
+                            if has_body_exception
+                            else "re_raised"
+                        ),
+                        # PR#347 review SF-2: close_exc が body 例外を上書きしないため
+                        # __context__ チェーンは切断される。代わりに body 例外の型名を
+                        # 同一ログイベント内に記録し、close 失敗と body 例外の対応関係を
+                        # 追跡可能にする (PII 非含: __qualname__ はクラス名のみ)。
+                        body_exception_type=exc_type.__qualname__ if exc_type is not None else None,
+                        exc_info=True,  # スタックトレースをログに残す
+                    )
+                except Exception:  # noqa: BLE001
+                    # ロガー自体の例外が close_exc / body 例外を隠蔽するのを防ぐ
+                    # （PR#347 B-3）。stderr フォールバックで監視可能性を維持する。
+                    try:
+                        print(
+                            f"[github_client] aclose logger failed: {type(close_exc).__name__}",
+                            file=sys.stderr,
+                            flush=True,
+                        )
+                    except Exception:  # noqa: BLE001, S110
+                        pass
                 # body 例外がない場合のみ実装バグとして re-raise。
                 # body 例外がある場合は本質的原因の上書きを防ぐため raise しない。
                 # bare ``raise`` で active exception の traceback を完全保持
@@ -321,13 +337,13 @@ class AsyncGitHubClient:
                 if not has_body_exception:
                     raise
             else:
-                # aclose() 成功時のみ closed ログを出す。logger.info を try 内に置くと
-                # logger 自体の例外が aclose 失敗として誤検知されるため else 節に分離 (PR#347)。
-                self.logger.info("async_github_client_closed")
-                # ダブルクローズ防止: AsyncAPIClient._close_async_client と同一パターン。
-                # aclose() 成功後に None をセットし、再 __aexit__ 時の
-                # `if self._client is not None` ガードで空振りさせる（冪等性確保）。
+                # ダブルクローズ防止: logger.info より先に None をセットする。
+                # logger.info が例外を投げても _client=None が確定済みのため、再 __aexit__
+                # 時の `if self._client is not None` ガードで空振りし aclose 二重実行を防ぐ
+                # （AsyncAPIClient._close_async_client と同一順序, PR#347 B-2）。
                 self._client = None
+                # aclose() 成功時のみ closed ログを出す（else 節分離で logger 例外の誤検知回避）。
+                self.logger.info("async_github_client_closed")
 
     async def get_user(self, username: str) -> dict[str, Any]:
         """ユーザー情報取得
@@ -638,6 +654,7 @@ class AsyncGitHubClient:
                 f"{type(e).__module__}.{type(e).__qualname__}",
                 e.pos,
                 e.lineno,
+                e.colno,
             )
         raise GitHubAPIError("Invalid JSON response") from _sanitized_cause
 

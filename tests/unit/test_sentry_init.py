@@ -1094,6 +1094,37 @@ class TestBeforeSend:
         assert isinstance(mock_emit.call_args.args[0], RuntimeError)
         assert mock_emit.call_args.kwargs == {"event_id": "evt-789"}
 
+    @pytest.mark.parametrize(
+        "emit_error",
+        [MemoryError("emit-oom"), RecursionError("emit-depth")],
+    )
+    def test_before_send_fail_closed_when_emit_reraises_system_error(
+        self, emit_error: BaseException
+    ) -> None:
+        """emit がシステム異常 (MemoryError/RecursionError) を再 raise しても、SF-1 の
+        呼び出し側 try/except が捕捉し event を drop (None) する（PR#347 #15）。
+
+        _emit_scrub_failure_to_sentry は内部でシステム異常を fail-fast 再 raise する設計だが、
+        その再 raise は scrub ブロックの except (MemoryError, RecursionError) の外で発生するため
+        SF-1 の保護が無いと return None を飛び越えて _before_send 外へ伝播し、fail-closed ドロップが
+        Sentry SDK の capture_internal_exceptions 挙動依存になる。本テストは SF-1 が emit 経路の
+        fail-closed を SDK 非依存で確定させることを保証する（SF-1 除去時は再 raise が伝播し失敗）。
+        """
+        event = cast(Event, {"request": {"url": "https://example.com/path?token=abc"}})
+
+        with (
+            patch.object(sentry_module, "_scrub_url", side_effect=RuntimeError("url-scrub-boom")),
+            patch.object(
+                sentry_module,
+                "_emit_scrub_failure_to_sentry",
+                side_effect=emit_error,
+            ),
+        ):
+            # SF-1 が無いと emit_error がこの呼び出しで伝播する（red 条件）。
+            result = _before_send(event, {})
+
+        assert result is None
+
     def test_before_send_secondary_fallback_when_logger_error_raises(self) -> None:
         """scrub 失敗ログ出力中に _logger.error 自体が例外を投げた場合、二次 fallback の
         _safe_log_warning へ fall through し、event は drop (None) される。
@@ -1304,6 +1335,28 @@ class TestBeforeSend:
         assert "[SENTRY_SCRUB_FAILED]" in captured.err
         assert "sentry_sdk_not_loaded" in captured.err
         assert "error_type=KeyError" in captured.err
+
+    def test_emit_scrub_failure_reraises_recursion_error_fail_fast(self) -> None:
+        """内部 SDK 呼び出しが RecursionError を投げた場合 fail-fast で再 raise する（PR#347 T-1）。
+
+        MemoryError/RecursionError は system 致命例外であり、_emit 内部の
+        ``except Exception`` で握り潰さず即時伝播させる契約（_safe_log_warning と同一方針）。
+        伝播した例外は Sentry SDK の capture_internal_exceptions が捕捉し event を破棄するため
+        fail-closed（PII 非送信）は維持される。
+        """
+        mock_sdk = MagicMock()
+        mock_sdk.new_scope = MagicMock(side_effect=RecursionError())
+        with patch.dict(sys.modules, {"sentry_sdk": mock_sdk}):
+            with pytest.raises(RecursionError):
+                sentry_module._emit_scrub_failure_to_sentry(ValueError("orig"))
+
+    def test_emit_scrub_failure_reraises_memory_error_fail_fast(self) -> None:
+        """内部 SDK 呼び出しが MemoryError を投げた場合 fail-fast で再 raise する（PR#347 T-1）。"""
+        mock_sdk = MagicMock()
+        mock_sdk.new_scope = MagicMock(side_effect=MemoryError())
+        with patch.dict(sys.modules, {"sentry_sdk": mock_sdk}):
+            with pytest.raises(MemoryError):
+                sentry_module._emit_scrub_failure_to_sentry(ValueError("orig"))
 
     def test_returns_event(self) -> None:
         """イベントオブジェクトを返す（Noneではない）"""

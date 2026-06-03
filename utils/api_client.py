@@ -3,6 +3,7 @@
 import asyncio
 import json
 import random
+import sys
 import time
 from types import TracebackType
 from typing import Any, Self
@@ -812,6 +813,29 @@ class AsyncAPIClient:
         """非同期コンテキストマネージャーのエントリー"""
         return self
 
+    def _log_aclose_error_with_fallback(
+        self, event: str, close_exc: BaseException, **fields: Any
+    ) -> None:
+        """aclose エラーを logger.error で記録し、失敗時は stderr へフォールバック (PR#347 B-3)。
+
+        ``_close_async_client`` の suppress / ``__aexit__`` 両経路で共通する
+        「logger.error → 失敗時 stderr」パターンを集約する。ロガー自体が例外を投げても
+        握りつぶした close 例外を再露出させないことを保証し、呼び出し側の分岐
+        （循環的複雑度）を抑える。
+        """
+        try:
+            self.logger.error(event, **fields)
+        except Exception:  # noqa: BLE001
+            # ロガー例外が握りつぶした close_exc を再露出させない保険。
+            try:
+                print(
+                    f"[api_client] aclose logger failed: {type(close_exc).__name__}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            except Exception:  # noqa: BLE001, S110
+                pass
+
     async def _close_async_client(
         self,
         body_exc_type: type[BaseException] | None,
@@ -867,8 +891,9 @@ class AsyncAPIClient:
                     # aclose() 直接呼び出し経路: finally ブロック等での安全な呼び出しを保証するため
                     # 予期しない例外を握りつぶし、error ログで本番監視対象にする。
                     # suppress_unexpected=True は has_body_exception より優先して評価する。
-                    self.logger.error(
+                    self._log_aclose_error_with_fallback(
                         "async_api_client_aclose_unexpected_error_suppressed",
+                        close_exc,
                         error_type=type(close_exc).__name__,
                         error_module=type(close_exc).__module__,
                         exc_info=True,  # スタックトレースをログに残す
@@ -879,8 +904,9 @@ class AsyncAPIClient:
                     # __context__ チェーンは切断される。代わりに body 例外の型名を
                     # 同一ログイベント内に記録し、close 失敗と body 例外の対応関係を
                     # 追跡可能にする (PII 非含: __qualname__ はクラス名のみ)。
-                    self.logger.error(
+                    self._log_aclose_error_with_fallback(
                         "async_api_client_aclose_unexpected_error",
+                        close_exc,
                         error_type=type(close_exc).__name__,
                         error_module=type(close_exc).__module__,
                         has_body_exception=has_body_exception,

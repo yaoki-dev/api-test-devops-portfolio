@@ -59,6 +59,10 @@ def _has_internal_tag(tags: Any) -> bool:
     受け入れる契約 (``test_before_send_list_tags_redacts_sensitive_key``) のため、
     防御の対称性として recursion guard も両形式に対応する (defense-in-depth)。
 
+    （PR#347 S-1: dict が常態の現行 SDK では list 分岐は一見 YAGNI に見えるが、
+    上記の ``_before_send`` list[tuple] 受け入れ契約をテストが独立に検証しているため
+    意図的に維持する。当該契約テスト廃止時にのみ本分岐の削除を検討すること。）
+
     判定仕様:
         - dict 形式: ``tags[_INTERNAL_TAG_KEY] == _INTERNAL_TAG_VALUE`` で判定。
         - list 形式: ``(_INTERNAL_TAG_KEY, _INTERNAL_TAG_VALUE)`` タプルの完全一致
@@ -408,9 +412,16 @@ def _scrub_span_item(item: Any, _depth: int) -> Any:
         _safe_log_warning("scrub_max_depth_exceeded", depth=_depth, max=MAX_SCRUB_DEPTH)
         return "[MAX_DEPTH_EXCEEDED]"
     if not isinstance(item, dict):
-        return _scrub_list_item(item, _depth)
+        return _scrub_list_item(item, _depth + 1)
 
     scrubbed = _scrub_sensitive_data(item, _depth + 1)
+    if not isinstance(scrubbed, dict):
+        # _depth+1 が MAX_SCRUB_DEPTH に到達すると _scrub_sensitive_data は
+        # "[MAX_DEPTH_EXCEEDED]" (str) を返す。str.get() による AttributeError →
+        # _before_send の except 捕捉 → イベントのサイレントドロップを防ぐ防御ガード
+        # （PR#347 B-1）。現呼び出し元 _scrub_sentry_field は _depth=0 固定のため到達
+        # しないが、将来 _scrub_span_item が深い再帰文脈から呼ばれた場合の保険。
+        return scrubbed
     description = scrubbed.get("description")
     if isinstance(description, str):
         method, separator, target = description.partition(" ")
@@ -626,7 +637,10 @@ def _scrub_exception_field(exception_value: dict[str, Any]) -> dict[str, Any]:
         # default=[]) で空リスト扱い、Relay schema でも values は必須でない)。
         # よって誤検知 WARNING を出さずに、他キーをベストエフォートスクラブして返す
         # (PR#347 review #8: 正常構造に対するログノイズ抑制)。
-        return cast(dict[str, Any], _scrub_sensitive_data(exception_value))
+        scrubbed = _scrub_sensitive_data(exception_value)
+        # _depth=0 開始のため dict 以外（"[MAX_DEPTH_EXCEEDED]"）は構造上発生しないが、
+        # cast による型隠蔽を避け isinstance ガードで型安全を明示する（PR#347 Q-2）。
+        return scrubbed if isinstance(scrubbed, dict) else {}
     if not isinstance(values, list):
         # str / int 等、None でも list/dict でもない真に予期しない型のみ WARNING。
         _safe_log_warning(
@@ -635,7 +649,10 @@ def _scrub_exception_field(exception_value: dict[str, Any]) -> dict[str, Any]:
             action="exception_scrub_fallback",
         )
         # 構造不明でも _scrub_sensitive_data でベストエフォートスクラブ (PR#347)
-        return cast(dict[str, Any], _scrub_sensitive_data(exception_value))
+        scrubbed = _scrub_sensitive_data(exception_value)
+        # _depth=0 開始のため dict 以外（"[MAX_DEPTH_EXCEEDED]"）は構造上発生しないが、
+        # cast による型隠蔽を避け isinstance ガードで型安全を明示する（PR#347 Q-2）。
+        return scrubbed if isinstance(scrubbed, dict) else {}
 
     result = dict(exception_value)
     result["values"] = [_scrub_exception_value_item(val) for val in values]
@@ -775,13 +792,14 @@ def _emit_scrub_failure_to_sentry(exc: BaseException, event_id: str | None = Non
                 scope.set_extra("event_id", event_id)
             scope.capture_message("sentry_scrub_failed", level="error")
     except RecursionError:
-        # RecursionError も Exception 派生のため、再raise しないと下流の
+        # RecursionError も Exception 派生のため、再raise しないと直下の
         # except Exception に捕捉されサイレント隠蔽される（他5箇所と同一方針）。
-        # before_send から伝播しても Sentry SDK は capture_internal_exceptions で
-        # 捕捉し event を破棄するため fail-closed（PII 非送信）は維持される。
+        # 再raise後は呼び出し元 _before_send の emit 保護 try/except (SF-1, PR#347 #15)
+        # が捕捉し、明示的に return None するため fail-closed（PII 非送信）は維持される。
         raise
     except MemoryError:
-        # MemoryError も同様に fail-fast。OOM を握り潰さず即座に伝播させる。
+        # MemoryError も同様に fail-fast。OOM を握り潰さず即座に伝播させ、
+        # 呼び出し元 SF-1 の emit 保護が捕捉して return None する。
         raise
     except Exception as inner_exc:  # noqa: BLE001
         # Sentry 通知自体が失敗 → stderr へ最終フォールバック
@@ -896,7 +914,25 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
                 error_type=type(scrub_exc).__qualname__,
                 error_module=type(scrub_exc).__module__,
             )
-        _emit_scrub_failure_to_sentry(scrub_exc, event_id=event_dict.get("event_id"))
+        # SF-1 (PR#347 #15): emit 呼び出しを try/except で保護する。
+        # _emit_scrub_failure_to_sentry は内部でシステム異常 (MemoryError/RecursionError) を
+        # re-raise する設計（emit 自身の except Exception による隠蔽回避のため）。その re-raise が
+        # ここで未捕捉のまま伝播すると下方の return None を飛び越え、scrubbing 失敗イベントの
+        # fail-closed ドロップが Sentry SDK の capture_internal_exceptions 挙動に依存してしまう。
+        # 呼び出し側で全 Exception を捕捉して return None を保証することで、line 881 の
+        # (MemoryError, RecursionError) → return None パターンと一貫した fail-closed を SDK 非依存で
+        # 確定させる。KeyboardInterrupt / SystemExit は BaseException 直系のため捕捉せず伝播させる。
+        try:
+            _emit_scrub_failure_to_sentry(scrub_exc, event_id=event_dict.get("event_id"))
+        except Exception:  # noqa: BLE001
+            try:
+                print(
+                    "[SENTRY_SCRUB_FAILED] emit failed; event dropped (fail-closed)",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            except Exception:  # noqa: BLE001, S110
+                pass
         return None
 
     return event
@@ -957,6 +993,8 @@ def init_sentry() -> bool:  # noqa: C901
             before_send=_before_send,
             # transaction イベントは before_send を通らない（SDK仕様）。同一 scrub 経路へ
             # 配線し、span data / WSGI-ASGI 由来の request を PII スクラブする（PR#347 review）。
+            # per-event scrub コストは traces_sample_rate（既定 0.1 = 低サンプリング）で
+            # 上限が画定されるため、現設定では累積負荷は許容範囲（PR#347 review #12/P-4）。
             before_send_transaction=_before_send,
         )
 
