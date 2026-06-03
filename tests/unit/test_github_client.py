@@ -2182,20 +2182,51 @@ def test_sanitized_jsondecodeerror_str_contains_no_response_body() -> None:
     """
     cause = _SanitizedJSONDecodeError(
         "json.JSONDecodeError",
+        msg="Expecting value",
         pos=42,
         lineno=3,
         colno=7,
     )
 
     rendered = str(cause)
-    # 型・位置情報のみが厳密に含まれる（body 由来の文字列を混入させる余地がない）
-    assert rendered == "json.JSONDecodeError: pos=42, lineno=3, colno=7"
+    # 型・msg・位置情報のみが厳密に含まれる（body 由来の文字列を混入させる余地がない）。
+    # msg は json.JSONDecodeError.msg（静的パーサ診断文字列）で PII 非含有（PR#347 SF-1）。
+    assert rendered == "json.JSONDecodeError: Expecting value pos=42, lineno=3, colno=7"
+    assert cause.msg == "Expecting value"  # PR#347 SF-1: 破損種別識別用 msg を保持
     assert cause.pos == 42
     assert cause.lineno == 3
     assert cause.colno == 7  # PR#347 Q-3: 診断用 colno を保持
     # 仮にレスポンス body 由来の機密文字列があっても __str__ には現れない
     assert "password" not in rendered
     assert "token" not in rendered
+
+
+def test_sanitized_jsondecodeerror_reduce_roundtrip_preserves_fields() -> None:
+    """_SanitizedJSONDecodeError は __reduce__ で全フィールドを復元できる（PR#347 Q-2）。
+
+    非標準 __init__ シグネチャ（5 引数）のため __reduce__ を実装。pytest-xdist の
+    worker→controller 例外転送や Sentry SDK シリアライズが依存する pickle プロトコル
+    の契約（``cls(*args)`` で再構築可能）を直接検証する。pickle.loads は CWE-502 回避の
+    ため使わず、__reduce__ の戻り値から手動で再構築して TypeError にならないことを保証する。
+    """
+    original = _SanitizedJSONDecodeError(
+        "json.JSONDecodeError",
+        msg="Expecting value",
+        pos=42,
+        lineno=3,
+        colno=7,
+    )
+
+    cls, args = original.__reduce__()
+    restored = cls(*args)
+
+    assert isinstance(restored, _SanitizedJSONDecodeError)
+    assert restored.error_type == "json.JSONDecodeError"
+    assert restored.msg == "Expecting value"
+    assert restored.pos == 42
+    assert restored.lineno == 3
+    assert restored.colno == 7
+    assert str(restored) == str(original)
 
 
 def test_parse_json_response_unexpected_parse_error_propagates() -> None:
@@ -2984,19 +3015,19 @@ def test_cache_key_build_failure_logs_endpoint_and_error_type_without_pii() -> N
         def __str__(self) -> str:
             raise TypeError("not serializable")
 
-    with (
-        patch("utils.github_client._module_logger") as mock_logger,
-        pytest.raises(GitHubAPIError),
-    ):
+    with capture_logs() as log_output, pytest.raises(GitHubAPIError):
         AsyncGitHubClient._cache_key("/repos", {"secret_param": NonSerializable()})
 
-    mock_logger.warning.assert_called_once()
-    log_call = mock_logger.warning.call_args
-    assert log_call.args[0] == "cache_key_build_failed"
-    assert log_call.kwargs["endpoint"] == "/repos"
-    assert log_call.kwargs["error_type"] == "TypeError"
+    # 他テストと統一して structlog capture_logs で検証する（_module_logger への
+    # patch は内部実装名に密結合し rename で壊れるため。PR#347 T-1）。
+    warnings = [log for log in log_output if log["event"] == "cache_key_build_failed"]
+    assert len(warnings) == 1
+    log = warnings[0]
+    assert log["log_level"] == "warning"
+    assert log["endpoint"] == "/repos"
+    assert log["error_type"] == "TypeError"
     # PII-safe: param キー名・値はログ引数に含めない
-    assert "secret_param" not in str(log_call.kwargs)
+    assert "secret_param" not in str(log)
 
 
 def test_cache_key_unicode_encode_error_logs_endpoint_and_error_type_without_pii() -> None:
@@ -3012,20 +3043,19 @@ def test_cache_key_unicode_encode_error_logs_endpoint_and_error_type_without_pii
         def __str__(self) -> str:
             raise UnicodeEncodeError("ascii", "秘密", 0, 1, "not encodable")
 
-    with (
-        patch("utils.github_client._module_logger") as mock_logger,
-        pytest.raises(GitHubAPIError),
-    ):
+    with capture_logs() as log_output, pytest.raises(GitHubAPIError):
         AsyncGitHubClient._cache_key("/repos", {"secret_param": NonEncodable()})
 
-    mock_logger.warning.assert_called_once()
-    log_call = mock_logger.warning.call_args
-    assert log_call.args[0] == "cache_key_build_failed"
-    assert log_call.kwargs["endpoint"] == "/repos"
-    assert log_call.kwargs["error_type"] == "UnicodeEncodeError"
+    # 他テストと統一して structlog capture_logs で検証する（PR#347 T-1）。
+    warnings = [log for log in log_output if log["event"] == "cache_key_build_failed"]
+    assert len(warnings) == 1
+    log = warnings[0]
+    assert log["log_level"] == "warning"
+    assert log["endpoint"] == "/repos"
+    assert log["error_type"] == "UnicodeEncodeError"
     # PII-safe: param キー名・値・例外内の非 ASCII payload をログ引数に含めない
-    assert "secret_param" not in str(log_call.kwargs)
-    assert "秘密" not in str(log_call.kwargs)
+    assert "secret_param" not in str(log)
+    assert "秘密" not in str(log)
 
 
 # =============================================================================

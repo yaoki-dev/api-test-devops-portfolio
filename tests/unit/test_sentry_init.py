@@ -1792,6 +1792,25 @@ class TestBeforeSend:
             action="skip_item",
         )
 
+    def test_scrub_exception_value_item_redacts_custom_toplevel_sensitive_key(self) -> None:
+        """value/stacktrace 以外のトップレベル機密キーも redact し type は保持する（PR#347 Q-1）。
+
+        カスタム SDK 統合が token 等を value item 直下に付与した場合の PII 漏洩防止。
+        """
+        value_item = {
+            "type": "ValueError",
+            "value": "boom",
+            "token": "secret_value",  # noqa: S106 — テスト用ダミー機密値
+            "safe": "keep_this",
+        }
+
+        result = sentry_module._scrub_exception_value_item(value_item)
+
+        assert result["token"] == "[REDACTED]"  # noqa: S105  # カスタム機密キーは redact
+        assert result["type"] == "ValueError"  # type は観測性のため保持（S-1 方針）
+        assert result["value"] == "[REDACTED]"  # value は無条件 redact
+        assert result["safe"] == "keep_this"  # 非機密キーは保持
+
 
 class TestBeforeSendTransaction:
     """transaction イベント（before_send_transaction 経路）の scrub テスト。

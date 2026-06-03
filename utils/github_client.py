@@ -119,14 +119,30 @@ class GitHubAPIError(APIClientError):
 
 
 class _SanitizedJSONDecodeError(Exception):
-    """レスポンスbodyを保持しない JSONDecodeError cause。"""
+    """レスポンスbodyを保持しない JSONDecodeError cause。
 
-    def __init__(self, error_type: str, pos: int, lineno: int, colno: int) -> None:
+    ``msg`` は ``json.JSONDecodeError.msg``（"Expecting value" /
+    "Unterminated string starting at" 等のパーサ診断文字列）を保持する。
+    これらは静的なパーサメッセージで PII（レスポンス body 由来データ）を
+    含まないため、破損 JSON の種別識別に利用できる（PR#347 SF-1）。
+    """
+
+    def __init__(self, error_type: str, msg: str, pos: int, lineno: int, colno: int) -> None:
         self.error_type = error_type
+        self.msg = msg
         self.pos = pos
         self.lineno = lineno
         self.colno = colno
-        super().__init__(f"{error_type}: pos={pos}, lineno={lineno}, colno={colno}")
+        super().__init__(f"{error_type}: {msg} pos={pos}, lineno={lineno}, colno={colno}")
+
+    def __reduce__(
+        self,
+    ) -> tuple[type[_SanitizedJSONDecodeError], tuple[str, str, int, int, int]]:
+        # pytest-xdist の worker→controller 例外転送や Sentry SDK のシリアライズで
+        # pickle される。非標準 __init__ シグネチャ（5 引数）は Exception 既定の
+        # __reduce__（args=単一メッセージ文字列で復元）では TypeError になるため、
+        # 全フィールドを渡す __reduce__ を明示する（PR#347 Q-2）。
+        return (self.__class__, (self.error_type, self.msg, self.pos, self.lineno, self.colno))
 
 
 class RateLimitError(GitHubAPIError):
@@ -286,16 +302,13 @@ class AsyncGitHubClient:
                     error_type=type(close_exc).__name__,
                     error_module=type(close_exc).__module__,
                 )
-            except RecursionError:
-                # RecursionError も Exception 派生のため、再raise しないと下流の
-                # except Exception に has_body_exception=True 時捕捉されサイレント隠蔽される
-                # （api_client._close_async_client / sentry_init と同一方針）。
-                # 致命的エラーとして必ず再raise（fail-fast）。
-                raise
-            except MemoryError:
-                # MemoryError も Exception 派生のため、再raise しないと下流の
-                # except Exception に捕捉されサイレント隠蔽される。
-                # 致命的エラーとして必ず再raise（fail-fast）。
+            except ASYNC_FATAL_EXCEPTIONS:
+                # システム致命例外（MemoryError/RecursionError/KeyboardInterrupt/
+                # SystemExit/asyncio.CancelledError）は再raise して fail-fast を維持する。
+                # 再raise しないと下流の except Exception に（has_body_exception=True 時）
+                # 捕捉されサイレント隠蔽される。api_client._close_async_client / _request /
+                # sentry_init の致命例外方針と統一し、専用 except 句の重複を解消する
+                # （PR#347 Q-4。定数は utils.api_client で集中管理）。
                 raise
             except Exception as close_exc:  # noqa: BLE001
                 # 予期しない例外（AttributeError, RuntimeError 等の実装バグ可能性）。
@@ -652,6 +665,7 @@ class AsyncGitHubClient:
             # active exception context の外で raise して __context__ を None に保つ。
             _sanitized_cause = _SanitizedJSONDecodeError(
                 f"{type(e).__module__}.{type(e).__qualname__}",
+                e.msg,
                 e.pos,
                 e.lineno,
                 e.colno,

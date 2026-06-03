@@ -183,6 +183,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - HTTP headers: `proxy-authorization`, `set-cookie`, `x-auth-token`,
       `csrf_token`, `x-csrf-token`, `x-refresh-token`, `x-access-token`
     - 複合語バリアント: `authtoken`, `usertoken`, `userpassword`
+    - 個人情報: `username`（Sentry user.username は個人識別情報。PR#347 review follow-up で追加）
   - **追加されたスクラブ対象フィールド (4 → 7)**: `breadcrumbs`、`exception`、`spans` を
     `_SCRUBBED_EVENT_FIELDS` に追加. あわせて `before_send_transaction=_before_send` を
     設定し、transaction イベント（`before_send` を通らない SDK 仕様）にも同一スクラブ経路を適用.

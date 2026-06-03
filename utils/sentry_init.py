@@ -172,6 +172,28 @@ def _scrub_exception_stacktrace(stacktrace: dict[str, Any]) -> dict[str, Any]:
     return stacktrace
 
 
+def _scrub_exception_value_item_extra_keys(scrubbed_value: dict[str, Any]) -> None:
+    """exception value item の value/stacktrace 以外のトップレベルキーを in-place で
+    機密スクラブする (PR#347 Q-1)。
+
+    標準 Sentry exception value item は type/module/mechanism 等で PII を含まないが、
+    カスタム SDK 統合が token/password 等を value item に直接付与した場合の漏洩を
+    防ぐ defense-in-depth。``type`` は ``_is_sensitive_key`` 非該当のため redact されず
+    観測性を保つ（S-1 の type 非 redact 方針と両立）。dict 値の反復中に値のみを
+    更新する（キーの追加/削除はしないため反復は安全）。
+    """
+    for key in scrubbed_value:
+        if key in ("value", "stacktrace"):
+            continue
+        item = scrubbed_value[key]
+        if _is_sensitive_key(key):
+            scrubbed_value[key] = "[REDACTED]"
+        elif isinstance(item, dict):
+            scrubbed_value[key] = _scrub_sensitive_data(item)
+        elif isinstance(item, (list, tuple)):
+            scrubbed_value[key] = type(item)(_scrub_list_item(elem, _depth=0) for elem in item)
+
+
 def _scrub_exception_value_item(value_item: Any) -> Any:
     """Sentry exception values[*] を fail-open でスクラブする。"""
     if not isinstance(value_item, dict):
@@ -197,6 +219,9 @@ def _scrub_exception_value_item(value_item: Any) -> Any:
             actual_type=type(stacktrace).__name__,
             action="skip_stacktrace_scrub",
         )
+
+    # value / stacktrace 以外のトップレベルキーも機密判定する (PR#347 Q-1)。
+    _scrub_exception_value_item_extra_keys(scrubbed_value)
 
     return scrubbed_value
 
