@@ -360,6 +360,26 @@ class TestSensitiveKeysCompleteness:
         assert _is_sensitive_key(key) is expected
 
     @pytest.mark.parametrize(
+        "key",
+        [
+            "username",
+            "user_name",
+            "get_username",
+            "username_hash",
+            "display_username",
+        ],
+    )
+    def test_username_variants_over_redacted(self, key: str) -> None:
+        """username を含むキーは意図的に over-redact される（PR#347 SEC-1 契約）。
+
+        ``user_id`` (False) と異なり、``username`` は SENSITIVE_KEYS に含まれるため、
+        派生キー (get_username / username_hash / display_username 等) も True になる。
+        セキュリティ観点では過剰 redact は漏洩より低リスクであり、この意図的な
+        over-redact 挙動を契約テストとして固定する（実挙動を empirical に確認済み）。
+        """
+        assert _is_sensitive_key(key) is True
+
+    @pytest.mark.parametrize(
         ("key", "expected"),
         [
             # camelCase 機密キー → True（snake_case 正規化後にパターン一致）
@@ -1579,12 +1599,17 @@ class TestBeforeSend:
                 "values": "not_a_list",  # 不正な型: list 期待だが str
             },
         }
-        result = _before_send(event, {})
+        with patch.object(sentry_module, "_safe_log_warning") as mock_warning:
+            result = _before_send(event, {})
         assert result is not None, "fail-open: 異常構造でもイベントdropしない"
         result_dict = cast(dict[str, Any], result)
         assert result_dict["exception"]["values"] == "not_a_list", (
             "元の値が保持されている（破壊的置換なし）"
         )
+        # _safe_log_warning が想定 event で発火することを検証（PR#347 TEST-1）。
+        # これがないと将来 _safe_log_warning 呼び出しが削除されてもテストが通過する。
+        mock_warning.assert_called_once()
+        assert mock_warning.call_args[0][0] == "sentry_exception_values_unexpected_type"
 
     def test_before_send_exception_fail_open_non_dict_value_item(self) -> None:
         """values 内に非 dict 要素があってもイベントをdropせずfail-openする。

@@ -748,6 +748,95 @@ async def test_aexit_aclose_unexpected_exception_reraises_when_no_body_exception
     assert len(closed_logs) == 0
 
 
+@pytest.mark.asyncio
+async def test_aclose_standalone_success_sets_client_none() -> None:
+    """standalone aclose() 正常系 → else 節で _client=None + info ログ。
+
+    （PR#347 SF-3: __aexit__ を経由しない finally 用クローズ経路の直接検証）
+    """
+    client = AsyncGitHubClient()
+    client._client = AsyncMock()
+
+    with capture_logs() as log_output:
+        await client.aclose()
+
+    # 全経路規約: 正常クローズ後は _client=None（ダブル aclose 防止）
+    assert client._client is None
+    closed_logs = [log for log in log_output if log.get("event") == "async_github_client_closed"]
+    assert len(closed_logs) == 1
+
+
+@pytest.mark.asyncio
+async def test_aclose_standalone_known_close_error_warns_and_sets_none() -> None:
+    """standalone aclose() で既知の CloseError → warning のみ・re-raise しない・_client=None。"""
+    client = AsyncGitHubClient()
+    client._client = AsyncMock()
+    client._client.aclose = AsyncMock(side_effect=httpx.CloseError("known-close"))
+
+    with capture_logs() as log_output:
+        await client.aclose()  # CloseError は warning 化され伝播しない
+
+    assert client._client is None
+    warning_logs = [
+        log for log in log_output if log.get("event") == "async_github_client_aclose_failed"
+    ]
+    assert len(warning_logs) == 1
+    assert warning_logs[0]["error_type"] == "CloseError"
+
+
+@pytest.mark.asyncio
+async def test_aclose_standalone_fatal_reraises_and_sets_none() -> None:
+    """standalone aclose() で ASYNC_FATAL（CancelledError）→ _client=None 後 re-raise。"""
+    client = AsyncGitHubClient()
+    client._client = AsyncMock()
+    client._client.aclose = AsyncMock(side_effect=asyncio.CancelledError())
+
+    with pytest.raises(asyncio.CancelledError):
+        await client.aclose()
+
+    # 致命例外でも CloseError/else 節と対称に _client=None を設定する
+    assert client._client is None
+
+
+@pytest.mark.asyncio
+async def test_aclose_standalone_unexpected_is_suppressed() -> None:
+    """standalone aclose() で予期しない例外 → 抑制（re-raise しない）・error ログ・_client=None。
+
+    __aexit__ は body 例外なし時に re-raise するが、standalone aclose は伝播中の
+    例外を上書きしないよう常に抑制する（AsyncAPIClient.aclose と対称, PR#347 SF-3）。
+    """
+    client = AsyncGitHubClient()
+    client._client = AsyncMock()
+    client._client.aclose = AsyncMock(side_effect=RuntimeError("unexpected-close"))
+
+    with capture_logs() as log_output:
+        await client.aclose()  # 抑制されるため例外は伝播しない
+
+    assert client._client is None
+    error_logs = [
+        log
+        for log in log_output
+        if log.get("event") == "async_github_client_aclose_unexpected_error"
+    ]
+    assert len(error_logs) == 1
+    assert error_logs[0]["error_type"] == "RuntimeError"
+    assert error_logs[0]["action"] == "suppressed_standalone_aclose"
+
+
+@pytest.mark.asyncio
+async def test_aclose_standalone_idempotent_when_client_none() -> None:
+    """standalone aclose() は _client が既に None なら早期 return（ダブル aclose 冪等性）。"""
+    client = AsyncGitHubClient()
+    client._client = None
+
+    with capture_logs() as log_output:
+        await client.aclose()  # 早期 return — 何も起きない
+
+    assert client._client is None
+    # 早期 return のためクローズ系ログは一切出ない
+    assert log_output == []
+
+
 async def test_aexit_body_exception_not_overridden_by_close_exception() -> None:
     """__aexit__ で本体例外発生中に aclose() も予期しない例外を出すケース。
 

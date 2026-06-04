@@ -361,7 +361,9 @@ class SyncAPIClient:
         self.logger = get_logger(__name__)
 
         # HTTPクライアントの初期化
-        self._client = httpx.Client(
+        # close() 後に None を代入するため Optional 宣言
+        # （AsyncAPIClient._client と対称, PR#347 CQ-6）。
+        self._client: httpx.Client | None = httpx.Client(
             base_url=self.base_url,
             timeout=self.timeout,
             headers=self.default_headers,
@@ -384,9 +386,25 @@ class SyncAPIClient:
         self.close()
 
     def close(self) -> None:
-        """クライアントのクローズ"""
-        if self._client:
-            self._client.close()
+        """クライアントのクローズ
+
+        ``AsyncAPIClient`` / ``AsyncGitHubClient.__aexit__`` と同様に、close 後は
+        ``self._client = None`` を設定してダブルクローズを防止する（PR#347 CQ-6）。
+        truthy チェックではなく ``is not None`` で他箇所の規約と統一する。
+
+        ``self._client.close()`` が例外（``httpx.CloseError`` / ``OSError`` 等）を投げても、
+        ``finally`` 節で ``self._client = None`` を必ず設定する。これにより ``_request`` 冒頭の
+        use-after-close ガード（``_client is None`` 判定）の前提が保たれ、close 失敗後に壊れた
+        クライアントへリクエストが発行される状態不整合を防ぐ。``AsyncAPIClient._close_async_client``
+        が全 except 経路で ``_client=None`` を設定するのと対称（PR#347 review）。例外は従来通り
+        呼び出し元へ伝播させる（``finally`` は抑制しない）。``api_client_closed`` info ログは
+        close 成功時のみ出力する（``finally`` の外に置くため、例外時はスキップされる）。
+        """
+        if self._client is not None:
+            try:
+                self._client.close()
+            finally:
+                self._client = None
             self.logger.info("api_client_closed")
 
     def _make_request_with_retry(self, method: str, endpoint: str, **kwargs: Any) -> httpx.Response:
@@ -413,6 +431,11 @@ class SyncAPIClient:
             呼び出し元は APIClientError で捕捉すること。
 
         """
+        # close 後の use-after-close を明示エラー化（AsyncAPIClient._request と同一パターン）。
+        # 型注釈 _client: httpx.Client | None に対する None 絞り込みも兼ねる（PR#347 CQ-6）。
+        if self._client is None:
+            raise RuntimeError("Client not initialized or already closed.")
+
         last_exception: APIClientError | None = None
 
         for attempt in range(self.retry_count + 1):
@@ -756,7 +779,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
 
 
 def _log_error_with_stderr_fallback(
-    logger: Any,
+    logger: FilteringBoundLogger,
     source: str,
     context: str,
     exc: BaseException,

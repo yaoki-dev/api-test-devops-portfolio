@@ -283,51 +283,89 @@ class AsyncGitHubClient:
         )
         return self
 
-    async def __aexit__(
+    async def _close_async_client(
         self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
+        body_exc_type: type[BaseException] | None,
+        *,
+        suppress_unexpected: bool = False,
     ) -> None:
-        """非同期コンテキストマネージャーの終了処理。"""
-        # AsyncGitHubClient は AsyncAPIClient の _close_async_client() ヘルパーを継承しないため、
-        # __aexit__ に close ロジックをインラインで実装する。
-        # AsyncAPIClient._close_async_client() と同一の `is not None` 明示比較で統一
-        # （型安全規約・PR#347 review Q-1）。httpx.AsyncClient は __bool__/__len__ 未定義の
-        # ため truthy 判定と等価だが、None 比較を明示して意図を明確化する。
-        if self._client is not None:
-            try:
-                await self._client.aclose()
-            except (httpx.CloseError, OSError) as close_exc:  # fmt: skip
-                # 既知のクローズ時例外 — warning のみ（body 例外 exc_val を上書きしない）。
-                # error_type + error_module で third-party 例外の起点モジュールを識別可能にする。
+        """``__aexit__`` と ``aclose()`` で共有する close 処理.
+
+        AsyncAPIClient._close_async_client() と対称の集約ヘルパー。AsyncGitHubClient は
+        AsyncAPIClient のヘルパーを継承しない（別クラス階層）ため自前で定義し、
+        ``__aexit__`` / ``aclose()`` 間の close ロジック重複を解消する（DRY, PR#347）。
+
+        Args:
+            body_exc_type: ``__aexit__`` 経路では body 内で発生した例外型（無しなら ``None``）。
+                ``aclose()`` 直接呼び出し経路では常に ``None``。予期しない close 例外捕捉時、
+                ``has_body_exception = body_exc_type is not None`` を判定材料とし、body 例外の
+                上書き防止のため ``None`` の場合のみ実装バグとして bare ``raise`` で再送出する。
+            suppress_unexpected: ``True`` の場合、予期しない close 例外を error ログのみ記録して
+                握りつぶす（re-raise しない）。``aclose()`` で ``True`` を渡し finally ブロック等
+                での安全な呼び出しを保証する。``__aexit__`` 経路では ``False``（デフォルト）のまま
+                ``has_body_exception`` ロジックによる従来の re-raise 判定を維持する。
+        """
+        if self._client is None:
+            return
+        try:
+            await self._client.aclose()
+        except (httpx.CloseError, OSError) as close_exc:
+            # 既知のクローズ時例外 — warning のみ（body 例外を上書きしない）。
+            # error_type + error_module で third-party 例外の起点モジュールを識別可能にする。
+            self._client = None
+            self.logger.warning(
+                "async_github_client_aclose_failed",
+                error_type=type(close_exc).__name__,
+                error_module=type(close_exc).__module__,
+            )
+        except ASYNC_FATAL_EXCEPTIONS:
+            # システム致命例外（MemoryError/RecursionError/KeyboardInterrupt/SystemExit/
+            # asyncio.CancelledError）は再raise して fail-fast を維持する。MemoryError/
+            # RecursionError は Exception 派生のため、明示捕捉しないと下流の except Exception に
+            # （has_body_exception=True 時）捕捉されサイレント隠蔽される。KeyboardInterrupt/
+            # SystemExit/CancelledError は BaseException 直系で except Exception の境界外（素通り）
+            # だが、_client=None 設定の一貫性のため本句で先取りする。
+            # NOTE: 本クラスは _request パス（utils.api_client の ASYNC_FATAL_EXCEPTIONS 方針）と
+            # 同一の定数を close 経路でも使用する。一方 AsyncAPIClient._close_async_client は
+            # close 文脈で (MemoryError, RecursionError) のみを使う別方針（CancelledError 等は
+            # BaseException 直系として素通りさせる設計）であり、両クラスの close ヘルパーは
+            # この点で対称ではない（PR#347 Q-4）。
+            # 他の close 経路（CloseError/OSError 句・else 節）と対称に _client=None を設定し、
+            # 再呼び出し時のダブル aclose を防ぐ（PR#347 CQ-1）。
+            self._client = None
+            raise
+        except Exception as close_exc:  # noqa: BLE001
+            # 予期しない例外（AttributeError, RuntimeError 等の実装バグ可能性）。
+            # RecursionError / MemoryError は上の ASYNC_FATAL_EXCEPTIONS 句で
+            # 先取り済み（fail-fast）。
+            # logger.error 記録 + 失敗時 stderr フォールバック。ロガー自体の例外が close_exc /
+            # body 例外を隠蔽するのを防ぐ（PR#347 B-3）。api_client と共通の module-level
+            # ヘルパーで stderr フォールバックの重複を解消する（PR#347 Q-8 DRY）。
+            if suppress_unexpected:
+                # aclose() 直接呼び出し経路: finally ブロック等での安全な呼び出しを保証するため、
+                # 伝播中の例外を上書きしないよう常に抑制し error ログで本番監視対象にする
+                # （PR#347 SF-3）。suppress_unexpected=True は has_body_exception より優先評価。
+                # suppress 経路でも状態一貫性のため _client=None を設定し、aclose 失敗後の
+                # 壊れたクライアント再利用を防止する（成功時 else 節と同一方針）。
                 self._client = None
-                self.logger.warning(
-                    "async_github_client_aclose_failed",
+                _log_error_with_stderr_fallback(
+                    self.logger,
+                    "github_client",
+                    "aclose",
+                    close_exc,
+                    "async_github_client_aclose_unexpected_error",
                     error_type=type(close_exc).__name__,
                     error_module=type(close_exc).__module__,
+                    action="suppressed_standalone_aclose",
+                    exc_info=True,  # スタックトレースをログに残す
                 )
-            except ASYNC_FATAL_EXCEPTIONS:
-                # システム致命例外（MemoryError/RecursionError/KeyboardInterrupt/
-                # SystemExit/asyncio.CancelledError）は再raise して fail-fast を維持する。
-                # 再raise しないと下流の except Exception に（has_body_exception=True 時）
-                # 捕捉されサイレント隠蔽される。api_client._close_async_client / _request /
-                # sentry_init の致命例外方針と統一し、専用 except 句の重複を解消する
-                # （PR#347 Q-4。定数は utils.api_client で集中管理）。
-                raise
-            except Exception as close_exc:  # noqa: BLE001
-                # 予期しない例外（AttributeError, RuntimeError 等の実装バグ可能性）。
-                # RecursionError / MemoryError は上の専用句で先取り済み（fail-fast）。
-                has_body_exception = exc_type is not None
-                # logger.error 記録 + 失敗時 stderr フォールバック。ロガー自体の例外が
-                # close_exc / body 例外を隠蔽するのを防ぐ（PR#347 B-3）。logger.error が
-                # MemoryError/RecursionError を投げた場合は握り潰さず再raise する（#2）。
-                # api_client と共通の module-level ヘルパーで stderr フォールバックの重複を
-                # 解消する（PR#347 Q-8 DRY）。
-                # SF-2: close_exc は body 例外を上書きしないため __context__ チェーンは
-                # 切断される。代わりに body 例外の型名（body_exception_type）を同一ログ
-                # イベント内に記録し、close 失敗と body 例外の対応関係を追跡可能にする
-                # （PII 非含: __qualname__ はクラス名のみ）。
+            else:
+                # __aexit__ 経路（context manager）: 従来の has_body_exception ロジックを維持。
+                # SF-2: close_exc は body 例外を上書きしないため __context__ チェーンは切断される。
+                # 代わりに body 例外の型名（body_exception_type）を同一ログイベント内に記録し、
+                # close 失敗と body 例外の対応関係を追跡可能にする（PII 非含: __qualname__ は
+                # クラス名のみ）。本経路は _client=None を設定しない（従来 __aexit__ 挙動を保持）。
+                has_body_exception = body_exc_type is not None
                 _log_error_with_stderr_fallback(
                     self.logger,
                     "github_client",
@@ -338,29 +376,46 @@ class AsyncGitHubClient:
                     error_module=type(close_exc).__module__,
                     has_body_exception=has_body_exception,
                     action=(
-                        # NOTE: MemoryError/RecursionError は L309 の ASYNC_FATAL_EXCEPTIONS で
-                        # generic except より先に捕捉・即 re-raise されるため、
-                        # 本 generic except 経路には到達しない
-                        # （logger 伝播による re-raise スキップは発生しない）。
                         "suppressed_due_to_body_exception" if has_body_exception else "re_raised"
                     ),
-                    body_exception_type=exc_type.__qualname__ if exc_type is not None else None,
+                    body_exception_type=(
+                        body_exc_type.__qualname__ if body_exc_type is not None else None
+                    ),
                     exc_info=True,  # スタックトレースをログに残す
                 )
-                # body 例外がない場合のみ実装バグとして re-raise。
-                # body 例外がある場合は本質的原因の上書きを防ぐため raise しない。
-                # bare ``raise`` で active exception の traceback を完全保持
-                # （``raise close_exc`` への回帰防止: 余分な frame を追加せず Python idiom）。
+                # body 例外がない場合のみ実装バグとして re-raise。body 例外がある場合は本質的
+                # 原因の上書きを防ぐため raise しない。bare ``raise`` で active exception の
+                # traceback を完全保持（``raise close_exc`` への回帰防止: 余分な frame 不追加）。
                 if not has_body_exception:
                     raise
-            else:
-                # ダブルクローズ防止: logger.info より先に None をセットする。
-                # logger.info が例外を投げても _client=None が確定済みのため、再 __aexit__
-                # 時の `if self._client is not None` ガードで空振りし aclose 二重実行を防ぐ
-                # （AsyncAPIClient._close_async_client と同一順序, PR#347 B-2）。
-                self._client = None
-                # aclose() 成功時のみ closed ログを出す（else 節分離で logger 例外の誤検知回避）。
-                self.logger.info("async_github_client_closed")
+        else:
+            # ダブルクローズ防止: logger.info より先に None をセットする。logger.info が例外を
+            # 投げても _client=None が確定済みのため再呼び出し時のガードで空振りし aclose 二重
+            # 実行を防ぐ（AsyncAPIClient._close_async_client と同一順序, PR#347 B-2）。
+            self._client = None
+            self.logger.info("async_github_client_closed")
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        """非同期コンテキストマネージャーの終了処理。"""
+        # close ロジックは _close_async_client() ヘルパーに集約（AsyncAPIClient と対称）。
+        # body 例外型を渡し、has_body_exception ロジックで close 例外の re-raise を判定する。
+        await self._close_async_client(exc_type)
+
+    async def aclose(self) -> None:
+        """明示的な非同期クローズ（``async with`` を使わない finally 解放経路用）.
+
+        ``AsyncAPIClient.aclose()`` と対称。``__aexit__`` と同一の close ロジックを
+        ``_close_async_client()`` ヘルパーに集約済み。body 例外コンテキストを持たないため
+        ``body_exc_type=None`` を渡し、予期しない close 例外は ``suppress_unexpected=True`` で
+        握りつぶす（finally ブロック内で他例外を上書きしないため）。全経路で ``_client=None``
+        を設定し、再呼び出し時のダブル aclose を防ぐ。
+        """
+        await self._close_async_client(None, suppress_unexpected=True)
 
     async def get_user(self, username: str) -> dict[str, Any]:
         """ユーザー情報取得
@@ -886,16 +941,22 @@ class AsyncGitHubClient:
             # 通常フローでは発生しない。発生した場合は実装バグの兆候として
             # Sentry に捕捉される logger.error を出力し、両キャッシュを clear して
             # 次回リクエストの fresh fetch に倒す（user request flow は維持）。
-            self.logger.error(
-                "cache_invariant_violation",
-                etag_cache_size=len(self._etag_cache),
-                data_cache_size=len(self._data_cache),
-                etag_only_keys=etag_only_keys,
-                data_only_keys=data_only_keys,
-                etag_only_keys_truncated=etag_only_count > _MAX_CACHE_INVARIANT_LOG_KEYS,
-                data_only_keys_truncated=data_only_count > _MAX_CACHE_INVARIANT_LOG_KEYS,
-                action="cleared_both_caches",
-            )
+            try:
+                self.logger.error(
+                    "cache_invariant_violation",
+                    etag_cache_size=len(self._etag_cache),
+                    data_cache_size=len(self._data_cache),
+                    etag_only_keys=etag_only_keys,
+                    data_only_keys=data_only_keys,
+                    etag_only_keys_truncated=etag_only_count > _MAX_CACHE_INVARIANT_LOG_KEYS,
+                    data_only_keys_truncated=data_only_count > _MAX_CACHE_INVARIANT_LOG_KEYS,
+                    action="cleared_both_caches",
+                )
+            except Exception:  # noqa: BLE001, S110
+                # logger 自体が例外を投げても両キャッシュ clear を必ず実行する。
+                # clear をスキップすると invariant 違反が継続し、外側 _update_etag_cache の
+                # except に etag_cache_update_failed として埋没する（PR#347 B-3 fail-closed）。
+                pass
             self._etag_cache.clear()
             self._data_cache.clear()
             return  # clear() によりサイズ 0 → max_cache_entries 制限は達成済み（while ループ不要）

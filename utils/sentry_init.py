@@ -833,7 +833,12 @@ def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
 # 値は _emit_scrub_failure_to_sentry が設定する extra キーと 1:1 で対応させる
 # （不足 → 実行時 ValueError / 過剰 → PII 素通りの穴）。
 _INTERNAL_EVENT_EXTRA_KEYS: frozenset[str] = frozenset(
-    {"error_type", "error_module", "action", "event_id"}
+    {
+        "error_type",
+        "error_module",
+        "action",
+        "event_id",
+    }
 )
 
 
@@ -905,15 +910,14 @@ def _emit_scrub_failure_to_sentry(exc: BaseException, event_id: str | None = Non
                 extras["event_id"] = event_id
             _set_internal_extras(scope, extras)
             scope.capture_message("sentry_scrub_failed", level="error")
-    except RecursionError:
-        # RecursionError も Exception 派生のため、再raise しないと直下の
-        # except Exception に捕捉されサイレント隠蔽される（他5箇所と同一方針）。
-        # 再raise後は呼び出し元 _before_send の emit 保護 try/except (SF-1, PR#347 #15)
-        # が捕捉し、明示的に return None するため fail-closed（PII 非送信）は維持される。
-        raise
-    except MemoryError:
-        # MemoryError も同様に fail-fast。OOM を握り潰さず即座に伝播させ、
-        # 呼び出し元 SF-1 の emit 保護が捕捉して return None する。
+    except (MemoryError, RecursionError):  # fmt: skip
+        # MemoryError/RecursionError も Exception 派生のため、再raise しないと直下の
+        # except Exception に捕捉されサイレント隠蔽される。OOM/再帰超過を握り潰さず
+        # 即座に fail-fast 伝播させる。コードベース他6箇所の統一パターン
+        # `except (MemoryError, RecursionError): raise` に集約し、将来の修正漏れを防ぐ
+        # （PR#347 SF-1。分離記述から統合、挙動は不変）。
+        # 再raise後は呼び出し元 _before_send の emit 保護 try/except が捕捉し、明示的に
+        # return None するため fail-closed（PII 非送信）は維持される。
         raise
     except Exception as inner_exc:  # noqa: BLE001
         # Sentry 通知自体が失敗 → stderr へ最終フォールバック
