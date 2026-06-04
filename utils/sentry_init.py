@@ -34,7 +34,7 @@ import secrets
 import sys
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlunparse
 
 from config.settings import get_settings
 from utils.logger import get_logger
@@ -94,10 +94,9 @@ def _safe_log_warning(event: str, **fields: Any) -> None:
     DRY 化したヘルパー。関数内で ``# noqa: BLE001, S110`` を 1 箇所に集約し、
     ``try/except Exception: pass`` でロガー例外を抑止する。
 
-    fail-open ロジック内部でのみ使用する想定。``_scrub_sentry_field`` (本ファイル
-    下流) の ``print(..., file=sys.stderr)`` フォールバックパターンとは責務が異なる:
-    あちらは fail-safe (event drop 防止) のため stderr 通知が必要、こちらは fail-open
-    (元データ通過) のため例外抑止のみで十分。
+    fail-open ロジック内部でのみ使用する想定。logger 失敗時は完全無音を避け、
+    最低限 stderr へ通知する（障害隠蔽防止）。``except Exception`` は抑止するが
+    MemoryError / RecursionError は fail-fast で再 raise する。
 
     **PII 漏洩防止**: ``event`` 引数は静的な識別子文字列 (例: "sentry_field_type_unexpected")
     のみを渡すこと。動的なユーザーデータや変数値を直接渡すと、ログ経由で PII が
@@ -201,10 +200,18 @@ def _scrub_exception_value_item_extra_keys(scrubbed_value: dict[str, Any]) -> No
 
 
 def _scrub_exception_value_item(value_item: Any) -> Any:
-    """Sentry exception values[*] を fail-open でスクラブする。"""
+    """Sentry exception values[*] を fail-open でスクラブする。
+
+    value フィールドは例外メッセージ文字列のため PII 保護優先で無条件 [REDACTED] に
+    置換する（観測性とのトレードオフ。詳細は _scrub_exception_field docstring 参照）。
+    """
     if not isinstance(value_item, dict):
         if isinstance(value_item, (list, tuple)):
             return type(value_item)(_scrub_list_item(item, _depth=0) for item in value_item)
+        # str/bytes は PII を含む可能性があるため内容確認せず一律 REDACT。
+        # int/float/bool は PII 非含のため素通し。
+        if isinstance(value_item, (str, bytes)):
+            return "[REDACTED]"
         _safe_log_warning(
             "sentry_exception_value_item_unexpected_type",
             actual_type=type(value_item).__name__,
@@ -213,7 +220,7 @@ def _scrub_exception_value_item(value_item: Any) -> Any:
         return value_item
 
     scrubbed_value = dict(value_item)
-    if isinstance(scrubbed_value.get("value"), str):
+    if isinstance(scrubbed_value.get("value"), (str, bytes)):
         scrubbed_value["value"] = "[REDACTED]"
 
     stacktrace = scrubbed_value.get("stacktrace")
@@ -534,6 +541,44 @@ def _scrub_query_string(query_string: str) -> str:
     return urlencode(scrubbed_pairs)
 
 
+def _scrub_path_params(params: str) -> str:
+    """RFC 2396 パスパラメータ (`;key=value` 形式) をスクラブする。
+
+    query string (_scrub_query_string) と同じ機密キー分類を使い、path 固有の
+    email PII 除去も行う (PR#347 B-1, supersedes #7)。
+
+    アルゴリズム:
+        - params を ";" で split。
+        - 各 part に "=" を含む場合は partition で key を抽出。
+      - `_is_sensitive_key(unquote(key))` が True → `{key}=[REDACTED]` に置換。
+          - False → email PII (_PATH_PII_PATTERN) を [REDACTED] に置換して保持。
+        - "=" を含まない part → email PII を [REDACTED] に置換して保持。
+        - ";" で再結合して返す。
+
+    Args:
+        params: urlparse の params フィールド（先頭の `;` を除いた文字列）。
+
+    Returns:
+        スクラブ済みパスパラメータ文字列。
+    """
+    scrubbed_parts: list[str] = []
+    for part in params.split(";"):
+        if "=" in part:
+            key, sep, val = part.partition("=")
+            scrubbed_key = _PATH_PII_PATTERN.sub("[REDACTED]", key)
+            if not key or _is_sensitive_key(unquote(key)):
+                scrubbed_parts.append(f"{scrubbed_key}{sep}[REDACTED]")
+            else:
+                # 非機密キーでも値中の email PII は除去（防御維持）
+                scrubbed_parts.append(
+                    f"{scrubbed_key}{sep}{_PATH_PII_PATTERN.sub('[REDACTED]', val)}"
+                )
+        else:
+            # "=" を含まないセグメントは email PII のみ除去
+            scrubbed_parts.append(_PATH_PII_PATTERN.sub("[REDACTED]", part))
+    return ";".join(scrubbed_parts)
+
+
 def _scrub_request_query_string(query_string: str | bytes) -> str:
     """Sentry request.query_string の str/bytes 値を安全にスクラブする。"""
     if isinstance(query_string, bytes):
@@ -546,8 +591,8 @@ def _scrub_url(url: str) -> str:
 
     - query: `_scrub_query_string` でキーベーススクラブ
     - path: メールアドレス形式のPII (`_PATH_PII_PATTERN`) を [REDACTED] に置換 (#16)
-    - params: RFC 2396 パスパラメータ (`;key=value` 形式) はキースクラブを意図的に行わない (#7)
-              ただしメールアドレス形式の PII は path 同様に除去する (#16)
+    - params: RFC 2396 パスパラメータ (`;key=value` 形式) を `_scrub_path_params` で
+              キーベーススクラブ + email PII 除去 (PR#347 B-1, supersedes #7)
     - fragment: 完全除去（PII漏洩防止）
     """
     parsed = urlparse(url)
@@ -571,9 +616,8 @@ def _scrub_url(url: str) -> str:
             parsed.scheme,
             netloc,
             _PATH_PII_PATTERN.sub("[REDACTED]", parsed.path),
-            # RFC 2396 パスパラメータ: query string ではないためキースクラブは不要 (#7)
-            # ただしメールアドレス形式の PII は path と同様に除去する (#16)
-            _PATH_PII_PATTERN.sub("[REDACTED]", parsed.params) if parsed.params else "",
+            # RFC 2396 パスパラメータ: キーベーススクラブ + email PII 除去 (PR#347 B-1)
+            _scrub_path_params(parsed.params) if parsed.params else "",
             _scrub_query_string(parsed.query) if parsed.query else "",
             "",  # fragment を除去（PII 漏洩防止）
         )

@@ -301,8 +301,9 @@ class AsyncGitHubClient:
             except (httpx.CloseError, OSError) as close_exc:  # fmt: skip
                 # 既知のクローズ時例外 — warning のみ（body 例外 exc_val を上書きしない）。
                 # error_type + error_module で third-party 例外の起点モジュールを識別可能にする。
+                self._client = None
                 self.logger.warning(
-                    "github_client_aclose_failed",
+                    "async_github_client_aclose_failed",
                     error_type=type(close_exc).__name__,
                     error_module=type(close_exc).__module__,
                 )
@@ -332,11 +333,15 @@ class AsyncGitHubClient:
                     "github_client",
                     "aclose",
                     close_exc,
-                    "github_client_aclose_unexpected_error",
+                    "async_github_client_aclose_unexpected_error",
                     error_type=type(close_exc).__name__,
                     error_module=type(close_exc).__module__,
                     has_body_exception=has_body_exception,
                     action=(
+                        # NOTE: MemoryError/RecursionError は L309 の ASYNC_FATAL_EXCEPTIONS で
+                        # generic except より先に捕捉・即 re-raise されるため、
+                        # 本 generic except 経路には到達しない
+                        # （logger 伝播による re-raise スキップは発生しない）。
                         "suppressed_due_to_body_exception" if has_body_exception else "re_raised"
                     ),
                     body_exception_type=exc_type.__qualname__ if exc_type is not None else None,

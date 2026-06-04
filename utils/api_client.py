@@ -902,6 +902,7 @@ class AsyncAPIClient:
                 await self._client.aclose()
             except (httpx.CloseError, OSError) as close_exc:
                 # 既知のクローズ時例外 — 警告のみ（body 例外を上書きしない）
+                self._client = None
                 self.logger.warning(
                     "async_api_client_aclose_failed",
                     error_type=type(close_exc).__name__,
@@ -928,6 +929,10 @@ class AsyncAPIClient:
                     # aclose() 直接呼び出し経路: finally ブロック等での安全な呼び出しを保証するため
                     # 予期しない例外を握りつぶし、error ログで本番監視対象にする。
                     # suppress_unexpected=True は has_body_exception より優先して評価する。
+                    # suppress 経路でも状態一貫性のため None セット。
+                    # aclose 失敗後の壊れたクライアント再利用を防止
+                    # （github_client __aexit__ L356 / 成功時 else 節と同一方針）。
+                    self._client = None
                     self._log_aclose_error_with_fallback(
                         "async_api_client_aclose_unexpected_error_suppressed",
                         close_exc,

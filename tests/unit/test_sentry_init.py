@@ -28,6 +28,7 @@ from utils.sentry_init import (
     _before_send,
     _is_sensitive_key,
     _scrub_exception_field,
+    _scrub_exception_value_item,
     _scrub_query_string,
     _scrub_sensitive_data,
     _scrub_url,
@@ -500,11 +501,17 @@ class TestScrubQueryStringAndUrl:
         url = "https://example.com/path?page=2&sort=asc"
         assert _scrub_url(url) == url
 
-    def test_scrub_url_path_params_pass_through(self) -> None:
-        """RFC 2396 パスパラメータ (`;key=value`) は query string ではない。
-        scrub せずそのまま通過する (#7)。"""
+    def test_scrub_url_path_params_sensitive_key_scrubbed(self) -> None:
+        """path param の機密キー値は query と一貫してスクラブされる (B-1 Option A)。
+
+        session_id は _is_sensitive_key で True となるため [REDACTED] に置換される。
+        非機密キー (sort=asc) は保持される。fragment は除去される。
+        """
         result = _scrub_url("https://example.com/path;session_id=secret?sort=asc#frag")
-        assert result == "https://example.com/path;session_id=secret?sort=asc"
+        assert "session_id=secret" not in result
+        assert "session_id=[REDACTED]" in result
+        assert "sort=asc" in result
+        assert "#" not in result
 
     def test_scrub_url_redacts_email_in_path(self) -> None:
         """URL パスセグメント内のメールアドレスを [REDACTED] に置換する (#16)。"""
@@ -541,6 +548,12 @@ class TestScrubQueryStringAndUrl:
         assert result == "http:///path?token=%5BREDACTED%5D"
         # abc (token値) はスクラブ済み
         assert "abc" not in result
+
+    def test_scrub_url_fragment_only_is_removed(self) -> None:
+        """fragment-only URL の fragment が除去される（PII 漏洩防止）。"""
+        result = _scrub_url("https://example.com/path#secret-fragment")
+        assert "#" not in result
+        assert result == "https://example.com/path"
 
 
 class TestScrubExceptionField:
@@ -1595,8 +1608,9 @@ class TestBeforeSend:
         values = result_dict["exception"]["values"]
         # 正常な dict 要素はスクラブされている
         assert values[0]["stacktrace"]["frames"][0]["vars"]["password"] == "[REDACTED]"  # noqa: S105
-        # 非 dict 要素はそのまま保持（fail-open）
-        assert values[1] == "not_a_dict"
+        # str は PII 含む可能性のため [REDACTED] に置換される (B-3)
+        assert values[1] == "[REDACTED]"
+        # int/float/bool は PII 非含のため素通し（fail-open）
         assert values[2] == 42
 
     def test_before_send_exception_fail_open_non_dict_stacktrace(self) -> None:
@@ -2616,6 +2630,68 @@ class TestSafeLogWarning:
         assert "_safe_log_warning failed" in captured.err
         assert "RuntimeError" in captured.err
 
+    def test_stderr_fallback_exception_is_fully_suppressed(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """logger.warning 失敗かつ stderr (print) も失敗する二重障害パスで例外が伝播しない。"""
+        with (
+            patch.object(sentry_module._logger, "warning", side_effect=RuntimeError("log fail")),
+            patch("builtins.print", side_effect=OSError("stderr closed")),
+        ):
+            sentry_module._safe_log_warning("test_event")  # 例外伝播しないことを確認
+        assert capsys.readouterr().err == ""
+
+
+class TestScrubUrlPathParams:
+    """RFC 2396 path params のPII/secretスクラブ回帰テスト。"""
+
+    def test_percent_encoded_sensitive_key_is_redacted(self) -> None:
+        """キー分類前に percent-encoded key を decode して判定する。"""
+        url = "https://example.com/path;%73ession_id=secret"
+
+        result = _scrub_url(url)
+
+        assert result == "https://example.com/path;%73ession_id=[REDACTED]"
+        assert "secret" not in result
+
+    def test_email_pii_in_key_position_is_redacted(self) -> None:
+        """key=value の key 側に email PII があっても漏らさない。"""
+        url = "https://example.com/path;contact@example.com=true"
+
+        result = _scrub_url(url)
+
+        assert result == "https://example.com/path;[REDACTED]=true"
+        assert "contact@example.com" not in result
+
+    def test_empty_key_redacts_value(self) -> None:
+        """空キーは機密性を判定できないため値を conservative に隠す。"""
+        url = "https://example.com/path;=password123"
+
+        result = _scrub_url(url)
+
+        assert result == "https://example.com/path;=[REDACTED]"
+        assert "password123" not in result
+
+    def test_no_equals_path_param_preserves_non_pii_segment(self) -> None:
+        """値なし matrix param は PII でなければそのまま保持する。"""
+        assert _scrub_url("https://example.com/path;jsessionid") == (
+            "https://example.com/path;jsessionid"
+        )
+
+    def test_no_equals_path_param_redacts_email_pii_segment(self) -> None:
+        """値なし matrix param 全体に email PII があれば除去する。"""
+        result = _scrub_url("https://example.com/path;contact@example.com")
+
+        assert result == "https://example.com/path;[REDACTED]"
+        assert "contact@example.com" not in result
+
+
+def test_exception_value_item_redacts_dict_bytes_value() -> None:
+    """exception value dict 内の bytes value も文字列同様に隠す。"""
+    result = _scrub_exception_value_item({"value": b"password=secret"})
+
+    assert result == {"value": "[REDACTED]"}
+
 
 class TestScrubUrlIpv6:
     """_scrub_url IPv6 関連テスト (#12-Q-10)"""
@@ -2857,3 +2933,9 @@ class TestSetInternalExtras:
         mock_scope.set_extra.assert_any_call("event_id", "evt-1")
         # 許可キーのみが委譲され、余分な書き込みがない
         assert mock_scope.set_extra.call_count == 4
+
+    def test_empty_dict_is_accepted(self) -> None:
+        """空 dict は許可リスト違反なし・scope への書き込みなしで正常終了する。"""
+        mock_scope = MagicMock()
+        sentry_module._set_internal_extras(mock_scope, {})
+        mock_scope.set_extra.assert_not_called()

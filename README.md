@@ -16,14 +16,14 @@
 [![Security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 [![Dependencies: safety](https://img.shields.io/badge/dependencies-safety--checked-green.svg)](https://safetycli.com/)
 
-> **Python/Docker/CI/CDを統合したAPIテスト自動化ポートフォリオ。1,262件のテスト（CI品質ゲート: 1,248件/95.83%）。**
+> **Python/Docker/CI/CDを統合したAPIテスト自動化ポートフォリオ。1,338件のテスト（CI品質ゲート: 1,324件/95.83%）。**
 
 ## 概要
 
-- **1,262件のテストスイート**: Unit(1,216) / Integration(37, うちExternal 5件含む) / Performance(7, 週次のみ) / Smoke(2) / E2E(実装予定)
+- **1,338件のテストスイート**: Unit(1,290) / Integration(39, うちExternal 5件含む) / Performance(7, 週次のみ) / Smoke(2) / E2E(実装予定)
 - **カバレッジ: 95.83%**（unit+integration条件）: 継続的な品質向上
-- **CI実行テスト: 1,248件**（unit+integration条件, external・performance・smoke除外）
-  - 内訳: Unit 1,216件 + Integration 32件（37件のうちexternal 5件を除外）
+- **CI実行テスト: 1,324件**（unit+integration条件, external・performance・smoke除外）
+  - 内訳: Unit 1,290件 + Integration 34件（39件のうちexternal 5件を除外）
 - **CI/CD自動化**: GitHub Actions による多段階パイプライン
 - **セキュリティ**: CI/CD品質ゲート（pytest + ruff + mypy + Trivy）
 - **GitHub API統合**: 実務的なAPI統合スキルを証明（Rate Limit管理、ETag活用、非同期処理）
@@ -34,22 +34,22 @@
 
 ### 1. テスト実行
 
-![Test Demo - pytest実行で基本テスト19件合格（全1,262件中の抽出実行、CI環境での全体カバレッジ: 95.83%）。テスト自動化スキルを実証](assets/demo-test.gif)
+![Test Demo - pytest実行で基本テスト19件合格（全1,338件中の抽出実行、CI環境での全体カバレッジ: 95.83%）。テスト自動化スキルを実証](assets/demo-test.gif)
 
-> **📝 デモ内容**: クイック実行例（基本テスト19件、デモ時間短縮のため抽出。全1,262件は約60秒）
-> **🔍 全1,262件を今すぐ確認**: [GitHub Actions CI/CD](https://github.com/yuta158/api-test-portfolio/actions) でフルテスト結果＋カバレッジレポートを閲覧
+> **📝 デモ内容**: クイック実行例（基本テスト19件、デモ時間短縮のため抽出。全1,338件は約60秒）
+> **🔍 全1,338件を今すぐ確認**: [GitHub Actions CI/CD](https://github.com/yuta158/api-test-portfolio/actions) でフルテスト結果＋カバレッジレポートを閲覧
 
 **何がわかるか**:
 
 - pytest + pytest-covによる自動テスト実行
 - カバレッジレポートによる品質可視化
-- テスト実行: 基本19件 ~5秒、全1,262件 ~60秒
+- テスト実行: 基本19件 ~5秒、全1,338件 ~60秒
 
 <details>
-<summary>全テスト実行コマンド（1,262件、約60秒）</summary>
+<summary>全テスト実行コマンド（1,338件、約60秒）</summary>
 
 ```bash
-# 全テスト実行（1,262件）
+# 全テスト実行（1,338件）
 uv run pytest --cov=utils --cov=config --cov=models --cov-report=term -q --color=yes
 
 # クイック実行（unit tests）
@@ -180,7 +180,7 @@ api-test-devops-portfolio/
 ├── config/              # 設定管理（Pydantic Settings）
 ├── utils/               # ユーティリティ（APIクライアント等）
 ├── models/              # データモデル
-├── tests/               # テストスイート（1,262件）
+├── tests/               # テストスイート（1,338件）
 │   ├── unit/            # 単体テスト
 │   ├── integration/     # 統合テスト
 │   ├── performance/     # パフォーマンステスト
@@ -283,9 +283,9 @@ if init_sentry():
 
 | 種別 | 件数 | CI対象 | 備考 |
 |------|------|--------|------|
-| Unit tests | 1,216件 | ✅ | ビジネスロジック検証（Slow 1件含む） |
-| Integration tests | 37件（CI対象: 32件） | ✅（external 5件除外） | API統合検証 |
-| **CI合計（カバレッジ計測対象）** | **1,248件** | | |
+| Unit tests | 1,290件 | ✅ | ビジネスロジック検証（Slow 1件含む） |
+| Integration tests | 39件（CI対象: 34件） | ✅（external 5件除外） | API統合検証 |
+| **CI合計（カバレッジ計測対象）** | **1,324件** | | |
 | **カバレッジ** | **95.83%** | | unit+integration条件 |
 
 **カバレッジ計測対象外テスト**
@@ -293,21 +293,21 @@ if init_sentry():
 | 種別 | 件数 | 除外理由 |
 |------|------|---------|
 | Performance tests | 7件 | 週次のみ実行（performanceマーカーのみ、PR CI除外） |
-| External API tests | 5件 | 実ネットワーク依存（Integration 37件の内数） |
+| External API tests | 5件 | 実ネットワーク依存（Integration 39件の内数） |
 | Smoke tests | 2件 | カバレッジ計測対象外（--no-covで実行、外部API疎通 + 設定ロード） |
 | E2E tests | 実装予定 | — |
 
-> **合計テスト数（参考）**: 1,262件（全テスト）/ CI計測対象: 1,248件
+> **合計テスト数（参考）**: 1,338件（全テスト）/ CI計測対象: 1,324件
 > カバレッジはCI安定性確保のため、決定論的テスト（unit + integration）のみを計測対象としています。
 
 ### テストピラミッド
 
 ```mermaid
 graph TB
-    subgraph "Test Pyramid - 1,262件（CI対象: 1,248件）"
+    subgraph "Test Pyramid - 1,338件（CI対象: 1,324件）"
         E2E["🔝 E2E<br/>0件 → 5%目標"]
-        Integration["🔗 Integration<br/>37件（CI対象: 32件）→ 25%目標"]
-        Unit["🧱 Unit<br/>1,216件 → 70%目標"]
+        Integration["🔗 Integration<br/>39件（CI対象: 34件）→ 25%目標"]
+        Unit["🧱 Unit<br/>1,290件 → 70%目標"]
     end
     E2E --> Integration --> Unit
 
@@ -322,7 +322,7 @@ graph TB
 - **Integration (25%)**: API・DB接続の検証（中速・実環境近似）
 - **E2E (5%)**: クリティカルパスのみ（低速・高信頼）
 
-> **Note**: Slow testsはunit/integrationマーカーを併用のためCI対象(1,248件)に含む。Performance tests(7件)はweeklyのみ実行（PR CI除外）。External testsはintegration markerを併用のためIntegration(37件)の内数。Smoke tests(2件)のみカバレッジCI対象外（全PRに--no-covで実行、外部API最小疎通 + 設定ロード確認のみ）。
+> **Note**: Slow testsはunit/integrationマーカーを併用のためCI対象(1,324件)に含む。Performance tests(7件)はweeklyのみ実行（PR CI除外）。External testsはintegration markerを併用のためIntegration(39件)の内数。Smoke tests(2件)のみカバレッジCI対象外（全PRに--no-covで実行、外部API最小疎通 + 設定ロード確認のみ）。
 
 ### テスト実行特性（CI最適化）
 

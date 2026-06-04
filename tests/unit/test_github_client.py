@@ -694,13 +694,15 @@ async def test_aexit_aclose_known_exception_is_suppressed_with_warning(
     with capture_logs() as log_output:
         await client.__aexit__(None, None, None)
 
-    warning_logs = [log for log in log_output if log.get("event") == "github_client_aclose_failed"]
+    known_event = "async_github_client_aclose_failed"
+    warning_logs = [log for log in log_output if log.get("event") == known_event]
     assert len(warning_logs) == 1
     assert warning_logs[0]["error_type"] == expected_type
     # PR#347 review Q2: third-party 例外起点モジュール識別のため error_module を併用
     assert warning_logs[0]["error_module"] == expected_module
+    assert client._client is None
     # 既知例外では error ログは出ない
-    unexpected_event = "github_client_aclose_unexpected_error"
+    unexpected_event = "async_github_client_aclose_unexpected_error"
     error_logs = [log for log in log_output if log.get("event") == unexpected_event]
     assert len(error_logs) == 0
     # PR#347 review #3-1: else節スキップ検証。aclose() 例外時は __aexit__ の
@@ -726,7 +728,7 @@ async def test_aexit_aclose_unexpected_exception_reraises_when_no_body_exception
     with pytest.raises(RuntimeError, match="close-failed"), capture_logs() as log_output:
         await client.__aexit__(None, None, None)
 
-    unexpected_event = "github_client_aclose_unexpected_error"
+    unexpected_event = "async_github_client_aclose_unexpected_error"
     error_logs = [log for log in log_output if log.get("event") == unexpected_event]
     assert len(error_logs) == 1
     assert error_logs[0]["error_type"] == "RuntimeError"
@@ -736,7 +738,8 @@ async def test_aexit_aclose_unexpected_exception_reraises_when_no_body_exception
     # exc_info=True によりスタックトレースが記録される（PR#347 二段構え）
     assert error_logs[0].get("exc_info") is True
     # 予期しない例外では warning ログは出ない
-    warning_logs = [log for log in log_output if log.get("event") == "github_client_aclose_failed"]
+    known_event = "async_github_client_aclose_failed"
+    warning_logs = [log for log in log_output if log.get("event") == known_event]
     assert len(warning_logs) == 0
     # PR#347 review #3-1: else節スキップ検証。aclose() 例外時は __aexit__ の
     # else 節 (utils/github_client.py L291-292) が実行されず "async_github_client_closed"
@@ -767,7 +770,7 @@ async def test_aexit_body_exception_not_overridden_by_close_exception() -> None:
 
     # close 例外は re-raise しない。body 例外は ValueError として外側に伝播。
     # RuntimeError は予期しない例外 → error ログ (has_body_exception=True)
-    unexpected_event = "github_client_aclose_unexpected_error"
+    unexpected_event = "async_github_client_aclose_unexpected_error"
     error_logs = [log for log in log_output if log.get("event") == unexpected_event]
     assert len(error_logs) == 1
     assert error_logs[0]["error_type"] == "RuntimeError"
@@ -776,7 +779,8 @@ async def test_aexit_body_exception_not_overridden_by_close_exception() -> None:
     # exc_info=True によりスタックトレースが記録される（PR#347 二段構え）
     assert error_logs[0].get("exc_info") is True
     # warning ログは出ない
-    warning_logs = [log for log in log_output if log.get("event") == "github_client_aclose_failed"]
+    known_event = "async_github_client_aclose_failed"
+    warning_logs = [log for log in log_output if log.get("event") == known_event]
     assert len(warning_logs) == 0
     # PR#347 review #3-1: else節スキップ検証。body+close 二重例外時も
     # else 節 (utils/github_client.py L291-292) は実行されず "async_github_client_closed"
@@ -814,10 +818,11 @@ async def test_aexit_fatal_close_exception_propagates_even_with_body_exception(
 
     # 専用 except 句が except Exception より先に re-raise するため、
     # unexpected_error（error ログ）も known-exception warning も記録されない。
-    unexpected_event = "github_client_aclose_unexpected_error"
+    unexpected_event = "async_github_client_aclose_unexpected_error"
     error_logs = [log for log in log_output if log.get("event") == unexpected_event]
     assert len(error_logs) == 0
-    warning_logs = [log for log in log_output if log.get("event") == "github_client_aclose_failed"]
+    known_event = "async_github_client_aclose_failed"
+    warning_logs = [log for log in log_output if log.get("event") == known_event]
     assert len(warning_logs) == 0
     # aclose 失敗のため else 節（closed ログ）は未到達。
     closed_logs = [log for log in log_output if log.get("event") == "async_github_client_closed"]

@@ -948,6 +948,7 @@ async def test_async_api_client_aexit_aclose_exception_is_suppressed_with_warnin
     assert len(warning_logs) == 1
     assert warning_logs[0]["error_type"] == expected_type
     assert warning_logs[0]["error_module"] == expected_module
+    assert client._client is None
 
 
 async def test_async_api_client_aexit_body_exception_not_overridden_by_close_exception() -> None:
@@ -1153,6 +1154,8 @@ async def test_aclose_unexpected_exception_suppressed_with_warning() -> None:
     # aclose 失敗のため else 節 (closed ログ) は未到達
     closed_logs = [log for log in log_output if log.get("event") == "async_api_client_closed"]
     assert len(closed_logs) == 0
+    # suppress 経路でも状態一貫性のため _client が None になること（壊れたクライアント再利用防止）
+    assert client._client is None
 
 
 @pytest.mark.parametrize(
