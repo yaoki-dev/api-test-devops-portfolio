@@ -144,6 +144,12 @@ def _scrub_exception_frame(frame: Any) -> Any:
         return frame
 
     scrubbed_frame = dict(frame)
+    # PR#347 Q-13: ソースコンテキスト (pre_context / context_line / post_context) を除去する。
+    # Sentry はデフォルトでエラー行周辺のソース行を収集するが、ソース中にハードコードされた
+    # 機密値や PII がそのまま送信されるリスクがある (CWE-312)。_scrub_sensitive_data は
+    # vars (変数値) のみを対象としソース行テキストは非カバーのため、防御の深さとして drop する。
+    for _source_context_key in ("pre_context", "context_line", "post_context"):
+        scrubbed_frame.pop(_source_context_key, None)
     frame_vars = scrubbed_frame.get("vars")
     if isinstance(frame_vars, dict):
         scrubbed_frame["vars"] = _scrub_sensitive_data(frame_vars)
@@ -775,6 +781,40 @@ def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
                 )
 
 
+# scrub バイパス内部イベント（_INTERNAL_TAG 付与）専用の extra 許可リスト。
+# このセットに含まれるキーのみ _set_internal_extras 経由で設定でき、_before_send の
+# scrub をバイパスして Sentry に到達する。PII を含み得るキーを追加してはならない
+# （PR#347 review #11-[2/2] マージブロッカー対応 — コメント規約をコードレベル強制に格上げ）。
+# 各キーは「scrub バイパスを許可する」明示的な grant であり、セキュリティ境界そのもの。
+# 値は _emit_scrub_failure_to_sentry が設定する extra キーと 1:1 で対応させる
+# （不足 → 実行時 ValueError / 過剰 → PII 素通りの穴）。
+_INTERNAL_EVENT_EXTRA_KEYS: frozenset[str] = frozenset(
+    {"error_type", "error_module", "action", "event_id"}
+)
+
+
+def _set_internal_extras(scope: Any, extras: dict[str, str | None]) -> None:
+    """scrub バイパス内部イベント専用の extra セッター。
+
+    許可リスト ``_INTERNAL_EVENT_EXTRA_KEYS`` 外のキーを拒否し、将来の変更者が
+    新規 extra キーを無検証で追加して PII を scrub バイパスさせるリスクを
+    コードレベルで防止する（コメント規約のみの保証を技術的強制へ格上げ）。
+
+    Args:
+        scope: Sentry スコープ（``new_scope()`` の戻り値）。
+        extras: 設定する extra キー・値のマッピング。
+
+    Raises:
+        ValueError: 許可リスト外のキーが含まれる場合。
+    """
+    for key in extras:
+        if key not in _INTERNAL_EVENT_EXTRA_KEYS:
+            raise ValueError(f"Unauthorized key in internal event extra: {key!r}")
+
+    for key, value in extras.items():
+        scope.set_extra(key, value)
+
+
 def _emit_scrub_failure_to_sentry(exc: BaseException, event_id: str | None = None) -> None:
     """scrub 失敗を内部識別 tag 付きで Sentry へ通知する（fail-safe）。
 
@@ -808,13 +848,18 @@ def _emit_scrub_failure_to_sentry(exc: BaseException, event_id: str | None = Non
         with sentry_sdk.new_scope() as scope:
             scope.set_tag(_INTERNAL_TAG_KEY, _INTERNAL_TAG_VALUE)
             scope.set_level("error")
-            # SECURITY: set_extra に PII 含む値追加禁止 — _before_send scrub バイパスのため
-            scope.set_extra("error_type", type(exc).__qualname__)
-            scope.set_extra("error_module", type(exc).__module__)
-            scope.set_extra("action", "event_dropped")
-            # event_id は UUID 形式のため PII ではない（PR#347 review #12/#28）
+            # SECURITY: extra は許可リスト（_INTERNAL_EVENT_EXTRA_KEYS）経由でのみ設定 —
+            # _before_send scrub バイパスのため、PII を含み得るキーの素通りをコードで防止する。
+            extras: dict[str, str | None] = {
+                "error_type": type(exc).__qualname__,
+                "error_module": type(exc).__module__,
+                "action": "event_dropped",
+            }
+            # event_id は UUID 形式のため PII ではない（PR#347 review #12/#28）。
+            # None の場合は extra に含めない（従来挙動を維持）。
             if event_id is not None:
-                scope.set_extra("event_id", event_id)
+                extras["event_id"] = event_id
+            _set_internal_extras(scope, extras)
             scope.capture_message("sentry_scrub_failed", level="error")
     except RecursionError:
         # RecursionError も Exception 派生のため、再raise しないと直下の

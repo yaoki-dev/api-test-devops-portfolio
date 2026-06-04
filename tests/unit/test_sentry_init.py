@@ -735,6 +735,23 @@ class TestScrubExceptionFailOpenBranches:
         assert result["vars"]["password"] == "[REDACTED]"  # noqa: S105
         assert result["vars"]["user_input"] == "safe_value"
 
+    def test_frame_source_context_is_removed_and_vars_are_scrubbed(self) -> None:
+        """ソースコンテキストは削除し、変数値の scrub は維持する。"""
+        frame = {
+            "pre_context": ["API_KEY = 'secret'"],
+            "context_line": "raise RuntimeError(password)",
+            "post_context": ["logger.info(user_email)"],
+            "vars": {"password": "secret", "user_input": "safe_value"},
+        }
+
+        result = sentry_module._scrub_exception_frame(frame)
+
+        assert "pre_context" not in result
+        assert "context_line" not in result
+        assert "post_context" not in result
+        assert result["vars"]["password"] == "[REDACTED]"  # noqa: S105
+        assert result["vars"]["user_input"] == "safe_value"
+
     def test_frames_unexpected_type_returns_input_and_warns(self) -> None:
         """stacktrace['frames'] が list/None 以外: stacktrace を素通しし警告を出す (fail-open)。"""
         stacktrace = {"frames": "not-a-list"}
@@ -2778,3 +2795,65 @@ class TestBeforeSendLoggerEventId:
             f"{len(drop_event_calls)} 件: {mock_logger.error.call_args_list}"
         )
         assert drop_event_calls[0].kwargs.get("event_id") == "evt-logger-check-001"
+
+
+class TestSetInternalExtras:
+    """_set_internal_extras の許可リスト強制 (PR#347 #3 マージブロッカー)。
+
+    内部タグ付きイベントは _before_send の scrub をバイパスして Sentry に到達するため、
+    extra に書けるキーを _INTERNAL_EVENT_EXTRA_KEYS で固定し、PII を含み得るキーの
+    混入を fail-fast で拒否する多層防御 (CWE-312) を検証する。
+    """
+
+    def test_unauthorized_key_raises_value_error(self) -> None:
+        """許可リスト外キーは ValueError で拒否され、scope へ一切書き込まない。"""
+        mock_scope = MagicMock()
+
+        with pytest.raises(
+            ValueError,
+            match=r"Unauthorized key in internal event extra: 'user_email'",
+        ):
+            sentry_module._set_internal_extras(mock_scope, {"user_email": "x@example.com"})
+
+        # 拒否時は部分書き込みが起きない（原子性）
+        mock_scope.set_extra.assert_not_called()
+
+    def test_mixed_unauthorized_key_raises_before_partial_write(self) -> None:
+        """許可キー混在時も未許可キーがあれば scope へ一切書き込まない。"""
+        mock_scope = MagicMock()
+
+        with pytest.raises(
+            ValueError,
+            match=r"Unauthorized key in internal event extra: 'user_email'",
+        ):
+            sentry_module._set_internal_extras(
+                mock_scope,
+                {"error_type": "ValueError", "user_email": "x@example.com"},
+            )
+
+        mock_scope.set_extra.assert_not_called()
+
+    def test_authorized_keys_are_delegated_to_scope(self) -> None:
+        """許可リスト内キーは全て scope.set_extra へ委譲される。
+
+        実呼び出し元 _emit_scrub_failure_to_sentry は 4 キー全てを使うため、
+        いずれかの転送が欠落するリグレッションを検出できるよう全キーを検証する。
+        """
+        mock_scope = MagicMock()
+
+        sentry_module._set_internal_extras(
+            mock_scope,
+            {
+                "error_type": "ValueError",
+                "error_module": "builtins",
+                "action": "scrub_failed",
+                "event_id": "evt-1",
+            },
+        )
+
+        mock_scope.set_extra.assert_any_call("error_type", "ValueError")
+        mock_scope.set_extra.assert_any_call("error_module", "builtins")
+        mock_scope.set_extra.assert_any_call("action", "scrub_failed")
+        mock_scope.set_extra.assert_any_call("event_id", "evt-1")
+        # 許可キーのみが委譲され、余分な書き込みがない
+        assert mock_scope.set_extra.call_count == 4

@@ -1055,6 +1055,7 @@ def test_sync_create_todo() -> None:
     [
         pytest.param(SystemExit, (1,), id="SystemExit"),
         pytest.param(MemoryError, ("Out of memory",), id="MemoryError"),
+        pytest.param(RecursionError, ("maximum recursion depth exceeded",), id="RecursionError"),
     ],
 )
 def test_sync_health_check_system_exception_propagates(
@@ -1064,11 +1065,13 @@ def test_sync_health_check_system_exception_propagates(
     """システム例外がhealth_checkのexcept APIClientErrorで握りつぶされないことを検証
 
     SyncAPIClient.health_check() は except APIClientError の前に
-    SystemExit, MemoryError を明示的に re-raise する。
+    SYNC_FATAL_EXCEPTIONS (SystemExit / MemoryError / RecursionError) を明示的に re-raise する。
     （KeyboardInterruptはpytest自体がSIGINTハンドラとして処理するためunitテストでの検証は省略）
     この設計により:
     - SystemExit: graceful shutdown シグナルがプロセス外へ正しく伝播
     - MemoryError: K8s OOMKilled 検知が遅延しない
+    - RecursionError: スタック枯渇が except APIClientError に隠蔽されず fail-fast 伝播する
+      （PR#347 Q-6: 非同期版 parametrize との対称性を回復）
 
     回帰テスト: except 節の順序変更や削除による退行を検出。
     """

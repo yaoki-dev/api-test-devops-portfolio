@@ -42,6 +42,7 @@ from utils.api_client import (
     AsyncAPIClient,
     SyncAPIClient,
     _classify_error,
+    _log_error_with_stderr_fallback,
     _map_request_error,
     _resolve_client_config,
     _safe_parse_json,
@@ -467,3 +468,86 @@ async def test_async_client_headers_empty_dict_preserves_defaults(mock_base_url:
         assert client.default_headers["User-Agent"]
         assert client.default_headers["Accept"] == "application/json"
         assert client.default_headers["Content-Type"] == "application/json"
+
+
+class TestLogErrorWithStderrFallback:
+    """_log_error_with_stderr_fallback の stderr フォールバック分岐 (PR#347 Q-8/B-3 DRY)。
+
+    close・cache 失敗ログで共通する「logger.error → 失敗時 stderr」パターンを
+    保証する。MemoryError/RecursionError は fail-fast 再 raise、それ以外の logger
+    例外は握りつぶした exc の「型名のみ」を stderr へ再露出する設計を検証する。
+    """
+
+    def test_generic_logger_exception_falls_back_to_stderr(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """logger.error が一般例外を投げた場合、exc の型名のみ stderr へ出力する。
+
+        握りつぶした元例外の str()・logger 例外の str() のいずれも stderr へ
+        漏らさない（型名のみ）ことで PII 漏洩を防ぐ設計を保証する。
+        """
+        mock_logger = Mock()
+        mock_logger.error.side_effect = RuntimeError("logger backend down")
+        # 元例外の str() に PII を模した値を入れ、漏れないことを検証する
+        suppressed_exc = ValueError("user-email=secret@example.com")
+
+        _log_error_with_stderr_fallback(
+            mock_logger,
+            "api_client",
+            "aclose",
+            suppressed_exc,
+            "aclose_failed",
+            endpoint="/test",
+        )
+
+        captured = capsys.readouterr()
+        assert captured.err.strip() == "[api_client] aclose logger failed: ValueError"
+        # PII（元例外の str）も logger 例外の str も stderr に含まれない
+        assert "secret@example.com" not in captured.err
+        assert "logger backend down" not in captured.err
+        # フォールバック前に logger.error が event/fields 付きで1回呼ばれている
+        mock_logger.error.assert_called_once_with("aclose_failed", endpoint="/test")
+
+    def test_successful_logging_emits_no_stderr(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """logger.error が成功した場合、stderr へ何も出力しない（主経路の回帰保護）。
+
+        DRY 集約後に最も多用される正常系。logger.error が event/fields 付きで
+        1回だけ呼ばれ、stderr フォールバックを通らないことを保証する。
+        """
+        mock_logger = Mock()
+
+        _log_error_with_stderr_fallback(
+            mock_logger,
+            "api_client",
+            "aclose",
+            ValueError("orig"),
+            "aclose_failed",
+            endpoint="/test",
+        )
+
+        mock_logger.error.assert_called_once_with("aclose_failed", endpoint="/test")
+        assert capsys.readouterr().err == ""
+
+    @pytest.mark.parametrize("fatal_exc", [MemoryError, RecursionError])
+    def test_fatal_logger_exception_propagates(
+        self, fatal_exc: type[BaseException], capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """logger.error が MemoryError/RecursionError を投げた場合は再 raise する。
+
+        致命例外は except 句の評価順序で先取りされ、stderr 握りつぶしの対象外
+        （PR#347 Q-6: sync/async fail-fast 対称性）。
+        """
+        mock_logger = Mock()
+        mock_logger.error.side_effect = fatal_exc()
+
+        with pytest.raises(fatal_exc):
+            _log_error_with_stderr_fallback(
+                mock_logger,
+                "api_client",
+                "aclose",
+                ValueError("orig"),
+                "aclose_failed",
+            )
+
+        # fail-fast 経路では stderr フォールバックを通らない
+        assert capsys.readouterr().err == ""

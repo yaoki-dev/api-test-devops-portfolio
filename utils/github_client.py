@@ -11,7 +11,6 @@ import hashlib
 import itertools
 import json
 import re
-import sys
 from datetime import UTC, datetime
 from types import TracebackType
 from typing import Any, NoReturn, Self, cast
@@ -19,7 +18,12 @@ from urllib.parse import quote, urlencode
 
 import httpx
 
-from utils.api_client import ASYNC_FATAL_EXCEPTIONS, APIClientError, exponential_backoff_with_jitter
+from utils.api_client import (
+    ASYNC_FATAL_EXCEPTIONS,
+    APIClientError,
+    _log_error_with_stderr_fallback,
+    exponential_backoff_with_jitter,
+)
 from utils.logger import get_logger
 
 # モジュールレベル logger: ``@staticmethod`` (例: ``_cache_key``) など
@@ -314,35 +318,30 @@ class AsyncGitHubClient:
                 # 予期しない例外（AttributeError, RuntimeError 等の実装バグ可能性）。
                 # RecursionError / MemoryError は上の専用句で先取り済み（fail-fast）。
                 has_body_exception = exc_type is not None
-                try:
-                    self.logger.error(
-                        "github_client_aclose_unexpected_error",
-                        error_type=type(close_exc).__name__,
-                        error_module=type(close_exc).__module__,
-                        has_body_exception=has_body_exception,
-                        action=(
-                            "suppressed_due_to_body_exception"
-                            if has_body_exception
-                            else "re_raised"
-                        ),
-                        # PR#347 review SF-2: close_exc が body 例外を上書きしないため
-                        # __context__ チェーンは切断される。代わりに body 例外の型名を
-                        # 同一ログイベント内に記録し、close 失敗と body 例外の対応関係を
-                        # 追跡可能にする (PII 非含: __qualname__ はクラス名のみ)。
-                        body_exception_type=exc_type.__qualname__ if exc_type is not None else None,
-                        exc_info=True,  # スタックトレースをログに残す
-                    )
-                except Exception:  # noqa: BLE001
-                    # ロガー自体の例外が close_exc / body 例外を隠蔽するのを防ぐ
-                    # （PR#347 B-3）。stderr フォールバックで監視可能性を維持する。
-                    try:
-                        print(
-                            f"[github_client] aclose logger failed: {type(close_exc).__name__}",
-                            file=sys.stderr,
-                            flush=True,
-                        )
-                    except Exception:  # noqa: BLE001, S110
-                        pass
+                # logger.error 記録 + 失敗時 stderr フォールバック。ロガー自体の例外が
+                # close_exc / body 例外を隠蔽するのを防ぐ（PR#347 B-3）。logger.error が
+                # MemoryError/RecursionError を投げた場合は握り潰さず再raise する（#2）。
+                # api_client と共通の module-level ヘルパーで stderr フォールバックの重複を
+                # 解消する（PR#347 Q-8 DRY）。
+                # SF-2: close_exc は body 例外を上書きしないため __context__ チェーンは
+                # 切断される。代わりに body 例外の型名（body_exception_type）を同一ログ
+                # イベント内に記録し、close 失敗と body 例外の対応関係を追跡可能にする
+                # （PII 非含: __qualname__ はクラス名のみ）。
+                _log_error_with_stderr_fallback(
+                    self.logger,
+                    "github_client",
+                    "aclose",
+                    close_exc,
+                    "github_client_aclose_unexpected_error",
+                    error_type=type(close_exc).__name__,
+                    error_module=type(close_exc).__module__,
+                    has_body_exception=has_body_exception,
+                    action=(
+                        "suppressed_due_to_body_exception" if has_body_exception else "re_raised"
+                    ),
+                    body_exception_type=exc_type.__qualname__ if exc_type is not None else None,
+                    exc_info=True,  # スタックトレースをログに残す
+                )
                 # body 例外がない場合のみ実装バグとして re-raise。
                 # body 例外がある場合は本質的原因の上書きを防ぐため raise しない。
                 # bare ``raise`` で active exception の traceback を完全保持
@@ -1020,18 +1019,20 @@ class AsyncGitHubClient:
                 # は retry/エラー判定の対象だが、本イベントは error ログで監視対象にする。
                 try:
                     self._update_etag_cache(cache_key, response, result_json)
-                except RecursionError:
-                    # RecursionError も Exception 派生のため、再raise しないと下流の
-                    # except Exception に捕捉されサイレント隠蔽される（sentry_init と同一方針）。
-                    # 致命的エラーとして必ず再raise（fail-fast）。
-                    raise
-                except MemoryError:
-                    # MemoryError は Exception 派生のため、再raise しないと下流の
-                    # except Exception に捕捉されサイレント隠蔽される。
-                    # 致命的エラーとして必ず再raise（fail-fast）。
+                except (MemoryError, RecursionError):  # fmt: skip
+                    # MemoryError / RecursionError も Exception 派生のため、再raise しないと
+                    # 下流の except Exception に捕捉されサイレント隠蔽される（sentry_init と
+                    # 同一方針）。致命的エラーとして必ず再raise（fail-fast, PR#347 #1）。
                     raise
                 except Exception as cache_exc:  # noqa: BLE001
-                    self.logger.error(
+                    # logger.error 記録 + 失敗時 stderr フォールバック（PR#347 Q-12）。
+                    # cache 更新失敗はレスポンス返却を阻害しないが、ロガー自体の失敗で
+                    # 観測性が完全に失われるのを防ぐ。api_client と共通の DRY ヘルパー使用。
+                    _log_error_with_stderr_fallback(
+                        self.logger,
+                        "github_client",
+                        "etag_cache_update",
+                        cache_exc,
                         "etag_cache_update_failed",
                         endpoint=endpoint,
                         method=method,

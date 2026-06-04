@@ -755,6 +755,56 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
             return False
 
 
+def _log_error_with_stderr_fallback(
+    logger: Any,
+    source: str,
+    context: str,
+    exc: BaseException,
+    event: str,
+    **fields: Any,
+) -> None:
+    """logger.error 記録 + 失敗時 stderr フォールバック (PR#347 B-3 / Q-8 DRY)。
+
+    ``api_client`` / ``github_client`` の close・cache 失敗ログで共通する
+    「``logger.error`` → 失敗時 ``stderr``」パターンをモジュールレベルに集約する。
+    ``AsyncGitHubClient`` は ``AsyncAPIClient`` を継承しないため、メソッドではなく
+    モジュール関数として共有する (PR#347 Q-8: インライン重複による修正漏れを防ぐ)。
+
+    ロガー自体が致命例外 (``MemoryError`` / ``RecursionError``) を投げた場合は
+    fail-fast で再 raise し、それ以外のロガー例外は握りつぶした ``exc`` の型名を
+    ``stderr`` へ再露出させて監視可能性を保つ。
+
+    Args:
+        logger: structlog ロガー。
+        source: stderr メッセージのソース識別子 (例 ``"api_client"``)。
+        context: 失敗箇所の短い識別子 (例 ``"aclose"`` / ``"etag_cache"``)。
+        exc: 既に握りつぶされている元例外 (型名のみ stderr 出力, PII 非含)。
+        event: ``logger.error`` へ渡すイベント名。
+        **fields: ``logger.error`` へ渡す構造化フィールド。
+
+    Raises:
+        MemoryError: ``logger`` が ``MemoryError`` を投げた場合に再 raise（fail-fast）。
+        RecursionError: ``logger`` が ``RecursionError`` を投げた場合に再 raise（fail-fast）。
+    """
+    try:
+        logger.error(event, **fields)
+    except (MemoryError, RecursionError):  # fmt: skip
+        # 致命例外は握りつぶさず再raise（fail-fast）。両者は Exception 派生のため、
+        # 下の except Exception より先に明示的に先取りする
+        # （sentry_init._safe_log_warning / _close_async_client と同一方針）。
+        raise
+    except Exception:  # noqa: BLE001
+        # ロガー例外が握りつぶした exc を再露出させない保険。
+        try:
+            print(
+                f"[{source}] {context} logger failed: {type(exc).__name__}",
+                file=sys.stderr,
+                flush=True,
+            )
+        except Exception:  # noqa: BLE001, S110
+            pass
+
+
 # =============================================================================
 # 非同期APIクライアント
 # =============================================================================
@@ -816,25 +866,15 @@ class AsyncAPIClient:
     def _log_aclose_error_with_fallback(
         self, event: str, close_exc: BaseException, **fields: Any
     ) -> None:
-        """aclose エラーを logger.error で記録し、失敗時は stderr へフォールバック (PR#347 B-3)。
+        """aclose エラーを記録し、失敗時は stderr へフォールバック (PR#347 B-3 / Q-8)。
 
-        ``_close_async_client`` の suppress / ``__aexit__`` 両経路で共通する
-        「logger.error → 失敗時 stderr」パターンを集約する。ロガー自体が例外を投げても
-        握りつぶした close 例外を再露出させないことを保証し、呼び出し側の分岐
-        （循環的複雑度）を抑える。
+        モジュールレベル ``_log_error_with_stderr_fallback`` への薄いラッパー。
+        ``github_client`` とロジック (logger.error → 失敗時 stderr) を共有し、
+        インライン重複による修正漏れを防ぐ (PR#347 Q-8 DRY)。
         """
-        try:
-            self.logger.error(event, **fields)
-        except Exception:  # noqa: BLE001
-            # ロガー例外が握りつぶした close_exc を再露出させない保険。
-            try:
-                print(
-                    f"[api_client] aclose logger failed: {type(close_exc).__name__}",
-                    file=sys.stderr,
-                    flush=True,
-                )
-            except Exception:  # noqa: BLE001, S110
-                pass
+        _log_error_with_stderr_fallback(
+            self.logger, "api_client", "aclose", close_exc, event, **fields
+        )
 
     async def _close_async_client(
         self,
@@ -867,16 +907,13 @@ class AsyncAPIClient:
                     error_type=type(close_exc).__name__,
                     error_module=type(close_exc).__module__,
                 )
-            except RecursionError:
-                # RecursionError も Exception 派生のため、再raise しないと下流の
-                # except Exception に捕捉されサイレント隠蔽される
+            except (MemoryError, RecursionError):  # fmt: skip
+                # MemoryError/RecursionError も Exception 派生のため、再raise しないと
+                # 下流の except Exception に捕捉されサイレント隠蔽される
                 # （github_client / sentry_init と同一方針）。
                 # 致命的エラーとして必ず再raise（fail-fast）。
-                raise
-            except MemoryError:
-                # MemoryError も Exception 派生のため、再raise しないと下流の
-                # except Exception に捕捉されサイレント隠蔽される。
-                # 致命的エラーとして必ず再raise（fail-fast）。
+                # ASYNC_FATAL_EXCEPTIONS は流用しない（close 文脈で asyncio.CancelledError
+                # は捕捉対象外＝BaseException 直系で素通りさせるのが正しいため）。
                 raise
             except Exception as close_exc:  # noqa: BLE001
                 # 予期しない例外（AttributeError, RuntimeError, ValueError, TypeError 等の

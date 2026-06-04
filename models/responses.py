@@ -20,7 +20,6 @@ websiteはURL形式のためhtmlコンテキスト出力時は呼び出し元で
 import html
 import re
 import unicodedata
-from functools import lru_cache
 from typing import Annotated
 from urllib.parse import ParseResult, quote, unquote, urlparse, urlunparse
 
@@ -54,20 +53,13 @@ _STRIP_CATEGORIES = _INVISIBLE_CATEGORIES | frozenset({"Cs"})
 # URL正規化中のUnicodeカテゴリ参照を十分に吸収する余裕を持たせる。
 # 通常のURLで登場する文字種は数百程度だが、テスト・攻撃入力では多様な
 # 制御文字/不可視文字を含むため、余裕を持った上限にして再計算を避ける。
-# maxsize=2048: Unicodeカテゴリ数 ~30 × 入力文字バリエーション(攻撃入力含む)、実測ヒット率を考慮
-@lru_cache(maxsize=2048)
-def _unicode_category(c: str) -> str:
-    """Unicodeカテゴリ取得をキャッシュする。"""
-    return unicodedata.category(c)
-
-
 def _is_strippable_char(c: str, categories: frozenset[str]) -> bool:
     """不可視文字として除去すべき文字か判定する。
 
     Variation Selectors は Mn に分類されるが、結合文字（例: U+0301）は保持し、
     NFD由来のホスト名をサイレントに別文字列へ改変しない。
     """
-    return c != " " and (_unicode_category(c) in categories or c in _VARIATION_SELECTORS)
+    return c != " " and (unicodedata.category(c) in categories or c in _VARIATION_SELECTORS)
 
 
 def _strip_invisible_chars(v: str) -> str:
