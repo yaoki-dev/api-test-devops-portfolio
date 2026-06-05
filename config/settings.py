@@ -75,41 +75,6 @@ def _get_allowed_domains() -> frozenset[str]:
 ALLOWED_DOMAINS: frozenset[str] = _get_allowed_domains()
 
 
-def _validate_base_url_with_allowed_domains(v: str, allowed_domains: frozenset[str]) -> str:
-    """許可ドメインを注入してベースURLを検証する。"""
-    if not v.startswith(("http://", "https://")):
-        raise ValueError("Base URL must start with http:// or https://")
-
-    # URLパース
-    parsed = urlparse(v)
-    hostname = parsed.hostname
-
-    if not hostname:
-        raise ValueError("Invalid URL: hostname not found")
-
-    # SSRF Prevention: プライベートIPチェック
-    if is_private_ip(hostname):
-        raise ValueError(
-            f"SSRF Prevention: Private/loopback IP addresses are not allowed: {hostname}",
-        )
-
-    # SSRF Prevention: 許可ドメインチェック
-    if hostname not in allowed_domains:
-        _logger.warning(
-            "SSRF Prevention: Domain not in allowlist: %r. Allowed domains count: %d",
-            hostname[:200],
-            len(allowed_domains),
-        )
-        raise ValueError(
-            f"SSRF Prevention: Domain not in allowlist: {hostname}. "
-            f"Allowed domains count: {len(allowed_domains)}",
-        )
-
-    if v.endswith("/"):
-        v = v.rstrip("/")
-    return v
-
-
 # 危険なプライベートIPレンジ
 PRIVATE_IP_RANGES: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] = (
     ipaddress.ip_network("10.0.0.0/8"),
@@ -261,6 +226,41 @@ def is_private_ip(hostname: str) -> bool:
                 resolved[:100],
             )
             return True
+
+
+def _validate_base_url_with_allowed_domains(v: str, allowed_domains: frozenset[str]) -> str:
+    """許可ドメインを注入してベースURLを検証する。"""
+    if not v.startswith(("http://", "https://")):
+        raise ValueError("Base URL must start with http:// or https://")
+
+    # URLパース
+    parsed = urlparse(v)
+    hostname = parsed.hostname
+
+    if not hostname:
+        raise ValueError("Invalid URL: hostname not found")
+
+    # SSRF Prevention: プライベートIPチェック
+    if is_private_ip(hostname):
+        raise ValueError(
+            f"SSRF Prevention: Private/loopback IP addresses are not allowed: {hostname}",
+        )
+
+    # SSRF Prevention: 許可ドメインチェック
+    if hostname not in allowed_domains:
+        _logger.warning(
+            "SSRF Prevention: Domain not in allowlist: %r. Allowed domains count: %d",
+            hostname[:200],
+            len(allowed_domains),
+        )
+        raise ValueError(
+            f"SSRF Prevention: Domain not in allowlist: {hostname}. "
+            f"Allowed domains count: {len(allowed_domains)}",
+        )
+
+    if v.endswith("/"):
+        v = v.rstrip("/")
+    return v
 
 
 # =============================================================================

@@ -7,6 +7,9 @@ set -euo pipefail
 trap 'echo "❌ エラー発生 (line $LINENO): $BASH_COMMAND" >&2' ERR
 
 # P0-3: シグナル処理 - 中断時の不完全バックアップ削除
+# CURRENT_BACKUP="" はシグナルハンドラの [ -n "$CURRENT_BACKUP" ] ガードが
+# バックアップパス未設定時（L248到達前）に空判定となるよう意図的に空文字初期化する。
+# mv 完了前にシグナルを受信した場合、存在しないファイルへの rm -f は || true で安全に扱われる。
 BACKUP_IN_PROGRESS=false
 CURRENT_BACKUP=""
 

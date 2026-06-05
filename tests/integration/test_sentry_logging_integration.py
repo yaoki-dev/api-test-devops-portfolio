@@ -151,7 +151,10 @@ def test_logger_warning_does_not_forward_to_sentry(
     logger.warning("integration_test_warning", password="should-not-appear")  # noqa: S106
     sentry_sdk.flush()
 
-    assert len(captured_events) == events_before
+    assert len(captured_events) == events_before, (
+        "Sentry test client cleanup 後も新たなイベントがキャプチャされている"
+        "（クリーンアップが正しく機能していない）"
+    )
 
 
 def test_sentry_test_client_cleanup_disables_capture_after_fixture_use(

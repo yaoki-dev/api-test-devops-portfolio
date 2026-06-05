@@ -1,7 +1,7 @@
 """config.settings._get_allowed_domains() の警告ログ契約テスト.
 
 許可リストが空の場合のみ警告ログを出す契約を保護する。
-戻り値の機能検証は test_config_settings.py に集約する。
+戻り値の機能検証は test_config_settings.py (TestAllowedDomainsEnvOverride) に集約する。
 """
 
 import logging

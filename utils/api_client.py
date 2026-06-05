@@ -6,7 +6,7 @@ import random
 import sys
 import time
 from types import TracebackType
-from typing import Any, Self
+from typing import Any, Final, Self
 
 import httpx
 from structlog.typing import FilteringBoundLogger
@@ -1208,7 +1208,7 @@ class AsyncAPIClient:
 
 
 # 一括作成の部分失敗ログで記録する詳細の上限件数
-_MAX_LOGGED_FAILURE_DETAILS: int = 5
+_MAX_LOGGED_FAILURE_DETAILS: Final[int] = 5
 
 
 class AsyncJSONPlaceholderClient(AsyncAPIClient):
@@ -1333,7 +1333,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         """複数ユーザーの非同期一括作成
 
         個別失敗を許容し、成功したユーザーのみ返却。
-        失敗時はwarningログを出力（件数上限付きで詳細を記録）。
+        失敗時はwarningログを出力（詳細は _MAX_LOGGED_FAILURE_DETAILS 件まで記録）。
         K8s SIGTERM等で複数タスクが同時キャンセルされた場合はerrorログを出力後、
         CancelledError等のfatal例外を再発生させる（graceful shutdown保護）。
 
