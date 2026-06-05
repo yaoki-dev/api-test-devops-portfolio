@@ -84,14 +84,13 @@ def pytest_configure(config: pytest.Config) -> None:
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     """テスト実行順序の最適化"""
+
     # 高速テストを先に実行
-    items.sort(
-        key=lambda item: (
-            "slow" in [mark.name for mark in item.iter_markers()],
-            "external" in [mark.name for mark in item.iter_markers()],
-            item.name,
-        ),
-    )
+    def _sort_key(item: pytest.Item) -> tuple[bool, bool, str]:
+        marker_names = {mark.name for mark in item.iter_markers()}
+        return ("slow" in marker_names, "external" in marker_names, item.name)
+
+    items.sort(key=_sort_key)
 
 
 # =============================================================================

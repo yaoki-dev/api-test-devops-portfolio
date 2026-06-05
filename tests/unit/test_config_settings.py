@@ -17,6 +17,7 @@ from config.settings import (
     Settings,
     _resolve_hostname,
     _resolve_hostname_cached,
+    _validate_base_url_with_allowed_domains,
     get_settings,
     is_private_ip,
     reload_settings,
@@ -27,6 +28,27 @@ from config.settings import (
 
 # Module-level marker: All tests in this file are unit tests
 pytestmark = pytest.mark.unit
+
+
+class TestAPIConfigBaseUrlDependencyInjection:
+    """base_url検証の許可ドメイン注入テスト。"""
+
+    def test_validate_base_url_accepts_injected_allowed_domain(self) -> None:
+        """ALLOWED_DOMAINSのモンキーパッチなしで許可ドメインを注入できる。"""
+        result = _validate_base_url_with_allowed_domains(
+            "https://example.com/",
+            frozenset({"example.com"}),
+        )
+
+        assert result == "https://example.com"
+
+    def test_validate_base_url_rejects_domain_missing_from_injected_allowlist(self) -> None:
+        """注入された許可リスト外のドメインは拒否される。"""
+        with pytest.raises(ValueError, match="Domain not in allowlist"):
+            _validate_base_url_with_allowed_domains(
+                "https://httpbin.org",
+                frozenset({"example.com"}),
+            )
 
 
 class TestAPIConfigBoundaryValues:

@@ -1207,6 +1207,10 @@ class AsyncAPIClient:
         )
 
 
+# 一括作成の部分失敗ログで記録する詳細の上限件数
+_MAX_LOGGED_FAILURE_DETAILS: int = 5
+
+
 class AsyncJSONPlaceholderClient(AsyncAPIClient):
     """JSONPlaceholder API専用非同期クライアント"""
 
@@ -1329,7 +1333,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         """複数ユーザーの非同期一括作成
 
         個別失敗を許容し、成功したユーザーのみ返却。
-        失敗時はwarningログを出力（最初の5件まで詳細表示）。
+        失敗時はwarningログを出力（件数上限付きで詳細を記録）。
         K8s SIGTERM等で複数タスクが同時キャンセルされた場合はerrorログを出力後、
         CancelledError等のfatal例外を再発生させる（graceful shutdown保護）。
 
@@ -1401,7 +1405,8 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
                 "bulk_create_partial_failure",
                 failed_count=len(failed),
                 success_count=len(successful),
-                failed_details=failed_details[:5],  # 最初の5件の詳細
+                failed_details=failed_details[:_MAX_LOGGED_FAILURE_DETAILS],
+                details_truncated=len(failed_details) > _MAX_LOGGED_FAILURE_DETAILS,
             )
 
         return successful
