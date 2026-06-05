@@ -7,7 +7,7 @@ import yaml
 
 # Module-level marker: All tests in this file are unit tests
 # 外部プロセス(Docker)を起動せずYAML構造のみを検証するため
-# pyproject.toml marker定義「integration: external dependencies」に整合)
+# pyproject.toml marker定義: unitに整合)
 pytestmark = pytest.mark.unit
 
 

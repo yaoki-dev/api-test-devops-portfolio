@@ -50,6 +50,19 @@ class TestAPIConfigBaseUrlDependencyInjection:
                 frozenset({"example.com"}),
             )
 
+    def test_validate_base_url_blocks_private_ip_regardless_of_allowlist(self) -> None:
+        """プライベートIPは許可リストに含まれていてもブロックされる。
+
+        SSRF Prevention: DIパスの契約テスト。
+        許可リストにプライベートIPが含まれていても、
+        is_private_ip()による先行チェックでブロックされることを検証する。
+        """
+        with pytest.raises(ValueError, match="Private/loopback IP addresses are not allowed"):
+            _validate_base_url_with_allowed_domains(
+                "http://192.168.1.1",
+                frozenset({"192.168.1.1"}),  # 許可リストに入れても無効
+            )
+
 
 class TestAPIConfigBoundaryValues:
     """APIConfig数値フィールドの境界値テスト（P1-Critical）
