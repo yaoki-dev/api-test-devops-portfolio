@@ -122,6 +122,8 @@ coverage.json
 
 # Claude Code working documents (local only)
 claudedocs/
+docs/brainstorms/
+docs/plans/
 docs/agent-teams/
 docs/ai_collaboration/
 docs/analysis/
@@ -155,3 +157,6 @@ graphify-out/
 
 # Understand Anything - knowledge graph artifacts (auto-generated, reproducible)
 .understand-anything/
+
+# opencode
+opencode-studio

@@ -69,13 +69,13 @@ api-test-devops-portfolio/
 
 ### Module: utils.api_client
 - **Path**: `utils/api_client.py`
-- **Exports**: `APIClient` (同期), `AsyncAPIClient` (非同期)
+- **Exports**（`utils` パッケージ）: `SyncAPIClient` (同期), `AsyncAPIClient` (非同期), `SyncJSONPlaceholderClient`, `AsyncJSONPlaceholderClient`, `APIClientError`, `APIJSONDecodeError`。個別例外クラス（`APIConnectionError`, `APITimeoutError`, `APIHTTPError`, `APIRetryError`）は `utils.api_client` から直接 import
 - **Purpose**: HTTP API クライアント。リトライロジック・エラーハンドリング・コネクションプール実装。
 
 ### Module: utils.github_client
 - **Path**: `utils/github_client.py`
-- **Exports**: `GitHubClient` (同期), `AsyncGitHubClient` (非同期)
-- **Purpose**: GitHub API 専用クライアント。認証ヘッダー自動付与。
+- **Exports**: `AsyncGitHubClient` (非同期), `GitHubAPIError`, `RateLimitError`, `NotFoundError`, `GitHubServerError`, `validate_github_username`, `validate_github_repo`
+- **Purpose**: GitHub API 専用の非同期クライアント。ETagキャッシュ・Rate Limit管理・PII保護対応。認証拡張可能設計（未認証: 60 req/h）。
 
 ### Module: utils.logger
 - **Path**: `utils/logger.py`
@@ -85,11 +85,12 @@ api-test-devops-portfolio/
 ### Module: utils.sentry_init
 - **Path**: `utils/sentry_init.py`
 - **Exports**: `init_sentry()`
-- **Purpose**: Sentry SDK初期化。29種類の機密キー自動スクラブ。httpx統合。
+- **Purpose**: Sentry SDK初期化。44種類の機密キー自動スクラブ。httpx統合。
 
 ### Module: models.responses
 - **Path**: `models/responses.py`
-- **Exports**: `TodoResponse`, `PostResponse`, `UserResponse`
+- **Exports**: `Post`, `Comment`, `User`, `Geo`, `Address`,
+               `Company`, `Todo`, `Album`, `Photo`
 - **Purpose**: Pydantic モデルによるAPIレスポンス型定義・バリデーション。
 
 ---
@@ -144,7 +145,7 @@ api-test-devops-portfolio/
 - **E2E Tests**: 0 files (tests/e2e/ - prepared but empty)
 
 ### Coverage Metrics
-- **Current Coverage**: 93.43%（unit+integration条件）
+- **Current Coverage**: 96.06%（unit+integration条件）
 - **Target Coverage**: 85% (Week 5-6 goal) ✅ 達成済み
 - **Coverage Reports**: `reports/coverage.json`, `reports/htmlcov/`
 
@@ -171,7 +172,7 @@ uv run pytest -m "not slow"      # 高速テストのみ
 - **structlog** (>=23.1.0): 構造化ログ
 - **pydantic** (>=2.0.0): データバリデーション
 - **pydantic-settings** (>=2.0.0): 型安全な設定管理
-- **sentry-sdk[httpx]** (>=2.58.0,<3.0.0): エラー監視（httpx統合）
+- **sentry-sdk[httpx]** (>=2.61.0,<3.0.0): エラー監視（httpx統合）
 - **psutil** (>=6.1.1): システムメトリクス
 - **pyyaml** (>=6.0): YAML設定ファイル読み込み
 
@@ -205,8 +206,8 @@ cp .env.example .env
 ```bash
 # APIクライアント使用例（対話モード）
 uv run python
->>> from utils.api_client import APIClient
->>> client = APIClient()
+>>> from utils.api_client import SyncAPIClient
+>>> client = SyncAPIClient()
 >>> response = client.get("/todos/1")
 >>> print(response)
 ```
@@ -254,14 +255,14 @@ uv run pytest && uv run ruff check . && uv run mypy utils/ config/ models/
 ## 🔍 Key Features
 
 ### 1. API クライアント設計パターン
-- **同期/非同期の統一インターフェース**: `APIClient` / `AsyncAPIClient`
+- **同期/非同期の統一インターフェース**: `SyncAPIClient` / `AsyncAPIClient`
 - **リトライロジック**: 指数バックオフ + 30%ジッター
 - **エラーハンドリング階層**: 4xx即失敗、5xxリトライ
 - **コネクションプール**: 最大10接続（設定可能）
 
 ### 2. エラー監視（Sentry統合）
 - **自動エラー送信**: ERROR以上のログをSentryに送信
-- **機密情報スクラブ**: 29種類のキー（API_KEY, PASSWORD等）自動除外
+- **機密情報スクラブ**: 44種類のキー（API_KEY, PASSWORD等）自動除外
 - **環境別制御**: `SENTRY__ENABLED=false` で開発時無効化
 
 ### 3. 設定管理ベストプラクティス
@@ -286,7 +287,7 @@ uv run pytest && uv run ruff check . && uv run mypy utils/ config/ models/
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Test Coverage | 93.43% | 85% (Week 5-6) |
+| Test Coverage | 96.06% | 85% (Week 5-6) |
 | Test Files | 19 | - |
 | Python Version | 3.14 | - |
 | Code Quality | ruff + mypy | 0 errors |

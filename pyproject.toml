@@ -7,8 +7,8 @@ packages = ["utils", "config", "models"]
 
 [project]
 name = "api-test-devops-portfolio"
+description = "APIテスト + DevOps統合ポートフォリオ"
 version = "0.1.0"
-description = "APIテスト + DevOps 実践学習ポートフォリオ - 時給6000-8000円レベル到達を目指す統合学習プロジェクト"
 authors = [
     {name = "Yuta", email = "yuta@example.com"},
 ]

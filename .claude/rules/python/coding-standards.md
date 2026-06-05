@@ -80,6 +80,12 @@ except json.JSONDecodeError as e:
 
 **規則**: 階層的例外設計、`from e`でチェーン維持、4xx即失敗/5xxリトライ
 
+**セキュリティ規則**: 例外クラス名には PII（個人識別情報）を連想させる語を含めないこと。
+例: `UserEmailValidationError` のようなクラス名は、`__qualname__` 経由で Sentry に
+送信される際に「email」等を機密カテゴリ語として誤検知されたり、PII の存在を
+示唆したりするリスクがある（クラス名自体に実データは含まれないが、語が誤解を招く）。
+`ValidationError` のような汎用名を使用すること。
+
 ---
 
 ## 6. 非同期処理

@@ -25,6 +25,9 @@
       "pattern": "https://medium\\.com/"
     },
     {
+      "pattern": "https://depot\\.dev/"
+    },
+    {
       "pattern": "https://claude\\.com/"
     },
     {

@@ -26,3 +26,10 @@ CLAUDE.md
 # GSD planning documents (auto-generated working documents)
 .planning/**
 graphify-out/**
+# Agent working files (auto-generated)
+.remember/**
+.omo/**
+# Internal brainstorm/design documents
+docs/brainstorms/**
+# Gemini/Codex agent skill definitions (English technical specs)
+.gemini/**

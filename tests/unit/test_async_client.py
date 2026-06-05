@@ -800,15 +800,24 @@ async def test_async_bulk_create_users_multiple_cancelled_errors_logged() -> Non
         assert all(isinstance(e, asyncio.CancelledError) for e in exc_info.value.exceptions)
 
 
-async def test_async_bulk_create_users_memory_error_propagates() -> None:
-    """MemoryError が gather 後に再発生されることを確認
+@pytest.mark.parametrize(
+    "fatal_exc",
+    [MemoryError("OOM"), RecursionError("max depth")],
+)
+async def test_async_bulk_create_users_fatal_exception_propagates(
+    fatal_exc: BaseException,
+) -> None:
+    """MemoryError / RecursionError が gather 後に再発生されることを確認
 
-    bulk_create_users は asyncio.CancelledError だけでなく MemoryError も
-    fatal_exceptions として収集して再発生させる（OOM 保護）。
+    bulk_create_users は asyncio.CancelledError だけでなく ASYNC_FATAL_EXCEPTIONS
+    （MemoryError / RecursionError 等）も fatal_exceptions として収集して再発生させる
+    （OOM / スタック枯渇保護）。_close_async_client の
+    test_aclose_fatal_exception_propagates_not_suppressed が parametrize で
+    両方をカバーしているため、設計の一貫性を保つよう本テストも parametrize 化する。
 
-    実装の isinstance チェック対象4種:
+    実装の isinstance チェック対象（ASYNC_FATAL_EXCEPTIONS）:
     - asyncio.CancelledError: test_async_bulk_create_users_cancelled_error_propagates でカバー
-    - MemoryError: 本テストでカバー
+    - MemoryError / RecursionError: 本テストでカバー
     - KeyboardInterrupt: pytest がシグナルとして処理するため unit test 内での再現が困難。
       pytest.raises(KeyboardInterrupt) を使っても pytest 自体のシグナルハンドラが先に捕捉する。
     - SystemExit: 同様の理由で unit test での再現が困難。
@@ -818,9 +827,9 @@ async def test_async_bulk_create_users_memory_error_propagates() -> None:
         "create_user",
         new_callable=AsyncMock,
     ) as mock_create:
-        mock_create.side_effect = MemoryError("OOM")
+        mock_create.side_effect = fatal_exc
         async with AsyncJSONPlaceholderClient() as client:
-            with pytest.raises(MemoryError):
+            with pytest.raises(type(fatal_exc)):
                 await client.bulk_create_users([{"name": "A"}])
 
 
@@ -910,6 +919,301 @@ async def test_async_context_manager_cleanup_on_exception():
         assert str(exc_info.value) == "Test error"
         # 例外発生時でもaclose()が呼び出されることを確認（クリーンアップ保証）
         mock_client_instance.aclose.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "close_exc,expected_type,expected_module",
+    [
+        (httpx.CloseError("close-failed"), "CloseError", "httpx"),
+        (OSError("connection reset"), "OSError", "builtins"),
+    ],
+)
+async def test_async_api_client_aexit_aclose_exception_is_suppressed_with_warning(
+    close_exc: httpx.CloseError | OSError,
+    expected_type: str,
+    expected_module: str,
+) -> None:
+    """__aexit__ で aclose() が例外を投げても警告ログのみ出力する"""
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(client._client, "aclose", new=AsyncMock(side_effect=close_exc)),
+        capture_logs() as log_output,
+    ):
+        await client.__aexit__(None, None, None)
+
+    warning_logs = [
+        log for log in log_output if log.get("event") == "async_api_client_aclose_failed"
+    ]
+    assert len(warning_logs) == 1
+    assert warning_logs[0]["error_type"] == expected_type
+    assert warning_logs[0]["error_module"] == expected_module
+    assert client._client is None
+
+
+async def test_async_api_client_aexit_body_exception_not_overridden_by_close_exception() -> None:
+    """__aexit__ で本体例外発生中に aclose() も例外を出すケース。
+
+    PR#347 review Q8: body 例外 (exc_val) が close 例外で上書きされないこと
+    (warning log only, no re-raise) を end-to-end で検証する。設計意図:
+    ``async with`` body 例外 + aclose 例外の両発生時、原因情報 (body 例外) を
+    優先伝播させて debuggability を維持する (CWE-755 例外マスク回避)。
+    """
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(
+            client._client,
+            "aclose",
+            new=AsyncMock(side_effect=httpx.CloseError("close-failed")),
+        ),
+        pytest.raises(ValueError, match="body-error"),
+        capture_logs() as log_output,
+    ):
+        async with client:
+            raise ValueError("body-error")
+
+    # close 例外は warning log のみ。body 例外は ValueError として外側に伝播。
+    warning_logs = [
+        log for log in log_output if log.get("event") == "async_api_client_aclose_failed"
+    ]
+    assert len(warning_logs) == 1
+    assert warning_logs[0]["error_type"] == "CloseError"
+    assert warning_logs[0]["error_module"] == "httpx"
+
+
+async def test_aexit_unexpected_exception_reraises_when_no_body_exception() -> None:
+    """__aexit__ で body 例外なし + 予期しない close 例外 → close_exc を re-raise する。
+
+    github_client.py L698 のテストを api_client 用に移植（PR#347 二段構え統一）。
+
+    body 例外がない状態（exc_type is None）では、aclose() の予期しない例外は
+    実装バグとして呼び出し元に伝播させる。
+    error ログ（has_body_exception=False, exc_info=True）が記録されてから re-raise。
+    """
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(
+            client._client,
+            "aclose",
+            new=AsyncMock(side_effect=RuntimeError("close-failed")),
+        ),
+        pytest.raises(RuntimeError, match="close-failed"),
+        capture_logs() as log_output,
+    ):
+        await client.__aexit__(None, None, None)
+
+    unexpected_event = "async_api_client_aclose_unexpected_error"
+    error_logs = [log for log in log_output if log.get("event") == unexpected_event]
+    assert len(error_logs) == 1
+    assert error_logs[0]["error_type"] == "RuntimeError"
+    assert error_logs[0]["error_module"] == "builtins"
+    assert error_logs[0]["has_body_exception"] is False
+    # exc_info=True によりスタックトレースが記録される（PR#347 二段構え）
+    assert error_logs[0].get("exc_info") is True
+    # 予期しない例外では warning ログは出ない
+    failed_event = "async_api_client_aclose_failed"
+    warning_logs = [log for log in log_output if log.get("event") == failed_event]
+    assert len(warning_logs) == 0
+
+
+async def test_aexit_unexpected_exception_suppressed_when_body_exception() -> None:
+    """__aexit__ で body 例外あり + 予期しない close 例外 → re-raise しない（body 例外優先）。
+
+    github_client.py L728 のテストを api_client 用に移植（PR#347 二段構え統一）。
+
+    body 例外がある状態（exc_type is not None）では close_exc を re-raise せず、
+    body 例外を優先伝播させて debuggability を維持する（CWE-755 例外マスク回避）。
+    RuntimeError は予期しない例外ブランチ → error ログ + has_body_exception=True。
+    """
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(
+            client._client,
+            "aclose",
+            new=AsyncMock(side_effect=RuntimeError("close-failed")),
+        ),
+        pytest.raises(ValueError, match="body-error"),
+        capture_logs() as log_output,
+    ):
+        async with client:
+            raise ValueError("body-error")
+
+    # close 例外は re-raise しない。body 例外は ValueError として外側に伝播。
+    unexpected_event = "async_api_client_aclose_unexpected_error"
+    error_logs = [log for log in log_output if log.get("event") == unexpected_event]
+    assert len(error_logs) == 1
+    assert error_logs[0]["error_type"] == "RuntimeError"
+    assert error_logs[0]["error_module"] == "builtins"
+    assert error_logs[0]["has_body_exception"] is True
+    # exc_info=True によりスタックトレースが記録される（PR#347 二段構え）
+    assert error_logs[0].get("exc_info") is True
+    # warning ログは出ない
+    failed_event = "async_api_client_aclose_failed"
+    warning_logs = [log for log in log_output if log.get("event") == failed_event]
+    assert len(warning_logs) == 0
+
+
+async def test_aclose_logger_info_failure_propagates_without_misclassification() -> None:
+    """aclose() 単独呼び出し: logger.info 失敗が close 失敗として誤分類されないことを検証。
+
+    close 処理は __aexit__ と共通化されるが、logger 例外はそのまま caller に
+    propagate し、aclose_unexpected_error には記録されない (Codex Q-1 recommendation: both paths)。
+    """
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(client._client, "aclose", new=AsyncMock()),
+        patch.object(client.logger, "info", side_effect=RuntimeError("logger-failed")),
+        patch.object(client.logger, "error") as mock_error,
+        pytest.raises(RuntimeError, match="logger-failed"),
+    ):
+        await client.aclose()
+
+    mock_error.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("close_exc", "expected_type", "expected_module"),
+    [
+        (httpx.CloseError("close-failed"), "CloseError", "httpx"),
+        (OSError("close-failed"), "OSError", "builtins"),
+    ],
+)
+async def test_aclose_exception_is_suppressed_with_warning(
+    close_exc: httpx.CloseError | OSError,
+    expected_type: str,
+    expected_module: str,
+) -> None:
+    """aclose() 単独呼び出しでも close 例外は warning のみで抑止する。"""
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(client._client, "aclose", new=AsyncMock(side_effect=close_exc)),
+        capture_logs() as log_output,
+    ):
+        await client.aclose()
+
+    warning_logs = [
+        log for log in log_output if log.get("event") == "async_api_client_aclose_failed"
+    ]
+    assert len(warning_logs) == 1
+    assert warning_logs[0]["error_type"] == expected_type
+    assert warning_logs[0]["error_module"] == expected_module
+    closed_logs = [log for log in log_output if log.get("event") == "async_api_client_closed"]
+    assert len(closed_logs) == 0
+
+
+async def test_aclose_normal_close_logs_info() -> None:
+    """aclose() 単独呼び出し時に async_api_client_closed の info ログが1回出力される。"""
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(client._client, "aclose", new=AsyncMock()),
+        capture_logs() as log_output,
+    ):
+        await client.aclose()
+
+    closed_logs = [log for log in log_output if log.get("event") == "async_api_client_closed"]
+    assert len(closed_logs) == 1
+    assert closed_logs[0]["log_level"] == "info"
+
+
+async def test_aclose_unexpected_exception_suppressed_with_warning() -> None:
+    """aclose() 単独呼び出しで予期しない例外 (RuntimeError) は warning ログのみで抑止される。
+
+    既存の ``test_aclose_exception_is_suppressed_with_warning`` は CloseError/OSError で
+    第1 except 分岐 (async_api_client_aclose_failed) をヒットするのに対し、本テストは
+    ``except Exception`` 第2分岐 (suppress_unexpected=True パス /
+    async_api_client_aclose_unexpected_error_suppressed) を明示的にカバーする回帰防止テスト。
+    aclose() は finally ブロック等での安全な呼び出しを保証するため、実装バグ起因の
+    予期しない例外も re-raise せず握りつぶす設計 (PR#347 review SF-2)。
+    """
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(
+            client._client,
+            "aclose",
+            new=AsyncMock(side_effect=RuntimeError("unexpected-boom")),
+        ),
+        capture_logs() as log_output,
+    ):
+        await client.aclose()  # 例外が伝播しないこと（伝播すればこのテストは失敗する）
+
+    suppressed_logs = [
+        log
+        for log in log_output
+        if log.get("event") == "async_api_client_aclose_unexpected_error_suppressed"
+    ]
+    assert len(suppressed_logs) == 1
+    assert suppressed_logs[0]["error_type"] == "RuntimeError"
+    assert suppressed_logs[0]["error_module"] == "builtins"
+    # aclose 失敗のため else 節 (closed ログ) は未到達
+    closed_logs = [log for log in log_output if log.get("event") == "async_api_client_closed"]
+    assert len(closed_logs) == 0
+    # suppress 経路でも状態一貫性のため _client が None になること（壊れたクライアント再利用防止）
+    assert client._client is None
+
+
+@pytest.mark.parametrize(
+    "fatal_exc",
+    [MemoryError("OOM"), RecursionError("maximum recursion depth exceeded")],
+)
+async def test_aclose_fatal_exception_propagates_not_suppressed(
+    fatal_exc: MemoryError | RecursionError,
+) -> None:
+    """aclose() 単独呼出 (suppress_unexpected=True 経路) でも MemoryError /
+    RecursionError は握りつぶさず fail-fast で伝播する。
+
+    両者は ``Exception`` 派生 (MemoryError は ``Exception`` 直系、RecursionError は
+    ``RuntimeError`` 派生) のため ``except Exception`` に捕捉されうるが、専用 except 句で
+    先取りし即時 re-raise する設計 (github_client / sentry_init と同一方針)。
+    ``test_aclose_unexpected_exception_suppressed_with_warning`` (RuntimeError は
+    suppress) と対になり、「fatal のみ選択的に伝播」する不変条件を固定する回帰防止テスト。
+    """
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(client._client, "aclose", new=AsyncMock(side_effect=fatal_exc)),
+        pytest.raises(type(fatal_exc)),
+        capture_logs() as log_output,
+    ):
+        await client.aclose()  # 専用 except 句で即時 re-raise されること
+
+    # 専用句が except Exception より先に re-raise するため suppress ログは出ない
+    suppressed_logs = [
+        log
+        for log in log_output
+        if log.get("event") == "async_api_client_aclose_unexpected_error_suppressed"
+    ]
+    assert len(suppressed_logs) == 0
+    # aclose 失敗のため closed ログも未到達
+    closed_logs = [log for log in log_output if log.get("event") == "async_api_client_closed"]
+    assert len(closed_logs) == 0
+
+
+async def test_aexit_logger_info_failure_not_misclassified_as_close_failure() -> None:
+    """__aexit__: _client.aclose() 成功後に logger.info が例外を投げても
+    aclose_unexpected_error として誤分類されないことを検証 (Codex Q-1 regression)。
+
+    else 節に logger.info を分離したため、logger 例外は try-except 外から propagate し、
+    close 失敗 (aclose_unexpected_error) として記録されない。
+    """
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(client._client, "aclose", new=AsyncMock()),
+        patch.object(client.logger, "info", side_effect=RuntimeError("logger-failed")),
+        patch.object(client.logger, "error") as mock_error,
+        pytest.raises(RuntimeError, match="logger-failed"),
+    ):
+        await client.__aexit__(None, None, None)
+
+    # close 失敗として誤分類されていない = error ログ（unexpected_error）未呼び出し
+    mock_error.assert_not_called()
 
 
 @respx.mock

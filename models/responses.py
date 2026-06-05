@@ -37,7 +37,8 @@ _PERCENT_CTRL_RE: re.Pattern[str] = re.compile(
     re.IGNORECASE,
 )
 # 不完全な%シーケンス検出 — unquoteがリテラル扱いするためUnicodeDecodeErrorが発生しない
-_INCOMPLETE_PCT_RE: re.Pattern[str] = re.compile(r"%(?![0-9a-fA-F]{2})")
+# IGNORECASE flag で大文字小文字を統合（可読性目的、機能等価: r"%(?![0-9a-fA-F]{2})" と同一）
+_INCOMPLETE_PCT_RE: re.Pattern[str] = re.compile(r"%(?![0-9a-f]{2})", re.IGNORECASE)
 _ASCII_WHITESPACE_RE: re.Pattern[str] = re.compile(r"[ \t\n\r\f\v]")
 _VARIATION_SELECTORS: frozenset[str] = frozenset(
     {chr(codepoint) for codepoint in range(0xFE00, 0xFE10)}
@@ -49,6 +50,9 @@ _INVISIBLE_CATEGORIES = frozenset({"Cf", "Cc", "Zs", "Zl", "Zp"})
 _STRIP_CATEGORIES = _INVISIBLE_CATEGORIES | frozenset({"Cs"})
 
 
+# URL正規化中のUnicodeカテゴリ参照を十分に吸収する余裕を持たせる。
+# 通常のURLで登場する文字種は数百程度だが、テスト・攻撃入力では多様な
+# 制御文字/不可視文字を含むため、余裕を持った上限にして再計算を避ける。
 def _is_strippable_char(c: str, categories: frozenset[str]) -> bool:
     """不可視文字として除去すべき文字か判定する。
 
@@ -159,7 +163,7 @@ def _validate_netloc(parsed: ParseResult) -> None:
     # （urlparse が特定のエンコード済み入力で username=None を返すエッジケース対策）
     try:
         has_userinfo = parsed.username is not None or parsed.password is not None
-    except (ValueError, OverflowError) as e:
+    except (ValueError, OverflowError) as e:  # fmt: skip
         # parsed.username/password は内部で独自にunquoteするため、L135-137のチェックとは独立
         raise ValueError(f"URLのuserinfoパースに失敗しました（netloc={parsed.netloc!r}）") from e
     if has_userinfo:

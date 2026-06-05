@@ -1,10 +1,12 @@
-from unittest.mock import patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 import pytest
+from structlog.testing import capture_logs
 
 from tests.constants import BASE_URL
 from utils.api_client import (
+    AsyncAPIClient,
     SyncAPIClient,
 )
 
@@ -85,3 +87,72 @@ def test_base_client_close_method():
     # httpx.Client.close() doesn't set _client to None, but it closes the transport.
     # We can't easily assert the underlying httpx client is closed without mocking.
     # For now, just ensure no error is raised.
+
+
+@pytest.mark.asyncio
+async def test_close_async_client_with_none_client_does_not_raise() -> None:
+    """_client が None の場合、_close_async_client は何もせず例外を発生させない（no-op）。
+
+    Fix #13-TC-3: double-close 防止のため _close_async_client に
+    None ガードが実装されていることを検証する。
+    """
+    client = AsyncAPIClient(base_url="https://test.com")
+    # _client を None に強制設定（close 後の状態をシミュレート）
+    client._client = None
+    # None の場合は no-op であり、例外が発生しないことを検証
+    await client._close_async_client(None)
+
+
+@pytest.mark.asyncio
+async def test_aclose_unexpected_error_suppressed_logs_error() -> None:
+    """aclose() 直接呼び出し時の予期しないclose例外はerrorログで監視対象にする。"""
+    client = AsyncAPIClient(base_url="https://test.com")
+    client._client = AsyncMock()
+    client._client.aclose = AsyncMock(side_effect=RuntimeError("close-failed"))
+
+    with capture_logs() as logs:
+        await client.aclose()
+
+    error_logs = [
+        log
+        for log in logs
+        if log.get("event") == "async_api_client_aclose_unexpected_error_suppressed"
+    ]
+    assert len(error_logs) == 1
+    assert error_logs[0]["log_level"] == "error"
+    assert error_logs[0]["error_type"] == "RuntimeError"
+
+
+@pytest.mark.asyncio
+async def test_make_request_with_retry_raises_when_client_closed() -> None:
+    """close 後（_client=None）に _make_request_with_retry を呼ぶと RuntimeError を送出する。
+
+    PR#347 review fix: 従来は None.request アクセスで AttributeError になっていたが、
+    use-after-close を明示的な RuntimeError として通知する（github_client.py L878 と同一パターン）。
+    """
+    client = AsyncAPIClient(base_url="https://test.com")
+    # close 後の状態をシミュレート（_client を None に強制設定）
+    client._client = None
+    with pytest.raises(RuntimeError, match="Client not initialized"):
+        await client._make_request_with_retry("GET", "/test")
+
+
+@pytest.mark.unit
+def test_sync_close_sets_client_none_even_when_close_raises() -> None:
+    """SyncAPIClient.close() は close() が例外を投げても _client=None を保証する。
+
+    PR#347 review fix A: close() 例外時に _client が残存すると _request 冒頭の
+    use-after-close ガード（_client is None 判定）をすり抜け、壊れたクライアントへ
+    リクエストが発行される状態不整合が生じる。finally で _client=None を保証し、
+    例外は従来通り呼び出し元へ伝播させる（AsyncAPIClient._close_async_client と対称）。
+    """
+    client = SyncAPIClient(base_url="https://test.example.com")
+    client._client = Mock()
+    client._client.close = Mock(side_effect=OSError("close-failed"))
+
+    # 例外は呼び出し元へ伝播する（finally は抑制しない）
+    with pytest.raises(OSError, match="close-failed"):
+        client.close()
+
+    # close() 失敗後も _client=None が保証され、use-after-close ガードが機能する
+    assert client._client is None

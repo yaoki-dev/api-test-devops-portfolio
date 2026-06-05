@@ -1,6 +1,6 @@
 # Sentry統合ガイド
 
-*最終更新: 2025年12月29日*
+*最終更新: 2026年5月26日*
 *用途: Sentry SDK設定・機密データ保護・MCP統合*
 *アクセス頻度: 低（Sentry設定・デバッグ時のみ）*
 
@@ -53,19 +53,48 @@ if init_sentry():
 
 ## 機密データ保護
 
-`before_send`フックで以下**29種類**の機密キーを自動スクラブ:
+`before_send`フックで以下**44種類**の機密キーを自動スクラブ:
 
 | カテゴリ | キー | 個数 |
 |---------|------|------|
 | **認証系（基本）** | password, token, secret, api_key, dsn, authorization, cookie, session, credential | 9 |
-| **認証系（拡張）** | bearer, jwt, access_token, refresh_token, private_key, client_secret, x-api-key, auth_token, passwd | 9 |
+| **認証系（拡張）** | bearer, jwt, access_token, refresh_token, private_key, client_secret, x-api-key, auth_token, authtoken, usertoken, userpassword, passwd | 12 |
 | **暗号化** | encryption_key, cipher_key | 2 |
 | **OAuth** | oauth_token | 1 |
 | **二要素認証** | otp, mfa, totp | 3 |
-| **個人情報** | database_url, ssn, credit_card, cvv, card_number | 5 |
-| **合計** | - | **29** |
+| **個人情報** | email, ip_address, username, database_url, ssn, credit_card, cvv, card_number | 8 |
+| **HTTPヘッダー/レスポンス** | body_preview, access_key, proxy-authorization, set-cookie, x-auth-token, csrf_token, x-csrf-token, x-refresh-token, x-access-token | 9 |
+| **合計** | - | **44** |
 
-**確認元**: `utils/sentry_init.py` Lines 45-83 (`SENSITIVE_KEYS` frozenset)
+**注記 (個数 baseline)**:
+
+- `CHANGELOG.md` の「32 → 44（+12件）」表記が最終状態と一致する。
+  起点 32 は **PR#340 で `email` / `ip_address` / `body_preview` 追加後の件数**。
+  PR#340 前起点では **29 → 44（+15件）**。
+- 現ステージ済 PR で追加された **12 件** の内訳（CHANGELOG.md と同一）:
+  - 認証系 1 件: `access_key`
+  - HTTP ヘッダー 7 件: `proxy-authorization`, `set-cookie`, `x-auth-token`,
+    `csrf_token`, `x-csrf-token`, `x-refresh-token`, `x-access-token`
+  - 複合語バリアント 3 件: `authtoken`, `usertoken`, `userpassword`
+  - 個人情報 1 件: `username`（PR#347 review follow-up で追加）
+- 最終状態は **44 件**（`utils/sentry_init.py` 実装・`test_sentry_init.py::assert len(SENSITIVE_KEYS) == 44` と一致）。
+
+**確認元**: `utils/sentry_init.py` (`SENSITIVE_KEYS` frozenset)
+**マッチング方式**: `_is_sensitive_key` は **単語境界マッチ + ハイフン/アンダースコア
+正規化** で判定する (`_SENSITIVE_KEY_PATTERN = (?:^|[_\d])(?:KEY)(?=[^a-z]|$)`)。
+これにより composite key (例: `user_password`, `email_address`, `X-Auth-Token`)
+や数字サフィックス付きキー (例: `password2`, `api_key2`) も全て redact される
+(defense-in-depth)。一方で `prototype` / `photo_url` 等の機密語を**部分文字列として
+含むだけ**の非機密キーは過剰検出されない (PR#347 で substring → 単語境界へ変更)。
+
+履歴:
+- PR#340 以前: substring 一致 → 過剰検出あり
+- PR#347 fix #1: substring → exact 一致で composite key 漏洩 regression 発生 → 修正
+- PR#347 fix #2: 末尾境界に `\d` 追加 (`password2` 系を補足)
+
+詳細は `utils/sentry_init.py` の `_NORMALIZED_SENSITIVE_KEYS` / `_SENSITIVE_KEY_PATTERN`
+周辺コメント、契約テストは `tests/unit/test_sentry_init.py::TestSensitiveKeysCompleteness`
+を参照。
 
 ---
 
@@ -88,7 +117,7 @@ Sentry MCPサーバーでClaude Codeからエラー調査可能:
 ## テスト
 
 ```bash
-# Sentry統合テスト（31ケース）
+# Sentry統合テスト（151 test functions / 291 collected cases）
 uv run pytest tests/unit/test_sentry_init.py -v
 ```
 
@@ -98,8 +127,13 @@ uv run pytest tests/unit/test_sentry_init.py -v
 
 ### Sentry初期化失敗時
 
+初期化失敗時の警告は `SENTRY_DEBUG` に依存せず **常時** `_logger.warning` で出力される
+（本番監視対応, PR#347 #3/#7）。`SENTRY_DEBUG` は `utils/logger.py` の
+`_is_sentry_debug_enabled()` が消費する環境変数で、有効化すると Sentry 関連の
+追加診断（送信失敗の詳細・ImportError 等）を stderr へ出力する:
+
 ```bash
-# デバッグモード有効化
+# 追加の Sentry 診断を stderr へ出力（初期化失敗警告自体は常時出力される）
 export SENTRY_DEBUG=true
 ```
 
@@ -108,5 +142,5 @@ export SENTRY_DEBUG=true
 ```python
 # スクラブ対象キーの確認
 from utils.sentry_init import SENSITIVE_KEYS
-print(len(SENSITIVE_KEYS))  # 29
+print(len(SENSITIVE_KEYS))  # 44
 ```

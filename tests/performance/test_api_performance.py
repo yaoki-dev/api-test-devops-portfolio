@@ -11,13 +11,28 @@ APIパフォーマンステスト - 基盤実装
 import asyncio
 import statistics
 import time
-from typing import Any
+from typing import TypedDict
 
 import psutil
 import pytest
 
 from utils.api_client import APIClientError, AsyncAPIClient
 from utils.logger import get_logger
+
+
+# total=False makes all fields optional; in practice only `error` is intentionally optional.
+# Consider using Required[...] / NotRequired[...] (Python 3.11+) for precision.
+class PerformanceSummary(TypedDict, total=False):
+    """get_summary() の戻り値型（完全な構造は get_summary() の docstring 参照）"""
+
+    total_duration: float
+    request_count: int
+    response_times: dict[str, float]
+    throughput: float
+    memory_usage: dict[str, float]
+    cpu_usage: dict[str, float | None]
+    error: str
+
 
 logger = get_logger(__name__)
 
@@ -37,26 +52,39 @@ class PerformanceMetrics:
         self.start_time: float = 0
         self.end_time: float | None = None
         self.memory_usage: list[float] = []
-        self.cpu_usage: list[float] = []
+        self.cpu_usage: list[float | None] = []
 
     def start_monitoring(self):
-        """パフォーマンス監視開始"""
+        """パフォーマンス監視開始
+
+        psutil.cpu_percent(interval=None) を warmup として呼び出す。
+        戻り値は破棄する（初回呼び出しは仕様上 0.0 で意味なし）。
+        次回 cpu_percent(interval=None) 呼び出し時に、ここからの delta を取得する。
+        blocking なしのため start_time の精度に影響しない。
+        cpu_usage はこの時点では append しない（stop_monitoring の delta 取得後に追記）。
+        """
+        psutil.cpu_percent(interval=None)  # warmup（内部カウンターリセット、戻り値破棄）
         self.start_time = time.time()
         self.memory_usage.append(psutil.Process().memory_info().rss / 1024 / 1024)  # MB
-        psutil.cpu_percent()
-        self.cpu_usage.append(psutil.cpu_percent(interval=0.1))
+        self.cpu_usage.append(
+            None
+        )  # 測定開始時点のベースライン: non-blocking 設計のため意図的に未計測
 
     def record_response_time(self, response_time: float) -> None:
         """レスポンス時間記録"""
         self.response_times.append(response_time)
 
     def stop_monitoring(self):
-        """パフォーマンス監視終了"""
+        """パフォーマンス監視終了
+
+        psutil.cpu_percent(interval=None) で start_monitoring からの
+        delta-based 平均 CPU% を取得する（blocking なし、end_time 精度を毀損しない）。
+        """
         self.end_time = time.time()
         self.memory_usage.append(psutil.Process().memory_info().rss / 1024 / 1024)
-        self.cpu_usage.append(psutil.cpu_percent(interval=0.1))
+        self.cpu_usage.append(psutil.cpu_percent(interval=None))
 
-    def get_summary(self) -> dict[str, Any]:
+    def get_summary(self) -> PerformanceSummary:
         """パフォーマンスサマリー取得"""
         if not self.response_times:
             return {"error": "No response times recorded"}
@@ -92,8 +120,12 @@ class PerformanceMetrics:
                 else 0,
             },
             "cpu_usage": {
-                "start_percent": self.cpu_usage[0] if self.cpu_usage else 0,
-                "end_percent": self.cpu_usage[-1] if self.cpu_usage else 0,
+                # start_percent: non-blocking 設計のため意図的に未計測（None）
+                # 測定開始時点のCPU%は記録しない仕様。end_percent は start からの delta 平均。
+                "start_percent": None,  # non-blocking設計のため未計測（warmupのみ実施）
+                "end_percent": self.cpu_usage[-1]
+                if self.cpu_usage and self.cpu_usage[-1] is not None
+                else 0.0,
             },
         }
 
@@ -130,6 +162,35 @@ class TestAPIPerformance:
     # - TLS handshake・DNS解決等の初回接続コスト含む
     THROUGHPUT_THRESHOLD = 3  # 3 requests/sec
 
+    def test_get_summary_empty_cpu_usage_uses_float_default(self):
+        """cpu_usage が空の場合も end_percent は float 型で返す"""
+        metrics = PerformanceMetrics()
+        metrics.start_time = 1.0
+        metrics.end_time = 2.0
+        metrics.response_times.append(0.1)
+        metrics.memory_usage.append(10.0)
+
+        summary = metrics.get_summary()
+
+        assert summary["cpu_usage"]["end_percent"] == 0.0
+        assert isinstance(summary["cpu_usage"]["end_percent"], float)
+        assert summary["cpu_usage"]["start_percent"] is None
+
+    def test_get_summary_trailing_none_cpu_usage_uses_float_default(self):
+        """cpu_usage 末尾が None の場合も end_percent は float 型で返す"""
+        metrics = PerformanceMetrics()
+        metrics.start_time = 1.0
+        metrics.end_time = 2.0
+        metrics.response_times.append(0.1)
+        metrics.memory_usage.append(10.0)
+        metrics.cpu_usage.append(None)
+
+        summary = metrics.get_summary()
+
+        assert summary["cpu_usage"]["start_percent"] is None
+        assert summary["cpu_usage"]["end_percent"] == 0.0
+        assert isinstance(summary["cpu_usage"]["end_percent"], float)
+
     @pytest.mark.asyncio
     async def test_single_request_performance(self):
         """単一リクエストのパフォーマンステスト"""
@@ -155,7 +216,10 @@ class TestAPIPerformance:
                 "single_request_performance",
                 response_time=round(response_time, 3),
                 memory_mb=round(summary["memory_usage"]["start_mb"], 1),
-                cpu_start_percent=round(summary["cpu_usage"]["start_percent"], 1),
+                # psutil の Process.cpu_percent() は初回呼び出しで artifact 値 (0.0) を返すため、
+                # start サンプル値は信頼できない → None 固定で記録 (測定上のノイズ排除)。
+                # CPU 実値が必要な箇所は test 後半の cpu_end_percent を参照する。
+                cpu_start_percent=None,
             )
 
     @pytest.mark.asyncio
@@ -214,8 +278,11 @@ class TestAPIPerformance:
                 p95=round(summary["response_times"]["p95"], 3),
                 throughput=round(summary["throughput"], 1),
                 memory_increase_mb=round(summary["memory_usage"]["increase_mb"], 1),
-                cpu_start_percent=round(summary["cpu_usage"]["start_percent"], 1),
-                cpu_end_percent=round(summary["cpu_usage"]["end_percent"], 1),
+                # psutil の Process.cpu_percent() は初回呼び出しで artifact 値 (0.0) を返すため、
+                # start サンプル値は信頼できない → None 固定で記録 (測定上のノイズ排除)。
+                # CPU 実値が必要な箇所は test 後半の cpu_end_percent を参照する。
+                cpu_start_percent=None,
+                cpu_end_percent=round(summary["cpu_usage"]["end_percent"] or 0.0, 1),
             )
 
     @pytest.mark.asyncio
@@ -275,8 +342,11 @@ class TestAPIPerformance:
                 p95=round(summary["response_times"]["p95"], 3),
                 throughput=round(summary["throughput"], 1),
                 memory_increase_mb=round(summary["memory_usage"]["increase_mb"], 1),
-                cpu_start_percent=round(summary["cpu_usage"]["start_percent"], 1),
-                cpu_end_percent=round(summary["cpu_usage"]["end_percent"], 1),
+                # psutil の Process.cpu_percent() は初回呼び出しで artifact 値 (0.0) を返すため、
+                # start サンプル値は信頼できない → None 固定で記録 (測定上のノイズ排除)。
+                # CPU 実値が必要な箇所は test 後半の cpu_end_percent を参照する。
+                cpu_start_percent=None,
+                cpu_end_percent=round(summary["cpu_usage"]["end_percent"] or 0.0, 1),
             )
 
     @pytest.mark.asyncio
@@ -346,7 +416,10 @@ class TestPerformanceRegression:
                 baseline=round(self.BASELINE_RESPONSE_TIME, 3),
                 current=round(current_performance, 3),
                 ratio=round(performance_ratio, 2),
-                cpu_start_percent=round(summary["cpu_usage"]["start_percent"], 1),
+                # psutil の Process.cpu_percent() は初回呼び出しで artifact 値 (0.0) を返すため、
+                # start サンプル値は信頼できない → None 固定で記録 (測定上のノイズ排除)。
+                # CPU 実値が必要な箇所は test 後半の cpu_end_percent を参照する。
+                cpu_start_percent=None,
             )
 
             assert performance_ratio <= self.REGRESSION_THRESHOLD, (
