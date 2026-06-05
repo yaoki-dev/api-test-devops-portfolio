@@ -59,6 +59,9 @@ jobs:
       - name: Run mypy check
         run: uv run mypy utils/ config/ models/
 
+      - name: Run ruff check
+        run: uv run ruff check .
+
       - name: Set test markers
         id: markers
         run: |
@@ -94,7 +97,7 @@ jobs:
   # Checks: markdownlint, textlint (日本語対応)
   # ============================================================
   pr-md-quality-check:
-    name: PR Markdown Quality Check (PR Validation)
+    name: PR Markdown Quality Check
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5

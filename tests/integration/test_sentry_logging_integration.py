@@ -141,6 +141,19 @@ def test_logger_error_forwards_to_sentry_with_pii_scrubbed(
     )
 
 
+def test_logger_warning_does_not_forward_to_sentry(
+    captured_events: list[dict[str, Any]],
+) -> None:
+    """WARNINGログはSentryへ転送されないことを保証する。"""
+    logger = get_logger(__name__)
+
+    events_before = len(captured_events)
+    logger.warning("integration_test_warning", password="should-not-appear")  # noqa: S106
+    sentry_sdk.flush()
+
+    assert len(captured_events) == events_before
+
+
 def test_sentry_test_client_cleanup_disables_capture_after_fixture_use(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

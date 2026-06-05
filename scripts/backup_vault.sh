@@ -16,6 +16,11 @@ cleanup_on_signal() {
     echo "🔄 不完全なバックアップを削除中..." >&2
     # P1-2: .tmpファイルを削除（アトミック書込み対応）
     rm -f "$BACKUP_DIR"/.vault_*.tmp 2>/dev/null || true
+    if [ -n "$CURRENT_BACKUP" ]; then
+      rm -f "$CURRENT_BACKUP" 2>/dev/null || true
+      # チェックサムファイルも削除（シグナル中断時の孤立防止）
+      rm -f "${CURRENT_BACKUP%.tar.gz}.sha256" 2>/dev/null || true
+    fi
   fi
   exit 130  # 標準SIGINT終了コード
 }

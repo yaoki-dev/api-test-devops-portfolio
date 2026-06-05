@@ -5,10 +5,10 @@ from typing import Any
 import pytest
 import yaml
 
-# Module-level marker: All tests in this file are integration tests
-# (docker-compose.yml をファイルシステムから読み込むため
+# Module-level marker: All tests in this file are unit tests
+# 外部プロセス(Docker)を起動せずYAML構造のみを検証するため
 # pyproject.toml marker定義「integration: external dependencies」に整合)
-pytestmark = pytest.mark.integration
+pytestmark = pytest.mark.unit
 
 
 class TestDockerComposeContract:

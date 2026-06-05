@@ -74,6 +74,42 @@ def _get_allowed_domains() -> frozenset[str]:
 # import 前の環境変数設定が必要。
 ALLOWED_DOMAINS: frozenset[str] = _get_allowed_domains()
 
+
+def _validate_base_url_with_allowed_domains(v: str, allowed_domains: frozenset[str]) -> str:
+    """許可ドメインを注入してベースURLを検証する。"""
+    if not v.startswith(("http://", "https://")):
+        raise ValueError("Base URL must start with http:// or https://")
+
+    # URLパース
+    parsed = urlparse(v)
+    hostname = parsed.hostname
+
+    if not hostname:
+        raise ValueError("Invalid URL: hostname not found")
+
+    # SSRF Prevention: プライベートIPチェック
+    if is_private_ip(hostname):
+        raise ValueError(
+            f"SSRF Prevention: Private/loopback IP addresses are not allowed: {hostname}",
+        )
+
+    # SSRF Prevention: 許可ドメインチェック
+    if hostname not in allowed_domains:
+        _logger.warning(
+            "SSRF Prevention: Domain not in allowlist: %r. Allowed domains count: %d",
+            hostname[:200],
+            len(allowed_domains),
+        )
+        raise ValueError(
+            f"SSRF Prevention: Domain not in allowlist: {hostname}. "
+            f"Allowed domains count: {len(allowed_domains)}",
+        )
+
+    if v.endswith("/"):
+        v = v.rstrip("/")
+    return v
+
+
 # 危険なプライベートIPレンジ
 PRIVATE_IP_RANGES: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] = (
     ipaddress.ip_network("10.0.0.0/8"),
@@ -102,6 +138,8 @@ def _check_ip_private(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool
     return any(ip in network for network in PRIVATE_IP_RANGES)
 
 
+# 起動時/設定検証の短期再利用を想定したプロセス内キャッシュ。
+# 長期稼働中のDNS変更追従が必要な用途ではTTL付きキャッシュへ切り替える。
 @lru_cache(maxsize=256)
 def _resolve_hostname_cached(hostname: str) -> str:
     """ホスト名をDNS解決してIPアドレス文字列を返す（成功時のみキャッシュ）
@@ -289,37 +327,7 @@ class APIConfig(BaseModel):
             - 許可されたドメインのみ許可（ALLOWED_DOMAINS）
             - AWS metadata endpoint (169.254.169.254) をブロック
         """
-        if not v.startswith(("http://", "https://")):
-            raise ValueError("Base URL must start with http:// or https://")
-
-        # URLパース
-        parsed = urlparse(v)
-        hostname = parsed.hostname
-
-        if not hostname:
-            raise ValueError("Invalid URL: hostname not found")
-
-        # SSRF Prevention: プライベートIPチェック
-        if is_private_ip(hostname):
-            raise ValueError(
-                f"SSRF Prevention: Private/loopback IP addresses are not allowed: {hostname}",
-            )
-
-        # SSRF Prevention: 許可ドメインチェック
-        if hostname not in ALLOWED_DOMAINS:
-            _logger.warning(
-                "SSRF Prevention: Domain not in allowlist: %r. Allowed domains count: %d",
-                hostname[:200],
-                len(ALLOWED_DOMAINS),
-            )
-            raise ValueError(
-                f"SSRF Prevention: Domain not in allowlist: {hostname}. "
-                f"Allowed domains count: {len(ALLOWED_DOMAINS)}",
-            )
-
-        if v.endswith("/"):
-            v = v.rstrip("/")
-        return v
+        return _validate_base_url_with_allowed_domains(v, ALLOWED_DOMAINS)
 
 
 # =============================================================================
