@@ -82,15 +82,32 @@ check_dependencies() {
 check_dependencies
 
 # P3-1: macOS通知関数（失敗時にNotification Centerへ表示）
+# セキュリティ: on run argv パターンでメッセージをデータとして渡し AppleScript Injection を防止
 notify_failure() {
   local message="${1:-バックアップ失敗}"
   if command -v osascript >/dev/null 2>&1; then
-    osascript -e "display notification \"$message\" with title \"Obsidian Vault Backup\" subtitle \"エラー発生\" sound name \"Basso\"" 2>/dev/null || true
+    osascript \
+      -e "on run argv" \
+      -e "display notification (item 1 of argv) with title \"Obsidian Vault Backup\" subtitle \"エラー発生\" sound name \"Basso\"" \
+      -e "end run" \
+      -- "$message" 2>/dev/null || true
   fi
 }
 
 # P1-4: 構造化ログ関数（JSON形式でファイル出力 + 監視システム統合対応）
 LOG_FILE=""  # 後でLOG_DIR確定後に設定
+
+# JSON文字列の値として安全にエスケープ（CWE-116 対策）
+_json_escape() {
+  local s="${1-}"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\r'/\\r}"
+  s="${s//$'\t'/\\t}"
+  printf '%s' "$s"
+}
+
 log_event() {
   local level="$1"
   local message="$2"
@@ -98,12 +115,12 @@ log_event() {
   local timestamp
   timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-  # JSON形式でログ出力
+  # JSON形式でログ出力（エスケープ済み値を安全に埋め込み）
   local json_log
   if [ -n "$details" ]; then
-    json_log="{\"timestamp\":\"$timestamp\",\"level\":\"$level\",\"message\":\"$message\",\"details\":\"$details\"}"
+    json_log="{\"timestamp\":\"$(_json_escape "$timestamp")\",\"level\":\"$(_json_escape "$level")\",\"message\":\"$(_json_escape "$message")\",\"details\":\"$(_json_escape "$details")\"}"
   else
-    json_log="{\"timestamp\":\"$timestamp\",\"level\":\"$level\",\"message\":\"$message\"}"
+    json_log="{\"timestamp\":\"$(_json_escape "$timestamp")\",\"level\":\"$(_json_escape "$level")\",\"message\":\"$(_json_escape "$message")\"}"
   fi
 
   # ファイル出力（LOG_FILE設定後のみ）
@@ -365,7 +382,12 @@ verify_restore() {
     return 1
   fi
 
-  trap 'rm -rf "$TEMP"' EXIT ERR INT TERM
+  # EXIT trap は cleanup_lock を呼び出し LOCK_FILE が残留しないようにする。
+  # 各シグナル専用 trap は既存のシグナルハンドラパターン (cleanup_on_signal) に合わせる。
+  trap 'cleanup_lock; rm -rf "$TEMP"' EXIT
+  trap 'rm -rf "$TEMP"; cleanup_on_signal INT' INT
+  trap 'rm -rf "$TEMP"; cleanup_on_signal TERM' TERM
+  trap 'rm -rf "$TEMP"' ERR
 
   # 展開（エラーチェック付き）
   # P0-1: BSD tar（macOS）はデフォルトで絶対パスを除去するためpath traversal攻撃を防止
