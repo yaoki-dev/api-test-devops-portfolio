@@ -71,6 +71,20 @@ class TestAPIConfigBaseUrlDependencyInjection:
                 frozenset({"192.168.1.1"}),  # 許可リストに入れても無効
             )
 
+    def test_validate_base_url_logs_warning_for_domain_not_in_allowlist(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """許可ドメイン外アクセス試行時にSSRFセキュリティ証跡が記録される。"""
+        with caplog.at_level(logging.WARNING, logger="config.settings"):
+            with pytest.raises(ValueError, match="Domain not in allowlist"):
+                _validate_base_url_with_allowed_domains(
+                    "https://evil.com", frozenset({"example.com"})
+                )
+        assert any(
+            "Domain not in allowlist" in record.getMessage() and record.levelno == logging.WARNING
+            for record in caplog.records
+        )
+
 
 class TestAPIConfigBoundaryValues:
     """APIConfig数値フィールドの境界値テスト（P1-Critical）

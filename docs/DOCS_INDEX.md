@@ -91,11 +91,6 @@ autogen artifacts のため本 index 対象外 (CLAUDE.md 「Protected Artifacts
 |---------|------|
 | [api_documentation.md](main/api/api_documentation.md) | API ドキュメント |
 
-### 🛠️ Tools（ツール設定）
-
-| ファイル | 説明 |
-|---------|------|
-| [super_claude_complete_guide.md](tools/super_claude/super_claude_complete_guide.md) | SuperClaude完全ガイド |
 
 ### 📋 Other（その他）
 
@@ -119,10 +114,6 @@ autogen artifacts のため本 index 対象外 (CLAUDE.md 「Protected Artifacts
 - **CI/CD**: [ci_cd_guide.md](guides/ci_cd_guide.md)
 - **OWASP**: [owasp_compliance_checklist.md](guides/owasp_compliance_checklist.md)
 - **Staging環境**: [staging_environment_guide.md](guides/staging_environment_guide.md)
-
-### ツール設定
-
-- **SuperClaude**: [super_claude_complete_guide.md](tools/super_claude/super_claude_complete_guide.md)
 
 ---
 

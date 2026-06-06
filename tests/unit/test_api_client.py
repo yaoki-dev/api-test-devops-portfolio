@@ -6,7 +6,9 @@ from structlog.testing import capture_logs
 
 from tests.constants import BASE_URL
 from utils.api_client import (
+    _MAX_LOGGED_FAILURE_DETAILS,
     AsyncAPIClient,
+    AsyncJSONPlaceholderClient,
     SyncAPIClient,
 )
 
@@ -156,3 +158,45 @@ def test_sync_close_sets_client_none_even_when_close_raises() -> None:
 
     # close() 失敗後も _client=None が保証され、use-after-close ガードが機能する
     assert client._client is None
+
+
+@pytest.mark.asyncio
+async def test_bulk_create_users_details_truncated_false_at_max() -> None:
+    """失敗が上限件数ちょうど（_MAX_LOGGED_FAILURE_DETAILS）では details_truncated=False。"""
+    client = AsyncJSONPlaceholderClient(base_url="https://test.com")
+    with patch.object(client, "create_user", new=AsyncMock(side_effect=RuntimeError("fail"))):
+        with capture_logs() as logs:
+            result = await client.bulk_create_users(
+                [{"name": f"u{i}"} for i in range(_MAX_LOGGED_FAILURE_DETAILS)]
+            )
+    assert result == []
+    warn = next((lg for lg in logs if lg.get("event") == "bulk_create_partial_failure"), None)
+    assert warn is not None
+    assert warn["failed_count"] == _MAX_LOGGED_FAILURE_DETAILS
+    assert warn["success_count"] == 0
+    assert warn["details_truncated"] is False
+    assert len(warn["failed_details"]) == _MAX_LOGGED_FAILURE_DETAILS
+    detail = warn["failed_details"][0]
+    assert "index" in detail
+    assert "error_type" in detail
+
+
+@pytest.mark.asyncio
+async def test_bulk_create_users_details_truncated_true_above_max() -> None:
+    """失敗件数が _MAX_LOGGED_FAILURE_DETAILS+1 のとき details_truncated=True になる境界を検証。"""
+    client = AsyncJSONPlaceholderClient(base_url="https://test.com")
+    with patch.object(client, "create_user", new=AsyncMock(side_effect=RuntimeError("fail"))):
+        with capture_logs() as logs:
+            result = await client.bulk_create_users(
+                [{"name": f"u{i}"} for i in range(_MAX_LOGGED_FAILURE_DETAILS + 1)]
+            )
+    assert result == []
+    warn = next((lg for lg in logs if lg.get("event") == "bulk_create_partial_failure"), None)
+    assert warn is not None
+    assert warn["failed_count"] == _MAX_LOGGED_FAILURE_DETAILS + 1
+    assert warn["success_count"] == 0
+    assert warn["details_truncated"] is True
+    assert len(warn["failed_details"]) == _MAX_LOGGED_FAILURE_DETAILS
+    detail = warn["failed_details"][0]
+    assert "index" in detail
+    assert "error_type" in detail

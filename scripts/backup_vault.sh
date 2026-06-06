@@ -14,7 +14,8 @@ BACKUP_IN_PROGRESS=false
 CURRENT_BACKUP=""
 
 cleanup_on_signal() {
-  echo "⚠️ 中断シグナル受信（SIGINT/SIGTERM）" >&2
+  local sig="${1:-TERM}"
+  echo "⚠️ 中断シグナル受信（SIG${sig}）" >&2
   if [ "$BACKUP_IN_PROGRESS" = true ]; then
     echo "🔄 不完全なバックアップを削除中..." >&2
     # P1-2: .tmpファイルを削除（アトミック書込み対応）
@@ -25,9 +26,15 @@ cleanup_on_signal() {
       rm -f "${CURRENT_BACKUP%.tar.gz}.sha256" 2>/dev/null || true
     fi
   fi
-  exit 130  # 標準SIGINT終了コード
+  # 128+signum: SIGINT=2→130, SIGTERM=15→143（POSIX規約）
+  case "$sig" in
+    INT)  exit 130 ;;
+    TERM) exit 143 ;;
+    *)    exit 128 ;;
+  esac
 }
-trap cleanup_on_signal INT TERM
+trap 'cleanup_on_signal INT' INT
+trap 'cleanup_on_signal TERM' TERM
 
 # P1-1: タイムアウト関数（NFS/SMBハング対策）
 # macOSのgtimeout（coreutils）またはGNU timeout を使用

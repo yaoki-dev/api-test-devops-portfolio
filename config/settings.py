@@ -247,7 +247,9 @@ def _validate_base_url_with_allowed_domains(v: str, allowed_domains: frozenset[s
     # SSRF Prevention: プライベートIPチェック
     if is_private_ip(hostname):
         raise ValueError(
-            f"SSRF Prevention: Private/loopback IP addresses are not allowed: {hostname}",
+            f"SSRF Prevention: Private/loopback IP addresses are not allowed "
+            f"(or DNS resolution failure — check DNS connectivity if this domain "
+            f"is expected to be allowed): {hostname}",
         )
 
     # SSRF Prevention: 許可ドメインチェック
