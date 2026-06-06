@@ -50,6 +50,14 @@ class TestAPIConfigBaseUrlDependencyInjection:
                 frozenset({"example.com"}),
             )
 
+    def test_validate_base_url_rejects_missing_hostname(self) -> None:
+        """hostname が取れない URL は拒否される。"""
+        with pytest.raises(ValueError, match="Invalid URL: hostname not found"):
+            _validate_base_url_with_allowed_domains(
+                "https://",
+                frozenset({"example.com"}),
+            )
+
     def test_validate_base_url_blocks_private_ip_regardless_of_allowlist(self) -> None:
         """プライベートIPは許可リストに含まれていてもブロックされる。
 

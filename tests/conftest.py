@@ -87,8 +87,11 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
     # 高速テストを先に実行
     def _sort_key(item: pytest.Item) -> tuple[bool, bool, str]:
-        marker_names = {mark.name for mark in item.iter_markers()}
-        return ("slow" in marker_names, "external" in marker_names, item.name)
+        return (
+            item.get_closest_marker("slow") is not None,
+            item.get_closest_marker("external") is not None,
+            item.name,
+        )
 
     items.sort(key=_sort_key)
 

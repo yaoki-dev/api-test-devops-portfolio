@@ -152,8 +152,7 @@ def test_logger_warning_does_not_forward_to_sentry(
     sentry_sdk.flush()
 
     assert len(captured_events) == events_before, (
-        "Sentry test client cleanup 後も新たなイベントがキャプチャされている"
-        "（クリーンアップが正しく機能していない）"
+        "WARNING ログが Sentry event として送信されている（レベルルーティングが誤っている）"
     )
 
 

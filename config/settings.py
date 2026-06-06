@@ -229,7 +229,11 @@ def is_private_ip(hostname: str) -> bool:
 
 
 def _validate_base_url_with_allowed_domains(v: str, allowed_domains: frozenset[str]) -> str:
-    """許可ドメインを注入してベースURLを検証する。"""
+    """base_url 検証を切り出す。
+
+    許可ドメインを注入できるようにして、Settings の全体初期化に依存しない
+    直接テストを可能にする。
+    """
     if not v.startswith(("http://", "https://")):
         raise ValueError("Base URL must start with http:// or https://")
 
@@ -258,9 +262,7 @@ def _validate_base_url_with_allowed_domains(v: str, allowed_domains: frozenset[s
             f"Allowed domains count: {len(allowed_domains)}",
         )
 
-    if v.endswith("/"):
-        v = v.rstrip("/")
-    return v
+    return v.rstrip("/")
 
 
 # =============================================================================
