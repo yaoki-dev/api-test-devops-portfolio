@@ -15,9 +15,9 @@ CURRENT_BACKUP=""
 
 cleanup_on_signal() {
   local sig="${1:-TERM}"
-  echo "⚠️ 中断シグナル受信（SIG${sig}）" >&2
+  echo "⚠️ 中断シグナル受信（SIG${sig}）" >&2 || true
   if [ "$BACKUP_IN_PROGRESS" = true ]; then
-    echo "🔄 不完全なバックアップを削除中..." >&2
+    echo "🔄 不完全なバックアップを削除中..." >&2 || true
     # P1-2: .tmpファイルを削除（アトミック書込み対応）
     rm -f "$BACKUP_DIR"/.vault_*.tmp 2>/dev/null || true
     if [ -n "$CURRENT_BACKUP" ]; then
@@ -180,6 +180,9 @@ acquire_lock() {
 
 cleanup_lock() {
   rm -f "$LOCK_FILE"
+  if [ -n "${TAR_ERR:-}" ]; then
+    rm -f "$TAR_ERR"
+  fi
 }
 trap cleanup_lock EXIT
 
@@ -264,7 +267,6 @@ BACKUP_IN_PROGRESS=true
 # バックアップ作成（P1-1: タイムアウト付き、P1-2: tmpファイルに書込み）
 # P1-3: tar stderrを捕捉してI/Oエラー検出（NFS途中切断等）
 TAR_ERR=$(mktemp)
-trap 'rm -f "$TAR_ERR"' EXIT
 if ! run_with_timeout "$TAR_TIMEOUT" tar -czf "$TEMP_BACKUP" -C "$PROJECT_ROOT" "obsidian-vault-local/" 2>"$TAR_ERR"; then
   echo "❌ アーカイブ作成失敗（タイムアウト/ディスクフル等の可能性）" >&2
   [ -s "$TAR_ERR" ] && echo "   詳細: $(cat "$TAR_ERR")" >&2

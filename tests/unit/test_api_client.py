@@ -70,7 +70,6 @@ def test_base_client_uses_default_settings_if_not_provided():
     assert client.retry_count == 3
 
 
-@pytest.mark.unit
 def test_base_client_headers_are_set_correctly():
     """ヘッダーが正しく設定されることを確認"""
     custom_headers = {"X-Custom-Header": "Value"}
@@ -79,7 +78,6 @@ def test_base_client_headers_are_set_correctly():
     assert client.default_headers["Accept"] == "application/json"
 
 
-@pytest.mark.unit
 def test_base_client_close_method():
     """closeメソッドがクライアントを閉じることを確認"""
     client = SyncAPIClient(base_url="https://test.com")
@@ -91,7 +89,6 @@ def test_base_client_close_method():
     # For now, just ensure no error is raised.
 
 
-@pytest.mark.asyncio
 async def test_close_async_client_with_none_client_does_not_raise() -> None:
     """_client が None の場合、_close_async_client は何もせず例外を発生させない（no-op）。
 
@@ -105,7 +102,6 @@ async def test_close_async_client_with_none_client_does_not_raise() -> None:
     await client._close_async_client(None)
 
 
-@pytest.mark.asyncio
 async def test_aclose_unexpected_error_suppressed_logs_error() -> None:
     """aclose() 直接呼び出し時の予期しないclose例外はerrorログで監視対象にする。"""
     client = AsyncAPIClient(base_url="https://test.com")
@@ -125,7 +121,6 @@ async def test_aclose_unexpected_error_suppressed_logs_error() -> None:
     assert error_logs[0]["error_type"] == "RuntimeError"
 
 
-@pytest.mark.asyncio
 async def test_make_request_with_retry_raises_when_client_closed() -> None:
     """close 後（_client=None）に _make_request_with_retry を呼ぶと RuntimeError を送出する。
 
@@ -139,7 +134,6 @@ async def test_make_request_with_retry_raises_when_client_closed() -> None:
         await client._make_request_with_retry("GET", "/test")
 
 
-@pytest.mark.unit
 def test_sync_close_sets_client_none_even_when_close_raises() -> None:
     """SyncAPIClient.close() は close() が例外を投げても _client=None を保証する。
 
@@ -160,7 +154,6 @@ def test_sync_close_sets_client_none_even_when_close_raises() -> None:
     assert client._client is None
 
 
-@pytest.mark.asyncio
 async def test_bulk_create_users_details_truncated_false_at_max() -> None:
     """失敗が上限件数ちょうど（_MAX_LOGGED_FAILURE_DETAILS）では details_truncated=False。"""
     client = AsyncJSONPlaceholderClient(base_url="https://test.com")
@@ -181,7 +174,6 @@ async def test_bulk_create_users_details_truncated_false_at_max() -> None:
     assert "error_type" in detail
 
 
-@pytest.mark.asyncio
 async def test_bulk_create_users_details_truncated_true_above_max() -> None:
     """失敗件数が _MAX_LOGGED_FAILURE_DETAILS+1 のとき details_truncated=True になる境界を検証。"""
     client = AsyncJSONPlaceholderClient(base_url="https://test.com")

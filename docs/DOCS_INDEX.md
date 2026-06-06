@@ -8,8 +8,7 @@ autogen artifacts のため本 index 対象外 (CLAUDE.md 「Protected Artifacts
 
 ## 📊 統計情報
 
-- **総ドキュメント数**: 32 (手動管理 docs のみ。autogen artifacts 16 件は除外)
-- **カテゴリ数**: 14
+- **総ドキュメント数**: 31 (手動管理 docs のみ。autogen artifacts 16 件は除外)
 - **最終スキャン**: 2026-05-17 JST
 
 ---
