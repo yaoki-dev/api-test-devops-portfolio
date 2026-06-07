@@ -143,7 +143,7 @@ api-test-devops-portfolio/
 - **Smoke Tests**: 1 file (tests/test_smoke.py)
 
 ### Coverage Metrics
-- **Current Coverage**: 96.06%（unit+integration条件）
+- **Current Coverage**: 96.15%（unit+integration条件）
 - **Target Coverage**: 85% (Week 5-6 goal) ✅ 達成済み
 - **Coverage Reports**: `reports/coverage.json`, `reports/htmlcov/`
 
@@ -285,8 +285,8 @@ uv run pytest && uv run ruff check . && uv run mypy utils/ config/ models/
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Test Coverage | 96.06% | 85% (Week 5-6) |
-| Test Files | 19 | - |
+| Test Coverage | 96.15% | 85% |
+| Test Files (CI計測対象) | 21 | - |
 | Python Version | 3.14 | - |
 | Code Quality | ruff + mypy | 0 errors |
 | Documentation | CLAUDE.md + README | - |

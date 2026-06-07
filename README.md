@@ -184,7 +184,8 @@ api-test-devops-portfolio/
 │   ├── unit/            # 単体テスト
 │   ├── integration/     # 統合テスト
 │   ├── performance/     # パフォーマンステスト
-│   └── e2e/             # E2Eテスト（2026年6月判断: 範囲外として撤廃済み）
+│   ├── test_smoke.py    # スモークテスト
+│   └── conftest.py      # フィクスチャー
 ├── assets/              # デモGIF・画像
 ├── scripts/             # 自動化スクリプト
 ├── docs/                # ドキュメント
