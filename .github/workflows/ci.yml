@@ -53,6 +53,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev --frozen
 
+      # ruff を mypy より先に実行: lint 問題を先に除去し mypy の誤検知を低減（実行順設計）
       - name: Run ruff check
         run: uv run ruff check .
 
@@ -574,6 +575,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev --frozen
 
+      # ruff を mypy より先に実行: lint 問題を先に除去し mypy の誤検知を低減（実行順設計）
       - name: Run ruff check
         run: uv run ruff check .
 

@@ -90,7 +90,8 @@ class TestAPIConfigBaseUrlDependencyInjection:
                     "https://evil.com", frozenset({"example.com"})
                 )
         assert any(
-            "Domain not in allowlist" in record.getMessage() and record.levelno == logging.WARNING
+            "SSRF Prevention: Domain not in allowlist" in record.getMessage()
+            and record.levelno == logging.WARNING
             for record in caplog.records
         )
 

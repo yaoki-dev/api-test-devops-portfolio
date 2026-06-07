@@ -31,6 +31,7 @@ from utils.github_client import (
 )
 
 pytestmark = pytest.mark.unit
+# asyncio_mode = "auto"（pyproject.toml）— @pytest.mark.asyncio は自動検出されるため省略可
 
 GITHUB_API_BASE_URL = "https://api.github.com"
 MAX_RETRIES = 3
@@ -748,7 +749,6 @@ async def test_aexit_aclose_unexpected_exception_reraises_when_no_body_exception
     assert len(closed_logs) == 0
 
 
-@pytest.mark.asyncio
 async def test_aclose_standalone_success_sets_client_none() -> None:
     """standalone aclose() 正常系 → else 節で _client=None + info ログ。
 
@@ -766,7 +766,6 @@ async def test_aclose_standalone_success_sets_client_none() -> None:
     assert len(closed_logs) == 1
 
 
-@pytest.mark.asyncio
 async def test_aclose_standalone_known_close_error_warns_and_sets_none() -> None:
     """standalone aclose() で既知の CloseError → warning のみ・re-raise しない・_client=None。"""
     client = AsyncGitHubClient()
@@ -784,7 +783,6 @@ async def test_aclose_standalone_known_close_error_warns_and_sets_none() -> None
     assert warning_logs[0]["error_type"] == "CloseError"
 
 
-@pytest.mark.asyncio
 async def test_aclose_standalone_fatal_reraises_and_sets_none() -> None:
     """standalone aclose() で ASYNC_FATAL（CancelledError）→ _client=None 後 re-raise。"""
     client = AsyncGitHubClient()
@@ -798,7 +796,6 @@ async def test_aclose_standalone_fatal_reraises_and_sets_none() -> None:
     assert client._client is None
 
 
-@pytest.mark.asyncio
 async def test_aclose_standalone_unexpected_is_suppressed() -> None:
     """standalone aclose() で予期しない例外 → 抑制（re-raise しない）・error ログ・_client=None。
 
@@ -823,7 +820,6 @@ async def test_aclose_standalone_unexpected_is_suppressed() -> None:
     assert error_logs[0]["action"] == "suppressed_standalone_aclose"
 
 
-@pytest.mark.asyncio
 async def test_aclose_standalone_idempotent_when_client_none() -> None:
     """standalone aclose() は _client が既に None なら早期 return（ダブル aclose 冪等性）。"""
     client = AsyncGitHubClient()

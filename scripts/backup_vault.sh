@@ -98,14 +98,14 @@ notify_failure() {
 LOG_FILE=""  # 後でLOG_DIR確定後に設定
 
 # JSON文字列の値として安全にエスケープ（CWE-116 対策）
-# bash 仕様: set -e はコマンド置換内で無効、python3 失敗が silent になるリスクがある。
-# if/result パターンで exit コード捕捉し、失敗時は生文字列でフォールバック。
+# python3 json.dumps で RFC 8259 §7 完全対応（C0制御文字含む）。
+# python3 は必須依存（起動時 deps チェック済み）— 失敗は到達不能パス。
 _json_escape() {
   local result
   if ! result=$(python3 -c 'import json, sys; print(json.dumps(sys.argv[1], ensure_ascii=False)[1:-1], end="")' "${1-}" 2>/dev/null); then
-    printf '⚠️ _json_escape: python3 失敗、生文字列で代用\n' >&2 || true
-    printf '%s' "${1-}"
-    return 0
+    # python3 は必須依存（起動時チェック済み）— 到達不能パス; 生文字列返却によるJSON破損を防ぐ
+    printf '_json_escape: python3 unavailable\n' >&2 || true
+    return 1
   fi
   printf '%s' "$result"
 }
@@ -117,12 +117,21 @@ log_event() {
   local timestamp
   timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-  # JSON形式でログ出力（エスケープ済み値を安全に埋め込み）
+  # JSON エスケープ失敗時に早期 abort して壊れた JSON ログ出力を防ぐ
+  # bash 仕様: $() 内 set -e 無効 / pipefail は | 専用 → || return 1 で明示的ステータス受け
+  local escaped_ts escaped_level escaped_msg
+  escaped_ts=$(_json_escape "$timestamp") || return 1
+  escaped_level=$(_json_escape "$level") || return 1
+  escaped_msg=$(_json_escape "$message") || return 1
+
+  # JSON 形式でログ出力（エスケープ済み値を安全に埋め込み）
   local json_log
   if [ -n "$details" ]; then
-    json_log="{\"timestamp\":\"$(_json_escape "$timestamp")\",\"level\":\"$(_json_escape "$level")\",\"message\":\"$(_json_escape "$message")\",\"details\":\"$(_json_escape "$details")\"}"
+    local escaped_details
+    escaped_details=$(_json_escape "$details") || return 1
+    json_log="{\"timestamp\":\"${escaped_ts}\",\"level\":\"${escaped_level}\",\"message\":\"${escaped_msg}\",\"details\":\"${escaped_details}\"}"
   else
-    json_log="{\"timestamp\":\"$(_json_escape "$timestamp")\",\"level\":\"$(_json_escape "$level")\",\"message\":\"$(_json_escape "$message")\"}"
+    json_log="{\"timestamp\":\"${escaped_ts}\",\"level\":\"${escaped_level}\",\"message\":\"${escaped_msg}\"}"
   fi
 
   # ファイル出力（LOG_FILE設定後のみ）
@@ -326,6 +335,7 @@ BACKUP_IN_PROGRESS=false
 
 # 古いバックアップ削除（RETENTION_DAYS日以上）
 # P1-3: -maxdepth 1 -type fでサブディレクトリ誤削除防止
+# 2>/dev/null: 権限なしファイルの "Permission denied" を抑止; 削除失敗は || true で継続
 find "$BACKUP_DIR" -maxdepth 1 -type f \
   \( -name "vault_*.tar.gz" -o -name "vault_*.sha256" \) \
   -mtime +"$RETENTION_DAYS" -delete 2>/dev/null || true
@@ -366,7 +376,8 @@ verify_restore() {
   CHECKSUM_FILE="${LATEST%.tar.gz}.sha256"
   if [ -f "$CHECKSUM_FILE" ]; then
     echo "🔐 チェックサム検証中..."
-    if ! (cd "$BACKUP_DIR" && shasum -a 256 -c "$(basename "$CHECKSUM_FILE")" 2>/dev/null); then
+    # 2>/dev/null: "OK" の逐次出力を抑止; 検証失敗は exit code で検出
+    if ! (cd "$BACKUP_DIR" && shasum -a 256 -c "$(basename "$CHECKSUM_FILE")" >/dev/null 2>&1); then
       echo "❌ チェックサム検証失敗: ファイル破損の可能性" >&2
       return 1
     fi
