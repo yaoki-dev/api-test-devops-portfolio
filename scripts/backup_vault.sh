@@ -15,7 +15,7 @@ CURRENT_BACKUP=""
 
 cleanup_on_signal() {
   local sig="${1:-TERM}"
-  echo "⚠️ 中断シグナル受信（SIG${sig}）" >&2 || true
+  printf '⚠️ 中断シグナル受信（SIG%s）\n' "$sig" >&2 || true
   if [ "$BACKUP_IN_PROGRESS" = true ]; then
     echo "🔄 不完全なバックアップを削除中..." >&2 || true
     # P1-2: .tmpファイルを削除（アトミック書込み対応）
@@ -58,7 +58,7 @@ SHASUM_TIMEOUT=60
 
 # P1-5: 依存関係チェック（早期失敗）
 check_dependencies() {
-  local deps=("tar" "shasum" "find" "df" "du")
+  local deps=("tar" "shasum" "find" "df" "du" "python3")
   local missing=()
 
   for cmd in "${deps[@]}"; do
@@ -99,13 +99,7 @@ LOG_FILE=""  # 後でLOG_DIR確定後に設定
 
 # JSON文字列の値として安全にエスケープ（CWE-116 対策）
 _json_escape() {
-  local s="${1-}"
-  s="${s//\\/\\\\}"
-  s="${s//\"/\\\"}"
-  s="${s//$'\n'/\\n}"
-  s="${s//$'\r'/\\r}"
-  s="${s//$'\t'/\\t}"
-  printf '%s' "$s"
+  python3 -c 'import json, sys; print(json.dumps(sys.argv[1], ensure_ascii=False)[1:-1], end="")' "${1-}"
 }
 
 log_event() {
@@ -373,6 +367,7 @@ verify_restore() {
 
   # 一時ディレクトリ作成（trap付き）
   TEMP=$(mktemp -d -t vault_verify.XXXXXXXXXX)
+  trap 'rm -rf "$TEMP"; trap - RETURN' RETURN
   chmod 700 "$TEMP"  # 明示的権限設定
 
   # P1-4: symlink攻撃検出（CVE-2008-2957対策）
@@ -384,7 +379,6 @@ verify_restore() {
 
   # 関数スコープの一時ディレクトリだけを RETURN trap で掃除する。
   # EXIT trap はグローバル終了処理のため、verify_restore() では上書きしない。
-  trap 'rm -rf "$TEMP"; trap - RETURN' RETURN
   trap 'rm -rf "$TEMP"; cleanup_on_signal INT' INT
   trap 'rm -rf "$TEMP"; cleanup_on_signal TERM' TERM
   trap 'rm -rf "$TEMP"' ERR

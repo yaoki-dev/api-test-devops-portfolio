@@ -58,18 +58,27 @@ class TestAPIConfigBaseUrlDependencyInjection:
                 frozenset({"example.com"}),
             )
 
-    def test_validate_base_url_blocks_private_ip_regardless_of_allowlist(self) -> None:
+    def test_validate_base_url_blocks_private_ip_regardless_of_allowlist(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """プライベートIPは許可リストに含まれていてもブロックされる。
 
         SSRF Prevention: DIパスの契約テスト。
         許可リストにプライベートIPが含まれていても、
         is_private_ip()による先行チェックでブロックされることを検証する。
         """
-        with pytest.raises(ValueError, match="Private/loopback IP addresses are not allowed"):
-            _validate_base_url_with_allowed_domains(
-                "http://192.168.1.1",
-                frozenset({"192.168.1.1"}),  # 許可リストに入れても無効
-            )
+        with caplog.at_level(logging.WARNING, logger="config.settings"):
+            with pytest.raises(ValueError, match="Private/loopback IP addresses are not allowed"):
+                _validate_base_url_with_allowed_domains(
+                    "http://192.168.1.1",
+                    frozenset({"192.168.1.1"}),  # 許可リストに入れても無効
+                )
+
+        assert any(
+            "SSRF Prevention: private or loopback IP blocked" in record.getMessage()
+            and record.levelno == logging.WARNING
+            for record in caplog.records
+        )
 
     def test_validate_base_url_logs_warning_for_domain_not_in_allowlist(
         self, caplog: pytest.LogCaptureFixture

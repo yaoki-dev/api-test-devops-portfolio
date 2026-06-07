@@ -53,14 +53,14 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev --frozen
 
+      - name: Run ruff check
+        run: uv run ruff check .
+
       # mypyをvalidationジョブ内ステップとして統合
       # 設計決定: runner起動コスト~60秒削減 > 並列フィードバック喪失
       # 根拠: mypy失敗頻度低
       - name: Run mypy check
         run: uv run mypy utils/ config/ models/
-
-      - name: Run ruff check
-        run: uv run ruff check .
 
       - name: Set test markers
         id: markers
@@ -547,7 +547,8 @@ jobs:
     name: Post Validation (Smoke + e2e)
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     runs-on: ubuntu-latest
-    timeout-minutes: 15  # Smoke + e2e（直列、pr-validationと同等構成。mypy初回キャッシュ未生成時の余裕確保）
+    # Smoke + e2e（直列、pr-validationと同等構成。mypy初回キャッシュ未生成時の余裕確保）
+    timeout-minutes: 15
     permissions:
       contents: read
 
@@ -572,6 +573,15 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --dev --frozen
+
+      - name: Run ruff check
+        run: uv run ruff check .
+
+      # mypyをvalidationジョブ内ステップとして統合
+      # 設計決定: runner起動コスト~60秒削減 > 並列フィードバック喪失
+      # 根拠: mypy失敗頻度低
+      - name: Run mypy check (Post Validation)
+        run: uv run mypy utils/ config/ models/
 
       - name: Run smoke tests (Post Validation)
         id: smoke-tests
