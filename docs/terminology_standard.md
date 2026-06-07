@@ -44,7 +44,7 @@ development → testing → staging → production
     ↓           ↓          ↓           ↓
  ローカル開発   CI/CD     本番前検証   本番稼働
     ↓           ↓          ↓           ↓
-Unit/Integration System Tests  E2E Tests  監視・運用
+Unit/Integration System Tests  監視・運用
 ```
 
 ---
@@ -58,9 +58,8 @@ Unit/Integration System Tests  E2E Tests  監視・運用
 | **Unit Tests** | 外部依存なしの単体テスト | ローカルdev | `@pytest.mark.unit` | 毎回コミット前 |
 | **Integration Tests** | 実API呼び出し統合テスト | ローカルdev + docker-compose | `@pytest.mark.integration` | 毎回コミット前 |
 | **System Tests** | 本番同等環境での統合検証 | staging docker-compose | `@pytest.mark.system` | PR作成時 |
-| **E2E Tests** | ユーザージャーニー全体テスト | 本番同等環境（Playwright） | `@pytest.mark.e2e` | stagingデプロイ後 |
 
-**テストピラミッド比率**: Unit 60-65% / Integration 20-25% / E2E 5-10%（Security/Performanceはマーカー分類）
+**テストピラミッド比率**: Unit 70% / Integration 30%（2026年6月時点、E2E撤廃済み）
 
 **根拠**: Mike Cohn (2009), Google Testing Blog
 
@@ -74,8 +73,6 @@ tests/
 │   └── test_*.py
 ├── system/         # システムテスト（staging環境）
 │   └── test_staging_*.py
-└── e2e/            # E2Eテスト
-    └── test_*_journey.py
 ```
 
 ---

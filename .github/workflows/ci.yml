@@ -1,8 +1,8 @@
 name: CI/CD Pipeline - 3-Tier Test Pyramid
 
 # Test Pyramid Strategy (Google Testing Blog):
-#   Unit 70% / Integration 25% / E2E 5%
-# Coverage Target: 85% (baseline protection, dynamic targets in local dev)
+#   Unit 70% / Integration 30%
+# Coverage Target: 96.15% (achieved 2026-06, CI条件: unit+integration, not external)
 # Reference: .serena/memories/test_strategy_part1_overview.md
 
 # Default permissions (least privilege principle)
@@ -55,7 +55,7 @@ jobs:
 
       # mypyをvalidationジョブ内ステップとして統合
       # 設計決定: runner起動コスト~60秒削減 > 並列フィードバック喪失
-      # 根拠: テスト996件・信頼度高、mypy失敗頻度低
+      # 根拠: テスト1,346件・信頼度高、mypy失敗頻度低
       - name: Run mypy check
         run: uv run mypy utils/ config/ models/
 
@@ -541,13 +541,13 @@ jobs:
   # ============================================================
   # Stage 3: Post Validation
   # Triggers: push to main or develop
-  # Tests: Smoke + e2e
+  # Tests: Smoke
   # ============================================================
   post-validation:
-    name: Post Validation (mypy + Smoke + e2e)
+    name: Post Validation (mypy + Smoke)
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     runs-on: ubuntu-latest
-    timeout-minutes: 15  # mypy + Smoke + e2e（直列、pr-validationと同等構成。mypy初回キャッシュ未生成時の余裕確保）
+    timeout-minutes: 15  # mypy + Smoke（直列、pr-validationと同等構成。mypy初回キャッシュ未生成時の余裕確保）
     permissions:
       contents: read
 
@@ -575,29 +575,13 @@ jobs:
 
       # mypyをvalidationジョブ内ステップとして統合
       # 設計決定: runner起動コスト~60秒削減 > 並列フィードバック喪失
-      # 根拠: テスト996件・信頼度高、mypy失敗頻度低
+      # 根拠: テスト1,346件・信頼度高、mypy失敗頻度低
       - name: Run mypy check
         run: uv run mypy utils/ config/ models/
 
       - name: Run smoke tests (Post Validation)
-        id: smoke-tests
         run: |
           uv run pytest -m "smoke and not external" -v --tb=short --no-cov
-        env:
-          ENVIRONMENT: testing
-
-      - name: Run e2e tests (Post Validation)
-        # smoke成功時のみe2eを実行（テストピラミッドgate: smokeが失敗したらe2eをスキップ）
-        if: steps.smoke-tests.outcome == 'success'
-        run: |
-          exit_code=0
-          uv run pytest -m "e2e" -v --tb=short --no-cov || exit_code=$?
-          # Exit code 5: no tests collected (e2e not yet implemented — critical path only, planned)
-          case "$exit_code" in
-            0) ;;
-            5) echo "::notice::E2Eテスト未実装（critical path実装後に自動実行されます）" ;;
-            *) exit "$exit_code" ;;
-          esac
         env:
           ENVIRONMENT: testing
 
@@ -850,7 +834,7 @@ jobs:
         run: echo "::notice::External API tests passed - all integrations healthy"
 
       - name: Full coverage report
-        # unit/integration/smoke/e2e/slow のみ（performance/external は上で個別実行済）
+        # unit/integration/smoke/slow のみ（performance/external は上で個別実行済）
         run: uv run pytest -m 'not performance and not external' --cov=. --cov-report=html:reports/htmlcov --cov-report=json -v
 
       - name: Upload weekly test results
@@ -966,8 +950,8 @@ jobs:
           echo "# CI/CD Pipeline Status Report (3-Tier Test Pyramid)" > status_report.md
           echo "" >> status_report.md
           echo "## Test Pyramid Strategy" >> status_report.md
-          echo "- Unit 70% / Integration 25% / E2E 5%" >> status_report.md
-          echo "- Coverage Target: 85% (baseline protection)" >> status_report.md
+          echo "- Unit 70% / Integration 30%" >> status_report.md
+          echo "- Coverage Target: 96.15% (achieved)" >> status_report.md
           echo "" >> status_report.md
           echo "## Stage Results" >> status_report.md
           echo "- PR Validation: ${{ needs.pr-validation.result }}" >> status_report.md

@@ -27,7 +27,6 @@ api-test-devops-portfolio/
 │   ├── unit/              # ユニットテスト（14 files）
 │   ├── integration/       # 統合テスト（3 files）
 │   ├── performance/       # パフォーマンステスト（1 file）
-│   ├── e2e/               # E2Eテスト（準備中）
 │   ├── conftest.py        # pytest fixtures
 │   └── test_smoke.py      # スモークテスト（1 file）
 ├── scripts/                # 自動化スクリプト
@@ -142,7 +141,6 @@ api-test-devops-portfolio/
 - **Integration Tests**: 3 files (tests/integration/)
 - **Performance Tests**: 1 file (tests/performance/)
 - **Smoke Tests**: 1 file (tests/test_smoke.py)
-- **E2E Tests**: 0 files (tests/e2e/ - prepared but empty)
 
 ### Coverage Metrics
 - **Current Coverage**: 96.06%（unit+integration条件）

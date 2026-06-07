@@ -36,7 +36,6 @@ CI/CD パイプラインで効率的かつ継続的に実施できます。
 markers =
     unit: Unit tests (fast, isolated, mock-based)
     integration: Integration tests (external dependencies, real API calls)
-    e2e: End-to-end tests (Playwright)
     slow: Slow tests (>3 seconds)
     external: External API dependent tests (weekly only)
     performance: Performance tests (weekly CI only)

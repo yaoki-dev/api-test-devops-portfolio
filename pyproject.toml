@@ -73,12 +73,11 @@ addopts = [
     "--cov-report=term-missing", # 欠損行表示
     "--cov-report=html:reports/htmlcov",  # HTMLレポート
     "--cov-report=xml:reports/coverage.xml",  # XMLレポート
-    "--cov-fail-under=85",       # ローカル/CI目標: 85%(unit, integration)
+    "--cov-fail-under=85",       # 安全ネット: 85%(現在96.15%達成済み、過剰な単体低下のみfail)(unit, integration)
 ]
 markers = [
     "unit: Unit tests (fast, isolated)",
     "integration: Integration tests (external dependencies)",
-    "e2e: End-to-end tests (full user scenarios)",
     "performance: Performance tests (latency/throughput)",
     "slow: Slow tests (>3s, excluded from local dev)",
     "external: External API tests (weekly CI only)",

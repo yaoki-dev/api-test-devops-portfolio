@@ -347,9 +347,9 @@ uv run bandit -r utils/ config/ models/ -q
 #### パフォーマンス工学
 
 - **テスト実行回数**: 10,000+ (自動化CI/CD)
-- **総テストケース数**: 414件 (unit/performance/security/integration/e2e)
+- **総テストケース数**: 1,360件 (unit/integration/performance/smoke、CI計測対象: 1,346件)
 - **テストファイル数**: 32ファイル (分散テスト設計)
-- **カバレッジ**: 85%以上 (ブランチカバレッジ有効)
+- **カバレッジ**: 96.15%達成 (ブランチカバレッジ有効、2026年6月時点)
 - **実測レスポンス時間**: 43-101ms (JSONPlaceholder API平均)
 - **並行処理能力**: 50リクエスト/秒、セマフォ制御
 - **カバーしたエンドポイント**: 17個 (albums/photosを含む全JSONPlaceholder API)
