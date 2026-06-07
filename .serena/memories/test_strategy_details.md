@@ -59,9 +59,9 @@ async def test_real_api_user_workflow():
 @pytest.fixture
 def todo_data_factory():
     """TODOテストデータファクトリー"""
-    def create_todo(user_id: int = 1, todo_id: int = 1, 
+    def create_todo(user_id: int = 1, todo_id: int = 1,
                     title: str = "Test TODO", completed: bool = False):
-        return {"userId": user_id, "id": todo_id, 
+        return {"userId": user_id, "id": todo_id,
                 "title": title, "completed": completed}
     return create_todo
 ```
@@ -281,10 +281,9 @@ def test_future_feature():
 
 ---
 
-## 10. 将来計画 (Week 6完了後)
+## 10. 将来計画
 
 ### 検討項目
-- **E2Eテスト**: Playwright統合
 - **負荷テスト**: Locust統合
 - **Mutation Testing**: mutmut導入
 - **Property-Based Testing**: Hypothesis

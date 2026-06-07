@@ -345,7 +345,7 @@ graph TB
 | PR Validation | Pull Request | mypy + Unit + Integration + smoke | 20分 |
 | PR Markdown Quality Check | Pull Request| markdownlint && textlint | 5分 |
 | PR Trivy scan | Pull Request | Trivy脆弱性スキャン | 20分 |
-| Post Validation | Push to main/develop | Smoke + e2e | 15分 |
+| Post Validation | Push to main/develop | mypy + Smoke + e2e | 15分 |
 | Post Trivy scan | Push to main/develop | Docker Build + Trivy | 20分 |
 | Weekly Extended Test | Weekly | Performance + External API | 30分 |
 | Weekly Link Check | Weekly | Markdown link check | 15分 |

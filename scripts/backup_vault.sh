@@ -98,8 +98,16 @@ notify_failure() {
 LOG_FILE=""  # 後でLOG_DIR確定後に設定
 
 # JSON文字列の値として安全にエスケープ（CWE-116 対策）
+# bash 仕様: set -e はコマンド置換内で無効、python3 失敗が silent になるリスクがある。
+# if/result パターンで exit コード捕捉し、失敗時は生文字列でフォールバック。
 _json_escape() {
-  python3 -c 'import json, sys; print(json.dumps(sys.argv[1], ensure_ascii=False)[1:-1], end="")' "${1-}"
+  local result
+  if ! result=$(python3 -c 'import json, sys; print(json.dumps(sys.argv[1], ensure_ascii=False)[1:-1], end="")' "${1-}" 2>/dev/null); then
+    printf '⚠️ _json_escape: python3 失敗、生文字列で代用\n' >&2 || true
+    printf '%s' "${1-}"
+    return 0
+  fi
+  printf '%s' "$result"
 }
 
 log_event() {
@@ -283,6 +291,7 @@ if ! run_with_timeout "$TAR_TIMEOUT" tar -czf "$TEMP_BACKUP" -C "$PROJECT_ROOT" 
   [ -s "$TAR_ERR" ] && echo "   詳細: $(cat "$TAR_ERR")" >&2
   log_event "ERROR" "archive_failed" "stderr=$(cat "$TAR_ERR" 2>/dev/null | head -c 200)"
   rm -f "$TEMP_BACKUP" "$TAR_ERR"
+  TAR_ERR=""  # 明示リセット: cleanup_lock() の ${TAR_ERR:-} ガードを確実に
   notify_failure "アーカイブ作成失敗"
   exit 1
 fi
@@ -291,6 +300,7 @@ if [ -s "$TAR_ERR" ]; then
   echo "⚠️ tar警告: $(cat "$TAR_ERR")" >&2
 fi
 rm -f "$TAR_ERR"
+TAR_ERR=""  # 明示リセット: cleanup_lock() の ${TAR_ERR:-} ガードを確実に
 
 # P1-3: バックアップ権限設定（所有者のみ読み書き可能）
 chmod 600 "$TEMP_BACKUP"
@@ -367,7 +377,6 @@ verify_restore() {
 
   # 一時ディレクトリ作成（trap付き）
   TEMP=$(mktemp -d -t vault_verify.XXXXXXXXXX)
-  trap 'rm -rf "$TEMP"; trap - RETURN' RETURN
   chmod 700 "$TEMP"  # 明示的権限設定
 
   # P1-4: symlink攻撃検出（CVE-2008-2957対策）
@@ -377,11 +386,27 @@ verify_restore() {
     return 1
   fi
 
-  # 関数スコープの一時ディレクトリだけを RETURN trap で掃除する。
-  # EXIT trap はグローバル終了処理のため、verify_restore() では上書きしない。
-  trap 'rm -rf "$TEMP"; cleanup_on_signal INT' INT
-  trap 'rm -rf "$TEMP"; cleanup_on_signal TERM' TERM
-  trap 'rm -rf "$TEMP"' ERR
+  # 関数スコープで完結する trap 管理:
+  # - INT/TERM: $TEMP 削除後に exit (ユーザー案: 関数内で完結)
+  #   bash 仕様: exit 時は RETURN trap は発火しないため、cleanup_on_signal 経由ではなく直接 exit
+  # - ERR: $TEMP 削除 (グローバル ERR trap は echo のみで干渉しない)
+  # - RETURN: グローバルトラップ復元 (全 return 経路で cleanup 保証)
+  trap 'rm -rf "$TEMP" 2>/dev/null || true; exit 130' INT
+  trap 'rm -rf "$TEMP" 2>/dev/null || true; exit 143' TERM
+  trap 'rm -rf "$TEMP" 2>/dev/null || true' ERR
+
+  # shellcheck disable=SC2329  # invoked via trap RETURN
+  _verify_cleanup() {
+    local rc=$?
+    rm -rf "$TEMP" 2>/dev/null || true
+    # グローバル trap を元の状態に戻す
+    trap 'cleanup_on_signal INT' INT
+    trap 'cleanup_on_signal TERM' TERM
+    trap 'echo "❌ エラー発生 (line $LINENO): $BASH_COMMAND" >&2' ERR
+    trap - RETURN
+    return "$rc"
+  }
+  trap _verify_cleanup RETURN
 
   # 展開（エラーチェック付き）
   # P0-1: BSD tar（macOS）はデフォルトで絶対パスを除去するためpath traversal攻撃を防止
