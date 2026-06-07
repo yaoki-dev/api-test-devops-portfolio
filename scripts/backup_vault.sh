@@ -382,9 +382,9 @@ verify_restore() {
     return 1
   fi
 
-  # EXIT trap は cleanup_lock を呼び出し LOCK_FILE が残留しないようにする。
-  # 各シグナル専用 trap は既存のシグナルハンドラパターン (cleanup_on_signal) に合わせる。
-  trap 'cleanup_lock; rm -rf "$TEMP"' EXIT
+  # 関数スコープの一時ディレクトリだけを RETURN trap で掃除する。
+  # EXIT trap はグローバル終了処理のため、verify_restore() では上書きしない。
+  trap 'rm -rf "$TEMP"; trap - RETURN' RETURN
   trap 'rm -rf "$TEMP"; cleanup_on_signal INT' INT
   trap 'rm -rf "$TEMP"; cleanup_on_signal TERM' TERM
   trap 'rm -rf "$TEMP"' ERR

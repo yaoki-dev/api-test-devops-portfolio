@@ -247,12 +247,11 @@ def _validate_base_url_with_allowed_domains(v: str, allowed_domains: frozenset[s
     # SSRF Prevention: プライベートIPチェック
     if is_private_ip(hostname):
         _logger.warning(
-            "SSRF Prevention: DNS resolution failure or private IP for hostname=%r — blocked",
+            "SSRF Prevention: private or loopback IP blocked for hostname=%r",
             hostname,
         )
         raise ValueError(
-            f"SSRF Prevention: Private/loopback IP addresses are not allowed: {hostname} "
-            f"(Check WARNING logs for DNS resolution failure detail if this domain is expected.)"
+            f"SSRF Prevention: Private/loopback IP addresses are not allowed: {hostname}",
         )
 
     # SSRF Prevention: 許可ドメインチェック
