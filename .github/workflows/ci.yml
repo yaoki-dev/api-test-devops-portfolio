@@ -1,4 +1,4 @@
-name: CI/CD Pipeline - 3-Tier Test Pyramid
+name: CI/CD Pipeline
 
 # Test Pyramid Strategy (Google Testing Blog):
 #   Unit 70% / Integration 30%
@@ -807,9 +807,10 @@ jobs:
         run: uv run pytest -m "performance" -v
 
       - name: Run external API tests
-        id: external-tests  # Used for outcome-based error handling
+        id: external-tests # Used for outcome-based error handling
         # External API tests run only if performance tests completed (success or failure).
-        # On cancellation, external tests are skipped to save CI cost and API rate limits.
+        # On cancellation, external tests are intentionally skipped to save CI costs and API rate limits.
+        # Next scheduled run or manual re-run should be used to verify external API health.
         if: success() || failure()
         run: |
           uv run pytest -m "external" -v --maxfail=5
@@ -950,7 +951,7 @@ jobs:
 
       - name: Generate status report
         run: |
-          echo "# CI/CD Pipeline Status Report (3-Tier Test Pyramid)" > status_report.md
+          echo "# CI/CD Pipeline Status Report" > status_report.md
           echo "" >> status_report.md
           echo "## Test Pyramid Strategy" >> status_report.md
           echo "- Unit 70% / Integration 30%" >> status_report.md

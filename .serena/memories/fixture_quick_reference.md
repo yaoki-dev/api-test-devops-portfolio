@@ -261,7 +261,6 @@ conftest.py `pytest_configure()`で登録済み:
 |---------|------|--------|
 | `unit` | 単体テスト | L88 |
 | `integration` | 統合テスト | L89 |
-| `e2e` | E2Eテスト | L90 |
 | `slow` | 実行時間の長いテスト | L91 |
 | `external` | 外部API依存テスト | L92 |
 | `performance` | パフォーマンステスト | L93 |
