@@ -1,6 +1,6 @@
 # Documentation Index
 
-*最終更新: 2026年05月17日*
+*最終更新: 2026年06月08日*
 
 docs/ 配下のドキュメント一覧です。カテゴリ別に整理されています。
 `brainstorms/`, `goals/`, `ideation/` は plugin (goalbuddy / ce-brainstorm) の
@@ -8,9 +8,9 @@ autogen artifacts のため本 index 対象外 (CLAUDE.md 「Protected Artifacts
 
 ## 📊 統計情報
 
-- **総ドキュメント数**: 32 (手動管理 docs のみ。autogen artifacts 16 件は除外)
-- **カテゴリ数**: 14
-- **最終スキャン**: 2026-05-17 JST
+- **総ドキュメント数**: 30 (手動管理 docs のみ。autogen artifacts 16 件は除外)
+- **カテゴリ数**: 9
+- **最終スキャン**: 2026-06-08 JST
 
 ---
 
@@ -91,17 +91,7 @@ autogen artifacts のため本 index 対象外 (CLAUDE.md 「Protected Artifacts
 |---------|------|
 | [api_documentation.md](main/api/api_documentation.md) | API ドキュメント |
 
-### 🛠️ Tools（ツール設定）
 
-| ファイル | 説明 |
-|---------|------|
-| [super_claude_complete_guide.md](tools/super_claude/super_claude_complete_guide.md) | SuperClaude完全ガイド |
-
-### 📋 Other（その他）
-
-| ファイル | 説明 |
-|---------|------|
-| [terminology_standard.md](terminology_standard.md) | 用語標準 |
 
 ---
 

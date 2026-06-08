@@ -808,6 +808,9 @@ jobs:
 
       - name: Run external API tests
         id: external-tests  # Used for outcome-based error handling
+        # External API tests run only if performance tests completed (success or failure).
+        # On cancellation, external tests are skipped to save CI cost and API rate limits.
+        if: success() || failure()
         run: |
           uv run pytest -m "external" -v --maxfail=5
         continue-on-error: true
