@@ -4,7 +4,12 @@
 # P1改善: 絶対パス、シークレット検出拡張、権限設定、チェックサム検証、Vault存在チェック
 
 set -euo pipefail
-trap 'echo "❌ エラー発生 (line $LINENO): $BASH_COMMAND" >&2' ERR
+
+_err_trap() {
+  printf '❌ エラー発生 (line %s): %s\n' "$1" "$2" >&2
+}
+
+trap '_err_trap "$LINENO" "$BASH_COMMAND"' ERR
 
 # P0-3: シグナル処理 - 中断時の不完全バックアップ削除
 # CURRENT_BACKUP="" はシグナルハンドラの [ -n "$CURRENT_BACKUP" ] ガードが
@@ -104,7 +109,7 @@ _json_escape() {
   local result
   if ! result=$(python3 -c 'import json, sys; print(json.dumps(sys.argv[1], ensure_ascii=False)[1:-1], end="")' "${1-}" 2>/dev/null); then
     # python3 は必須依存（起動時チェック済み）— 到達不能パス; 生文字列返却によるJSON破損を防ぐ
-    printf '_json_escape: python3 unavailable\n' >&2 || true
+    printf '_json_escape: python3 unavailable\n' >&2
     return 1
   fi
   printf '%s' "$result"
@@ -120,15 +125,15 @@ log_event() {
   # JSON エスケープ失敗時に早期 abort して壊れた JSON ログ出力を防ぐ
   # bash 仕様: $() 内 set -e 無効 / pipefail は | 専用 → || return 1 で明示的ステータス受け
   local escaped_ts escaped_level escaped_msg
-  escaped_ts=$(_json_escape "$timestamp") || return 1
-  escaped_level=$(_json_escape "$level") || return 1
-  escaped_msg=$(_json_escape "$message") || return 1
+  escaped_ts=$(_json_escape "$timestamp") || escaped_ts="[ESCAPE_ERROR]"
+  escaped_level=$(_json_escape "$level") || escaped_level="[ESCAPE_ERROR]"
+  escaped_msg=$(_json_escape "$message") || escaped_msg="[ESCAPE_ERROR]"
 
   # JSON 形式でログ出力（エスケープ済み値を安全に埋め込み）
   local json_log
   if [ -n "$details" ]; then
     local escaped_details
-    escaped_details=$(_json_escape "$details") || return 1
+    escaped_details=$(_json_escape "$details") || escaped_details="[ESCAPE_ERROR]"
     json_log="{\"timestamp\":\"${escaped_ts}\",\"level\":\"${escaped_level}\",\"message\":\"${escaped_msg}\",\"details\":\"${escaped_details}\"}"
   else
     json_log="{\"timestamp\":\"${escaped_ts}\",\"level\":\"${escaped_level}\",\"message\":\"${escaped_msg}\"}"
@@ -388,6 +393,7 @@ verify_restore() {
 
   # 一時ディレクトリ作成（trap付き）
   TEMP=$(mktemp -d -t vault_verify.XXXXXXXXXX)
+  trap 'rm -rf "$TEMP" 2>/dev/null || true' EXIT
   chmod 700 "$TEMP"  # 明示的権限設定
 
   # P1-4: symlink攻撃検出（CVE-2008-2957対策）
@@ -413,7 +419,7 @@ verify_restore() {
     # グローバル trap を元の状態に戻す
     trap 'cleanup_on_signal INT' INT
     trap 'cleanup_on_signal TERM' TERM
-    trap 'echo "❌ エラー発生 (line $LINENO): $BASH_COMMAND" >&2' ERR
+    trap '_err_trap "$LINENO" "$BASH_COMMAND"' ERR
     trap - RETURN
     return "$rc"
   }

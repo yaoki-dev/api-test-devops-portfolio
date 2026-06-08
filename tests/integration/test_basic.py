@@ -1,11 +1,6 @@
 """
 基本APIテスト - JSONPlaceholder API対象
 
-学習目標:
-- pytest基本パターンの習得
-- HTTPXクライアント使用方法
-- 非同期テストの実装
-- アサーションの効果的な書き方
 """
 
 from typing import Any
@@ -107,7 +102,6 @@ def test_users_endpoint_response_structure():
 # =============================================================================
 
 
-@pytest.mark.asyncio
 async def test_async_api_request(async_client):
     """非同期クライアントを使用したAPIリクエスト"""
     # Given: 非同期クライアント（fixtureから提供）
@@ -126,7 +120,6 @@ async def test_async_api_request(async_client):
     assert data["id"] == 1
 
 
-@pytest.mark.asyncio
 async def test_concurrent_requests(async_client):
     """複数の並行リクエストのテスト"""
     import asyncio
@@ -258,31 +251,3 @@ def test_with_data_factory(todo_data_factory):
     assert todo["id"] == 100
     assert todo["title"] == "Custom Test TODO"
     assert todo["completed"] is True
-
-
-# =============================================================================
-# 学習ポイント:
-#
-# 1. テスト構造（AAA パターン）:
-#    - Given（前提条件）
-#    - When（実行）
-#    - Then（検証）
-#
-# 2. 同期 vs 非同期テスト:
-#    - httpx.Client（同期）
-#    - httpx.AsyncClient（非同期）
-#    - @pytest.mark.asyncio デコレータ
-#
-# 3. パラメータ化テスト:
-#    - @pytest.mark.parametrize
-#    - 複数ケースの効率的なテスト
-#
-# 4. フィクスチャ活用:
-#    - テストデータの再利用
-#    - ファクトリーパターン
-#
-# 5. アサーション技法:
-#    - 明確なエラーメッセージ
-#    - 段階的な検証
-#    - データ型確認
-# =============================================================================

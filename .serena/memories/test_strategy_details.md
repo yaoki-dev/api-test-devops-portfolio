@@ -23,7 +23,8 @@
 #### Unit Test (モック中心)
 ```python
 @pytest.mark.unit
-@pytest.mark.asyncio
+# @pytest.mark.asyncio: asyncio_mode = "auto" (pyproject.toml) のため、@pytest.mark.asyncio は不要
+# pytest-asyncio が async テストを自動検出する@pytest.mark.asyncio
 async def test_async_get_user_with_mock(mock_httpx_client, sample_user_data):
     """モックを使った非同期ユーザー取得テスト"""
     mock_httpx_client.get.return_value = mock_response(
@@ -40,7 +41,8 @@ async def test_async_get_user_with_mock(mock_httpx_client, sample_user_data):
 ```python
 @pytest.mark.integration
 @pytest.mark.external
-@pytest.mark.asyncio
+# @pytest.mark.asyncio: asyncio_mode = "auto" (pyproject.toml) のため、@pytest.mark.asyncio は不要
+# pytest-asyncio が async テストを自動検出する
 async def test_real_api_user_workflow():
     """実API使用: ユーザーデータ取得ワークフロー"""
     async with AsyncJSONPlaceholderClient() as client:
@@ -203,7 +205,8 @@ asyncio_mode = "auto"  # 非同期テスト自動検出
 
 ### 6.2 並行テスト
 ```python
-@pytest.mark.asyncio
+# @pytest.mark.asyncio: asyncio_mode = "auto" (pyproject.toml) のため、@pytest.mark.asyncio は不要
+# pytest-asyncio が async テストを自動検出する
 async def test_concurrent_requests(async_client):
     users = await asyncio.gather(
         async_client.get("/users/1"),

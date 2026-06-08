@@ -14,7 +14,8 @@ from utils.api_client import (
 
 # Module-level marker: All tests in this file are unit tests
 pytestmark = pytest.mark.unit
-# asyncio_mode = "auto"（pyproject.toml）— @pytest.mark.asyncio は自動検出されるため省略可
+# @pytest.mark.asyncio: asyncio_mode = "auto" (pyproject.toml) のため、@pytest.mark.asyncio は不要
+# pytest-asyncio が async テストを自動検出する
 
 
 # Mock settings for testing purposes, as the actual SyncAPIClient uses config.settings

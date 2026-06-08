@@ -31,7 +31,8 @@ from utils.github_client import (
 )
 
 pytestmark = pytest.mark.unit
-# asyncio_mode = "auto"（pyproject.toml）— @pytest.mark.asyncio は自動検出されるため省略可
+# @pytest.mark.asyncio: asyncio_mode = "auto" (pyproject.toml) のため、@pytest.mark.asyncio は不要
+# pytest-asyncio が async テストを自動検出する
 
 GITHUB_API_BASE_URL = "https://api.github.com"
 MAX_RETRIES = 3

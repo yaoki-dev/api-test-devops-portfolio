@@ -244,16 +244,6 @@ def _validate_base_url_with_allowed_domains(v: str, allowed_domains: frozenset[s
     if not hostname:
         raise ValueError("Invalid URL: hostname not found")
 
-    # SSRF Prevention: プライベートIPチェック
-    if is_private_ip(hostname):
-        _logger.warning(
-            "SSRF Prevention: private or loopback IP blocked for hostname=%r",
-            hostname,
-        )
-        raise ValueError(
-            f"SSRF Prevention: Private/loopback IP addresses are not allowed: {hostname}",
-        )
-
     # SSRF Prevention: 許可ドメインチェック
     if hostname not in allowed_domains:
         _logger.warning(
@@ -264,6 +254,16 @@ def _validate_base_url_with_allowed_domains(v: str, allowed_domains: frozenset[s
         raise ValueError(
             f"SSRF Prevention: Domain not in allowlist: {hostname}. "
             f"Allowed domains count: {len(allowed_domains)}",
+        )
+
+    # SSRF Prevention: プライベートIPチェック
+    if is_private_ip(hostname):
+        _logger.warning(
+            "SSRF Prevention: private or loopback IP blocked for hostname=%r",
+            hostname[:200],
+        )
+        raise ValueError(
+            f"SSRF Prevention: Private/loopback IP addresses are not allowed: {hostname}",
         )
 
     return v.rstrip("/")

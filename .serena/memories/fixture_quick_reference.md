@@ -84,7 +84,8 @@ async def test_async_api_with_mock(mock_httpx_client):
     mock_httpx_clientはconftest.pyで.get/.post等がAsyncMock()として設定済み。
     return_valueにはMock()を設定可能（AsyncMockがawait時に自動返却）。
 
-    Note: @pytest.mark.asyncioは不要（pyproject.toml: asyncio_mode="auto"）
+    Note: @pytest.mark.asyncio: asyncio_mode = "auto" (pyproject.toml) のため、@pytest.mark.asyncio は不要
+          pytest-asyncio が async テストを自動検出する
     """
     from unittest.mock import Mock
 
@@ -104,7 +105,8 @@ async def test_async_api_with_mock(mock_httpx_client):
 async def test_real_api(async_client):
     """実APIを使った統合テスト
 
-    Note: @pytest.mark.asyncioは不要（pyproject.toml: asyncio_mode="auto"）
+    Note: @pytest.mark.asyncio: asyncio_mode = "auto" (pyproject.toml) のため、@pytest.mark.asyncio は不要
+          pytest-asyncio が async テストを自動検出する
     """
     result = await async_client.get("/posts/1")
     assert result["id"] == 1

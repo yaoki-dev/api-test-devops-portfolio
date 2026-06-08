@@ -165,9 +165,6 @@ def test_sync_health_check_success() -> None:
     - health_check()メソッドの正常動作
     - 正常時: True返却
 
-    学習ポイント:
-    - Docker/Kubernetes readiness probe対応
-    - 軽量クエリ（_limit=1）でサーバー負荷最小化
     """
     route = respx.get(f"{BASE_URL}/users", params={"_limit": 1}).respond(
         json=[{"id": 1, "name": "User 1"}]
@@ -188,10 +185,6 @@ def test_sync_health_check_connection_error() -> None:
     検証項目：
     - 接続エラー時: False返却（graceful degradation）
     - httpx.ConnectError → APIConnectionErrorに変換 → health_checkでキャッチ
-
-    学習ポイント:
-    - respxのside_effectでhttpxネイティブ例外をシミュレート（patch不要）
-    - サービス継続性: 例外時はFalse返却
     """
     route = respx.get(f"{BASE_URL}/users", params={"_limit": 1}).mock(
         side_effect=httpx.ConnectError("Connection refused")
@@ -243,40 +236,12 @@ def test_sync_client_timeout_zero_not_overridden() -> None:
 
     httpxでは timeout=0.0 は即座にタイムアウト（TimeoutException発生）する設定値。
     falsyな値として `or` パターンで設定値に上書きされてはならない。
-
-    学習ポイント:
-    - is not None パターンの必要性: 0/0.0/False 等の有効なfalsy値を保護する
-    - timeout=0.0 の用途: 即座にタイムアウトさせたい場合に使用（無効化には timeout=None）
     """
     client = SyncAPIClient(timeout=0.0)
     assert client.timeout == 0.0, (
         "timeout=0.0 はhttpxで有効な設定値（即座にタイムアウト）のため"
         "デフォルト設定値に上書きされてはならない"
     )
-
-
-# =============================================================================
-# 学習ポイント:
-#
-# 1. Sync/Async対称構造:
-#    - test_async_client.py と同一のテスト設計
-#    - 責務分離（SRP）: 基本操作 vs エラーハンドリング
-#
-# 2. pytest.mark.parametrize:
-#    - 境界値テストの効率的な実装
-#    - ids引数でテスト名を明確化
-#
-# 3. respxによるHTTPモック:
-#    - @respx.mock: 同期テスト用デコレータ（@pytest.mark.asyncioは不要）
-#    - respx.get/post/put/delete().respond(): レスポンス定義
-#    - side_effect: 例外シミュレーション
-#
-# =============================================================================
-
-
-# =============================================================================
-# Issue #173: 同期クライアント未テストメソッドのカバレッジ追加
-# =============================================================================
 
 
 # =============================================================================
@@ -298,11 +263,6 @@ def test_sync_get_posts(limit: int | None, expected_count: int) -> None:
     - limit指定時に正しくパラメータが送信される
     - limit=Noneで全件取得
     - limit=0で0件取得（API仕様では空配列返却、境界値検証）
-
-    学習ポイント:
-    - 同期APIクライアントのテストパターン
-    - respxを使用した同期テスト
-    - API実動作に基づくテスト設計（推測ではなく検証）
     """
     all_posts = [
         {"id": i, "userId": 1, "title": f"Post {i}", "body": f"Content {i}"} for i in range(1, 6)
@@ -348,11 +308,6 @@ def test_sync_get_posts_user_filter(user_id: int | None, expected_count: int) ->
     - user_id=None: フィルタなしで全投稿取得
     - user_id=1/2: 指定ユーザーの投稿のみ取得（API側フィルタ）
     - user_id=999: 存在しないユーザーで空配列返却
-
-    学習ポイント:
-    - API側フィルタリング: クライアント側フィルタリングと比較して90%転送削減
-    - クエリパラメータ: /posts?userId=X
-    - パフォーマンス最適化: ネットワーク転送量削減
     """
     all_posts = [
         {"id": 1, "userId": 1, "title": "Post 1", "body": "Content 1"},
@@ -410,10 +365,6 @@ def test_sync_get_posts_validation_error(
     検証項目：
     - limit < 0: ValueError発生
     - user_id < 1: ValueError発生（JSONPlaceholder APIはID=1から）
-
-    学習ポイント:
-    - 早期エラー検出: API呼び出し前にクライアント側で検証
-    - Fail-Fast原則: 無効な入力は即座に拒否
     """
     with SyncJSONPlaceholderClient() as client:
         with pytest.raises(ValueError, match=expected_error):
@@ -428,10 +379,6 @@ def test_sync_get_post_success() -> None:
     検証項目：
     - post_id指定で特定投稿を取得
     - レスポンスデータが正確に返却される
-
-    学習ポイント:
-    - RESTful API: 個別リソース取得パターン
-    - _safe_parse_json()による安全なJSONパース
     """
     post_id = 1
     expected_post = {"id": 1, "userId": 1, "title": "Test Post", "body": "Test Content"}
@@ -455,10 +402,6 @@ def test_sync_create_post() -> None:
     - title/body/user_id指定で投稿作成
     - リクエストボディの正確性（title, body, userId）
     - レスポンスにidが付与される（サーバー生成）
-
-    学習ポイント:
-    - RESTful POST: リソース作成操作
-    - respx route.calls でリクエストボディを直接検証するパターン
     """
     title = "New Post"
     body = "This is a new post content"
@@ -519,10 +462,6 @@ def test_sync_get_todos(
     - user_id/completed/limitの全組み合わせ動作確認
     - クエリパラメータが正確に構築される
     - Noneパラメータは送信されない
-
-    学習ポイント:
-    - pytest.parametrize: 3パラメータの組み合わせテスト
-    - 同期APIクライアントのフィルタ処理検証
     """
     all_todos = [
         {"id": 1, "userId": 1, "title": "Todo 1", "completed": True},
@@ -596,10 +535,6 @@ def test_sync_get_todos_validation_error(
     検証項目：
     - limit < 0: ValueError発生
     - user_id < 1: ValueError発生（JSONPlaceholder APIはID=1から）
-
-    学習ポイント:
-    - Fail-Fast原則: 無効な入力は即座に拒否
-    - get_posts()と同一パターンのバリデーション一貫性
     """
     with SyncJSONPlaceholderClient() as client:
         with pytest.raises(ValueError, match=expected_error):
@@ -625,10 +560,6 @@ def test_sync_get_albums(user_id: int | None, expected_count: int) -> None:
     - user_id指定時に正しくパラメータが送信される
     - user_id=Noneで全件取得
     - フィルタ結果が期待通りの件数である
-
-    学習ポイント:
-    - Albums API: ユーザーごとのアルバム管理
-    - 同期APIクライアントのテストパターン
     """
     # モックデータ（5件のアルバム、複数ユーザー）
     all_albums = [
@@ -676,10 +607,6 @@ def test_sync_get_albums_validation_error(user_id: int, expected_error: str) -> 
 
     検証項目：
     - user_id < 1: ValueError発生（JSONPlaceholder APIはID=1から）
-
-    学習ポイント:
-    - Fail-Fast原則: 無効な入力は即座に拒否
-    - get_posts()と同一パターンのバリデーション一貫性
     """
     with SyncJSONPlaceholderClient() as client:
         with pytest.raises(ValueError, match=expected_error):
@@ -705,10 +632,6 @@ def test_sync_get_photos(album_id: int | None, expected_count: int) -> None:
     - album_id指定時に正しくエンドポイントが構築される（/albums/{album_id}/photos）
     - album_id=Noneで全件取得（/photos）
     - フィルタ結果が期待通りの件数である
-
-    学習ポイント:
-    - Photos API: アルバムごとの写真管理
-    - エンドポイント分岐ロジック: パラメータ有無で異なるURL
     """
     # モックデータ（6件の写真、複数アルバム）
     all_photos = [
@@ -750,10 +673,6 @@ def test_sync_get_comments_with_post_id() -> None:
     - post_id=1 指定時に /posts/1/comments にGETリクエストが送られる
     - レスポンスのコメントリストがそのまま返される
     - リクエストが1回だけ発行される
-
-    学習ポイント:
-    - Comments API: post_id指定時はパスベースのエンドポイント（/posts/{id}/comments）
-    - クエリパラメータではなくパスパラメータでフィルタリングする設計
     """
     mock_comments = [
         {"id": 1, "postId": 1, "name": "Test Comment", "email": "test@example.com", "body": "Body"},
@@ -776,10 +695,6 @@ def test_sync_get_comments_without_post_id() -> None:
     - post_id未指定時に /comments にGETリクエストが送られる
     - 全コメントのリストがそのまま返される
     - リクエストが1回だけ発行される
-
-    学習ポイント:
-    - post_id=None の場合は /comments に直接アクセス（全件取得）
-    - Optional引数の有無でエンドポイントが切り替わる分岐ロジック
     """
     mock_comments = [
         {"id": 1, "postId": 1, "name": "Comment 1", "email": "a@b.com", "body": "Body 1"},
@@ -812,10 +727,6 @@ def test_sync_get_comments_invalid_post_id(post_id: int) -> None:
     - post_id=0 は ValueError を発生させる（JSONPlaceholder API は1-based ID）
     - 負数のpost_idも同様に ValueError を発生させる
     - HTTP リクエストは発行されない
-
-    学習ポイント:
-    - 境界値テスト: 0 は偽値（falsy）であるため `if post_id:` では検出できないバグ
-    - `if post_id is not None and post_id < 1:` による正確な検証パターン
     """
     with SyncJSONPlaceholderClient() as client:
         with pytest.raises(ValueError, match="post_id must be >= 1"):
@@ -835,10 +746,6 @@ def test_sync_get_photos_invalid_album_id(album_id: int) -> None:
     - album_id=0 は ValueError を発生させる（JSONPlaceholder API は1-based ID）
     - 負数のalbum_idも同様に ValueError を発生させる
     - HTTP リクエストは発行されない
-
-    学習ポイント:
-    - album_id=0 を渡すと API は空配列を返すが、正しいエラーではない（サイレント失敗）
-    - 明示的な ValueError により呼び出し側でバグを早期発見できる
     """
     with SyncJSONPlaceholderClient() as client:
         with pytest.raises(ValueError, match="album_id must be >= 1"):
@@ -874,18 +781,6 @@ def test_sync_client_falsy_values_not_overridden() -> None:
     修正前の `x or default` パターンでは retry_count=0 や
     timeout=0.0 がFalsyと判定され設定値で上書きされていた。
     `x if x is not None else default` への修正が正しく動作することを保証する。
-
-    学習ポイント:
-    - is not None パターンの必要性: 0/0.0/False 等の有効なfalsy値を保護する
-    - retry_delay=0.0: コンストラクタ直接指定時のみ有効
-      （Pydantic ge=0.1制約を迂回）
-    - 環境変数 API__RETRY_DELAY=0.0 では
-      Pydantic Field制約(ge=0.1)によりValidationErrorとなる
-    - timeout=0.0: コンストラクタ直接指定時のみ有効
-      （Pydantic ge=1.0制約を迂回）
-    - 環境変数 API__TIMEOUT=0.0 では
-      Pydantic Field制約(ge=1.0)によりValidationErrorとなる
-    - retry_count=0 の用途: リトライを行わず即座に失敗させたい場合に使用
     """
     with SyncAPIClient(
         base_url=BASE_URL,
@@ -920,10 +815,6 @@ def test_sync_patch_method() -> None:
     - PATCHリクエストが正しく送信される
     - HTTPメソッドが "PATCH" である
     - リクエストボディが正確に送信される
-
-    学習ポイント:
-    - HTTP PATCH: リソースの部分更新操作
-    - PUT vs PATCH: PUTは全体更新、PATCHは部分更新
     """
     endpoint = "/todos/1"
     patch_data = {"completed": True}
@@ -961,9 +852,6 @@ def test_sync_get_users() -> None:
     - GET /users リクエストが送信される
     - ユーザーリストが正しく返される
     - call_count で1回のリクエストを確認
-
-    学習ポイント:
-    - respx: パラメータなしのGETリクエストモック
     """
     mock_users = [
         {"id": 1, "name": "Leanne Graham", "email": "sincere@april.biz"},
@@ -988,9 +876,6 @@ def test_sync_get_todo() -> None:
     検証項目:
     - GET /todos/{id} リクエストが送信される
     - 正しいTODOデータが返される
-
-    学習ポイント:
-    - respx: パスパラメータを含むURLのモック
     """
     mock_todo = {"id": 1, "userId": 1, "title": "delectus aut autem", "completed": False}
 
@@ -1013,10 +898,6 @@ def test_sync_create_todo() -> None:
     - POST /todos リクエストが送信される
     - リクエストボディに title/userId/completed が含まれる
     - 201 Created レスポンスが正しく処理される
-
-    学習ポイント:
-    - respx: POSTリクエストのボディ検証
-    - respx: route.calls[0].request.content でボディ確認
     """
     new_todo_response = {
         "id": 201,
