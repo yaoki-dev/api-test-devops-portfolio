@@ -23,7 +23,7 @@ api-test-devops-portfolio/
 │   ├── github_client.py   # GitHub API 専用クライアント
 │   ├── logger.py          # 構造化ログ（structlog）
 │   └── sentry_init.py     # エラー監視（Sentry SDK）
-├── tests/                  # テストスイート（23 test files）
+├── tests/                  # テストスイート（全23 test files）
 │   ├── unit/              # ユニットテスト（16 files）
 │   ├── integration/       # 統合テスト（5 files）
 │   ├── performance/       # パフォーマンステスト（1 file）
@@ -286,7 +286,7 @@ uv run pytest && uv run ruff check . && uv run mypy utils/ config/ models/
 | Metric | Value | Target |
 |--------|-------|--------|
 | Test Coverage | 96.15% | 85% |
-| Test Files  | 21 | - |
+| CI Test Files (unit+integration) | 21 | - |
 | Python Version | 3.14 | - |
 | Code Quality | ruff + mypy | 0 errors |
 | Documentation | CLAUDE.md + README | - |
