@@ -1,8 +1,8 @@
-name: CI/CD Pipeline - 3-Tier Test Pyramid
+name: CI/CD Pipeline
 
 # Test Pyramid Strategy (Google Testing Blog):
-#   Unit 70% / Integration 25% / E2E 5%
-# Coverage Target: 85% (baseline protection, dynamic targets in local dev)
+#   Unit 70% / Integration 30%
+# Coverage Target: 96.15% (achieved 2026-06, CI条件: unit+integration, not external)
 # Reference: .serena/memories/test_strategy_part1_overview.md
 
 # Default permissions (least privilege principle)
@@ -33,7 +33,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
@@ -43,7 +43,7 @@ jobs:
           python-version: '3.14'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           enable-cache: true
 
@@ -105,7 +105,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
@@ -187,7 +187,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
@@ -219,7 +219,7 @@ jobs:
           scan-type: 'filesystem'
 
       - name: Upload filesystem scan results to Security tab
-        uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         if: always() && steps.verify-fs-scan.outcome == 'success' && steps.fs-scan.outcome != 'cancelled' && steps.fs-scan.outcome != 'skipped'
         with:
           sarif_file: 'trivy-fs-scan.sarif'
@@ -307,7 +307,7 @@ jobs:
           scan-type: 'image'
 
       - name: Upload image scan results to Security tab
-        uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         if: always() && steps.verify-image-scan.outcome == 'success' && steps.image-scan.outcome != 'cancelled' && steps.image-scan.outcome != 'skipped'
         with:
           sarif_file: 'trivy-image-scan.sarif'
@@ -353,7 +353,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
@@ -457,7 +457,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
@@ -542,20 +542,19 @@ jobs:
   # ============================================================
   # Stage 3: Post Validation
   # Triggers: push to main or develop
-  # Tests: Smoke + e2e
+  # Tests: Smoke
   # ============================================================
   post-validation:
-    name: Post Validation (Smoke + e2e)
+    name: Post Validation (mypy + Smoke)
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     runs-on: ubuntu-latest
-    # Smoke + e2e（直列、pr-validationと同等構成。mypy初回キャッシュ未生成時の余裕確保）
-    timeout-minutes: 15
+    timeout-minutes: 10  # mypy + Smoke（直列、pr-validationと同等構成。mypy初回キャッシュ未生成時の余裕確保）
     permissions:
       contents: read
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
@@ -565,7 +564,7 @@ jobs:
           python-version: '3.14'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           enable-cache: true
 
@@ -589,21 +588,6 @@ jobs:
         id: smoke-tests
         run: |
           uv run pytest -m "smoke and not external" -v --tb=short --no-cov
-        env:
-          ENVIRONMENT: testing
-
-      - name: Run e2e tests (Post Validation)
-        # smoke成功時のみe2eを実行（テストピラミッドgate: smokeが失敗したらe2eをスキップ）
-        if: steps.smoke-tests.outcome == 'success'
-        run: |
-          exit_code=0
-          uv run pytest -m "e2e" -v --tb=short --no-cov || exit_code=$?
-          # Exit code 5: no tests collected (e2e not yet implemented — critical path only, planned)
-          case "$exit_code" in
-            0) ;;
-            5) echo "::notice::E2Eテスト未実装（critical path実装後に自動実行されます）" ;;
-            *) exit "$exit_code" ;;
-          esac
         env:
           ENVIRONMENT: testing
 
@@ -636,7 +620,7 @@ jobs:
 
     steps:
       - name: Checkout code (Post Trivy Scan)
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
@@ -667,7 +651,7 @@ jobs:
           scan-type: 'filesystem'
 
       - name: Upload filesystem scan results to Security tab (Post Trivy Scan)
-        uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         if: always() && steps.verify-fs-scan.outcome == 'success' && steps.fs-scan.outcome != 'cancelled' && steps.fs-scan.outcome != 'skipped'
         with:
           sarif_file: 'trivy-post-fs-scan.sarif'
@@ -756,7 +740,7 @@ jobs:
           scan-type: 'image'
 
       - name: Upload image scan results to Security tab (Post Trivy Scan)
-        uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         if: always() && steps.verify-image-scan.outcome == 'success' && steps.image-scan.outcome != 'cancelled' && steps.image-scan.outcome != 'skipped'
         with:
           sarif_file: 'trivy-post-image-scan.sarif'
@@ -805,7 +789,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
@@ -815,7 +799,7 @@ jobs:
           python-version: '3.14'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           enable-cache: true
 
@@ -829,7 +813,11 @@ jobs:
         run: uv run pytest -m "performance" -v
 
       - name: Run external API tests
-        id: external-tests  # Used for outcome-based error handling
+        id: external-tests # Used for outcome-based error handling
+        # External API tests run only if performance tests completed (success or failure).
+        # On cancellation, external tests are intentionally skipped to save CI costs and API rate limits.
+        # Next scheduled run or manual re-run should be used to verify external API health.
+        if: "!cancelled()"
         run: |
           uv run pytest -m "external" -v --maxfail=5
         continue-on-error: true
@@ -856,7 +844,7 @@ jobs:
         run: echo "::notice::External API tests passed - all integrations healthy"
 
       - name: Full coverage report
-        # unit/integration/smoke/e2e/slow のみ（performance/external は上で個別実行済）
+        # unit/integration/smoke/slow のみ（performance/external は上で個別実行済）
         run: uv run pytest -m 'not performance and not external' --cov=. --cov-report=html:reports/htmlcov --cov-report=json -v
 
       - name: Upload weekly test results
@@ -884,7 +872,7 @@ jobs:
 
     steps:
       - name: Checkout code (Weekly Link Check)
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
@@ -969,11 +957,11 @@ jobs:
 
       - name: Generate status report
         run: |
-          echo "# CI/CD Pipeline Status Report (3-Tier Test Pyramid)" > status_report.md
+          echo "# CI/CD Pipeline Status Report" > status_report.md
           echo "" >> status_report.md
           echo "## Test Pyramid Strategy" >> status_report.md
-          echo "- Unit 70% / Integration 25% / E2E 5%" >> status_report.md
-          echo "- Coverage Target: 85% (baseline protection)" >> status_report.md
+          echo "- Unit 70% / Integration 30%" >> status_report.md
+          echo "- Coverage Target: 96.15% (achieved)" >> status_report.md
           echo "" >> status_report.md
           echo "## Stage Results" >> status_report.md
           echo "- PR Validation: ${{ needs.pr-validation.result }}" >> status_report.md

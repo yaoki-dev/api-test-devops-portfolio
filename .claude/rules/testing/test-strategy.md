@@ -1,12 +1,12 @@
 # テスト戦略・設計ドキュメント
 
-*最終更新: 2026年04月10日*
+*最終更新: 2026年06月07日*
 
 ## エグゼクティブサマリー
 
-**現在のカバレッジ**: 94.59%（CI条件: unit+integration, not external） | **目標達成**: ✅
-**テスト資産**: 996件（CI条件）
-**最優先改善領域**: utils/api_client.py (90.42%)
+**現在のカバレッジ**: 96.15%（CI条件: unit+integration, not external） | **目標達成**: ✅
+**テスト資産**: 1,346件（CI条件）／総テスト数: 1,360件
+**最優先改善領域**: utils/api_client.py (92.22%)
 
 ---
 
@@ -40,7 +40,7 @@ uv run pytest -n auto -m "(unit or integration) and not external" \
 
 ```
   Unit 70%: モック中心・高速
-  Integration 25%: 実API/連携
+  Integration 30%: 実API/連携
 ```
 
 | 層 | 実行時間 | 目的 |
