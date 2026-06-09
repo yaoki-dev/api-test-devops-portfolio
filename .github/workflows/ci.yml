@@ -547,7 +547,7 @@ jobs:
     name: Post Validation (mypy + Smoke)
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     runs-on: ubuntu-latest
-    timeout-minutes: 15  # mypy + Smoke（直列、pr-validationと同等構成。mypy初回キャッシュ未生成時の余裕確保）
+    timeout-minutes: 10  # mypy + Smoke（直列、pr-validationと同等構成。mypy初回キャッシュ未生成時の余裕確保）
     permissions:
       contents: read
 
@@ -580,6 +580,7 @@ jobs:
         run: uv run mypy utils/ config/ models/
 
       - name: Run smoke tests (Post Validation)
+        id: smoke-tests
         run: |
           uv run pytest -m "smoke and not external" -v --tb=short --no-cov
         env:
@@ -811,7 +812,7 @@ jobs:
         # External API tests run only if performance tests completed (success or failure).
         # On cancellation, external tests are intentionally skipped to save CI costs and API rate limits.
         # Next scheduled run or manual re-run should be used to verify external API health.
-        if: success() || failure()
+        if: "!cancelled()"
         run: |
           uv run pytest -m "external" -v --maxfail=5
         continue-on-error: true
