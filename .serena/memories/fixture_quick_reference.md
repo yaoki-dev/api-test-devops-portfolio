@@ -259,15 +259,14 @@ def test_sync(async_client):  # RuntimeError
 
 conftest.py `pytest_configure()`で登録済み:
 
-| マーカー | 用途 | 行番号 |
-|---------|------|--------|
-| `unit` | 単体テスト | L88 |
-| `integration` | 統合テスト | L89 |
-| `e2e` | E2Eテスト | L90 |
-| `slow` | 実行時間の長いテスト | L91 |
-| `external` | 外部API依存テスト | L92 |
-| `performance` | パフォーマンステスト | L93 |
-| `smoke` | スモークテスト（main PR用） | L94 |
+| マーカー | 用途 |
+|---------|------|
+| `smoke` | スモークテスト（main PR用） |
+| `unit` | 単体テスト |
+| `integration` | 統合テスト |
+| `external` | 外部API依存テスト |
+| `slow` | 実行時間の長いテスト |
+| `performance` | パフォーマンステスト |
 
 > **Note**: `security`マーカーは2025-12-25に削除済み（プロジェクトでセキュリティテストを実装しないため）。
 > `security_payloads`フィクスチャはテストデータ例として残存。

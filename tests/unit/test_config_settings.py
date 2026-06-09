@@ -80,6 +80,23 @@ class TestAPIConfigBaseUrlDependencyInjection:
             for record in caplog.records
         )
 
+    def test_validate_base_url_blocks_private_ip_before_allowlist(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """プライベートIPは許可リスト外でも攻撃ベクターとして記録される。"""
+        with caplog.at_level(logging.WARNING, logger="config.settings"):
+            with pytest.raises(ValueError, match="Private/loopback IP addresses are not allowed"):
+                _validate_base_url_with_allowed_domains(
+                    "http://192.168.1.1",
+                    frozenset({"example.com"}),
+                )
+
+        assert any(
+            "SSRF Prevention: private or loopback IP blocked" in record.getMessage()
+            and record.levelno == logging.WARNING
+            for record in caplog.records
+        )
+
     def test_validate_base_url_logs_warning_for_domain_not_in_allowlist(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:

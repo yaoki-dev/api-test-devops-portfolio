@@ -124,9 +124,7 @@ log_event() {
 
   # JSON エスケープ失敗時に早期 abort して壊れた JSON ログ出力を防ぐ
   # bash 仕様: $() 内 set -e 無効 / pipefail は | 専用 → || return 1 で明示的ステータス受け
-  local escaped_ts escaped_level escaped_msg
-  escaped_ts=$(_json_escape "$timestamp") || escaped_ts="[ESCAPE_ERROR]"
-  escaped_level=$(_json_escape "$level") || escaped_level="[ESCAPE_ERROR]"
+  local escaped_msg
   escaped_msg=$(_json_escape "$message") || escaped_msg="[ESCAPE_ERROR]"
 
   # JSON 形式でログ出力（エスケープ済み値を安全に埋め込み）
@@ -134,9 +132,9 @@ log_event() {
   if [ -n "$details" ]; then
     local escaped_details
     escaped_details=$(_json_escape "$details") || escaped_details="[ESCAPE_ERROR]"
-    json_log="{\"timestamp\":\"${escaped_ts}\",\"level\":\"${escaped_level}\",\"message\":\"${escaped_msg}\",\"details\":\"${escaped_details}\"}"
+    json_log="{\"timestamp\":\"${timestamp}\",\"level\":\"${level}\",\"message\":\"${escaped_msg}\",\"details\":\"${escaped_details}\"}"
   else
-    json_log="{\"timestamp\":\"${escaped_ts}\",\"level\":\"${escaped_level}\",\"message\":\"${escaped_msg}\"}"
+    json_log="{\"timestamp\":\"${timestamp}\",\"level\":\"${level}\",\"message\":\"${escaped_msg}\"}"
   fi
 
   # ファイル出力（LOG_FILE設定後のみ）
@@ -393,7 +391,6 @@ verify_restore() {
 
   # 一時ディレクトリ作成（trap付き）
   TEMP=$(mktemp -d -t vault_verify.XXXXXXXXXX)
-  trap 'rm -rf "$TEMP" 2>/dev/null || true' EXIT
   chmod 700 "$TEMP"  # 明示的権限設定
 
   # P1-4: symlink攻撃検出（CVE-2008-2957対策）
@@ -420,6 +417,7 @@ verify_restore() {
     trap 'cleanup_on_signal INT' INT
     trap 'cleanup_on_signal TERM' TERM
     trap '_err_trap "$LINENO" "$BASH_COMMAND"' ERR
+    trap cleanup_lock EXIT
     trap - RETURN
     return "$rc"
   }
