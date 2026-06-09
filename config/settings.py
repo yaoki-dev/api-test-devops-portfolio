@@ -251,7 +251,7 @@ def _validate_base_url_with_allowed_domains(v: str, allowed_domains: frozenset[s
             hostname[:200],
         )
         raise ValueError(
-            f"SSRF Prevention: Private/loopback IP addresses are not allowed: {hostname}",
+            f"SSRF Prevention: Private/loopback IP addresses are not allowed: {hostname[:200]}",
         )
 
     # SSRF Prevention: 許可ドメインチェック
@@ -262,7 +262,7 @@ def _validate_base_url_with_allowed_domains(v: str, allowed_domains: frozenset[s
             len(allowed_domains),
         )
         raise ValueError(
-            f"SSRF Prevention: Domain not in allowlist: {hostname}. "
+            f"SSRF Prevention: Domain not in allowlist: {hostname[:200]}. "
             f"Allowed domains count: {len(allowed_domains)}",
         )
 

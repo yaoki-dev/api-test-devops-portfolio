@@ -108,7 +108,7 @@ LOG_FILE=""  # 後でLOG_DIR確定後に設定
 _json_escape() {
   local result
   if ! result=$(python3 -c 'import json, sys; print(json.dumps(sys.argv[1], ensure_ascii=False)[1:-1], end="")' "${1-}" 2>/dev/null); then
-    # python3 は必須依存（起動時チェック済み）— 到達不能パス; 生文字列返却によるJSON破損を防ぐ
+    # python3 は必須依存（起動時チェック済み）— 生文字列返却によるJSON破損を防ぐ
     printf '_json_escape: python3 unavailable\n' >&2
     return 1
   fi
@@ -122,8 +122,8 @@ log_event() {
   local timestamp
   timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-  # JSON エスケープ失敗時に早期 abort して壊れた JSON ログ出力を防ぐ
-  # bash 仕様: $() 内 set -e 無効 / pipefail は | 専用 → || return 1 で明示的ステータス受け
+  # timestamp/level は内部生成の固定形式（制御文字なし）のためエスケープ不要
+  # message/details のみエスケープ（python3起動回数を 4→2 回に削減）
   local escaped_msg
   escaped_msg=$(_json_escape "$message") || escaped_msg="[ESCAPE_ERROR]"
 
@@ -217,6 +217,111 @@ cleanup_lock() {
 }
 trap cleanup_lock EXIT
 
+
+# リストア検証関数（--verify オプション用）
+
+verify_restore() {
+  echo "🔄 リストア検証開始..."
+
+  # mtime降順で最新ファイル取得（ls -t はスペース/特殊文字ファイル名で誤動作の恐れあり）
+  # P0-1: Linux/BSD両対応のstat（既存パターン準拠）
+  if stat --version >/dev/null 2>&1; then
+    # GNU stat (Linux): -c "%Y %n" (既存 lock_mtime パターン準拠)
+    LATEST=$(find "$BACKUP_DIR" -maxdepth 1 -name "vault_*.tar.gz" \
+      -exec stat -c "%Y %n" {} \; 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2-)
+  else
+    # BSD stat (macOS)
+    LATEST=$(find "$BACKUP_DIR" -maxdepth 1 -name "vault_*.tar.gz" \
+      -exec stat -f "%m %N" {} \; 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2-)
+  fi
+
+  if [ -z "$LATEST" ]; then
+    echo "❌ バックアップファイルが見つかりません" >&2
+    return 1
+  fi
+
+  # ファイル存在確認（レースコンディション対策）
+  if [ ! -f "$LATEST" ]; then
+    echo "❌ バックアップファイルが削除されました: $LATEST" >&2
+    return 1
+  fi
+
+  # P1-4: チェックサム検証
+  CHECKSUM_FILE="${LATEST%.tar.gz}.sha256"
+  if [ -f "$CHECKSUM_FILE" ]; then
+    echo "🔐 チェックサム検証中..."
+    # stderrのみ抑制、stdoutは失敗時の詳細(FAILED)のために変数に捕捉
+    if ! shasum_out=$(cd "$BACKUP_DIR" && shasum -a 256 -c "$(basename "$CHECKSUM_FILE")" 2>&1); then
+      echo "❌ チェックサム検証失敗: ファイル破損の可能性（詳細: ${shasum_out}）" >&2
+      return 1
+    fi
+    echo "✅ チェックサム検証OK"
+  else
+    echo "⚠️ チェックサムファイルが見つかりません（スキップ）" >&2
+  fi
+
+  # 一時ディレクトリ作成（trap付き）
+  TEMP=$(mktemp -d -t vault_verify.XXXXXXXXXX)
+  chmod 700 "$TEMP"  # 明示的権限設定
+
+  # P1-4: symlink攻撃検出（CVE-2008-2957対策）
+  if [ -L "$TEMP" ]; then
+    echo "❌ セキュリティ警告: 一時ディレクトリがシンボリックリンク" >&2
+    rm -rf "$TEMP"
+    return 1
+  fi
+
+  # 関数スコープで完結する trap 管理:
+  # - INT/TERM: _verify_cleanup 実行後に exit（RETURN trapはexitで発火しないため明示呼び出し）
+  # - ERR: _verify_cleanup 実行（グローバル ERR trap は echo のみで干渉しない）
+  # - RETURN: 全 return 経路で cleanup 保証
+  # shellcheck disable=SC2329  # invoked via trap RETURN/ERR/INT/TERM
+  _verify_cleanup() {
+    local rc=$?
+    rm -rf "$TEMP" 2>/dev/null || true
+    trap - RETURN
+    return "$rc"
+  }
+
+  trap '_verify_cleanup; exit 130' INT
+  trap '_verify_cleanup; exit 143' TERM
+  trap '_verify_cleanup' ERR
+  trap _verify_cleanup RETURN
+
+  # 展開（エラーチェック付き）
+  # P0-1: BSD tar（macOS）はデフォルトで絶対パスを除去するためpath traversal攻撃を防止
+  # GNU tarの--no-absolute-namesと同等の動作（-Pオプションを使わない限り安全）
+  if ! tar -xzf "$LATEST" -C "$TEMP" 2>/dev/null; then
+    echo "❌ アーカイブ展開失敗: $LATEST" >&2
+    return 1
+  fi
+
+  # ファイル数比較
+  ORIG=$(find "$VAULT_PATH" -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
+  REST=$(find "$TEMP" -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
+
+  # 空Vault検出（偽陽性防止）
+  if [ "$ORIG" -eq 0 ]; then
+    echo "⚠️ 警告: Vaultが空です（0ファイル）。データ損失の可能性があります" >&2
+    return 1
+  fi
+
+  if [ "$ORIG" -eq "$REST" ]; then
+    echo "✅ リストア検証OK: $ORIG ファイル一致"
+    return 0
+  else
+    echo "❌ リストア検証失敗: 元=$ORIG, 復元=$REST" >&2
+    return 1
+  fi
+}
+
+# --verify オプションでリストア検証を実行（バックアップ処理をスキップ）
+# P1-5: 終了コードを検証結果に基づいて設定（CI/CD統合対応）
+if [ "${1:-}" = "--verify" ]; then
+  verify_restore
+  exit $?
+fi
+
 if ! acquire_lock; then
   echo "⚠️ 別のバックアッププロセスが実行中です（スキップ）" >&2
   log_event "INFO" "backup_skipped" "concurrent_execution_detected"
@@ -266,7 +371,6 @@ if [ ! -w "$BACKUP_DIR" ]; then
   exit 1
 fi
 
-# P0-4: 事前ディスク容量チェック + P1-8: 使用率チェック（df単一呼び出し）
 VAULT_SIZE_KB=$(du -sk "$VAULT_PATH" 2>/dev/null | awk '{print $1}' || echo "0")
 DF_OUT=$(df -k "$BACKUP_DIR" 2>/dev/null | tail -1 | awk '{gsub(/%/,"",$5); print $4, $5}')
 read -r AVAILABLE_KB DISK_USAGE <<< "$DF_OUT"
@@ -347,115 +451,3 @@ find "$BACKUP_DIR" -maxdepth 1 -type f \
 BACKUP_SIZE=$(du -sh "$CURRENT_BACKUP" 2>/dev/null | cut -f1 || echo "unknown")
 echo "✅ バックアップ完了: $CURRENT_BACKUP"
 log_event "INFO" "backup_completed" "file=$CURRENT_BACKUP,size=$BACKUP_SIZE"
-
-# P1-4: リストア検証関数（週次実行用）- チェックサム検証追加
-verify_restore() {
-  echo "🔄 リストア検証開始..."
-
-  # mtime降順で最新ファイル取得（ls -t はスペース/特殊文字ファイル名で誤動作の恐れあり）
-  # P0-1: Linux/BSD両対応のstat（既存パターン準拠）
-  if stat --version >/dev/null 2>&1; then
-    # GNU stat (Linux): -c "%Y %n" (既存 lock_mtime パターン準拠)
-    LATEST=$(find "$BACKUP_DIR" -maxdepth 1 -name "vault_*.tar.gz" 2>/dev/null \
-      -exec stat -c "%Y %n" {} \; | sort -n | tail -1 | cut -d' ' -f2-)
-  else
-    # BSD stat (macOS)
-    LATEST=$(find "$BACKUP_DIR" -maxdepth 1 -name "vault_*.tar.gz" 2>/dev/null \
-      -exec stat -f "%m %N" {} \; | sort -n | tail -1 | cut -d' ' -f2-)
-  fi
-
-  if [ -z "$LATEST" ]; then
-    echo "❌ バックアップファイルが見つかりません" >&2
-    return 1
-  fi
-
-  # ファイル存在確認（レースコンディション対策）
-  if [ ! -f "$LATEST" ]; then
-    echo "❌ バックアップファイルが削除されました: $LATEST" >&2
-    return 1
-  fi
-
-  # P1-4: チェックサム検証
-  CHECKSUM_FILE="${LATEST%.tar.gz}.sha256"
-  if [ -f "$CHECKSUM_FILE" ]; then
-    echo "🔐 チェックサム検証中..."
-    # 2>/dev/null: "OK" の逐次出力を抑止; 検証失敗は exit code で検出
-    if ! (cd "$BACKUP_DIR" && shasum -a 256 -c "$(basename "$CHECKSUM_FILE")" >/dev/null 2>&1); then
-      echo "❌ チェックサム検証失敗: ファイル破損の可能性" >&2
-      return 1
-    fi
-    echo "✅ チェックサム検証OK"
-  else
-    echo "⚠️ チェックサムファイルが見つかりません（スキップ）" >&2
-  fi
-
-  # 一時ディレクトリ作成（trap付き）
-  TEMP=$(mktemp -d -t vault_verify.XXXXXXXXXX)
-  chmod 700 "$TEMP"  # 明示的権限設定
-
-  # P1-4: symlink攻撃検出（CVE-2008-2957対策）
-  if [ -L "$TEMP" ]; then
-    echo "❌ セキュリティ警告: 一時ディレクトリがシンボリックリンク" >&2
-    rm -rf "$TEMP"
-    return 1
-  fi
-
-  # 関数スコープで完結する trap 管理:
-  # - INT/TERM: $TEMP 削除後に exit (ユーザー案: 関数内で完結)
-  #   bash 仕様: exit 時は RETURN trap は発火しないため、cleanup_on_signal 経由ではなく直接 exit
-  # - ERR: $TEMP 削除 (グローバル ERR trap は echo のみで干渉しない)
-  # - RETURN: グローバルトラップ復元 (全 return 経路で cleanup 保証)
-  trap 'rm -rf "$TEMP" 2>/dev/null || true; exit 130' INT
-  trap 'rm -rf "$TEMP" 2>/dev/null || true; exit 143' TERM
-  trap 'rm -rf "$TEMP" 2>/dev/null || true' ERR
-
-  # shellcheck disable=SC2329  # invoked via trap RETURN
-  _verify_cleanup() {
-    local rc=$?
-    rm -rf "$TEMP" 2>/dev/null || true
-    # グローバル trap を元の状態に戻す
-    trap 'cleanup_on_signal INT' INT
-    trap 'cleanup_on_signal TERM' TERM
-    trap '_err_trap "$LINENO" "$BASH_COMMAND"' ERR
-    trap cleanup_lock EXIT
-    trap - RETURN
-    return "$rc"
-  }
-  trap _verify_cleanup RETURN
-
-  # 展開（エラーチェック付き）
-  # P0-1: BSD tar（macOS）はデフォルトで絶対パスを除去するためpath traversal攻撃を防止
-  # GNU tarの--no-absolute-namesと同等の動作（-Pオプションを使わない限り安全）
-  if ! tar -xzf "$LATEST" -C "$TEMP" 2>/dev/null; then
-    echo "❌ アーカイブ展開失敗: $LATEST" >&2
-    return 1
-  fi
-
-  # ファイル数比較
-  ORIG=$(find "$VAULT_PATH" -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
-  REST=$(find "$TEMP" -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
-
-  # 空Vault検出（偽陽性防止）
-  if [ "$ORIG" -eq 0 ]; then
-    echo "⚠️ 警告: Vaultが空です（0ファイル）。データ損失の可能性があります" >&2
-    return 1
-  fi
-
-  if [ "$ORIG" -eq "$REST" ]; then
-    echo "✅ リストア検証OK: $ORIG ファイル一致"
-    return 0
-  else
-    echo "❌ リストア検証失敗: 元=$ORIG, 復元=$REST" >&2
-    return 1
-  fi
-}
-
-# --verify オプションでリストア検証を実行
-# P1-5: 終了コードを検証結果に基づいて設定（CI/CD統合対応）
-if [ "${1:-}" = "--verify" ]; then
-  if verify_restore; then
-    exit 0
-  else
-    exit 1
-  fi
-fi
