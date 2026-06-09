@@ -104,7 +104,7 @@ LOG_FILE=""  # 後でLOG_DIR確定後に設定
 
 # JSON文字列の値として安全にエスケープ（CWE-116 対策）
 # python3 json.dumps で RFC 8259 §7 完全対応（C0制御文字含む）。
-# python3 は必須依存（起動時 deps チェック済み）— 失敗は到達不能パス。
+# python3 は必須依存だが、呼び出し失敗時はJSON破損を避けるため明示エラーにする。
 _json_escape() {
   local result
   if ! result=$(python3 -c 'import json, sys; print(json.dumps(sys.argv[1], ensure_ascii=False)[1:-1], end="")' "${1-}" 2>/dev/null); then
@@ -261,7 +261,33 @@ verify_restore() {
   fi
 
   # 一時ディレクトリ作成（trap付き）
+  local previous_int_trap previous_term_trap previous_err_trap previous_return_trap
+  previous_int_trap=$(trap -p INT || true)
+  previous_term_trap=$(trap -p TERM || true)
+  previous_err_trap=$(trap -p ERR || true)
+  previous_return_trap=$(trap -p RETURN || true)
+
+  # shellcheck disable=SC2329  # invoked by _verify_cleanup, which is invoked via trap
+  _restore_verify_traps() {
+    if [ -n "$previous_int_trap" ]; then eval "$previous_int_trap"; else trap - INT; fi
+    if [ -n "$previous_term_trap" ]; then eval "$previous_term_trap"; else trap - TERM; fi
+    if [ -n "$previous_err_trap" ]; then eval "$previous_err_trap"; else trap - ERR; fi
+    if [ -n "$previous_return_trap" ]; then eval "$previous_return_trap"; else trap - RETURN; fi
+  }
+
+  # shellcheck disable=SC2329  # trap-invoked cleanup handler
+  _verify_cleanup() {
+    local rc=$?
+    rm -rf "$TEMP" 2>/dev/null || true
+    _restore_verify_traps
+    return "$rc"
+  }
+
   TEMP=$(mktemp -d -t vault_verify.XXXXXXXXXX)
+  trap '_verify_cleanup; exit 130' INT
+  trap '_verify_cleanup; exit 143' TERM
+  trap '_verify_cleanup' ERR
+  trap _verify_cleanup RETURN
   chmod 700 "$TEMP"  # 明示的権限設定
 
   # P1-4: symlink攻撃検出（CVE-2008-2957対策）
@@ -270,23 +296,6 @@ verify_restore() {
     rm -rf "$TEMP"
     return 1
   fi
-
-  # 関数スコープで完結する trap 管理:
-  # - INT/TERM: _verify_cleanup 実行後に exit（RETURN trapはexitで発火しないため明示呼び出し）
-  # - ERR: _verify_cleanup 実行（グローバル ERR trap は echo のみで干渉しない）
-  # - RETURN: 全 return 経路で cleanup 保証
-  # shellcheck disable=SC2329  # invoked via trap RETURN/ERR/INT/TERM
-  _verify_cleanup() {
-    local rc=$?
-    rm -rf "$TEMP" 2>/dev/null || true
-    trap - RETURN
-    return "$rc"
-  }
-
-  trap '_verify_cleanup; exit 130' INT
-  trap '_verify_cleanup; exit 143' TERM
-  trap '_verify_cleanup' ERR
-  trap _verify_cleanup RETURN
 
   # 展開（エラーチェック付き）
   # P0-1: BSD tar（macOS）はデフォルトで絶対パスを除去するためpath traversal攻撃を防止

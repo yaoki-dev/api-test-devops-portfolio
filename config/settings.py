@@ -250,9 +250,7 @@ def _validate_base_url_with_allowed_domains(v: str, allowed_domains: frozenset[s
             "SSRF Prevention: private or loopback IP blocked for hostname=%r",
             hostname[:200],
         )
-        raise ValueError(
-            f"SSRF Prevention: Private/loopback IP addresses are not allowed: {hostname[:200]}",
-        )
+        raise ValueError("SSRF Prevention: Private/loopback IP addresses are not allowed.")
 
     # SSRF Prevention: 許可ドメインチェック
     if hostname not in allowed_domains:
@@ -261,10 +259,7 @@ def _validate_base_url_with_allowed_domains(v: str, allowed_domains: frozenset[s
             hostname[:200],
             len(allowed_domains),
         )
-        raise ValueError(
-            f"SSRF Prevention: Domain not in allowlist: {hostname[:200]}. "
-            f"Allowed domains count: {len(allowed_domains)}",
-        )
+        raise ValueError("SSRF Prevention: Domain not in allowlist. ")
 
     return v.rstrip("/")
 
@@ -457,7 +452,10 @@ class SentryConfig(BaseModel):
 # 本番相当環境セット（production + staging）
 # validate_production_secrets / validate_production_https / is_production_like で共有
 _PRODUCTION_LIKE_ENVIRONMENTS: frozenset[Environment] = frozenset(
-    {Environment.PRODUCTION, Environment.STAGING}
+    {
+        Environment.PRODUCTION,
+        Environment.STAGING,
+    }
 )
 
 
