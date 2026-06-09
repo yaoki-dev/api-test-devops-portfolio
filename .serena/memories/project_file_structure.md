@@ -12,9 +12,12 @@
 
 ```
 api-test-devops-portfolio/
-├── .claude/                    # Claude Code設定（グローバルルール）
-│   ├── commands/              # カスタムスラッシュコマンド
-│   └── mcp_tools/             # MCPツール設定
+├── .claude/                   # Claude Code設定（プロジェクト）
+│   ├── rules/                 # プロジェクトルール (条件付きルール)
+│   ├── CLAUDE.md              # プロジェクト基本ルール
+│   ├── agents/                # プロジェクトエージェント
+│   ├── commands/              # プロジェクトカスタムスラッシュコマンド
+│   └── skills/                # プロジェクトスキル
 │
 ├── .serena/                   # Serena MCP長期メモリ
 │   └── memories/              # プロジェクト固有メモリ（13ファイル）
@@ -54,31 +57,27 @@ api-test-devops-portfolio/
 │   └── tools/                 # ツール関連ドキュメント
 │
 ├── scripts/                   # 自動化スクリプト
-│   ├── setup/                 # セットアップスクリプト
-│   ├── test/                  # テスト補助スクリプト
-│   └── deploy/                # デプロイスクリプト（Week 8以降）
 │
 ├── tests/                     # テストファイル（全種類）
-│   ├── conftest.py            # pytest共通設定・フィクスチャ（397行）
+│   ├── conftest.py            # pytest共通設定・フィクスチャ
+│   ├── constants.py           # テスト共通定数
+│   ├── types.py               # テスト共通 TypedDict 型定義
 │   ├── unit/                  # 単体テスト（モック中心）
 │   ├── integration/           # 統合テスト（実API）
 │   ├── performance/           # パフォーマンステスト
-│   ├── security/              # セキュリティテスト（マーカー未使用）
-│   ├── e2e/                   # E2Eテスト（ブラウザ自動化）
-│   ├── regression/            # リグレッションテスト
-│   └── validation/            # バリデーションテスト
+│   └── test_smoke.py          # スモークテスト
 │
 ├── utils/                     # コアモジュール実装
-│   ├── api_client.py          # APIクライアント（972行）
+│   ├── api_client.py          # APIクライアント
 │   ├── logger.py              # structlog統合ロギング
 │   └── __init__.py
 │
 ├── config/                    # 設定管理
-│   ├── settings.py            # Pydantic Settings（447行）
+│   ├── settings.py            # Pydantic Settings
 │   └── __init__.py
 │
 ├── models/                    # データモデル
-│   ├── responses.py           # APIレスポンスモデル（350行）
+│   ├── responses.py           # APIレスポンスモデル
 │   └── __init__.py
 │
 ├── reports/                   # テスト・品質レポート（自動生成）
@@ -96,7 +95,7 @@ api-test-devops-portfolio/
 ├── uv.lock                    # 依存関係ロックファイル
 ├── README.md                  # プロジェクトREADME
 ├── CLAUDE.md                  # Claude Code向けプロジェクト説明
-└── docker-compose.yml         # Docker環境設定（Week 7実装）
+└── docker-compose.yml         # Docker環境設定
 ```
 
 ---
@@ -442,16 +441,12 @@ tests/
 ```
 
 **テストマーカー運用**:
+- `@pytest.mark.smoke`: スモークテスト（PR用）
 - `@pytest.mark.unit`: 単体テスト（モック中心）
 - `@pytest.mark.integration`: 統合テスト（実API）
-- `@pytest.mark.performance`: パフォーマンステスト
-- `@pytest.mark.e2e`: E2Eテスト
-- `@pytest.mark.slow`: 低速テスト
 - `@pytest.mark.external`: 外部API依存テスト
-- `@pytest.mark.smoke`: スモークテスト（PR用）
-- ~~`@pytest.mark.security`~~: 削除済み（2025-12-25）
-
-> **Note**: security/ディレクトリは存在するが、マーカーは未使用
+- `@pytest.mark.slow`: 低速テスト
+- `@pytest.mark.performance`: パフォーマンステスト
 
 **並列実行**:
 ```bash

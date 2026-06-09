@@ -40,7 +40,7 @@ graph TB
 |-------|---------|---------|---------|---------|
 | **pr-validation** | `pull_request` | mypy+ (Unit + Integration + smoke) Tests | 15分 | ○ |
 | **pr-trivy-scan** | `pull_request` | Trivy scan（Filesystem + Image）+ Docker Build  | 20分 | ○ |
-| **post-validation** | `push to develop/main` | mypy + (Smoke + e2e) Tests | 15分 | × |
+| **post-validation** | `push to develop/main` | mypy + Smoke Tests | 15分 | × |
 | **post-trivy-scan** | `push to develop/main` | Trivy scan（Filesystem + Image）+ Docker Build | 20分 | × |
 | **weekly-extended-test** | `schedule` (週次) | (Performance + External) Tests | 30分 | × |
 | **weekly-link-check** | `schedule` (週次) | Markdown link check | 15分 | × |
@@ -152,7 +152,7 @@ uv run pytest -n auto -m "(unit or integration) and not external" \
 |---------|------|--------|---------|
 | `feature/*` | 新機能開発 | pr-validation + pr-trivy-scan + pr-md-quality-check | `develop` |
 | `develop` | 統合ブランチ | pr-validation + pr-trivy-scan + pr-md-quality-check | `main` |
-| `main` | 本番環境 | post-validation (mypy + Smoke + e2e) + post-trivy-scan (Docker + Trivy) | - |
+| `main` | 本番環境 | post-validation (mypy + Smoke) + post-trivy-scan (Docker + Trivy) | - |
 | `hotfix/*` | 緊急修正 | pr-validation + pr-trivy-scan + pr-md-quality-check | `main` + `develop` |
 
 **マージ戦略**:

@@ -1,6 +1,6 @@
 # テスト戦略・詳細実装ガイド
 
-*最終更新: 2025年12月27日*
+*最終更新: 2026年06月07日*
 
 > **概要版**: @memory:test_strategy を参照
 
@@ -13,8 +13,7 @@
 | テスト層 | 比率 | 実行時間 | 環境 | 目的 |
 |---------|------|---------|------|------|
 | Unit | 70% | <0.5s/test | ローカル | モック中心、外部依存排除 |
-| Integration | 25% | 1-3s/test | docker-compose | 実API、コンポーネント連携 |
-| E2E | 5% | 10-30s/test | Playwright | ユーザージャーニー |
+| Integration | 30% | 1-3s/test | docker-compose | 実API、コンポーネント連携 |
 
 **設計根拠**: Mike Cohn提唱（2009年）、Google Testing Blog推奨構成
 
@@ -87,30 +86,20 @@ async def async_client(test_config) -> AsyncGenerator[AsyncAPIClient, None]:
 
 ## 3. カバレッジ戦略
 
-### 3.1 6週プラン目標
+### 3.1 優先モジュール
 
-| Week | 目標 | テスト増加 | 主要実装 |
-|------|------|-----------|---------|
-| 1 | 40% | +25件 | 単体テスト基盤 |
-| 2 | 60% | +20件 | エラーハンドリング |
-| 3 | 60% | 維持 | Docker基盤構築 |
-| 4 | 60% | 維持 | CI/CD統合 |
-| 5 | 80% | +30件 | 非同期テスト |
-| 6 | 85% | +25件 | e2e |
-
-### 3.2 優先モジュール
-
-1. **utils/api_client.py** (~970行)
+1. **utils/api_client.py** (1,653行 wc -l / 435 stmts)
    - リトライロジック (lines 117-247)
    - 非同期並行処理 (lines 509-582)
    - エラーハンドリング (lines 324-395)
+   - **カバレッジ: 92.22%**（残未カバー: 437, 636-637, 827-828, 1307-1308, 1317-1319, 1518, 1562, 1595, 1612-1637, 1641-1646）
 
 2. **models/responses.py** (~350行)
    - Pydanticモデル
    - @field_validator
    - sanitize_user_content() XSS保護
 
-3. **config/settings.py** (~450行) ✅ 96%達成
+3. **config/settings.py** (~450行 wc -l / 205 stmts) ✅ 97.59%達成
 
 ### 3.3 除外パターン
 ```python
@@ -284,10 +273,10 @@ def test_future_feature():
 ## 10. 将来計画 (Week 6完了後)
 
 ### 検討項目
-- **E2Eテスト**: Playwright統合
 - **負荷テスト**: Locust統合
 - **Mutation Testing**: mutmut導入
 - **Property-Based Testing**: Hypothesis
+- **E2Eテスト**: Web UI 実装時に再評価（現状スコープ外）
 
 ### 成功の定義
 1. カバレッジ85%達成

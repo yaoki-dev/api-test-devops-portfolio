@@ -1,13 +1,13 @@
 # API Test + DevOps Portfolio
 
-*最終更新: 2026年03月22日*
+*最終更新: 2026年06月07日*
 
 ## 概要
 
 このプロジェクトは、APIテストとDevOps技術を統合した実践的なポートフォリオです。
 
 [![CI/CD Pipeline](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml/badge.svg)](https://github.com/yuta158/api-test-portfolio/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/badge/coverage-95.83%25-brightgreen)](https://yuta158.github.io/api-test-portfolio/htmlcov/)
+[![Coverage](https://img.shields.io/badge/coverage-96.15%25-brightgreen)](https://yuta158.github.io/api-test-portfolio/htmlcov/)
 ![Python](https://img.shields.io/badge/Python-3.14-blue)
 [![Docker](https://img.shields.io/badge/docker-multi--stage-blue)](./Dockerfile)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
@@ -16,14 +16,14 @@
 [![Security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 [![Dependencies: safety](https://img.shields.io/badge/dependencies-safety--checked-green.svg)](https://safetycli.com/)
 
-> **Python/Docker/CI/CDを統合したAPIテスト自動化ポートフォリオ。1,338件のテスト（CI品質ゲート: 1,324件/95.83%）。**
+> **Python/Docker/CI/CDを統合したAPIテスト自動化ポートフォリオ。1,360件のテスト（CI品質ゲート: 1,346件/96.15%）。**
 
 ## 概要
 
-- **1,338件のテストスイート**: Unit(1,290) / Integration(39, うちExternal 5件含む) / Performance(7, 週次のみ) / Smoke(2) / E2E(実装予定)
-- **カバレッジ: 95.83%**（unit+integration条件）: 継続的な品質向上
-- **CI実行テスト: 1,324件**（unit+integration条件, external・performance・smoke除外）
-  - 内訳: Unit 1,290件 + Integration 34件（39件のうちexternal 5件を除外）
+- **1,360件のテストスイート**: Unit(1,316) / Integration(35, うちExternal 5件含む) / Performance(7, 週次のみ) / Smoke(2)
+- **カバレッジ: 96.15%**（unit+integration条件）: 継続的な品質向上
+- **CI実行テスト: 1,346件**（unit+integration条件, external・performance・smoke除外）
+  - 内訳: Unit 1,316件 + Integration 30件（35件のうちexternal 5件を除外）
 - **CI/CD自動化**: GitHub Actions による多段階パイプライン
 - **セキュリティ**: CI/CD品質ゲート（pytest + ruff + mypy + Trivy）
 - **GitHub API統合**: 実務的なAPI統合スキルを証明（Rate Limit管理、ETag活用、非同期処理）
@@ -34,22 +34,22 @@
 
 ### 1. テスト実行
 
-![Test Demo - pytest実行で基本テスト19件合格（全1,338件中の抽出実行、CI環境での全体カバレッジ: 95.83%）。テスト自動化スキルを実証](assets/demo-test.gif)
+![Test Demo - pytest実行で基本テスト19件合格（全1,360件中の抽出実行、CI環境での全体カバレッジ: 96.15%）。テスト自動化スキルを実証](assets/demo-test.gif)
 
-> **📝 デモ内容**: クイック実行例（基本テスト19件、デモ時間短縮のため抽出。全1,338件は約60秒）
-> **🔍 全1,338件を今すぐ確認**: [GitHub Actions CI/CD](https://github.com/yuta158/api-test-portfolio/actions) でフルテスト結果＋カバレッジレポートを閲覧
+> **📝 デモ内容**: クイック実行例（基本テスト19件、デモ時間短縮のため抽出。全1,360件は約60秒）
+> **🔍 全1,360件を今すぐ確認**: [GitHub Actions CI/CD](https://github.com/yuta158/api-test-portfolio/actions) でフルテスト結果＋カバレッジレポートを閲覧
 
 **何がわかるか**:
 
 - pytest + pytest-covによる自動テスト実行
 - カバレッジレポートによる品質可視化
-- テスト実行: 基本19件 ~5秒、全1,338件 ~60秒
+- テスト実行: 基本19件 ~5秒、全1,360件 ~60秒
 
 <details>
-<summary>全テスト実行コマンド（1,338件、約60秒）</summary>
+<summary>全テスト実行コマンド（1,360件、約60秒）</summary>
 
 ```bash
-# 全テスト実行（1,338件）
+# 全テスト実行（1,360件）
 uv run pytest --cov=utils --cov=config --cov=models --cov-report=term -q --color=yes
 
 # クイック実行（unit tests）
@@ -180,11 +180,12 @@ api-test-devops-portfolio/
 ├── config/              # 設定管理（Pydantic Settings）
 ├── utils/               # ユーティリティ（APIクライアント等）
 ├── models/              # データモデル
-├── tests/               # テストスイート（1,338件）
+├── tests/               # テストスイート（1,360件）
 │   ├── unit/            # 単体テスト
 │   ├── integration/     # 統合テスト
 │   ├── performance/     # パフォーマンステスト
-│   └── e2e/             # E2Eテスト（Playwright導入予定）
+│   ├── test_smoke.py    # スモークテスト
+│   └── conftest.py      # フィクスチャー
 ├── assets/              # デモGIF・画像
 ├── scripts/             # 自動化スクリプト
 ├── docs/                # ドキュメント
@@ -283,35 +284,32 @@ if init_sentry():
 
 | 種別 | 件数 | CI対象 | 備考 |
 |------|------|--------|------|
-| Unit tests | 1,290件 | ✅ | ビジネスロジック検証（Slow 1件含む） |
-| Integration tests | 39件（CI対象: 34件） | ✅（external 5件除外） | API統合検証 |
-| **CI合計（カバレッジ計測対象）** | **1,324件** | | |
-| **カバレッジ** | **95.83%** | | unit+integration条件 |
+| Unit tests | 1,316件 | ✅ | ビジネスロジック検証（Slow 1件含む） |
+| Integration tests | 35件（CI対象: 30件） | ✅（external 5件除外） | API統合検証 |
+| **CI合計（カバレッジ計測対象）** | **1,346件** | | |
+| **カバレッジ** | **96.15%** | | unit+integration条件 |
 
 **カバレッジ計測対象外テスト**
 
 | 種別 | 件数 | 除外理由 |
 |------|------|---------|
 | Performance tests | 7件 | 週次のみ実行（performanceマーカーのみ、PR CI除外） |
-| External API tests | 5件 | 実ネットワーク依存（Integration 39件の内数） |
+| External API tests | 5件 | 実ネットワーク依存（Integration 35件の内数） |
 | Smoke tests | 2件 | カバレッジ計測対象外（--no-covで実行、外部API疎通 + 設定ロード） |
-| E2E tests | 実装予定 | — |
 
-> **合計テスト数（参考）**: 1,338件（全テスト）/ CI計測対象: 1,324件
+> **合計テスト数（参考）**: 1,360件（全テスト）/ CI計測対象: 1,346件
 > カバレッジはCI安定性確保のため、決定論的テスト（unit + integration）のみを計測対象としています。
 
 ### テストピラミッド
 
 ```mermaid
 graph TB
-    subgraph "Test Pyramid - 1,338件（CI対象: 1,324件）"
-        E2E["🔝 E2E<br/>0件 → 5%目標"]
-        Integration["🔗 Integration<br/>39件（CI対象: 34件）→ 25%目標"]
-        Unit["🧱 Unit<br/>1,290件 → 70%目標"]
+    subgraph "Test Pyramid - 1,360件（CI対象: 1,346件）"
+        Integration["🔗 Integration<br/>35件（CI対象: 30件）→ 30%目標"]
+        Unit["🧱 Unit<br/>1,316件 → 70%目標"]
     end
-    E2E --> Integration --> Unit
+    Integration --> Unit
 
-    style E2E fill:#ff6b6b,color:#fff
     style Integration fill:#1e90ff,color:#fff
     style Unit fill:#2ed573,color:#fff
 ```
@@ -319,10 +317,9 @@ graph TB
 **戦略根拠**: テストピラミッド原則に基づき、CI速度と信頼性のバランスを考慮
 
 - **Unit (70%)**: ビジネスロジックの品質担保（高速・安定）
-- **Integration (25%)**: API・DB接続の検証（中速・実環境近似）
-- **E2E (5%)**: クリティカルパスのみ（低速・高信頼）
+- **Integration (30%)**: API・DB接続の検証（中速・実環境近似）
 
-> **Note**: Slow testsはunit/integrationマーカーを併用のためCI対象(1,324件)に含む。Performance tests(7件)はweeklyのみ実行（PR CI除外）。External testsはintegration markerを併用のためIntegration(39件)の内数。Smoke tests(2件)のみカバレッジCI対象外（全PRに--no-covで実行、外部API最小疎通 + 設定ロード確認のみ）。
+> **Note**: Slow testsはunit/integrationマーカーを併用のためCI対象(1,346件)に含む。Performance tests(7件)はweeklyのみ実行（PR CI除外）。External testsはintegration markerを併用のためIntegration(35件)の内数。Smoke tests(2件)のみカバレッジCI対象外（全PRに--no-covで実行、外部API最小疎通 + 設定ロード確認のみ）。
 
 ### テスト実行特性（CI最適化）
 
@@ -334,8 +331,8 @@ graph TB
 | `slow` | 実行時間 >3秒 | unit/integration併用テストのみCI対象（slow単独は除外） |
 | `external` | 外部API依存 | 週次のみ |
 | `performance` | 性能測定 | 週次のみ |
-| `e2e` | E2Eテスト | Playwright導入後 |
 
+> **Note**: E2Eテスト:（2026年6月判断: 範囲外として撤廃済み、Web UI 提供時に再評価）
 > **CI最適化戦略**: `external`マーカーを週次実行に分離し、PRバリデーションを高速化（目標: 10分以内）
 
 ### CI/CD 多段階パイプライン
@@ -345,7 +342,7 @@ graph TB
 | PR Validation | Pull Request | mypy + Unit + Integration + smoke | 20分 |
 | PR Markdown Quality Check | Pull Request| markdownlint && textlint | 5分 |
 | PR Trivy scan | Pull Request | Trivy脆弱性スキャン | 20分 |
-| Post Validation | Push to main/develop | mypy + Smoke + e2e | 15分 |
+| Post Validation | Push to main/develop | mypy + Smoke | 10分 |
 | Post Trivy scan | Push to main/develop | Docker Build + Trivy | 20分 |
 | Weekly Extended Test | Weekly | Performance + External API | 30分 |
 | Weekly Link Check | Weekly | Markdown link check | 15分 |

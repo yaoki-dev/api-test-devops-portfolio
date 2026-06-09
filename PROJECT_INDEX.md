@@ -23,11 +23,10 @@ api-test-devops-portfolio/
 │   ├── github_client.py   # GitHub API 専用クライアント
 │   ├── logger.py          # 構造化ログ（structlog）
 │   └── sentry_init.py     # エラー監視（Sentry SDK）
-├── tests/                  # テストスイート（19 test files）
-│   ├── unit/              # ユニットテスト（14 files）
-│   ├── integration/       # 統合テスト（3 files）
+├── tests/                  # テストスイート（全23 test files）
+│   ├── unit/              # ユニットテスト（16 files）
+│   ├── integration/       # 統合テスト（5 files）
 │   ├── performance/       # パフォーマンステスト（1 file）
-│   ├── e2e/               # E2Eテスト（準備中）
 │   ├── conftest.py        # pytest fixtures
 │   └── test_smoke.py      # スモークテスト（1 file）
 ├── scripts/                # 自動化スクリプト
@@ -137,15 +136,14 @@ api-test-devops-portfolio/
 ## 🧪 Test Coverage
 
 ### Test Statistics
-- **Total Test Files**: 19
-- **Unit Tests**: 14 files (tests/unit/)
-- **Integration Tests**: 3 files (tests/integration/)
+- **Total Test Files**: 23
+- **Unit Tests**: 16 files (tests/unit/)
+- **Integration Tests**: 5 files (tests/integration/)
 - **Performance Tests**: 1 file (tests/performance/)
 - **Smoke Tests**: 1 file (tests/test_smoke.py)
-- **E2E Tests**: 0 files (tests/e2e/ - prepared but empty)
 
 ### Coverage Metrics
-- **Current Coverage**: 96.06%（unit+integration条件）
+- **Current Coverage**: 96.15%（unit+integration条件）
 - **Target Coverage**: 85% (Week 5-6 goal) ✅ 達成済み
 - **Coverage Reports**: `reports/coverage.json`, `reports/htmlcov/`
 
@@ -283,12 +281,12 @@ uv run pytest && uv run ruff check . && uv run mypy utils/ config/ models/
 
 ---
 
-## 📊 Project Metrics
+## 📊 Project Metrics　(CI計測対象: unit + integration)
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Test Coverage | 96.06% | 85% (Week 5-6) |
-| Test Files | 19 | - |
+| Test Coverage | 96.15% | 85% |
+| CI Test Files (unit+integration) | 21 | - |
 | Python Version | 3.14 | - |
 | Code Quality | ruff + mypy | 0 errors |
 | Documentation | CLAUDE.md + README | - |
