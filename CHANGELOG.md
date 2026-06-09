@@ -197,7 +197,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `aws_secret_access_key` / `aws_session_token`: 本プロジェクト AWS 未使用
       (`.env` に AWS env 不在、AWS SDK / boto3 不導入).
     - `gitlab_token`: GitLab 統合不在.
-    - `slack_token`: Slack 統合不在 (`scripts/error_tracker.py` の Slack regex
+    - `slack_token`: Slack 統合不在 (`scripts/error_tracker.py`(削除済み 2026-06-09) の Slack regex
       は別レイヤーの汎用 CI ログマスキングで本実装と独立).
     - `github_token`: 本プロジェクトで使用中だが Authorization header 経由で
       送信されるため、既存 `authorization` キー redact で防御済.

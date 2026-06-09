@@ -259,7 +259,7 @@ def _validate_base_url_with_allowed_domains(v: str, allowed_domains: frozenset[s
             hostname[:200],
             len(allowed_domains),
         )
-        raise ValueError("SSRF Prevention: Domain not in allowlist. ")
+        raise ValueError("SSRF Prevention: Domain not in allowlist.")
 
     return v.rstrip("/")
 

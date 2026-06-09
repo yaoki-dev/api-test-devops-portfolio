@@ -68,7 +68,6 @@ addopts = [
     "-ra",                       # すべての結果を表示
     "--strict-markers",          # 未定義マーカーでエラー
     "--strict-config",           # 設定エラーで停止
-    "--ignore=tests/unit/test_error_tracker.py",  # pytest.iniから移行
     "--cov",                     # カバレッジ対象: [tool.coverage.run].source参照
     "--cov-report=term-missing", # 欠損行表示
     "--cov-report=html:reports/htmlcov",  # HTMLレポート
