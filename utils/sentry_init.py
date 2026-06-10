@@ -822,6 +822,7 @@ def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
                     event_id=event_dict.get("event_id"),
                 )
 
+
 # fail-closed防御による退避後、スクラビング失敗イベントを安全にSentryへ通知するフェーズ。
 # 以下の定数は、その内部イベント（_INTERNAL_TAG付与）専用のextra許可リストである。
 

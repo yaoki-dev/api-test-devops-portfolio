@@ -40,6 +40,11 @@ reviews:
       enabled: true
     markdownlint:
       enabled: true
+
+  # プロジェクトのレビュー共通ルール
+  instructions: |
+    レビューを行う際は、リポジトリのルート直下にある `REVIEW.md`のガイドラインを必ず遵守してください。
+    もし `REVIEW.md` のルールに違反しているコードを発見した場合は、その旨を指摘してください。
   path_instructions:
     - path: "config/**"
       instructions: |

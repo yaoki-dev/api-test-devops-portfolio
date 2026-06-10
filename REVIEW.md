@@ -37,7 +37,7 @@
 - **テスト債務分離**: unit / integration / smoke / external / performance の責務を混在させないこと。
 
 ### 6. CI / 品質ゲート (🟡 Suggested)
-- **品質ゲート**: ruff, mypy, pytest, coverage, gitleaks, trivy の失敗を無視しないこと。
+- **品質ゲート**: ruff, mypy, pytest, coverage, trufflehog, trivy の失敗を無視しないこと。
 - **外部API分離**: PR で実 API に依存するテストを実行しないこと。外部 API テストは weekly/manual に分離すること。
 - **flaky test対策**: flaky test は sleep で隠さず、原因を特定して deterministic に修正すること。
 - **実行戦略**: PRでは deterministic な unit/integration を優先し、external/performance は weekly/manual に分離すること。
@@ -63,6 +63,10 @@
 - suggested / nit は request changes ではなく comment として扱うこと。
 - 既存方針と異なる提案をする場合は、代替案と trade-off を示すこと。
 - ポートフォリオ規模に対して過剰な抽象化、過剰なツール追加、過剰なセキュリティ要件化は避けること。
+- DRY改善は以下の条件をすべて満たす場合にのみ指摘すること：
+  1. 同一ロジックの重複が4箇所以上存在する
+  2. 共通化しても可読性が低下しない
+  3. テストや仕様理解が難しくならない
 - スコープ外の大規模リファクタ、設計変更、ツール追加は、明確な不具合やリスクがない限り blocking としないこと。
 - 修正提案には、必要に応じて unit / integration / smoke / external / performance のどのテストで担保するかを示すこと。
 
