@@ -96,6 +96,8 @@ docs/search_index.json
 
 # Backup Files
 *.backup
+*.bak
+*.bk
 
 # Internal Project Management
 docs/text.md

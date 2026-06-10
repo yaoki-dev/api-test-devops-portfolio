@@ -471,7 +471,7 @@ async def test_async_client_headers_empty_dict_preserves_defaults(mock_base_url:
 
 
 class TestLogErrorWithStderrFallback:
-    """_log_error_with_stderr_fallback の stderr フォールバック分岐 (PR#347 Q-8/B-3 DRY)。
+    """_log_error_with_stderr_fallback の stderr フォールバック分岐。
 
     close・cache 失敗ログで共通する「logger.error → 失敗時 stderr」パターンを
     保証する。MemoryError/RecursionError は fail-fast 再 raise、それ以外の logger
@@ -535,7 +535,7 @@ class TestLogErrorWithStderrFallback:
         """logger.error が MemoryError/RecursionError を投げた場合は再 raise する。
 
         致命例外は except 句の評価順序で先取りされ、stderr 握りつぶしの対象外
-        （PR#347 Q-6: sync/async fail-fast 対称性）。
+        （sync/async fail-fast 対称性）
         """
         mock_logger = Mock()
         mock_logger.error.side_effect = fatal_exc()

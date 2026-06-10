@@ -126,7 +126,7 @@ async def test_aclose_unexpected_error_suppressed_logs_error() -> None:
 async def test_make_request_with_retry_raises_when_client_closed() -> None:
     """close 後（_client=None）に _make_request_with_retry を呼ぶと RuntimeError を送出する。
 
-    PR#347 review fix: 従来は None.request アクセスで AttributeError になっていたが、
+    従来は None.request アクセスで AttributeError になっていたが、
     use-after-close を明示的な RuntimeError として通知する（github_client.py L878 と同一パターン）。
     """
     client = AsyncAPIClient(base_url="https://test.com")
@@ -139,7 +139,7 @@ async def test_make_request_with_retry_raises_when_client_closed() -> None:
 def test_sync_close_sets_client_none_even_when_close_raises() -> None:
     """SyncAPIClient.close() は close() が例外を投げても _client=None を保証する。
 
-    PR#347 review fix A: close() 例外時に _client が残存すると _request 冒頭の
+    close() 例外時に _client が残存すると _request 冒頭の
     use-after-close ガード（_client is None 判定）をすり抜け、壊れたクライアントへ
     リクエストが発行される状態不整合が生じる。finally で _client=None を保証し、
     例外は従来通り呼び出し元へ伝播させる（AsyncAPIClient._close_async_client と対称）。

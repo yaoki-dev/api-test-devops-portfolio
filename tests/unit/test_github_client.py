@@ -463,9 +463,9 @@ async def test_network_error_retry_handling(
 async def test_network_error_final_retry_logs_error(
     network_exception: httpx.NetworkError | httpx.RemoteProtocolError,
 ) -> None:
-    """NetworkError最終リトライ時にERRORレベルで github_retry_failed がログ出力される。
+    """NetworkError最終リトライ時にERRORレベルで、github_retry_failed がログ出力される。
 
-    PR#347 review fix #3: 最終試行後の ERROR ログ欠落の回帰テスト。
+    最終試行後の、ERRORログ欠落の回帰テスト
     """
     respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=network_exception)
 
@@ -685,7 +685,7 @@ async def test_context_manager_initialization():
 async def test_aexit_aclose_known_exception_is_suppressed_with_warning(
     close_exception: Exception, expected_type: str, expected_module: str
 ) -> None:
-    """__aexit__ で httpx.CloseError / OSError は warning ログのみ出力する（PR#347 #18）。
+    """__aexit__ で httpx.CloseError / OSError は warning ログのみ出力する。
 
     既知のクローズ時例外は warning レベルで記録し、body 例外を上書きしない。
     """
@@ -700,25 +700,22 @@ async def test_aexit_aclose_known_exception_is_suppressed_with_warning(
     warning_logs = [log for log in log_output if log.get("event") == known_event]
     assert len(warning_logs) == 1
     assert warning_logs[0]["error_type"] == expected_type
-    # PR#347 review Q2: third-party 例外起点モジュール識別のため error_module を併用
+    # third-party 例外起点モジュール識別のため error_module を併用
     assert warning_logs[0]["error_module"] == expected_module
     assert client._client is None
     # 既知例外では error ログは出ない
     unexpected_event = "async_github_client_aclose_unexpected_error"
     error_logs = [log for log in log_output if log.get("event") == unexpected_event]
     assert len(error_logs) == 0
-    # PR#347 review #3-1: else節スキップ検証。aclose() 例外時は __aexit__ の
+    # else節スキップ検証。aclose() 例外時は __aexit__ の
     # else 節 (utils/github_client.py L291-292) が実行されず "async_github_client_closed"
-    # info ログは出力されない設計意図 (test_aexit_normal_close_logs_info L2431 の対照)。
+    # info ログは出力されない設計意図 (test_aexit_normal_close_logs_info L2431 の対照)
     closed_logs = [log for log in log_output if log.get("event") == "async_github_client_closed"]
     assert len(closed_logs) == 0
 
 
 async def test_aexit_aclose_unexpected_exception_reraises_when_no_body_exception() -> None:
     """__aexit__ で body 例外なし + 予期しない close 例外 → close_exc を re-raise する。
-
-    （PR#347 二段構え）
-
     body 例外がない状態（exc_type is None）では、aclose() の予期しない例外は
     実装バグとして呼び出し元に伝播させる。
     error ログ（has_body_exception=False, exc_info=True）が記録されてから re-raise。
@@ -734,26 +731,26 @@ async def test_aexit_aclose_unexpected_exception_reraises_when_no_body_exception
     error_logs = [log for log in log_output if log.get("event") == unexpected_event]
     assert len(error_logs) == 1
     assert error_logs[0]["error_type"] == "RuntimeError"
-    # PR#347 review Q2: third-party 例外起点モジュール識別のため error_module を併用
+    # third-party 例外起点モジュール識別のため error_module を併用
     assert error_logs[0]["error_module"] == "builtins"
     assert error_logs[0]["has_body_exception"] is False
-    # exc_info=True によりスタックトレースが記録される（PR#347 二段構え）
+    # exc_info=True によりスタックトレースが記録される
     assert error_logs[0].get("exc_info") is True
     # 予期しない例外では warning ログは出ない
     known_event = "async_github_client_aclose_failed"
     warning_logs = [log for log in log_output if log.get("event") == known_event]
     assert len(warning_logs) == 0
-    # PR#347 review #3-1: else節スキップ検証。aclose() 例外時は __aexit__ の
+    # else節スキップ検証。aclose() 例外時は __aexit__ の
     # else 節 (utils/github_client.py L291-292) が実行されず "async_github_client_closed"
-    # info ログは出力されない設計意図 (test_aexit_normal_close_logs_info L2431 の対照)。
+    # info ログは出力されない設計意図 (test_aexit_normal_close_logs_info L2431 の対照)
     closed_logs = [log for log in log_output if log.get("event") == "async_github_client_closed"]
     assert len(closed_logs) == 0
 
 
 async def test_aclose_standalone_success_sets_client_none() -> None:
-    """standalone aclose() 正常系 → else 節で _client=None + info ログ。
+    """standalone aclose() 正常系 → else 節で _client=None + info ログ
 
-    （PR#347 SF-3: __aexit__ を経由しない finally 用クローズ経路の直接検証）
+    __aexit__ を経由しない finally 用クローズ経路の直接検証
     """
     client = AsyncGitHubClient()
     client._client = AsyncMock()
@@ -801,7 +798,7 @@ async def test_aclose_standalone_unexpected_is_suppressed() -> None:
     """standalone aclose() で予期しない例外 → 抑制（re-raise しない）・error ログ・_client=None。
 
     __aexit__ は body 例外なし時に re-raise するが、standalone aclose は伝播中の
-    例外を上書きしないよう常に抑制する（AsyncAPIClient.aclose と対称, PR#347 SF-3）。
+    例外を上書きしないよう常に抑制する（AsyncAPIClient.aclose と対称)
     """
     client = AsyncGitHubClient()
     client._client = AsyncMock()
@@ -837,7 +834,7 @@ async def test_aclose_standalone_idempotent_when_client_none() -> None:
 async def test_aexit_body_exception_not_overridden_by_close_exception() -> None:
     """__aexit__ で本体例外発生中に aclose() も予期しない例外を出すケース。
 
-    PR#347 review Q8: body 例外 (exc_val) が close 例外で上書きされないこと
+    body 例外 (exc_val) が close 例外で上書きされないこと
     (re-raise しない) を end-to-end で検証する。設計意図:
     ``async with`` body 例外 + aclose 例外の両発生時、原因情報 (body 例外) を
     優先伝播させて debuggability を維持する (CWE-755 例外マスク回避)。
@@ -854,7 +851,7 @@ async def test_aexit_body_exception_not_overridden_by_close_exception() -> None:
             client._client.aclose = AsyncMock(side_effect=RuntimeError("close-failed"))
             raise ValueError("body-error")
 
-    # close 例外は re-raise しない。body 例外は ValueError として外側に伝播。
+    # close 例外は re-raise しない。body 例外は ValueError として外側に伝播
     # RuntimeError は予期しない例外 → error ログ (has_body_exception=True)
     unexpected_event = "async_github_client_aclose_unexpected_error"
     error_logs = [log for log in log_output if log.get("event") == unexpected_event]
@@ -862,13 +859,13 @@ async def test_aexit_body_exception_not_overridden_by_close_exception() -> None:
     assert error_logs[0]["error_type"] == "RuntimeError"
     assert error_logs[0]["error_module"] == "builtins"
     assert error_logs[0]["has_body_exception"] is True
-    # exc_info=True によりスタックトレースが記録される（PR#347 二段構え）
+    # exc_info=True によりスタックトレースが記録される
     assert error_logs[0].get("exc_info") is True
     # warning ログは出ない
     known_event = "async_github_client_aclose_failed"
     warning_logs = [log for log in log_output if log.get("event") == known_event]
     assert len(warning_logs) == 0
-    # PR#347 review #3-1: else節スキップ検証。body+close 二重例外時も
+    # else節スキップ検証。body+close 二重例外時も
     # else 節 (utils/github_client.py L291-292) は実行されず "async_github_client_closed"
     # info ログは出力されない (test_aexit_normal_close_logs_info L2431 の対照)。
     closed_logs = [log for log in log_output if log.get("event") == "async_github_client_closed"]
@@ -2002,7 +1999,7 @@ def test_enforce_cache_limit_evicts_multiple_entries_when_excess_gt_one() -> Non
 
 
 def test_update_etag_cache_enforces_limit_before_insert_with_reserve() -> None:
-    """_update_etag_cache は挿入前に reserve=1 で退避する（瞬間 max+1 防止, PR#347 #9）。
+    """_update_etag_cache は挿入前に reserve=1 で退避する（瞬間 max+1 防止）
 
     max+1 は呼び出し中の過渡状態のため返却後のサイズでは観測できない。代わりに
     _enforce_cache_limit 呼び出し時点を捕捉し、(a) reserve=1 が渡ること、(b) その時点で
@@ -2059,7 +2056,7 @@ def test_enforce_cache_limit_invariant_violation_clears_both_caches() -> None:
     assert client._etag_cache == {}
     assert client._data_cache == {}
     # logger.error呼び出し検証（Sentry捕捉対象）
-    # PR#347 review #3-2: etag_only_keys_truncated/data_only_keys_truncated は
+    # etag_only_keys_truncated/data_only_keys_truncated は
     # 実際に切り詰められた場合のみ True。本テストは 0/1 件のため False。
     mock_logger.error.assert_called_once_with(
         "cache_invariant_violation",
@@ -2117,7 +2114,7 @@ def test_enforce_cache_limit_detects_key_divergence_with_same_length() -> None:
     assert client._etag_cache == {}
     assert client._data_cache == {}
     # logger.error 呼び出し検証 (sizeはlogに残るが判定はkeys()で行われる)
-    # PR#347 review #3-2: etag_only_keys_truncated/data_only_keys_truncated は
+    # etag_only_keys_truncated/data_only_keys_truncated は
     # 実際に切り詰められた場合のみ True。本テストは 1 件のため False。
     mock_logger.error.assert_called_once_with(
         "cache_invariant_violation",
@@ -2265,11 +2262,11 @@ def test_parse_json_response_invalid_json_uses_sanitized_cause() -> None:
 
 
 def test_sanitized_jsondecodeerror_str_contains_no_response_body() -> None:
-    """_SanitizedJSONDecodeError.__str__() は型・位置情報のみで body を含まない（PR#347 T-2）。
+    """_SanitizedJSONDecodeError.__str__() は型・位置情報のみで body を含まない
 
     現状の PII 漏洩防止は __cause__ チェーン切断（__context__=None）に依存するが、
     __str__ 出力自体が response body を構造的に保持しないことを直接検証し、
-    将来のフォーマット変更による回帰を検出する。colno は PR#347 Q-3 で追加した診断情報。
+    将来のフォーマット変更による回帰を検出する。
     """
     cause = _SanitizedJSONDecodeError(
         "json.JSONDecodeError",
@@ -2281,19 +2278,19 @@ def test_sanitized_jsondecodeerror_str_contains_no_response_body() -> None:
 
     rendered = str(cause)
     # 型・msg・位置情報のみが厳密に含まれる（body 由来の文字列を混入させる余地がない）。
-    # msg は json.JSONDecodeError.msg（静的パーサ診断文字列）で PII 非含有（PR#347 SF-1）。
+    # msg は json.JSONDecodeError.msg（静的パーサ診断文字列）で PII 非含有
     assert rendered == "json.JSONDecodeError: Expecting value pos=42, lineno=3, colno=7"
-    assert cause.msg == "Expecting value"  # PR#347 SF-1: 破損種別識別用 msg を保持
+    assert cause.msg == "Expecting value"  # 破損種別識別用 msg を保持
     assert cause.pos == 42
     assert cause.lineno == 3
-    assert cause.colno == 7  # PR#347 Q-3: 診断用 colno を保持
+    assert cause.colno == 7  # 診断用 colno を保持
     # 仮にレスポンス body 由来の機密文字列があっても __str__ には現れない
     assert "password" not in rendered
     assert "token" not in rendered
 
 
 def test_sanitized_jsondecodeerror_reduce_roundtrip_preserves_fields() -> None:
-    """_SanitizedJSONDecodeError は __reduce__ で全フィールドを復元できる（PR#347 Q-2）。
+    """_SanitizedJSONDecodeError は __reduce__ で全フィールドを復元可能
 
     非標準 __init__ シグネチャ（5 引数）のため __reduce__ を実装。pytest-xdist の
     worker→controller 例外転送や Sentry SDK シリアライズが依存する pickle プロトコル
@@ -2383,7 +2380,7 @@ def test_update_etag_cache_clears_stale_cache_and_logs_endpoint(
 
 
 def test_update_etag_cache_invalid_etag_evicts_stale_cache() -> None:
-    """無効な形式のETag受信時、既存の stale キャッシュを破棄する（PR#347 review fix）。
+    """無効な形式のETag受信時、既存の stale キャッシュを破棄
 
     従来は warning ログ後に return するのみで _etag_cache/_data_cache が残存し、
     次回リクエストで古い ETag による 304 経路で stale データが再利用される恐れがあった。
@@ -2424,7 +2421,7 @@ def test_check_rate_limit_warning_triggers(remaining: int) -> None:
     assert len(warning_logs) == 1
     assert warning_logs[0]["remaining"] == remaining
     assert warning_logs[0]["reset_time"] == datetime.fromtimestamp(1700000000, tz=UTC).isoformat()
-    assert result == 1700000000  # PR#347: return value verification
+    assert result == 1700000000  # return value verification
 
 
 def test_check_rate_limit_warning_no_warning_at_boundary() -> None:
@@ -2439,7 +2436,7 @@ def test_check_rate_limit_warning_no_warning_at_boundary() -> None:
     assert len(warning_logs) == 0
     for log in logs:
         assert "remaining" not in log  # threshold以上では remaining フィールドを出力しない
-    assert result is None  # PR#347: return value verification
+    assert result is None  # return value verification
 
 
 def test_handle_http_status_error_truncates_long_body() -> None:
@@ -2579,7 +2576,7 @@ async def test_429_response_missing_reset_header_falls_back_to_zero() -> None:
             await client.get_user("octocat")
 
     assert exc_info.value.reset_time == 0
-    assert "unknown" in str(exc_info.value)  # else分岐のメッセージ内容を保護 (PR#347)
+    assert "unknown" in str(exc_info.value)  # else分岐のメッセージ内容を保護
     assert route.call_count == 1
 
 
@@ -2600,7 +2597,7 @@ async def test_httpx_status_error_429_missing_reset_header_falls_back_to_zero() 
             await client.get_user("octocat")
 
     assert exc_info.value.reset_time == 0
-    assert "unknown" in str(exc_info.value)  # else分岐のメッセージ内容を保護 (PR#347)
+    assert "unknown" in str(exc_info.value)  # else分岐のメッセージ内容を保護
     assert route.call_count == 1
 
 
@@ -2927,11 +2924,6 @@ async def test_304_returns_correct_cached_data_per_params() -> None:
     assert created_route.call_count == 1
 
 
-# =============================================================================
-# PR#347 追加テスト（3件）
-# =============================================================================
-
-
 def test_rate_limit_error_overflow_fallback() -> None:
     """RateLimitError: 極端な reset_time で OverflowError/OSError → unix:{reset_time} フォールバック
 
@@ -2953,7 +2945,7 @@ def test_rate_limit_error_overflow_fallback() -> None:
     ],
 )
 def test_rate_limit_error_negative_or_zero_reset_time(negative_reset_time: int) -> None:
-    """RateLimitError: reset_time が 0 以下の場合 "unknown" フォールバック (PR#347 review T-1)
+    """RateLimitError: reset_time が 0 以下の場合 "unknown" フォールバック
 
     実装 (utils/github_client.py:128-134) は `if reset_time > 0: ... else: reset_str = "unknown"`。
     負値 / 0 はいずれも else 分岐へ流れ "unknown" メッセージを生成する。
@@ -3109,8 +3101,8 @@ def test_cache_key_build_failure_logs_endpoint_and_error_type_without_pii() -> N
     with capture_logs() as log_output, pytest.raises(GitHubAPIError):
         AsyncGitHubClient._cache_key("/repos", {"secret_param": NonSerializable()})
 
-    # 他テストと統一して structlog capture_logs で検証する（_module_logger への
-    # patch は内部実装名に密結合し rename で壊れるため。PR#347 T-1）。
+    # 他テストと統一して structlog capture_logs で検証
+    # （_module_logger へのpatch は内部実装名に密結合し rename で壊れるため）
     warnings = [log for log in log_output if log["event"] == "cache_key_build_failed"]
     assert len(warnings) == 1
     log = warnings[0]
@@ -3137,7 +3129,7 @@ def test_cache_key_unicode_encode_error_logs_endpoint_and_error_type_without_pii
     with capture_logs() as log_output, pytest.raises(GitHubAPIError):
         AsyncGitHubClient._cache_key("/repos", {"secret_param": NonEncodable()})
 
-    # 他テストと統一して structlog capture_logs で検証する（PR#347 T-1）。
+    # 他テストと統一して structlog capture_logs で検証
     warnings = [log for log in log_output if log["event"] == "cache_key_build_failed"]
     assert len(warnings) == 1
     log = warnings[0]

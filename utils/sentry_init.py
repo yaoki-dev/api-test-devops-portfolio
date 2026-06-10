@@ -43,8 +43,8 @@ from utils.logger import get_logger
 # _before_send 冒頭で検出して scrub をスキップ通過させることで無限ループ
 # (capture_message → _before_send → 例外 → capture_message ...) を遮断する。
 # value はプロセス起動ごとにランダム生成し、OSS で公開された固定値を悪用した
-# scrub バイパス (任意 event tag への注入で _before_send を素通りさせる攻撃) を
-# 防ぐ (PR#347 review)。_has_internal_tag / _emit_scrub_failure_to_sentry は
+# scrub バイパス (任意 event tag への注入で _before_send を素通りさせる攻撃) を防ぐ。
+# _has_internal_tag / _emit_scrub_failure_to_sentry は
 # 同一モジュール global を参照するため一貫して機能する。
 _INTERNAL_TAG_KEY: str = "sentry_internal_event"
 _INTERNAL_TAG_VALUE: str = secrets.token_hex(16)
@@ -59,9 +59,9 @@ def _has_internal_tag(tags: Any) -> bool:
     受け入れる契約 (``test_before_send_list_tags_redacts_sensitive_key``) のため、
     防御の対称性として recursion guard も両形式に対応する (defense-in-depth)。
 
-    （PR#347 S-1: dict が常態の現行 SDK では list 分岐は一見 YAGNI に見えるが、
+    dict が常態の現行 SDK では list 分岐は一見 YAGNI に見えるが、
     上記の ``_before_send`` list[tuple] 受け入れ契約をテストが独立に検証しているため
-    意図的に維持する。当該契約テスト廃止時にのみ本分岐の削除を検討すること。）
+    意図的に維持する。当該契約テスト廃止時にのみ本分岐の削除を検討すること。
 
     判定仕様:
         - dict 形式: ``tags[_INTERNAL_TAG_KEY] == _INTERNAL_TAG_VALUE`` で判定。
@@ -89,9 +89,9 @@ _logger = get_logger(__name__)
 def _safe_log_warning(event: str, **fields: Any) -> None:
     """PII scrub フロー内で fail-open 用に warning ログを送出する（例外抑止）。
 
-    PR#347 review: ``_scrub_sensitive_data`` / ``_scrub_exception_field`` の 6 箇所に
-    重複していた ``try: _logger.warning(...) / except Exception: pass`` パターンを
-    DRY 化したヘルパー。関数内で ``# noqa: BLE001, S110`` を 1 箇所に集約し、
+    ``_scrub_sensitive_data`` / ``_scrub_exception_field`` の 6 箇所に重複していた
+    ``try: _logger.warning(...) / except Exception: pass` パターンをDRY 化したヘルパー。
+    関数内で ``# noqa: BLE001, S110`` を 1 箇所に集約し、
     ``try/except Exception: pass`` でロガー例外を抑止する。
 
     fail-open ロジック内部でのみ使用する想定。logger 失敗時は完全無音を避け、
@@ -110,7 +110,7 @@ def _safe_log_warning(event: str, **fields: Any) -> None:
         # 致命的エラーとして必ず再raise（fail-fast）。
         # `# fmt: skip`: ruff format はタプル括弧を除去するが、Python 3.14 (PEP 758)
         # では括弧なし `except A, B:` も有効な構文（旧 Py2 binding ではない）。
-        # 可読性のため括弧付きタプルを保持する（utils/ 全体で統一の規約。PR#347 #2-2）。
+        # 可読性のため括弧付きタプルを保持する（utils/ 全体で統一の規約）。
         raise
     except Exception as exc:  # noqa: BLE001
         # ロガー失敗 → fail-open（イベント drop 防止）だが、
@@ -121,7 +121,7 @@ def _safe_log_warning(event: str, **fields: Any) -> None:
                 f"event={event!r} error_type={type(exc).__name__} "
                 f"error_module={type(exc).__module__} "
                 # fields のキー名は呼び出し元によっては機密語を含みうるため件数のみ出力する
-                # （event 名で呼び出し箇所は特定可能, PR#347 review SF-3）。
+                # （event 名で呼び出し箇所は特定可能）。
                 f"fields_count={len(fields)}",
                 file=sys.stderr,
                 flush=True,
@@ -143,7 +143,7 @@ def _scrub_exception_frame(frame: Any) -> Any:
         return frame
 
     scrubbed_frame = dict(frame)
-    # PR#347 Q-13: ソースコンテキスト (pre_context / context_line / post_context) を除去する。
+    # ソースコンテキスト (pre_context / context_line / post_context) を除去する。
     # Sentry はデフォルトでエラー行周辺のソース行を収集するが、ソース中にハードコードされた
     # 機密値や PII がそのまま送信されるリスクがある (CWE-312)。_scrub_sensitive_data は
     # vars (変数値) のみを対象としソース行テキストは非カバーのため、防御の深さとして drop する。
@@ -179,7 +179,7 @@ def _scrub_exception_stacktrace(stacktrace: dict[str, Any]) -> dict[str, Any]:
 
 def _scrub_exception_value_item_extra_keys(scrubbed_value: dict[str, Any]) -> None:
     """exception value item の value/stacktrace 以外のトップレベルキーを in-place で
-    機密スクラブする (PR#347 Q-1)。
+    機密スクラブする。
 
     標準 Sentry exception value item は type/module/mechanism 等で PII を含まないが、
     カスタム SDK 統合が token/password 等を value item に直接付与した場合の漏洩を
@@ -233,7 +233,7 @@ def _scrub_exception_value_item(value_item: Any) -> Any:
             action="skip_stacktrace_scrub",
         )
 
-    # value / stacktrace 以外のトップレベルキーも機密判定する (PR#347 Q-1)。
+    # value / stacktrace 以外のトップレベルキーも機密判定する。
     _scrub_exception_value_item_extra_keys(scrubbed_value)
 
     return scrubbed_value
@@ -341,26 +341,25 @@ _NORMALIZED_SENSITIVE_KEYS: frozenset[str] = frozenset(
 )
 # プレフィックス境界 `(?:^|[_\d])` はハイフンを含まないが、入力キーは _is_sensitive_key の
 # ステップ4 (`key_norm.lower().replace("-", "_")`) でハイフンがアンダースコアへ正規化済みのため、
-# `x-auth-token` → `x_auth_token` として `_` 境界で正しくマッチする (PR#347 review Q-4)。
+# `x-auth-token` → `x_auth_token` として `_` 境界で正しくマッチする。
 # 左境界 `[_\d]` は数字を含むが小文字英字を含まないため非対称: `v2token` → True
 # （数字 `2` が左境界）/ `footoken` → False（小文字 `o` は境界外）。これは単語先頭の
 # 機密語のみを検出し、複合語中の偶発的な部分一致を避ける意図的設計（テストで担保。
-# PR#347 review #2-5）。
 _SENSITIVE_KEY_PATTERN: re.Pattern[str] = re.compile(
     r"(?:^|[_\d])(?:"
     + "|".join(
         re.escape(sensitive)
         for sensitive in sorted(_NORMALIZED_SENSITIVE_KEYS, key=len, reverse=True)
     )
-    + r")(?=[^a-z]|$)"  # suffix-PII(ssnumber/cvvcode等)対応 (PR#347)
+    + r")(?=[^a-z]|$)"  # suffix-PII(ssnumber/cvvcode等)対応
 )
-# 全大文字命名 fallback 用: アンダースコア除去後の完全一致集合 (PR#347)
+# 全大文字命名 fallback 用: アンダースコア除去後の完全一致集合
 # APIKEY / ACCESSTOKEN 等は ACRONYM 分割が効かないため別途事前計算
 _COMPACT_SENSITIVE_KEYS: frozenset[str] = frozenset(
     sensitive.replace("_", "") for sensitive in _NORMALIZED_SENSITIVE_KEYS
 )
 
-# camelCase / ACRONYM 分割用の事前コンパイル済みパターン (PR#347 review)。
+# camelCase / ACRONYM 分割用の事前コンパイル済みパターン
 # 生リテラル re.sub の re._cache 依存を排し、設計を統一するため、
 # すべての正規表現をモジュールレベルで事前コンパイルしています。
 _ACRONYM_PATTERN: re.Pattern[str] = re.compile(r"([A-Z]+)([A-Z][a-z])")
@@ -402,13 +401,13 @@ def _is_sensitive_key(key: str) -> bool:
         機密キーと判定された場合 True。
 
     """
-    key_norm = _ACRONYM_PATTERN.sub(r"\1_\2", key)  # ACRONYMWord → ACRONYM_Word (PR#347)
+    key_norm = _ACRONYM_PATTERN.sub(r"\1_\2", key)  # ACRONYMWord → ACRONYM_Word
     key_norm = _CAMEL_PATTERN.sub("_", key_norm)  # wordWord → word_Word（lower()前に分割）
     key_norm = key_norm.lower().replace("-", "_").replace(".", "_")
     if _SENSITIVE_KEY_PATTERN.search(key_norm) is not None:
         return True
     # 全大文字命名 fallback (APIKEY, ACCESSTOKEN 等): ACRONYM 分割が効かない場合に
-    # アンダースコア除去後の完全一致で補完 (PR#347)
+    # アンダースコア除去後の完全一致で補完
     return key_norm.replace("_", "") in _COMPACT_SENSITIVE_KEYS
 
 
@@ -457,7 +456,7 @@ def _scrub_span_item(item: Any, _depth: int) -> Any:
         # _depth+1 が MAX_SCRUB_DEPTH に到達すると _scrub_sensitive_data は
         # "[MAX_DEPTH_EXCEEDED]" (str) を返す。str.get() による AttributeError →
         # _before_send の except 捕捉 → イベントのサイレントドロップを防ぐ防御ガード
-        # （PR#347 B-1）。現呼び出し元 _scrub_sentry_field は _depth=0 固定のため到達
+        # 現呼び出し元 _scrub_sentry_field は _depth=0 固定のため到達
         # しないが、将来 _scrub_span_item が深い再帰文脈から呼ばれた場合の保険。
         return scrubbed
     description = scrubbed.get("description")
@@ -545,7 +544,7 @@ def _scrub_path_params(params: str) -> str:
     """RFC 2396 パスパラメータ (`;key=value` 形式) をスクラブする。
 
     query string (_scrub_query_string) と同じ機密キー分類を使い、path 固有の
-    email PII 除去も行う (PR#347 B-1, supersedes #7)。
+    email PII 除去も行う
 
     アルゴリズム:
         - params を ";" で split。
@@ -592,7 +591,7 @@ def _scrub_url(url: str) -> str:
     - query: `_scrub_query_string` でキーベーススクラブ
     - path: メールアドレス形式のPII (`_PATH_PII_PATTERN`) を [REDACTED] に置換 (#16)
     - params: RFC 2396 パスパラメータ (`;key=value` 形式) を `_scrub_path_params` で
-              キーベーススクラブ + email PII 除去 (PR#347 B-1, supersedes #7)
+              キーベーススクラブ + email PII 除去
     - fragment: 完全除去（PII漏洩防止）
     """
     parsed = urlparse(url)
@@ -616,7 +615,7 @@ def _scrub_url(url: str) -> str:
             parsed.scheme,
             netloc,
             _PATH_PII_PATTERN.sub("[REDACTED]", parsed.path),
-            # RFC 2396 パスパラメータ: キーベーススクラブ + email PII 除去 (PR#347 B-1)
+            # RFC 2396 パスパラメータ: キーベーススクラブ + email PII 除去
             _scrub_path_params(parsed.params) if parsed.params else "",
             _scrub_query_string(parsed.query) if parsed.query else "",
             "",  # fragment を除去（PII 漏洩防止）
@@ -672,7 +671,7 @@ def _scrub_exception_field(exception_value: dict[str, Any]) -> dict[str, Any]:
     PII を含まない FileNotFoundError 等の診断情報も失われる。将来改善する場合は、
     特定キーワードのみをマスクする selective redact へ移行する。
 
-    **values[*].type は意図的に redact しない** (PR#347 review S-1):
+    **values[*].type は意図的に redact しない**:
         `type` フィールドは例外クラス名 (`ValueError`, `KeyError` 等) を保持し、
         通常 PII を含まない。例外分類は Sentry UI / alert routing / metric 集計の
         primary key として機能するため、redact すると観測性が壊滅的に低下する。
@@ -702,7 +701,7 @@ def _scrub_exception_field(exception_value: dict[str, Any]) -> dict[str, Any]:
     """
     values = exception_value.get("values")
     if isinstance(values, dict):
-        # dict 型 values: _scrub_sensitive_data で内容をスクラブして返す (PR#347 review #6)
+        # dict 型 values: _scrub_sensitive_data で内容をスクラブして返す
         result = dict(exception_value)
         result["values"] = _scrub_sensitive_data(values)
         return result
@@ -711,10 +710,10 @@ def _scrub_exception_field(exception_value: dict[str, Any]) -> dict[str, Any]:
         # (getsentry/sentry interfaces/exception.py: get_path(data, "values",
         # default=[]) で空リスト扱い、Relay schema でも values は必須でない)。
         # よって誤検知 WARNING を出さずに、他キーをベストエフォートスクラブして返す
-        # (PR#347 review #8: 正常構造に対するログノイズ抑制)。
+        # 正常構造に対するログノイズ抑制
         scrubbed = _scrub_sensitive_data(exception_value)
         # _depth=0 開始のため dict 以外（"[MAX_DEPTH_EXCEEDED]"）は構造上発生しないが、
-        # cast による型隠蔽を避け isinstance ガードで型安全を明示する（PR#347 Q-2）。
+        # cast による型隠蔽を避け isinstance ガードで型安全を明示する。
         return scrubbed if isinstance(scrubbed, dict) else {}
     if not isinstance(values, list):
         # str / int 等、None でも list/dict でもない真に予期しない型のみ WARNING。
@@ -723,10 +722,10 @@ def _scrub_exception_field(exception_value: dict[str, Any]) -> dict[str, Any]:
             actual_type=type(values).__name__,
             action="exception_scrub_fallback",
         )
-        # 構造不明でも _scrub_sensitive_data でベストエフォートスクラブ (PR#347)
+        # 構造不明でも _scrub_sensitive_data でベストエフォートスクラブ
         scrubbed = _scrub_sensitive_data(exception_value)
         # _depth=0 開始のため dict 以外（"[MAX_DEPTH_EXCEEDED]"）は構造上発生しないが、
-        # cast による型隠蔽を避け isinstance ガードで型安全を明示する（PR#347 Q-2）。
+        # cast による型隠蔽を避け isinstance ガードで型安全を明示する。
         return scrubbed if isinstance(scrubbed, dict) else {}
 
     result = dict(exception_value)
@@ -774,13 +773,12 @@ def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
             if field == "exception":
                 # exception が list 形式（Sentry 標準は dict だが custom before_send
                 # 等で生じうる）でも values[*].value の REDACTION と stackframe vars
-                # scrub を適用し、PII（例外メッセージ・frame 変数）の素通りを防ぐ
-                # （PR#347 #1 blocker: defense-in-depth）。
+                # scrub を適用し、PII（例外メッセージ・frame 変数）の素通りを防ぐ (defense-in-depth）  # noqa: E501
                 # dict 要素は exception 専用スクラブ、非 dict 要素（custom hook が
                 # 生成しうる list/tuple/scalar）は汎用 _scrub_list_item で再帰スクラブ
                 # する。これにより tags/spans/その他（L697）の list 分岐と同様に
                 # 「全分岐で非 dict 要素も再帰スクラブ・素通しゼロ」を満たし、dispatch の
-                # 一貫性を保つ（PR#347 codex adversarial review: fail-open 非対称の解消）。
+                # 一貫性保持のため、fail-openによる非対称を解消。
                 event_dict[field] = [
                     _scrub_exception_value_item(item)
                     if isinstance(item, dict)
@@ -796,7 +794,7 @@ def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
         else:
             # dict/list以外はスクラブ不可能なため、安全サイドに倒して置換する（fail-closed）。
             # exception フィールドは Sentry exception interface 仕様に準拠した
-            # 無害なプレースホルダ構造へ置換し PII 素通りを防ぐ（PR#347 review #10）。
+            # 無害なプレースホルダ構造へ置換し PII 素通りを防ぐ。
             # 他フィールドは空 dict に置換する。
             if field == "exception":
                 event_dict[field] = {
@@ -824,11 +822,11 @@ def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
                     event_id=event_dict.get("event_id"),
                 )
 
+# fail-closed防御による退避後、スクラビング失敗イベントを安全にSentryへ通知するフェーズ。
+# 以下の定数は、その内部イベント（_INTERNAL_TAG付与）専用のextra許可リストである。
 
-# scrub バイパス内部イベント（_INTERNAL_TAG 付与）専用の extra 許可リスト。
 # このセットに含まれるキーのみ _set_internal_extras 経由で設定でき、_before_send の
 # scrub をバイパスして Sentry に到達する。PII を含み得るキーを追加してはならない
-# （PR#347 review #11-[2/2] マージブロッカー対応 — コメント規約をコードレベル強制に格上げ）。
 # 各キーは「scrub バイパスを許可する」明示的な grant であり、セキュリティ境界そのもの。
 # 値は _emit_scrub_failure_to_sentry が設定する extra キーと 1:1 で対応させる
 # （不足 → 実行時 ValueError / 過剰 → PII 素通りの穴）。
@@ -872,13 +870,13 @@ def _emit_scrub_failure_to_sentry(exc: BaseException, event_id: str | None = Non
     通過させるため無限再帰しない。内部 SDK 呼び出し自体が例外を投げた場合は
     最終フォールバックとして stderr へ出力し、メインプロセスをクラッシュさせない。
 
-    **SDK バージョン制約 (PR#347 review #10-SF-3)**:
+    **SDK バージョン制約**:
         再帰防止ガード（_INTERNAL_TAG_KEY による scrub スキップ）は Sentry SDK 2.x
         の内部動作（``Scope._apply_tags_to_event``）に依存する。
         pyproject.toml の ``sentry-sdk<3.0.0`` 制約により 3.x 以降の
         内部変更から保護している。3.x へ移行する際は本ガードの動作を再検証すること。
 
-    **Security constraint (PR#347 review #11-6)**: ``extra`` フィールドに
+    **Security constraint**: ``extra`` フィールドに
     PII を含めてはならない。本制約に違反した場合、内部通知イベントが scrub を
     バイパスして PII がそのまま Sentry に到達する。
     """
@@ -904,7 +902,7 @@ def _emit_scrub_failure_to_sentry(exc: BaseException, event_id: str | None = Non
                 "error_module": type(exc).__module__,
                 "action": "event_dropped",
             }
-            # event_id は UUID 形式のため PII ではない（PR#347 review #12/#28）。
+            # event_id は UUID 形式のため PII ではない。
             # None の場合は extra に含めない（従来挙動を維持）。
             if event_id is not None:
                 extras["event_id"] = event_id
@@ -915,7 +913,7 @@ def _emit_scrub_failure_to_sentry(exc: BaseException, event_id: str | None = Non
         # except Exception に捕捉されサイレント隠蔽される。OOM/再帰超過を握り潰さず
         # 即座に fail-fast 伝播させる。コードベース他6箇所の統一パターン
         # `except (MemoryError, RecursionError): raise` に集約し、将来の修正漏れを防ぐ
-        # （PR#347 SF-1。分離記述から統合、挙動は不変）。
+        # 分離記述から統合、挙動は不変。
         # 再raise後は呼び出し元 _before_send の emit 保護 try/except が捕捉し、明示的に
         # return None するため fail-closed（PII 非送信）は維持される。
         raise
@@ -955,7 +953,7 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
     # scrub_exc は except 句で捕捉した例外を try ブロックの外へ持ち出すための変数。
     # _emit_scrub_failure_to_sentry を except コンテキスト外で呼ぶことで sys.exc_info() が
     # アクティブな状態を避け、Sentry SDK が元例外(PII 付き)を内部通知イベントに添付する
-    # 事故を防ぐ (fail-closed 防御, PR#347 review S-4。詳細は下方 `except Exception` 節を参照)。
+    # 事故を防ぐ (fail-closed 防御。詳細は下方 `except Exception` 節を参照)
     scrub_exc: Exception | None = None
     # cast は実行時 no-op（型システム専用）— try 外に置いても動作変化なし
     event_dict = cast(dict[str, Any], event)
@@ -1014,7 +1012,7 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
     except Exception as exc:
         # sys.exc_info() がアクティブな状態で _emit_scrub_failure_to_sentry を
         # 呼ぶと、Sentry SDK が元例外（PII 付き）を内部通知イベントに添付する
-        # リスクがあるため、例外コンテキストの外で呼び出す（fail-closed 防御, PR#347）。
+        # リスクがあるため、例外コンテキストの外で呼び出す（fail-closed防御）
         scrub_exc = exc
 
     if scrub_exc is not None:
@@ -1032,7 +1030,7 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
                 error_type=type(scrub_exc).__qualname__,
                 error_module=type(scrub_exc).__module__,
             )
-        # SF-1 (PR#347 #15): emit 呼び出しを try/except で保護する。
+        # emit 呼び出しを try/exceptで保護する
         # _emit_scrub_failure_to_sentry は内部でシステム異常 (MemoryError/RecursionError) を
         # re-raise する設計（emit 自身の except Exception による隠蔽回避のため）。その re-raise が
         # ここで未捕捉のまま伝播すると下方の return None を飛び越え、scrubbing 失敗イベントの
@@ -1110,9 +1108,9 @@ def init_sentry() -> bool:  # noqa: C901
             send_default_pii=sentry_config.send_default_pii,
             before_send=_before_send,
             # transaction イベントは before_send を通らない（SDK仕様）。同一 scrub 経路へ
-            # 配線し、span data / WSGI-ASGI 由来の request を PII スクラブする（PR#347 review）。
+            # 配線し、span data / WSGI-ASGI 由来の request を PII スクラブする
             # per-event scrub コストは traces_sample_rate（既定 0.1 = 低サンプリング）で
-            # 上限が画定されるため、現設定では累積負荷は許容範囲（PR#347 review #12/P-4）。
+            # 上限が画定されるため、現設定では累積負荷は許容範囲
             before_send_transaction=_before_send,
         )
 
@@ -1138,7 +1136,7 @@ def init_sentry() -> bool:  # noqa: C901
             )
         except Exception as logger_exc:  # noqa: BLE001
             # ロガー失敗時は stderr へフォールバック（PII 非露出）。
-            # _emit_scrub_failure_to_sentry と同様にエラー型/モジュールを記録し設計を統一 (PR#347)。
+            # _emit_scrub_failure_to_sentry と同様にエラー型/モジュールを記録し設計を統一
             print(
                 "[SENTRY_WARN] sentry_sdk_not_installed "
                 f"original_error_type={type(exc).__name__} "
@@ -1168,7 +1166,7 @@ def init_sentry() -> bool:  # noqa: C901
             )
         except Exception as logger_exc:  # noqa: BLE001
             # ロガー失敗時は stderr へフォールバック（PII 非露出）。
-            # _emit_scrub_failure_to_sentry と同様にエラー型/モジュールを記録し設計を統一 (PR#347)。
+            # _emit_scrub_failure_to_sentry と同様にエラー型/モジュールを記録し設計を統一
             print(
                 "[SENTRY_WARN] sentry_init_failed "
                 f"original_error_type={type(exc).__name__} "

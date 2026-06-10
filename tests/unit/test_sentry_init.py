@@ -270,7 +270,6 @@ class TestSensitiveKeysCompleteness:
     @pytest.mark.parametrize(
         "composite_key",
         [
-            # PR#347 review で発見された PII regression 対象 composite key
             "user_password",
             "db_password",
             "password_hash",
@@ -292,9 +291,9 @@ class TestSensitiveKeysCompleteness:
     def test_composite_keys_are_redacted(self, composite_key: str) -> None:
         """composite key (接頭辞/接尾辞付き) の PII regression 回帰防止テスト。
 
-        PR#347 で _is_sensitive_key が substring → exact 一致へ変更され、
-        composite key が漏洩する regression が発生した。本テストはその逆方向の
-        変更を再導入しないための gate。
+        `_is_sensitive_key` を完全一致(exact)に変更した際に、
+        複合キーが漏洩したリグレッションを防止。
+        安全な判定ロジック（部分一致等）が変更され、脆弱性が再発しないことを担保するゲートテスト。
         """
         result = _scrub_sensitive_data({composite_key: "leak-me"})
         assert result[composite_key] == "[REDACTED]", (
@@ -326,7 +325,7 @@ class TestSensitiveKeysCompleteness:
             ("otp", True),
             ("mfa", True),
             ("totp", True),
-            # PR#347 review Q-2: prefix/suffix 非対称設計の契約化
+            # prefix/suffix 非対称設計の契約化
             # `token` 単独は _SENSITIVE_KEY_PATTERN (prefix `(?:^|[_\d])`,
             # suffix `(?=[^a-z]|$)`) では match しないが、_COMPACT_SENSITIVE_KEYS
             # (utils/sentry_init.py:210-212) のアンダースコア除去後完全一致 fallback で
@@ -370,7 +369,7 @@ class TestSensitiveKeysCompleteness:
         ],
     )
     def test_username_variants_over_redacted(self, key: str) -> None:
-        """username を含むキーは意図的に over-redact される（PR#347 SEC-1 契約）。
+        """username を含むキーは意図的に over-redact される。
 
         ``user_id`` (False) と異なり、``username`` は SENSITIVE_KEYS に含まれるため、
         派生キー (get_username / username_hash / display_username 等) も True になる。
@@ -402,7 +401,7 @@ class TestSensitiveKeysCompleteness:
 
         accessToken → access_token → token 境界で True。
         apiKey → api_key → api_key 完全一致で True。
-        PR#347 review fix #1: camelCase PII バイパス修正の回帰テスト。
+        camelCase PII バイパス修正の回帰テスト。
         """
         assert _is_sensitive_key(key) is expected
 
@@ -438,7 +437,7 @@ class TestSensitiveKeysCompleteness:
     def test_is_sensitive_key_digit_boundary(self, key: str, expected: bool) -> None:
         r"""数字プレフィックス/サフィックスを単語境界として扱う回帰テスト。
 
-        PR#347 review fix #2/#1: `_SENSITIVE_KEY_PATTERN` の数字境界を拡張。
+        `_SENSITIVE_KEY_PATTERN` の数字境界を拡張。
         これにより `password2` / `api_key2` / `v2token` 等の連番命名規約でも
         redact が確実に発火する。
 
@@ -455,7 +454,7 @@ class TestSensitiveKeysCompleteness:
             ("APIKEY", True),  # api_key compact = apikey
             ("ACCESSTOKEN", True),  # access_token compact = accesstoken
             ("PASSWORD", True),  # password compact = password
-            ("SECRET", True),  # secret compact = secret (PR#347 fallback)
+            ("SECRET", True),  # secret compact = secret
             # True positives: 既存 ACRONYM 分割が正常動作するケース → True
             ("APIKey", True),  # → api_key (ACRONYM_Word 分割)
             ("JSONWebToken", True),  # → json_web_token
@@ -473,7 +472,7 @@ class TestSensitiveKeysCompleteness:
         compact fallback（アンダースコア除去後の完全一致）がこれを補完する。
         `PHOTOURL` は compact `photourl` が `url` と完全一致しないため False 維持
         （substring 一致 ≠ 完全一致）。
-        PR#347 review fix: 全大文字 PII バイパス修正の回帰テスト。
+        全大文字 PII バイパス修正の回帰テスト。
         """
         assert _is_sensitive_key(key) is expected
 
@@ -659,7 +658,7 @@ class TestScrubExceptionField:
         Sentry exception interface は values を必須としない
         (getsentry/sentry interfaces/exception.py: get_path(data, "values",
         default=[]) で空リスト扱い)。誤検知 WARNING を抑制しつつ、他キーは
-        ベストエフォートで機密スクラブを継続することを検証する (PR#347 review #8)。
+        ベストエフォートで機密スクラブを継続することを検証する。
         """
         exception_value: dict[str, Any] = {"type": "ValueError", "token": "secret_xyz"}  # noqa: S106
 
@@ -728,7 +727,7 @@ class TestScrubExceptionFailOpenBranches:
 
     これらの分岐 (frame 非 dict / frame_vars 非 dict・None / frames 非 list・None) は
     従来 _before_send 経由の統合テストでしか到達せず、PII 漏洩防止に関わる重要パスのため
-    直接ユニットテストで個別に検証する (PR#347 review #2-8)。
+    直接ユニットテストで個別に検証する。
     """
 
     def test_frame_not_dict_returns_input_and_warns_high_risk(self) -> None:
@@ -810,8 +809,8 @@ class TestScrubSentryFieldExceptionAsList:
 
     Sentry 標準形は dict だが custom before_send 等で list 形態が生じうる。dict 要素は
     exception 専用スクラブで values[*].value REDACTION と stackframe vars scrub を適用し、
-    非 dict 要素は汎用 _scrub_list_item で再帰スクラブする (PR#347 #1 blocker +
-    codex adversarial review: dispatch 全分岐で素通しゼロ・defense-in-depth 一貫性)。
+    非 dict 要素は汎用 _scrub_list_item で再帰スクラブする
+    (dispatch 全分岐で素通しゼロ・defense-in-depth 一貫性)。
     """
 
     def test_exception_as_list_redacts_value_and_scrubs_frame_vars(self) -> None:
@@ -1100,7 +1099,7 @@ class TestBeforeSend:
     def test_before_send_fail_closed_when_scrub_url_raises(self) -> None:
         """_scrub_url が例外を発生させた場合も fail-closed でイベントをdropする。
 
-        drop ログは _logger.error 一本化で event_id を付与する (PR#347 review #12)。
+        drop ログは _logger.error 一本化で event_id を付与する。
         _safe_log_warning はロガー障害時のフォールバック専用のため通常は呼ばれない。
         """
         event = cast(Event, {"request": {"url": "https://example.com/path?token=abc"}})
@@ -1152,7 +1151,7 @@ class TestBeforeSend:
         self, emit_error: BaseException
     ) -> None:
         """emit がシステム異常 (MemoryError/RecursionError) を再 raise しても、SF-1 の
-        呼び出し側 try/except が捕捉し event を drop (None) する（PR#347 #15）。
+        呼び出し側 try/except が捕捉し event を drop (None) する。
 
         _emit_scrub_failure_to_sentry は内部でシステム異常を fail-fast 再 raise する設計だが、
         その再 raise は scrub ブロックの except (MemoryError, RecursionError) の外で発生するため
@@ -1183,7 +1182,7 @@ class TestBeforeSend:
         (mock_warning.assert_not_called()) のみカバーする。本テストはロガー障害時の
         二次 fallback 分岐 (sentry_init.py) を明示的に回帰検証する。
         一次 _logger.error は event_id を付与するが、フォールバック _safe_log_warning は
-        event_id を渡さない (PR#347 review: フォールバックはロガー障害時専用)。
+        event_id を渡さない (フォールバックはロガー障害時専用)。
         """
         event = cast(Event, {"request": {"url": "https://example.com/path?token=abc"}})
 
@@ -1210,7 +1209,7 @@ class TestBeforeSend:
     def test_before_send_drops_event_on_memory_error(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """MemoryError は fail-closed で event を drop し None を返す (PR#347 review #6)。
+        """MemoryError は fail-closed で event を drop し None を返す。
 
         旧仕様 (raise) では before_send からの例外を Sentry SDK が内部 catch し
         PII 付き event をそのまま送信し続けるリスクがあるため、stderr の最小通知に
@@ -1232,7 +1231,7 @@ class TestBeforeSend:
     def test_before_send_drops_event_on_recursion_error(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """RecursionError は fail-closed で event を drop し None を返す (PR#347 review #6)。
+        """RecursionError は fail-closed で event を drop し None を返す。
 
         詳細は test_before_send_drops_event_on_memory_error の docstring 参照。
         """
@@ -1387,7 +1386,7 @@ class TestBeforeSend:
         assert "error_type=KeyError" in captured.err
 
     def test_emit_scrub_failure_reraises_recursion_error_fail_fast(self) -> None:
-        """内部 SDK 呼び出しが RecursionError を投げた場合 fail-fast で再 raise する（PR#347 T-1）。
+        """内部 SDK 呼び出しが RecursionError を投げた場合 fail-fast で再 raise する。
 
         MemoryError/RecursionError は system 致命例外であり、_emit 内部の
         ``except Exception`` で握り潰さず即時伝播させる契約（_safe_log_warning と同一方針）。
@@ -1401,7 +1400,7 @@ class TestBeforeSend:
                 sentry_module._emit_scrub_failure_to_sentry(ValueError("orig"))
 
     def test_emit_scrub_failure_reraises_memory_error_fail_fast(self) -> None:
-        """内部 SDK 呼び出しが MemoryError を投げた場合 fail-fast で再 raise する（PR#347 T-1）。"""
+        """内部 SDK 呼び出しが MemoryError を投げた場合 fail-fast で再 raise する。"""
         mock_sdk = MagicMock()
         mock_sdk.new_scope = MagicMock(side_effect=MemoryError())
         with patch.dict(sys.modules, {"sentry_sdk": mock_sdk}):
@@ -1536,7 +1535,7 @@ class TestBeforeSend:
     ) -> None:
         """logger.warning 失敗時も Sentry イベントを drop せず fail-open で継続する。
 
-        PR#347 review #1: 旧実装は完全 silent (`except Exception: pass`) だったが、
+        旧実装は完全 silent (`except Exception: pass`) だったが、
         ロガー側 RecursionError 等の重大障害が無音化される問題があったため、
         stderr に最低限の診断 1 行を出力する fail-open に変更。
         """
@@ -1606,7 +1605,7 @@ class TestBeforeSend:
         assert result_dict["exception"]["values"] == "not_a_list", (
             "元の値が保持されている（破壊的置換なし）"
         )
-        # _safe_log_warning が想定 event で発火することを検証（PR#347 TEST-1）。
+        # _safe_log_warning が想定 event で発火することを検証。
         # これがないと将来 _safe_log_warning 呼び出しが削除されてもテストが通過する。
         mock_warning.assert_called_once()
         assert mock_warning.call_args[0][0] == "sentry_exception_values_unexpected_type"
@@ -1849,7 +1848,7 @@ class TestBeforeSend:
         )
 
     def test_scrub_exception_value_item_redacts_custom_toplevel_sensitive_key(self) -> None:
-        """value/stacktrace 以外のトップレベル機密キーも redact し type は保持する（PR#347 Q-1）。
+        """value/stacktrace 以外のトップレベル機密キーも redact し type は保持する。
 
         カスタム SDK 統合が token 等を value item 直下に付与した場合の PII 漏洩防止。
         """
@@ -1874,7 +1873,7 @@ class TestBeforeSendTransaction:
     transaction は error と異なり top-level ``spans`` (list[dict]) を持つ
     (Sentry transaction payload spec)。``before_send_transaction=_before_send``
     配線により error と同一 scrub 経路を通り、span 内の機密キーが REDACT される
-    ことを検証する（PR#347 review）。
+    ことを検証する。
     """
 
     def _call_before_send(self, event: Event) -> dict[str, Any]:
@@ -2115,7 +2114,7 @@ class TestInitSentry:
         """error / transaction 双方の scrub フックが _before_send に配線される。
 
         before_send_transaction を省略すると transaction イベントの span / request が
-        custom scrub をバイパスする（PR#347 review）。本テストは将来の refactor で
+        custom scrub をバイパスする。本テストは将来の refactor で
         配線が外れた場合のサイレント退行を検出する sentinel。
         """
         mock_settings.return_value.sentry.enabled = True
@@ -2620,7 +2619,7 @@ class TestSentryProcessorBeforeSendChain:
 
 
 def test_internal_tag_value_is_valid_hex() -> None:
-    """_INTERNAL_TAG_VALUE が secrets.token_hex(16) で生成された有効な32文字 hex か検証（PR#347）"""
+    """_INTERNAL_TAG_VALUE が secrets.token_hex(16) で生成された有効な32文字 hex か検証"""
     import re
 
     from utils.sentry_init import _INTERNAL_TAG_VALUE
@@ -2899,7 +2898,7 @@ class TestBeforeSendLoggerEventId:
 
 
 class TestSetInternalExtras:
-    """_set_internal_extras の許可リスト強制 (PR#347 #3 マージブロッカー)。
+    """_set_internal_extras の許可リスト強制。
 
     内部タグ付きイベントは _before_send の scrub をバイパスして Sentry に到達するため、
     extra に書けるキーを _INTERNAL_EVENT_EXTRA_KEYS で固定し、PII を含み得るキーの
