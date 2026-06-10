@@ -58,6 +58,41 @@ class TestAPIConfigBaseUrlDependencyInjection:
                 frozenset({"example.com"}),
             )
 
+    def test_validate_base_url_private_ip_log_includes_operator_guidance(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """DNS fail-closed時の切り分けに必要な運用者向け案内をログへ残す。"""
+        with caplog.at_level(logging.WARNING):
+            with pytest.raises(ValueError, match="Private/loopback IP addresses are not allowed"):
+                _validate_base_url_with_allowed_domains(
+                    "http://192.168.1.1",
+                    frozenset({"192.168.1.1"}),
+                )
+
+        assert any(
+            "check DNS resolution and ALLOWED_DOMAINS setting" in record.message
+            and record.levelno == logging.WARNING
+            for record in caplog.records
+        )
+
+    def test_validate_base_url_allowlist_log_includes_operator_guidance(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """許可ドメイン不一致時はALLOWED_DOMAINS確認をログへ残す。"""
+        with caplog.at_level(logging.WARNING):
+            with pytest.raises(ValueError, match="Domain not in allowlist"):
+                _validate_base_url_with_allowed_domains(
+                    "https://httpbin.org",
+                    frozenset({"example.com"}),
+                )
+
+        assert any(
+            "Check ALLOWED_DOMAINS setting" in record.message and record.levelno == logging.WARNING
+            for record in caplog.records
+        )
+
     def test_validate_base_url_blocks_private_ip_regardless_of_allowlist(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
@@ -1006,6 +1041,17 @@ class TestSSRFPrevention(DNSCacheClearMixin):
             # 127.0.0.0/8 境界（ループバック）
             pytest.param("127.0.0.1", True, "standard loopback", id="loopback_standard"),
             pytest.param("127.255.255.255", True, "loopback end", id="loopback_end"),
+            # RFC 1122 / RFC 6598 ranges that should never be accepted as public API hosts.
+            pytest.param(
+                "0.0.0.0",  # noqa: S104 - SSRF boundary test data, not a bind address.
+                True,
+                "current network start",
+                id="current_network_start",
+            ),
+            pytest.param("0.255.255.255", True, "current network end", id="current_network_end"),
+            pytest.param("100.64.0.0", True, "carrier-grade NAT start", id="cgnat_start"),
+            pytest.param("100.127.255.255", True, "carrier-grade NAT end", id="cgnat_end"),
+            pytest.param("100.128.0.0", False, "just above carrier-grade NAT", id="above_cgnat"),
         ],
     )
     def test_is_private_ip_boundary_values(

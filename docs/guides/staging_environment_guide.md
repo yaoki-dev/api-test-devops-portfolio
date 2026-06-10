@@ -73,7 +73,7 @@ pydantic_core._pydantic_core.ValidationError: 1 validation error for Settings
 
 ```text
 pydantic_core._pydantic_core.ValidationError: 1 validation error for Settings
-  Value error, SSRF Prevention: Domain not in allowlist: <staging-domain>. Allowed domains count: N [type=value_error, ...]
+  Value error, SSRF Prevention: Domain not in allowlist. [type=value_error, ...]
 ```
 
 **対処**: `ALLOWED_DOMAINS=<staging-domain>` を `.env` に追加してください。

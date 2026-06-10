@@ -82,6 +82,8 @@ PRIVATE_IP_RANGES: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] = (
     ipaddress.ip_network("192.168.0.0/16"),
     ipaddress.ip_network("127.0.0.0/8"),  # loopback
     ipaddress.ip_network("169.254.0.0/16"),  # link-local (AWS metadata)
+    ipaddress.ip_network("0.0.0.0/8"),  # current network / non-routable
+    ipaddress.ip_network("100.64.0.0/10"),  # carrier-grade NAT
     ipaddress.ip_network("::1/128"),  # IPv6 loopback
     ipaddress.ip_network("fc00::/7"),  # IPv6 private
     ipaddress.ip_network("fe80::/10"),  # IPv6 link-local
@@ -247,7 +249,8 @@ def _validate_base_url_with_allowed_domains(v: str, allowed_domains: frozenset[s
     # SSRF Prevention: プライベートIPチェック
     if is_private_ip(hostname):
         _logger.warning(
-            "SSRF Prevention: private or loopback IP blocked for hostname=%r",
+            "SSRF Prevention: private or loopback IP blocked for hostname=%r. "
+            "If this is a valid hostname, check DNS resolution and ALLOWED_DOMAINS setting.",
             hostname[:200],
         )
         raise ValueError("SSRF Prevention: Private/loopback IP addresses are not allowed.")
@@ -255,7 +258,8 @@ def _validate_base_url_with_allowed_domains(v: str, allowed_domains: frozenset[s
     # SSRF Prevention: 許可ドメインチェック
     if hostname not in allowed_domains:
         _logger.warning(
-            "SSRF Prevention: Domain not in allowlist: %r. Allowed domains count: %d",
+            "SSRF Prevention: Domain not in allowlist: %r. Allowed domains count: %d. "
+            "Check ALLOWED_DOMAINS setting.",
             hostname[:200],
             len(allowed_domains),
         )
@@ -474,7 +478,7 @@ class Settings(BaseSettings):
 
     # 基本設定
     environment: Environment = Field(default=Environment.DEVELOPMENT, description="実行環境")
-    debug: bool = Field(default=True, description="デバッグモードの有効化")
+    debug: bool = Field(default=False, description="デバッグモードの有効化")
     project_name: str = Field(default="API Test Portfolio", description="プロジェクト名")
     version: str = Field(default="0.1.0", description="アプリケーションバージョン")
 
