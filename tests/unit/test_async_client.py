@@ -1363,8 +1363,7 @@ async def test_async_performance_benchmark():
 #   pytest tests/unit/test_async_client.py -n 4 -v
 #
 # 9. Dockerコンテナ内でのテスト実行
-#   docker-compose -f docker-compose.test.yml run --rm unit-tests \
-#       pytest tests/unit/test_async_client.py -v
+#   docker compose --profile test run --rm test
 #
 # 10. 継続的テスト実行（ファイル変更監視）
 #   pytest-watch tests/unit/test_async_client.py
@@ -2695,8 +2694,7 @@ async def test_async_client_falsy_values_not_overridden() -> None:
 #   pytest tests/unit/test_async_client.py -n 4 -v
 #
 # 9. Dockerコンテナ内でのテスト実行
-#   docker-compose -f docker-compose.test.yml run --rm unit-tests \
-#       pytest tests/unit/test_async_client.py -v
+#   docker compose --profile test run --rm test
 #
 # 10. 継続的テスト実行（ファイル変更監視）
 #   pytest-watch tests/unit/test_async_client.py

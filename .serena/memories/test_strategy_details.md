@@ -13,7 +13,7 @@
 | テスト層 | 比率 | 実行時間 | 環境 | 目的 |
 |---------|------|---------|------|------|
 | Unit | 70% | <0.5s/test | ローカル | モック中心、外部依存排除 |
-| Integration | 30% | 1-3s/test | docker-compose | 実API、コンポーネント連携 |
+| Integration | 30% | 1-3s/test | docker compose | 実API、コンポーネント連携 |
 
 **設計根拠**: Mike Cohn提唱（2009年）、Google Testing Blog推奨構成
 
@@ -131,7 +131,7 @@ uv run bandit -r utils/ config/ models/ -f json -o reports/bandit.json
 
 ```bash
 # TrivyによるDockerイメージスキャン
-trivy image --severity HIGH,CRITICAL api-test:latest
+trivy image --severity HIGH,CRITICAL api-test-devops:latest
 ```
 
 ### 4.3 シークレット検出（gitleaks）

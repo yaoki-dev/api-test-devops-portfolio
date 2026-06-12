@@ -19,7 +19,7 @@
       "pattern": "\\{\\{.*\\}\\}"
     },
     {
-      "pattern": "https://yuta158\\.github\\.io/api-test-portfolio/htmlcov/"
+      "pattern": "https://yaoki-dev\\.github\\.io/api-test-devops-portfolio/htmlcov/"
     },
     {
       "pattern": "https://medium\\.com/"

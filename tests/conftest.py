@@ -159,7 +159,7 @@ async def async_client(
     async with AsyncAPIClient(
         base_url=test_config["api"]["base_url"],
         timeout=test_config["api"]["timeout"],
-        headers={"User-Agent": "API-Test-Portfolio/0.1.0"},
+        headers={"User-Agent": "api-test-devops-portfolio/0.1.0"},
     ) as client:
         yield client
 

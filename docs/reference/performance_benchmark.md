@@ -1,4 +1,4 @@
-# パフォーマンスベンチマークガイド
+# パフォーマンスベンチマーク
 
 *最終更新: 2025年09月23日*
 
@@ -651,4 +651,4 @@ def setup_continuous_monitoring():
 
 - [パフォーマンス監視実装ガイド](./performance_monitor_implementation.md)
 - [日常運用コマンド](./daily_commands.md)
-- [Docker環境構築ガイド](./docker_guide.md)
+- [Docker環境構築ガイド](./docker.md)

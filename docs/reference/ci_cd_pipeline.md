@@ -1,4 +1,4 @@
-# CI/CD運用ガイド
+# CI/CD Pipeline
 
 *最終更新: 2026年02月13日*
 
@@ -145,6 +145,10 @@ uv run pytest -n auto -m "(unit or integration) and not external" \
 | セキュリティ | 0 Critical/High | ✅ | Trivy SARIF |
 
 ---
+
+### CD（実装予定）
+
+main push 時に、Trivy scan を通過した runtime image のみ GHCR へ publish し、`docker pull` / `docker run` で公開・実行可能性を検証します。
 
 ## 📋 ブランチ戦略（Git Flow）
 

@@ -189,7 +189,7 @@ Gate 4 (git commit) → 未コミット?
 
 **完了タスク**:
 - [x] Docker 4-stage実装
-- [x] docker-compose dev環境構築
+- [x] docker compose dev環境構築
 
 **メトリクス変化**（※数値は例）:
 - カバレッジ: 80% → 83%

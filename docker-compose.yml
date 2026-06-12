@@ -25,7 +25,7 @@ services:
     build:
       context: .
       target: runtime
-    image: api-test:runtime
+    image: api-test-devops:runtime
     # 4環境切替: ホストの ENVIRONMENT 変数で読込 env ファイルを選択
     #   ENVIRONMENT=development / testing / staging / production の完全形のみ受け付ける
     #   （Pydantic Environment enum 4値に統一、短縮形 dev/test/stg/prod は ValidationError）
@@ -62,7 +62,7 @@ services:
     build:
       context: .
       target: test
-    image: api-test:test
+    image: api-test-devops:test
     profiles:
       - test
     # テスト用機密情報は .env.testing から読込（未存在でも起動可、Pydantic Environment値と一致）

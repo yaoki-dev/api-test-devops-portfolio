@@ -632,7 +632,7 @@ jobs:
 
 **📞 サポート情報**
 
-- **ドキュメント**: `docs/guides/security_testing_procedures.md`
+- **ドキュメント**: `docs/reference/security_testing_procedures.md`
 - **テスト実行**: `make security-comprehensive`
 - **問題報告**: GitHubイシューまたは social@security-team
 

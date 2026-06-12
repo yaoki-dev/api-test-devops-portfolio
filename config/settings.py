@@ -320,7 +320,9 @@ class APIConfig(BaseModel):
     retry_count: int = Field(default=3, ge=0, le=10, description="リトライ回数")
     retry_delay: float = Field(default=1.0, ge=0.1, le=60.0, description="リトライ間隔（秒）")
     max_connections: int = Field(default=10, ge=1, le=100, description="最大同時接続数")
-    user_agent: str = Field(default="API-Test-Portfolio/0.1.0", description="User-Agentヘッダー")
+    user_agent: str = Field(
+        default="api-test-devops-portfolio/0.1.0", description="User-Agentヘッダー"
+    )
 
     @field_validator("base_url")
     @classmethod

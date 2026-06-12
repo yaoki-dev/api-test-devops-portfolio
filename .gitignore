@@ -104,9 +104,9 @@ docs/text.md
 
 # Environment variables
 # .env*: per-environment files (.env.development/.env.testing/.env.staging/.env.production/.env.local 等) を一括で ignore
-# !.env.example: コミット対象のプレースホルダーテンプレートのみ追跡
+# !.env*.example: コミット対象のプレースホルダーテンプレートのみ追跡(.env.development.example/.env.testing.example/.env.staging.example/.env.production.example/.env.local.example 等) を一括で ignore
 .env*
-!.env.example
+!.env*.example
 
 # Claude MCP auto-generated files (claude-mem)
 # Excludes all CLAUDE.md in subdirectories, preserves root CLAUDE.md
@@ -129,6 +129,8 @@ docs/plans/
 docs/agent-teams/
 docs/ai_collaboration/
 docs/analysis/
+docs/main/interview
+docs/main/interview_docs/SkillSheet_yuta-aoki.md
 
 # GSD - local planning artifacts
 .planning/

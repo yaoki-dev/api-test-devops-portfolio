@@ -1,4 +1,4 @@
-# ccstatusline 導入・設定ガイド
+# ccstatusline 導入・設定
 
 *最終更新: 2025年11月13日*
 

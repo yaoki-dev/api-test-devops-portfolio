@@ -368,7 +368,7 @@ jobs:
         with:
           context: .
           target: test
-          tags: api-test:test
+          tags: api-test-devops:test
           load: true
           # load: true時の manifest unknown エラー回避
           provenance: false
@@ -471,7 +471,7 @@ jobs:
         with:
           context: .
           target: runtime
-          tags: api-test:runtime
+          tags: api-test-devops:runtime
           load: true
           # load: true時の manifest unknown エラー回避 (compose-test job と対称)
           provenance: false
