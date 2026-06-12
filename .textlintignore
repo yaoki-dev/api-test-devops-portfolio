@@ -12,6 +12,7 @@ node_modules/**
 .taskmaster/**
 .spec-workflow/**
 obsidian-vault-local/**
+docs/main/interview_docs/skillsheet_yuta-aoki-yyyymmdd.md
 # Cache directories
 .pre-commit-cache/**
 # Serena memories (dynamic content)

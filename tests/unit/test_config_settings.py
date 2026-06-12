@@ -133,9 +133,10 @@ class TestAPIConfigBaseUrlDependencyInjection:
         )
 
     def test_validate_base_url_logs_warning_for_domain_not_in_allowlist(
-        self, caplog: pytest.LogCaptureFixture
+        self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """許可ドメイン外アクセス試行時にSSRFセキュリティ証跡が記録される。"""
+        monkeypatch.setattr(socket, "gethostbyname", lambda _: "1.2.3.4")
         with caplog.at_level(logging.WARNING, logger="config.settings"):
             with pytest.raises(ValueError, match="Domain not in allowlist"):
                 _validate_base_url_with_allowed_domains(

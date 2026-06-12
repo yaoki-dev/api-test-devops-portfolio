@@ -2281,7 +2281,7 @@ jobs:
     env:
       ENVIRONMENT: staging
     steps:
-      - run: docker compose -f docker compose.stg.yml up -d
+      - run: ENVIRONMENT=staging docker compose up -d
       - run: uv run pytest -m system --env=staging  # stg環境検証
       - run: docker compose down
 ```
