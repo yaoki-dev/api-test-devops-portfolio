@@ -42,11 +42,16 @@ class TestAPIConfigBaseUrlDependencyInjection:
 
         assert result == "https://example.com"
 
-    def test_validate_base_url_rejects_domain_missing_from_injected_allowlist(self) -> None:
+    def test_validate_base_url_rejects_domain_missing_from_injected_allowlist(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """注入された許可リスト外のドメインは拒否される。"""
+        # 外部DNSに依存させず公開IPへ解決させ、is_private_ip()先行チェックを通過させて
+        # allowlist分岐へ確実に到達させる（CIのDNS状態に左右されない決定的テスト）。
+        monkeypatch.setattr(socket, "gethostbyname", lambda _: "1.2.3.4")
         with pytest.raises(ValueError, match="Domain not in allowlist"):
             _validate_base_url_with_allowed_domains(
-                "https://httpbin.org",
+                "https://evil.com",
                 frozenset({"example.com"}),
             )
 
