@@ -159,7 +159,7 @@ async def async_client(
     async with AsyncAPIClient(
         base_url=test_config["api"]["base_url"],
         timeout=test_config["api"]["timeout"],
-        headers={"User-Agent": "API-Test-Portfolio/0.1.0"},
+        headers={"User-Agent": "api-test-devops-portfolio/0.1.0"},
     ) as client:
         yield client
 
@@ -259,38 +259,6 @@ def post_data_factory() -> Callable[..., _PostData]:
 def performance_timer() -> PerformanceTimer:
     """パフォーマンス計測用タイマー"""
     return PerformanceTimer()
-
-
-# =============================================================================
-# セキュリティテスト用フィクスチャ
-# =============================================================================
-
-
-@pytest.fixture
-def security_payloads() -> dict[str, list[str]]:
-    """セキュリティテスト用のペイロード"""
-    return {
-        "sql_injection": [
-            "'; DROP TABLE users; --",
-            "1' OR '1'='1",
-            "admin'--",
-        ],
-        "xss": [
-            "<script>alert('xss')</script>",
-            "javascript:alert(1)",
-            "<img src=x onerror=alert(1)>",
-        ],
-        "command_injection": [
-            "; ls -la",
-            "| cat /etc/passwd",
-            "&& whoami",
-        ],
-        "path_traversal": [
-            "../../../etc/passwd",
-            "..\\..\\..\\windows\\system32\\drivers\\etc\\hosts",
-            "....//....//....//etc/passwd",
-        ],
-    }
 
 
 # =============================================================================

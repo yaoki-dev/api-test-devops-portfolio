@@ -1,0 +1,134 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "ja"
+early_access: false
+reviews:
+  profile: "assertive"
+  request_changes_workflow: false
+  high_level_summary: true
+  high_level_summary_in_walkthrough: true
+  poem: false
+  review_status: true
+  review_details: true
+  auto_review:
+    enabled: true
+    drafts: false
+  tools:
+    github-checks:
+      enabled: true
+      timeout_ms: 180000
+    ruff:
+      enabled: true
+    mypy:
+      enabled: true
+    pylint:
+      enabled: false
+    trivy:
+      enabled: true
+    checkov:
+      enabled: true
+    gitleaks:
+      enabled: false
+    trufflehog:
+      enabled: true
+    actionlint:
+      enabled: true
+    zizmor:
+      enabled: true
+    hadolint:
+      enabled: true
+    yamllint:
+      enabled: true
+    markdownlint:
+      enabled: true
+
+  # プロジェクトのレビュー共通ルール
+  instructions: |
+    レビューを行う際は、リポジトリのルート直下にある `REVIEW.md`のガイドラインを必ず遵守してください。
+    もし `REVIEW.md` のルールに違反しているコードを発見した場合は、その旨を指摘してください。
+  path_instructions:
+    - path: "config/**"
+      instructions: |
+        Pydantic Settingsベースの設定管理。
+        型安全性を重視し、環境変数からの自動ロードを検証すること。
+        SecretStrの使用状況を確認し、平文出力防止を確認。
+    - path: "utils/**"
+      instructions: |
+        HTTPクライアント・GitHub APIクライアント・Sentry初期化等のユーティリティ。
+        例外処理の原因連鎖 (__cause__) が保持されているか確認。
+        非同期処理でのキャンセル挙動、タイムアウト処理、リトライロジックを重点的にレビュー。
+        セキュリティ: shell=True使用禁止、eval/exec禁止、安全でないデシリアライズ禁止。
+    - path: "models/**"
+      instructions: |
+        Pydanticモデル定義。
+        バリデーションルール、フィールド制約、ネスト構造の妥当性を確認。
+        API レスポンスモデルとリクエストモデルの整合性を確認。
+    - path: "tests/**"
+      instructions: |
+        pytest ベースのテストスイート。
+        Unit / Integration / Performance / Smoke / External のマーカー設計を確認。
+        カバレッジ対象、CI除外マーカー、テスト件数は pyproject.toml / CI 定義を正とする。
+        モックの妥当性、テストの独立性、フィクスチャのスコープを確認。
+        asyncio_mode = auto のため、@pytest.mark.asyncio の重複付与を避ける。
+    - path: "scripts/**"
+      instructions: |
+        自動化スクリプト。シェルスクリプトの場合は shellcheck 対応。
+        set -euo pipefail 等の堅牢性設定を確認。
+    - path: ".github/workflows/**"
+      instructions: |
+        GitHub Actions ワークフロー。
+        タイムアウト設定、権限最小化、シークレット管理、マトリクス戦略を確認。
+        actionlint / zizmor の指摘事項を優先的に対応。
+    - path: "Dockerfile*"
+      instructions: |
+        Multi-stage build (base/dependencies/runtime/test)。
+        非rootユーザー実行、イメージサイズ最適化、セキュリティベースイメージを確認。
+    - path: "docker-compose*.yml"
+      instructions: |
+        4環境構成 (development/testing/staging/production)。
+        ヘルスチェック、ボリュームマウント、ネットワーク分離を確認。
+chat:
+  auto_reply: true
+  allow_external_contributors: true
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - ".claude/rules/python/coding-standards.md"
+      - ".claude/rules/testing/quality-gates.md"
+      - "AGENTS.md"
+      - "CLAUDE.md"
+  learnings:
+    scope: "local"
+  issues:
+    scope: "local"
+  pull_requests:
+    scope: "local"
+  mcp:
+    disabled_servers: []
+code_generation:
+  docstrings:
+    language: "ja"
+  unit_tests:
+    path_instructions:
+      - path: "tests/unit/**"
+        instructions: |
+          pytest + pytest-asyncio スタイルで作成。
+          asyncio_mode = auto により非同期テストへ@pytest.mark.asyncio の付与は不要
+          フィクスチャは conftest.py から再利用。
+          モックには unittest.mock.AsyncMock を使用。
+      - path: "tests/integration/**"
+        instructions: |
+          統合テストスタイル。実 API 呼び出しの場合は external マーカーを付与。
+          GitHub API テストは Rate Limit (5000/h) を考慮し、ETag 活用を確認。
+issue_enrichment:
+  auto_enrich:
+    enabled: true
+  planning:
+    enabled: true
+  auto_planning:
+    enabled: false
+    labels:
+      - "feature"
+      - "enhancement"
+  labeling:
+    enabled: true

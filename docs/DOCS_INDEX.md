@@ -37,20 +37,20 @@ autogen artifacts のため本 index 対象外 (CLAUDE.md 「Protected Artifacts
 | [IMPLEMENTATION_OPTIONS.md](analysis/IMPLEMENTATION_OPTIONS.md) | 実装オプション分析 |
 | [PREDICTIVE_CODE_ANALYSIS.md](analysis/PREDICTIVE_CODE_ANALYSIS.md) | 予測的コード分析 |
 
-### 📚 Guides（開発ガイド）
+### 📚 reference（開発ガイド）
 
 | ファイル | 説明 |
 |---------|------|
-| [ccstatusline_introduction_guide.md](guides/ccstatusline_introduction_guide.md) | ccstatusline導入ガイド |
-| [ci_cd_guide.md](guides/ci_cd_guide.md) | CI/CD設定ガイド |
-| [claude-code-plugins-usage-guide.md](guides/claude-code-plugins-usage-guide.md) | Claude Code Plugins使用ガイド |
-| [daily_commands.md](guides/daily_commands.md) | 日次コマンドリファレンス |
-| [developer_experience_enhancement.md](guides/developer_experience_enhancement.md) | 開発者体験改善 |
-| [docker_guide.md](guides/docker_guide.md) | Docker活用ガイド |
-| [owasp_compliance_checklist.md](guides/owasp_compliance_checklist.md) | OWASP準拠チェックリスト |
-| [performance_benchmark_guide.md](guides/performance_benchmark_guide.md) | パフォーマンスベンチマークガイド |
-| [performance_monitor_implementation.md](guides/performance_monitor_implementation.md) | パフォーマンスモニター実装 |
-| [staging_environment_guide.md](guides/staging_environment_guide.md) | staging環境設定・移行ガイド |
+| [ccstatusline_introduction_setup.md](reference/ccstatusline_introduction_setup.md) | ccstatusline導入＆セットアップリファレンス |
+| [ci_cd_pipeline.md](reference/ci_cd_pipeline.md) | CI/CD リファレンス |
+| [claude-code-plugins.md](reference/claude-code-plugins.md) | Claude Code Pluginsリファレンス |
+| [daily_commands.md](reference/daily_commands.md) | 日次コマンドリファレンス |
+| [developer_experience_enhancement.md](reference/developer_experience_enhancement.md) | 開発者体験改善 |
+| [docker.md](reference/docker.md) | Dockerリファレンス |
+| [owasp_compliance_checklist.md](reference/owasp_compliance_checklist.md) | OWASP準拠チェックリスト |
+| [performance_benchmark.md](reference/performance_benchmark.md) | パフォーマンスベンチマークリファレンス |
+| [performance_monitor_implementation.md](reference/performance_monitor_implementation.md) | パフォーマンスモニター実装 |
+| [staging_environment_setup.md](reference/staging_environment_setup.md) | staging環境設定・移行リファレンス |
 
 ### 📅 Main - 6週プラン
 
@@ -105,14 +105,10 @@ autogen artifacts のため本 index 対象外 (CLAUDE.md 「Protected Artifacts
 
 ### ガイド類
 
-- **Docker**: [docker_guide.md](guides/docker_guide.md)
-- **CI/CD**: [ci_cd_guide.md](guides/ci_cd_guide.md)
-- **OWASP**: [owasp_compliance_checklist.md](guides/owasp_compliance_checklist.md)
-- **Staging環境**: [staging_environment_guide.md](guides/staging_environment_guide.md)
-
-### ツール設定
-
-- **SuperClaude**: [super_claude_complete_guide.md](tools/super_claude/super_claude_complete_guide.md)
+- **Docker**: [docker.md](reference/docker.md)
+- **CI/CD**: [ci_cd_pipeline.md](reference/ci_cd_pipeline.md)
+- **OWASP**: [owasp_compliance_checklist.md](reference/owasp_compliance_checklist.md)
+- **Staging環境**: [staging_environment_setup.md](reference/staging_environment_setup.md)
 
 ---
 

@@ -1,6 +1,6 @@
 name: 'Trivy SARIF Verification'
 description: '3-layer verification for Trivy SARIF output (existence → size → JSON validity)'
-author: 'yuta158'
+author: 'yaoki-dev'
 
 inputs:
   sarif-file:

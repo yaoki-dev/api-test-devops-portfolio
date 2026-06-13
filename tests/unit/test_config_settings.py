@@ -42,11 +42,16 @@ class TestAPIConfigBaseUrlDependencyInjection:
 
         assert result == "https://example.com"
 
-    def test_validate_base_url_rejects_domain_missing_from_injected_allowlist(self) -> None:
+    def test_validate_base_url_rejects_domain_missing_from_injected_allowlist(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """注入された許可リスト外のドメインは拒否される。"""
+        # 外部DNSに依存させず公開IPへ解決させ、is_private_ip()先行チェックを通過させて
+        # allowlist分岐へ確実に到達させる（CIのDNS状態に左右されない決定的テスト）。
+        monkeypatch.setattr(socket, "gethostbyname", lambda _: "1.2.3.4")
         with pytest.raises(ValueError, match="Domain not in allowlist"):
             _validate_base_url_with_allowed_domains(
-                "https://httpbin.org",
+                "https://evil.com",
                 frozenset({"example.com"}),
             )
 
@@ -58,18 +63,100 @@ class TestAPIConfigBaseUrlDependencyInjection:
                 frozenset({"example.com"}),
             )
 
-    def test_validate_base_url_blocks_private_ip_regardless_of_allowlist(self) -> None:
+    def test_validate_base_url_private_ip_log_includes_operator_guidance(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """DNS fail-closed時の切り分けに必要な運用者向け案内をログへ残す。"""
+        with caplog.at_level(logging.WARNING, logger="config.settings"):
+            with pytest.raises(ValueError, match="Private/loopback IP addresses are not allowed"):
+                _validate_base_url_with_allowed_domains(
+                    "http://192.168.1.1",
+                    frozenset({"192.168.1.1"}),
+                )
+
+        assert any(
+            "check DNS resolution and ALLOWED_DOMAINS setting" in record.getMessage()
+            and record.levelno == logging.WARNING
+            for record in caplog.records
+        )
+
+    def test_validate_base_url_allowlist_log_includes_operator_guidance(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """許可ドメイン不一致時はALLOWED_DOMAINS確認をログへ残す。"""
+        # 外部DNSに依存させず公開IPへ解決させ、is_private_ip()先行チェックを通過させて
+        # allowlist分岐へ確実に到達させる（CIのDNS状態に左右されない決定的テスト）。
+        monkeypatch.setattr(socket, "gethostbyname", lambda _: "1.2.3.4")
+        with caplog.at_level(logging.WARNING, logger="config.settings"):
+            with pytest.raises(ValueError, match="Domain not in allowlist"):
+                _validate_base_url_with_allowed_domains(
+                    "https://evil.com",
+                    frozenset({"example.com"}),
+                )
+
+        assert any(
+            "Check ALLOWED_DOMAINS setting" in record.getMessage()
+            and record.levelno == logging.WARNING
+            for record in caplog.records
+        )
+
+    def test_validate_base_url_blocks_private_ip_regardless_of_allowlist(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """プライベートIPは許可リストに含まれていてもブロックされる。
 
         SSRF Prevention: DIパスの契約テスト。
         許可リストにプライベートIPが含まれていても、
         is_private_ip()による先行チェックでブロックされることを検証する。
         """
-        with pytest.raises(ValueError, match="Private/loopback IP addresses are not allowed"):
-            _validate_base_url_with_allowed_domains(
-                "http://192.168.1.1",
-                frozenset({"192.168.1.1"}),  # 許可リストに入れても無効
-            )
+        with caplog.at_level(logging.WARNING, logger="config.settings"):
+            with pytest.raises(ValueError, match="Private/loopback IP addresses are not allowed"):
+                _validate_base_url_with_allowed_domains(
+                    "http://192.168.1.1",
+                    frozenset({"192.168.1.1"}),  # 許可リストに入れても無効
+                )
+
+        assert any(
+            "SSRF Prevention: private or loopback IP blocked" in record.getMessage()
+            and record.levelno == logging.WARNING
+            for record in caplog.records
+        )
+
+    def test_validate_base_url_blocks_private_ip_before_allowlist(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """プライベートIPは許可リスト外でも攻撃ベクターとして記録される。"""
+        with caplog.at_level(logging.WARNING, logger="config.settings"):
+            with pytest.raises(ValueError, match="Private/loopback IP addresses are not allowed"):
+                _validate_base_url_with_allowed_domains(
+                    "http://192.168.1.1",
+                    frozenset({"example.com"}),
+                )
+
+        assert any(
+            "SSRF Prevention: private or loopback IP blocked" in record.getMessage()
+            and record.levelno == logging.WARNING
+            for record in caplog.records
+        )
+
+    def test_validate_base_url_logs_warning_for_domain_not_in_allowlist(
+        self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """許可ドメイン外アクセス試行時にSSRFセキュリティ証跡が記録される。"""
+        monkeypatch.setattr(socket, "gethostbyname", lambda _: "1.2.3.4")
+        with caplog.at_level(logging.WARNING, logger="config.settings"):
+            with pytest.raises(ValueError, match="Domain not in allowlist"):
+                _validate_base_url_with_allowed_domains(
+                    "https://evil.com", frozenset({"example.com"})
+                )
+        assert any(
+            "SSRF Prevention: Domain not in allowlist" in record.getMessage()
+            and record.levelno == logging.WARNING
+            for record in caplog.records
+        )
 
 
 class TestAPIConfigBoundaryValues:
@@ -965,6 +1052,17 @@ class TestSSRFPrevention(DNSCacheClearMixin):
             # 127.0.0.0/8 境界（ループバック）
             pytest.param("127.0.0.1", True, "standard loopback", id="loopback_standard"),
             pytest.param("127.255.255.255", True, "loopback end", id="loopback_end"),
+            # RFC 1122 / RFC 6598 ranges that should never be accepted as public API hosts.
+            pytest.param(
+                "0.0.0.0",  # noqa: S104 - SSRF boundary test data, not a bind address.
+                True,
+                "current network start",
+                id="current_network_start",
+            ),
+            pytest.param("0.255.255.255", True, "current network end", id="current_network_end"),
+            pytest.param("100.64.0.0", True, "carrier-grade NAT start", id="cgnat_start"),
+            pytest.param("100.127.255.255", True, "carrier-grade NAT end", id="cgnat_end"),
+            pytest.param("100.128.0.0", False, "just above carrier-grade NAT", id="above_cgnat"),
         ],
     )
     def test_is_private_ip_boundary_values(

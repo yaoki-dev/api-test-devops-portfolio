@@ -422,8 +422,7 @@ tests/conftest.py            # pytest共通設定・フィクスチャ
 ├── mock_httpx_client        # モック化HTTPXクライアント（単体テスト用）
 ├── todo_data_factory        # テストデータファクトリー（Todoモデル）
 ├── user_data_factory        # ユーザーデータファクトリー（Userモデル）
-├── performance_timer        # パフォーマンス計測タイマー
-└── security_payloads        # セキュリティテスト用ペイロード（SQL injection等）
+└── performance_timer        # パフォーマンス計測タイマー
 ```
 
 **詳細**: CLAUDE.md「テスト構成」参照

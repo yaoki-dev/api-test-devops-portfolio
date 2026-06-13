@@ -112,7 +112,7 @@ result = "".join(str(item) for item in items)  # 文字列結合 O(n)
 ## 8. テスト規約
 
 ```python
-@pytest.mark.asyncio
+# pytest-asyncio が async テストを自動検出する (asyncio_mode = "auto")
 async def test_async_get_user(sample_user_data, mock_response): ...
 
 @pytest.fixture

@@ -1,4 +1,4 @@
-# Claude Code Plugins 活用ガイド
+# Claude Code Plugins
 
 *最終更新: 2026年01月28日*
 

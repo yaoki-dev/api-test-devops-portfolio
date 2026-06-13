@@ -119,95 +119,11 @@ workflow:
 | マージ | `gh pr merge --squash` | レビュー承認後 |
 | ブランチ削除 | `/finishing-a-development-branch` | マージ完了後 |
 
----
-
-## 2. コマンド選択マトリクス
-
-**目的**: 複数のコマンドフレームワーク（ccplugins、SuperClaude、Claude Templates）から最適なコマンドを選択するための早見表
-
-### テスト・品質保証
-
-| 目的 | 推奨コマンド | フレームワーク | 固有価値 | 具体例 |
-|-----|------------|-------------|---------|--------|
-| コンテキスト検出テスト | `/test` | ccplugins | Cold Start検出、自動修正 | `/test`, `/test tests/unit/`, `/test --coverage` |
-| Docker環境テスト | `/test` | ccplugins | docker-compose統合 | `/test "docker-compose up dev"` |
-| テストカバレッジ分析 | `/test-coverage` | 個別インストール | 4種類のカバレッジタイプ（line/branch/function/statement）分析 | `/test-coverage --line` |
-| テスト自動生成 | `/generate-tests` | 個別インストール | AIベースのunit/integration/edge caseテスト生成 | `/generate-tests src/auth.ts` |
-
-### 実装・開発
-
-| 目的 | 推奨コマンド | フレームワーク | 固有価値 | 具体例 |
-|-----|------------|-------------|---------|--------|
-| リポジトリ移植実装 | `/implement` | ccplugins | Deep Validation + auto-fix | `/implement "GitHub Actions test workflow実装"` |
-| チェックリストベース実装 | `/implement` | ccplugins | セッション継続、進捗追跡 | `/implement docs/プロジェクト再編/Week7_Docker実装完了チェックリスト.md` |
-| 仕様書ベース実装 | `/implement` | ccplugins | 自動計画生成（implement/plan.md） | `/implement docs/プロジェクト再編/Week8_Day44_CICD最適化強化仕様.md` |
-| プロジェクト雛形作成 | `/scaffold` | ccplugins | パターン検出型スキャフォールディング | `/scaffold UserProfile` |
-
-### セキュリティ
-
-| 目的 | 推奨コマンド | フレームワーク | 固有価値 | 具体例 |
-|-----|------------|-------------|---------|--------|
-| 脆弱性検出・自動修正 | `/security-scan` | ccplugins | セッション継続型修正フロー | `/security-scan Dockerfile docker-compose.yml` |
-| Python依存関係スキャン | `/security-scan` | ccplugins | safety統合、自動修正 | `/security-scan requirements.txt` |
-| 全体セキュリティスキャン | `/security-scan` | ccplugins | Critical/High/Medium分類 | `/security-scan` |
-
-### ドキュメント
-
-| 目的 | 推奨コマンド | 規模・条件 | 設計特性 | 固有価値 | 具体例 |
-|-----|------------|----------|---------|---------|--------|
-| 小規模・迅速更新 | `/docs` | 1-2ファイル | 単一AI自律型 | 高速（agent起動なし）、4モード | `/docs update` |
-| 大規模・品質重視更新 | `/docs:update-docs` | 3+ファイルOR API変更 | マルチagent+review | 並列処理、専用品質保証、index管理 | `/docs:update-docs` |
-| ドキュメント品質監査 | `/docs-maintenance` | 全体監査 | 監査特化 | リンク検証・スタイル一貫性・自動同期 | `/docs-maintenance --audit` |
-
-**使い分けルール**:
-- **作成フェーズ**: `/docs`（プロジェクト統合）
-- **更新フェーズ**: 小規模（1-2ファイル）→ `/docs` | 大規模（3+ファイル）→ `/docs:update-docs`
-- **品質重視**: `/docs:update-docs`（review agent）| 速度重視: `/docs`（単一AI）
-
-### 設計・計画
-
-| 目的 | 推奨コマンド | フレームワーク | 固有価値 | 具体例 |
-|-----|------------|-------------|---------|--------|
-
-### セッション管理
-
-| 目的 | 推奨コマンド | フレームワーク | 固有価値 | 具体例 |
-|-----|------------|-------------|---------|--------|
-
----
-
-## 3. フレームワーク特性
-
-### ccplugins（Smart系）
-
-**特徴**:
-- セッションインテリジェンス: コンテキスト検出、Cold Start検出
-- 自動修正: テスト失敗時の自動リトライ・修正フロー
-- 継続的改善: 進捗追跡、セッション継続型ワークフロー
-
-**適用場面**:
-- 単一リポジトリ内の開発タスク
-- 継続的改善・品質保証
-- チェックリスト・仕様書ベースの実装
-
-**主要コマンド**:
-- `/test`: コンテキスト検出テスト、Docker環境テスト
-- `/implement`: リポジトリ移植、チェックリスト/仕様書ベース実装
-- `/review`: コードレビュー
-- `/docs`: ドキュメント一括更新、`/docs:update-docs`（更新）
-- `/refactor`: リファクタリング
-- `/scaffold`: プロジェクト雛形作成
-- `/security-scan`: セキュリティ脆弱性検出・自動修正
-
----
-
 ## 5. 自動発動ルール（Plugin/Command/Hook/Skill）
 
 **目的**: AIが明示的指示なしで適切なツールを自動発動するためのルール定義
 
 **💡 関連**: 全スキル自動発動ルール（簡潔版）は `~/.claude/docs/SKILLS_CATALOG.md` Section「スキル自動発動ルール」を参照
-
-**注記**: CCPluginsコマンド（`/implement`, `/test`, `/scaffold`, `/security-scan`）はユーザー明示実行を前提とするため、このセクションには記載していません。これらのコマンドは Section 2「コマンド選択マトリクス」で使い分けを参照してください。
 
 ### 優先度別発動ルール
 
@@ -279,7 +195,7 @@ workflow:
 
 **参照元**:
 - グローバルCLAUDE.md 行167-218（2025年11月14日抽出）
-- docs/guides/claude-code-plugins-usage-guide.md（2026年1月28日更新）
+- docs/reference/claude-code-plugins.md（2026年1月28日更新）
 
 ---
 

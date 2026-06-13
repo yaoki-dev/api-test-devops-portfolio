@@ -142,7 +142,7 @@ uv run safety scan --output json > reports/safety-detailed.json
 uv run pytest -n auto -m "(unit or integration) and not external" --cov=utils --cov=config --cov=models --cov-report=term-missing && uv run ruff check . && uv run mypy utils/ config/ models/
 
 # Docker環境でのテスト実行（Week3実装後に利用可能）
-# docker-compose -f docker-compose.test.yml run tests
+# docker compose --profile test run --rm test
 
 # 包括的検証 (品質+セキュリティ)
 uv run pytest -n auto --cov=utils --cov=config --cov=models --cov-report=term-missing && uv run ruff check . && uv run mypy utils/ config/ models/ && uv run bandit -r utils/ config/ models/ -q
@@ -190,35 +190,35 @@ git status
 
 ### 🐳 Docker Operations
 
-> ⚠️ **Week3実装予定** - `docker-compose.yml` は未作成のため、以下の `docker-compose` コマンドは現時点では利用不可
+> ⚠️ **Week3実装予定** - `docker-compose.yml` は未作成のため、以下の `docker compose` コマンドは現時点では利用不可
 
 #### Docker環境管理
 
 ```bash
 # Dockerイメージビルド
-docker build -t api-test-portfolio:latest .
+docker build -t api-test-devops-portfolio:latest .
 
 # 開発環境起動（Week3実装後）
-docker-compose up -d
+docker compose up -d
 
 # Docker環境でのテスト実行（Week3実装後）
-docker-compose -f docker-compose.test.yml run tests
+docker compose --profile test run --rm test
 
 # 環境停止・クリーンアップ（Week3実装後）
-docker-compose down
+docker compose down
 ```
 
 #### Docker詳細操作
 
 ```bash
 # コンテナログ表示（Week3実装後）
-docker-compose logs
+docker compose logs
 
 # コンテナシェル起動（Week3実装後）
-docker-compose exec app bash
+docker compose exec app bash
 
 # Docker環境の完全再構築（Week3実装後）
-docker-compose down && docker build -t api-test-portfolio:latest . && docker-compose up -d
+docker compose down && docker build -t api-test-devops-portfolio:latest . && docker compose up -d
 ```
 
 ### 🧹 Maintenance
@@ -234,7 +234,7 @@ find . -name "*.pyc" -delete 2>/dev/null || true
 rm -rf reports/htmlcov reports/coverage.xml
 
 # Dockerクリーンアップ（Week3実装後に実行可能）
-# docker-compose down --rmi local 2>/dev/null || true
+# docker compose down --rmi local 2>/dev/null || true
 ```
 
 ## 🎯 特殊用途・統合コマンド
@@ -628,7 +628,7 @@ uv run bandit -r utils/ config/ models/ -q && uv run safety scan  # セキュリ
 
 ```bash
 uv sync --dev              # 初期設定
-# docker-compose up -d   # Docker環境（Week3実装後に利用可能）
+# docker compose up -d   # Docker環境（Week3実装後に利用可能）
 find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && rm -rf reports/htmlcov reports/coverage.xml  # 完全クリーンアップ
 ```
 
@@ -644,7 +644,7 @@ uv sync --dev
 find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && uv sync --dev
 
 # Docker環境リセット（Week3実装後に利用可能）
-# docker-compose down && docker build -t api-test-portfolio:latest . && docker-compose up -d
+# docker compose down && docker build -t api-test-devops-portfolio:latest . && docker compose up -d
 ```
 
 ### 品質チェック問題

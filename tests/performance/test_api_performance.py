@@ -191,7 +191,6 @@ class TestAPIPerformance:
         assert summary["cpu_usage"]["end_percent"] == 0.0
         assert isinstance(summary["cpu_usage"]["end_percent"], float)
 
-    @pytest.mark.asyncio
     async def test_single_request_performance(self):
         """単一リクエストのパフォーマンステスト"""
         metrics = PerformanceMetrics()
@@ -222,7 +221,6 @@ class TestAPIPerformance:
                 cpu_start_percent=None,
             )
 
-    @pytest.mark.asyncio
     async def test_concurrent_requests_performance(self):
         """並行リクエストのパフォーマンステスト"""
         metrics = PerformanceMetrics()
@@ -285,7 +283,6 @@ class TestAPIPerformance:
                 cpu_end_percent=round(summary["cpu_usage"]["end_percent"] or 0.0, 1),
             )
 
-    @pytest.mark.asyncio
     async def test_load_test_simulation(self):
         """負荷テストシミュレーション"""
         metrics = PerformanceMetrics()
@@ -349,7 +346,6 @@ class TestAPIPerformance:
                 cpu_end_percent=round(summary["cpu_usage"]["end_percent"] or 0.0, 1),
             )
 
-    @pytest.mark.asyncio
     async def test_endpoint_comparison_performance(self):
         """エンドポイント別パフォーマンス比較"""
         endpoints = ["/posts/1", "/users/1", "/todos/1", "/comments/1"]
@@ -391,7 +387,6 @@ class TestPerformanceRegression:
     BASELINE_RESPONSE_TIME = 2.0  # 秒（外部API + CI環境の実測値に基づく保守的な値；旧: 1.0s）
     REGRESSION_THRESHOLD = 1.5  # 50%悪化まで許容；上限 = 2.0s × 1.5 = 3.0s（旧しきい値と同値）
 
-    @pytest.mark.asyncio
     async def test_performance_regression_detection(self):
         """パフォーマンス回帰検出テスト"""
         metrics = PerformanceMetrics()

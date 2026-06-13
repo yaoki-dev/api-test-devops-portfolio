@@ -29,10 +29,6 @@ api-test-devops-portfolio/
 │   ├── performance/       # パフォーマンステスト（1 file）
 │   ├── conftest.py        # pytest fixtures
 │   └── test_smoke.py      # スモークテスト（1 file）
-├── scripts/                # 自動化スクリプト
-│   ├── error_tracker.py   # エラー追跡
-│   ├── evaluate_4dimensions.py
-│   └── update_readme_metrics.py
 ├── docs/                   # プロジェクトドキュメント
 ├── .github/                # CI/CD workflows
 ├── reports/                # テスト・カバレッジレポート
@@ -42,11 +38,6 @@ api-test-devops-portfolio/
 ---
 
 ## 🚀 Entry Points
-
-### CLI / Scripts
-- **Error Tracker**: `scripts/error_tracker.py` - エラー発生履歴の記録・分析
-- **Metrics Updater**: `scripts/update_readme_metrics.py` - README.md メトリクス自動更新
-- **4-Dimension Evaluator**: `scripts/evaluate_4dimensions.py` - 学習進捗4次元評価
 
 ### API Clients
 - **Generic API Client**: `utils/api_client.py` - 汎用HTTP API クライアント

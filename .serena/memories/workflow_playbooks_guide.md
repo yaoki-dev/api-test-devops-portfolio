@@ -93,7 +93,7 @@
    - **成功基準**: コミット→テスト→ビルド→デプロイが完全自動化
 
 3. **`docker-devops`**: コンテナイメージの最適化と管理を担当する。
-   - **アウトプット**: Multi-stage Dockerfile、docker-compose設定、イメージ最適化
+   - **アウトプット**: Multi-stage Dockerfile、docker compose設定、イメージ最適化
    - **成功基準**: 本番用イメージが50MB以下、セキュリティスキャン合格
 
 4. **`logging-monitoring`**: ログとメトリクスの収集・可視化基盤を実装する。

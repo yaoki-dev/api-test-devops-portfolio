@@ -35,28 +35,28 @@ build_initial() {
 
     time docker build \
         --target base \
-        --cache-from api-test:base \
-        -t api-test:base \
+        --cache-from api-test-devops:base \
+        -t api-test-devops:base \
         . && \
     docker build \
         --target dependencies \
-        --cache-from api-test:base \
-        --cache-from api-test:dependencies \
-        -t api-test:dependencies \
+        --cache-from api-test-devops:base \
+        --cache-from api-test-devops:dependencies \
+        -t api-test-devops:dependencies \
         . && \
     docker build \
         --target runtime \
-        --cache-from api-test:base \
-        --cache-from api-test:dependencies \
-        --cache-from api-test:runtime \
-        -t api-test:runtime \
+        --cache-from api-test-devops:base \
+        --cache-from api-test-devops:dependencies \
+        --cache-from api-test-devops:runtime \
+        -t api-test-devops:runtime \
         . && \
     docker build \
         --target test \
-        --cache-from api-test:base \
-        --cache-from api-test:dependencies \
-        --cache-from api-test:runtime \
-        -t api-test:test \
+        --cache-from api-test-devops:base \
+        --cache-from api-test-devops:dependencies \
+        --cache-from api-test-devops:runtime \
+        -t api-test-devops:test \
         .
 
     log_info "初回ビルド完了（推定時間: 1.5-2分）"
@@ -72,10 +72,10 @@ build_fast() {
 
     time docker build \
         --target "$TARGET" \
-        --cache-from api-test:base \
-        --cache-from api-test:dependencies \
-        --cache-from api-test:runtime \
-        -t "api-test:$TARGET" \
+        --cache-from api-test-devops:base \
+        --cache-from api-test-devops:dependencies \
+        --cache-from api-test-devops:runtime \
+        -t "api-test-devops:$TARGET" \
         .
 
     log_info "高速再ビルド完了（推定時間: 5-8秒）"
@@ -87,7 +87,7 @@ build_fast() {
 test_run() {
     log_info "テスト実行開始"
 
-    docker-compose run --rm test
+    docker compose run --rm test
 
     log_info "テスト実行完了"
 }
@@ -111,11 +111,11 @@ analyze_size() {
 
     echo ""
     echo "Stage別イメージサイズ:"
-    docker images api-test --format "table {{.Tag}}\t{{.Size}}\t{{.CreatedAt}}"
+    docker images api-test-devops --format "table {{.Tag}}\t{{.Size}}\t{{.CreatedAt}}"
 
     echo ""
     echo "Layer分析（runtime）:"
-    docker history api-test:runtime --no-trunc --human
+    docker history api-test-devops:runtime --no-trunc --human
 }
 
 # ========================================

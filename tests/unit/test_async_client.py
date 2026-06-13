@@ -954,7 +954,7 @@ async def test_async_api_client_aexit_aclose_exception_is_suppressed_with_warnin
 async def test_async_api_client_aexit_body_exception_not_overridden_by_close_exception() -> None:
     """__aexit__ で本体例外発生中に aclose() も例外を出すケース。
 
-    PR#347 review Q8: body 例外 (exc_val) が close 例外で上書きされないこと
+    body 例外 (exc_val) が close 例外で上書きされないこと
     (warning log only, no re-raise) を end-to-end で検証する。設計意図:
     ``async with`` body 例外 + aclose 例外の両発生時、原因情報 (body 例外) を
     優先伝播させて debuggability を維持する (CWE-755 例外マスク回避)。
@@ -985,7 +985,7 @@ async def test_async_api_client_aexit_body_exception_not_overridden_by_close_exc
 async def test_aexit_unexpected_exception_reraises_when_no_body_exception() -> None:
     """__aexit__ で body 例外なし + 予期しない close 例外 → close_exc を re-raise する。
 
-    github_client.py L698 のテストを api_client 用に移植（PR#347 二段構え統一）。
+    github_client.py L698 のテストを api_client 用に移植
 
     body 例外がない状態（exc_type is None）では、aclose() の予期しない例外は
     実装バグとして呼び出し元に伝播させる。
@@ -1010,7 +1010,7 @@ async def test_aexit_unexpected_exception_reraises_when_no_body_exception() -> N
     assert error_logs[0]["error_type"] == "RuntimeError"
     assert error_logs[0]["error_module"] == "builtins"
     assert error_logs[0]["has_body_exception"] is False
-    # exc_info=True によりスタックトレースが記録される（PR#347 二段構え）
+    # exc_info=True によりスタックトレースが記録される
     assert error_logs[0].get("exc_info") is True
     # 予期しない例外では warning ログは出ない
     failed_event = "async_api_client_aclose_failed"
@@ -1021,7 +1021,7 @@ async def test_aexit_unexpected_exception_reraises_when_no_body_exception() -> N
 async def test_aexit_unexpected_exception_suppressed_when_body_exception() -> None:
     """__aexit__ で body 例外あり + 予期しない close 例外 → re-raise しない（body 例外優先）。
 
-    github_client.py L728 のテストを api_client 用に移植（PR#347 二段構え統一）。
+    github_client.py L728 のテストを api_client 用に移植
 
     body 例外がある状態（exc_type is not None）では close_exc を re-raise せず、
     body 例外を優先伝播させて debuggability を維持する（CWE-755 例外マスク回避）。
@@ -1048,7 +1048,7 @@ async def test_aexit_unexpected_exception_suppressed_when_body_exception() -> No
     assert error_logs[0]["error_type"] == "RuntimeError"
     assert error_logs[0]["error_module"] == "builtins"
     assert error_logs[0]["has_body_exception"] is True
-    # exc_info=True によりスタックトレースが記録される（PR#347 二段構え）
+    # exc_info=True によりスタックトレースが記録される
     assert error_logs[0].get("exc_info") is True
     # warning ログは出ない
     failed_event = "async_api_client_aclose_failed"
@@ -1129,7 +1129,7 @@ async def test_aclose_unexpected_exception_suppressed_with_warning() -> None:
     ``except Exception`` 第2分岐 (suppress_unexpected=True パス /
     async_api_client_aclose_unexpected_error_suppressed) を明示的にカバーする回帰防止テスト。
     aclose() は finally ブロック等での安全な呼び出しを保証するため、実装バグ起因の
-    予期しない例外も re-raise せず握りつぶす設計 (PR#347 review SF-2)。
+    予期しない例外も re-raise せず握りつぶす設計。
     """
     client = AsyncAPIClient()
 
@@ -1363,8 +1363,7 @@ async def test_async_performance_benchmark():
 #   pytest tests/unit/test_async_client.py -n 4 -v
 #
 # 9. Dockerコンテナ内でのテスト実行
-#   docker-compose -f docker-compose.test.yml run --rm unit-tests \
-#       pytest tests/unit/test_async_client.py -v
+#   docker compose --profile test run --rm test
 #
 # 10. 継続的テスト実行（ファイル変更監視）
 #   pytest-watch tests/unit/test_async_client.py
@@ -2695,8 +2694,7 @@ async def test_async_client_falsy_values_not_overridden() -> None:
 #   pytest tests/unit/test_async_client.py -n 4 -v
 #
 # 9. Dockerコンテナ内でのテスト実行
-#   docker-compose -f docker-compose.test.yml run --rm unit-tests \
-#       pytest tests/unit/test_async_client.py -v
+#   docker compose --profile test run --rm test
 #
 # 10. 継続的テスト実行（ファイル変更監視）
 #   pytest-watch tests/unit/test_async_client.py

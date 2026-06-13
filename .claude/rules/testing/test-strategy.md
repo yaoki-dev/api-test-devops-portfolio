@@ -50,18 +50,6 @@ uv run pytest -n auto -m "(unit or integration) and not external" \
 
 ---
 
-## カバレッジ戦略
-
-| Week | 目標 | 実績 | 主要実装 |
-|------|------|------|---------|
-| 1-2 | 60-65% | — | 単体テスト基盤 |
-| 3-4 | 65-70% | — | Docker/CI-CD |
-| 5-6 | 80-85% | 96.15% ✅ | 非同期/Integration強化 |
-
-**優先モジュール**: utils/api_client.py (92.22%) → 継続改善対象
-
----
-
 ## CI/CD統合
 
 | ステージ | トリガー | テスト |

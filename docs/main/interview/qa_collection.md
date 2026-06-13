@@ -14,14 +14,14 @@
 
 実際にこのプロジェクトでは、フルサイズから60%のサイズ削減を実現しました。
 
-#### Q: docker-composeとKubernetesの使い分けは？
+#### Q: docker composeとKubernetesの使い分けは？
 
 **A**:
 
-- **docker-compose**: 開発・小規模運用、単一ホスト環境
+- **docker compose**: 開発・小規模運用、単一ホスト環境
 - **Kubernetes**: 本番・大規模運用、クラスター環境、高可用性要求
 
-現在のプロジェクトはdocker-composeですが、
+現在のプロジェクトはdocker composeですが、
 Kubernetesへの移行も設計を考慮しています。
 
 ### CI/CD関連
