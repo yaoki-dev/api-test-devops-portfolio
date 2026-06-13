@@ -262,38 +262,6 @@ def performance_timer() -> PerformanceTimer:
 
 
 # =============================================================================
-# セキュリティテスト用フィクスチャ
-# =============================================================================
-
-
-@pytest.fixture
-def security_payloads() -> dict[str, list[str]]:
-    """セキュリティテスト用のペイロード"""
-    return {
-        "sql_injection": [
-            "'; DROP TABLE users; --",
-            "1' OR '1'='1",
-            "admin'--",
-        ],
-        "xss": [
-            "<script>alert('xss')</script>",
-            "javascript:alert(1)",
-            "<img src=x onerror=alert(1)>",
-        ],
-        "command_injection": [
-            "; ls -la",
-            "| cat /etc/passwd",
-            "&& whoami",
-        ],
-        "path_traversal": [
-            "../../../etc/passwd",
-            "..\\..\\..\\windows\\system32\\drivers\\etc\\hosts",
-            "....//....//....//etc/passwd",
-        ],
-    }
-
-
-# =============================================================================
 # 統合テスト用フィクスチャ
 # =============================================================================
 

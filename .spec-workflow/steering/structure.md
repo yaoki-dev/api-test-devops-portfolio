@@ -2037,8 +2037,7 @@ tests/
 │   ├── mock_todo_repository # モック化Repository（単体テスト用）
 │   ├── todo_data_factory    # テストデータ生成
 │   ├── user_data_factory    # テストデータ生成
-│   ├── performance_timer    # パフォーマンス計測
-│   └── security_payloads    # セキュリティテスト用ペイロード
+│   └── performance_timer    # パフォーマンス計測
 ├── unit/                    # 単体テスト（モック中心、開発環境）
 │   ├── domain/              # Domain層テスト
 │   ├── services/            # Service層テスト
