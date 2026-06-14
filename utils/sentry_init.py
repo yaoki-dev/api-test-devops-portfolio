@@ -32,6 +32,7 @@ from __future__ import annotations
 import re
 import secrets
 import sys
+import threading
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlunparse
@@ -302,6 +303,7 @@ SENSITIVE_KEYS: frozenset[str] = frozenset(
 
 # 遅延初期化フラグ
 _sentry_initialized: bool = False
+_sentry_init_lock = threading.Lock()
 
 
 # 再帰制限のデフォルト値
@@ -1055,8 +1057,16 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
     return event
 
 
-def init_sentry() -> bool:  # noqa: C901
-    """Sentry SDK初期化
+def init_sentry() -> bool:
+    """Sentry SDKをプロセス内で一度だけ初期化する。"""
+    with _sentry_init_lock:
+        if _sentry_initialized:
+            return True
+        return _init_sentry_unlocked()
+
+
+def _init_sentry_unlocked() -> bool:  # noqa: C901
+    """Sentry SDK初期化（呼び出し側で _sentry_init_lock を保持していること）。
 
     config/settings.pyのSentryConfigに基づいて初期化。
     enabled=Falseまたは空DSNの場合はスキップ。
@@ -1071,10 +1081,6 @@ def init_sentry() -> bool:  # noqa: C901
 
     """
     global _sentry_initialized  # noqa: PLW0603
-
-    # 二重初期化防止
-    if _sentry_initialized:
-        return True
 
     settings = get_settings()
     sentry_config = settings.sentry
@@ -1188,7 +1194,8 @@ def is_sentry_initialized() -> bool:
         False: 未初期化
 
     """
-    return _sentry_initialized
+    with _sentry_init_lock:
+        return _sentry_initialized
 
 
 def reset_sentry_state() -> None:
@@ -1199,4 +1206,5 @@ def reset_sentry_state() -> None:
 
     """
     global _sentry_initialized  # noqa: PLW0603
-    _sentry_initialized = False
+    with _sentry_init_lock:
+        _sentry_initialized = False

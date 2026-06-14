@@ -13,6 +13,8 @@ utils/sentry_init.py の単体テスト。
 from __future__ import annotations
 
 import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
@@ -2157,6 +2159,35 @@ class TestInitSentry:
         assert init_sentry() is True
 
         # sentry_sdk.initは1回のみ呼ばれる
+        assert mock_sdk_init.call_count == 1
+
+    @patch("utils.sentry_init.get_settings")
+    @patch("sentry_sdk.init")
+    def test_concurrent_init_prevented(
+        self,
+        mock_sdk_init: MagicMock,
+        mock_settings: MagicMock,
+    ) -> None:
+        """並行呼び出しでもSentry SDK初期化は1回に抑制される"""
+        mock_settings.return_value.sentry.enabled = True
+        mock_settings.return_value.sentry.dsn = SecretStr(
+            "https://abc123@o456.ingest.us.sentry.io/789",
+        )
+        mock_settings.return_value.sentry.environment = "testing"
+        mock_settings.return_value.sentry.traces_sample_rate = 0.1
+        mock_settings.return_value.sentry.profiles_sample_rate = 0.1
+        mock_settings.return_value.sentry.send_default_pii = False
+        mock_settings.return_value.environment.value = "testing"
+
+        def slow_init(**_: Any) -> None:
+            time.sleep(0.01)
+
+        mock_sdk_init.side_effect = slow_init
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            results = list(executor.map(lambda _: init_sentry(), range(8)))
+
+        assert results == [True] * 8
         assert mock_sdk_init.call_count == 1
 
 
