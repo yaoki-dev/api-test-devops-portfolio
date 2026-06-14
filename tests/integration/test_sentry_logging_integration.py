@@ -57,11 +57,25 @@ class _CapturingTransport(Transport):
     def __init__(self) -> None:
         super().__init__()
         self.captured_events: list[dict[str, Any]] = []
+        # payload 抽出失敗を記録する。sentry_sdk は transport 呼び出しを
+        # capture_internal_exceptions() でラップし例外をログのみで握り潰すため
+        # （getsentry/sentry-python 仕様）、ここで握り潰すと captured_events が
+        # 空のままになり PII スクラブ検証が空リストに対して vacuously true となる。
+        # fixture teardown でこのリストを assert し、抽出失敗を確実に顕在化させる。
+        self.capture_errors: list[str] = []
 
     def capture_envelope(self, envelope: Any) -> None:
-        """envelope 内の event item を収集する。"""
+        """envelope 内の event item を収集する。
+
+        payload 抽出失敗は握り潰さず capture_errors に記録する
+        （sentry-sdk 内部 API のバージョン差異によるサイレント障害を検知するため）。
+        """
         for item in envelope.items:
-            payload = item.payload.json
+            try:
+                payload = item.payload.json
+            except Exception as exc:  # noqa: BLE001 - 抽出失敗を確実に捕捉し teardown で顕在化
+                self.capture_errors.append(f"{type(exc).__qualname__}: {exc}")
+                continue
             if isinstance(payload, dict) and payload.get("type") != "transaction":
                 self.captured_events.append(payload)
 
@@ -92,11 +106,19 @@ def captured_events(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[dict[str, 
     client = sentry_sdk.get_client()
     client.transport = transport  # 実送信を捕捉用に差し替え（before_send 配線は維持）
 
-    yield transport.captured_events
+    captured_errors = transport.capture_errors
+    try:
+        yield transport.captured_events
+    finally:
+        # 後続テストへの状態リークを防止（assert 失敗時もクリーンアップを必ず実行）
+        _reset_sentry_sdk_client_for_test()
+        reload_settings()
 
-    # 後続テストへの状態リークを防止
-    _reset_sentry_sdk_client_for_test()
-    reload_settings()
+    # payload 抽出に失敗していた場合は teardown で顕在化させる。
+    # これを欠くと captured_events が空のまま PII 検証が vacuously true となり
+    # サイレントにリークを見逃す（sentry-sdk 内部 API のバージョン差異対策）。
+    # クリーンアップ後に assert することで、失敗してもセッション状態は復元済みにする。
+    assert not captured_errors, f"capturing transport で payload 抽出に失敗: {captured_errors}"
 
 
 def test_logger_error_forwards_to_sentry_with_pii_scrubbed(

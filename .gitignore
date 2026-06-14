@@ -111,6 +111,7 @@ docs/text.md
 # Claude MCP auto-generated files (claude-mem)
 # Excludes all CLAUDE.md in subdirectories, preserves root CLAUDE.md
 **/CLAUDE.md
+!CLAUDE.md
 
 # Other project-specific ignores
 docs/main/6週プラン/技術記事/技術記事作成.md
