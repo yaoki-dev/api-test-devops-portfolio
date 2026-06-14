@@ -68,8 +68,11 @@ def _get_allowed_domains() -> frozenset[str]:
 
 # 許可されたドメインリスト（環境変数で上書き可能）
 # NOTE: モジュール読み込み時に確定する。起動後の環境変数変更（monkeypatch等）は
-# 再起動するまで validate_base_url() に反映されない。テストで動的に変更する場合は
-# _get_allowed_domains() を直接呼ぶか、モジュールインポート前に環境変数を設定すること
+# 再起動するまで validate_base_url() に反映されない。validate_base_url() は
+# モジュール変数 ALLOWED_DOMAINS を直接参照するため、テストで動的に変更する場合は
+# config.settings.ALLOWED_DOMAINS を monkeypatch するか、モジュールインポート前に
+# 環境変数を設定すること。_get_allowed_domains() を呼ぶだけでは戻り値が
+# ALLOWED_DOMAINS に再代入されず validate_base_url() の動作は変わらない。
 # ALLOWED_DOMAINS は module-level で評価されるため、settings インスタンス生成タイミングではなく
 # import 前の環境変数設定が必要。
 ALLOWED_DOMAINS: frozenset[str] = _get_allowed_domains()
