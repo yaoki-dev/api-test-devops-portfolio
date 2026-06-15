@@ -49,7 +49,7 @@ dev = [
     "respx>=0.23.1",            # httpx用モックライブラリ
     "socksio>=1.0.0",           # SOCKS5 proxy support for httpx
     # 品質管理
-    "ruff>=0.15.16,<0.16",       # pre-commit frozen: v0.15.11（.pre-commit-config.yaml参照）
+    "ruff>=0.15.17,<0.16",       # pre-commit frozen: v0.15.11（.pre-commit-config.yaml参照）
     "mypy>=2.1.0,<3.0.0",
     "bandit>=1.8.6",
     "safety>=3.8.1",
