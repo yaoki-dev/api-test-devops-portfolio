@@ -30,6 +30,7 @@ from httpx import Response
 from structlog.testing import capture_logs
 
 # テストヘルパー
+from tests.constants import BASE_URL, INVALID_BASE_URLS
 from tests.unit.helpers import assert_warning_log_count
 
 # プロジェクト内モジュール
@@ -42,9 +43,6 @@ from utils.api_client import (
 
 # Module-level marker: All tests in this file are unit tests
 pytestmark = pytest.mark.unit
-
-# Constants
-BASE_URL = "https://jsonplaceholder.typicode.com"
 
 # ===============================================================================
 # テスト用フィクスチャ・設定
@@ -287,6 +285,12 @@ async def test_partial_failure_graceful_degradation():
     # 2件失敗（user_id=2,4）の警告ログ検証（Sentry監視の保証）
     assert_warning_log_count(log_output, "get_user_failed", 2)
 
+    # セキュリティ: get_user_failed ログの構造検証（APIClientErrorメッセージはサニタイズ済み）
+    for log in log_output:
+        if log.get("event") == "get_user_failed":
+            assert "error" not in log  # _classify_error と同方針で省略
+            assert "error_type" in log
+
 
 @respx.mock
 async def test_all_requests_fail_returns_empty_list():
@@ -319,6 +323,12 @@ async def test_all_requests_fail_returns_empty_list():
 
     # 各ユーザー取得失敗時に警告ログが出力されることを確認（Sentry監視の保証）
     assert_warning_log_count(log_output, "get_user_failed", 3)
+
+    # セキュリティ: get_user_failed ログの構造検証
+    for log in log_output:
+        if log.get("event") == "get_user_failed":
+            assert "error" not in log  # _classify_error と同方針で省略
+            assert "error_type" in log
 
 
 # ===============================================================================
@@ -473,9 +483,9 @@ async def test_async_bulk_create_users():
 
 
 @respx.mock
-async def test_async_bulk_create_users_partial_failure():
+async def test_async_bulk_create_users_partial_failure_4xx_returns_only_successful():
     """
-    複数ユーザーの並行作成における部分失敗テスト（silent failure設計の検証）
+    4xx部分失敗時の返却値テスト（silent partial failure + 成功分のみ返却）
 
     検証項目：
     - 一部リクエストが4xxエラーで失敗してもbulk_create_usersは例外を発生させない
@@ -506,10 +516,9 @@ async def test_async_bulk_create_users_partial_failure():
         Response(201, json={"id": 103, "name": "User 3", "email": "user3@test.com"}),
     ]
 
-    with capture_logs() as log_output:
-        async with AsyncJSONPlaceholderClient() as client:
-            # 例外なく完了することを確認（silent partial failure）
-            results = await client.bulk_create_users(users_to_create)
+    async with AsyncJSONPlaceholderClient() as client:
+        # 例外なく完了することを確認（silent partial failure）
+        results = await client.bulk_create_users(users_to_create)
 
     # 部分失敗: 3件中1件(422)が失敗するため成功件数は正確に2件
     # Note: respxのside_effectはリクエスト到着順（task作成順）に消費され決定論的
@@ -524,20 +533,68 @@ async def test_async_bulk_create_users_partial_failure():
     assert "User 3" in created_names  # 3件目成功
     assert "User 2" not in created_names  # 2件目は422エラーで失敗、返却されない
 
+
+@respx.mock
+async def test_async_bulk_create_users_partial_failure_4xx_log_structure():
+    """
+    4xx部分失敗時のwarningログ構造テスト（Sentry監視 + PII保護）
+
+    検証項目：
+    - bulk_create_partial_failure warningログが出力されること
+    - failed_count / success_count が正しいこと
+    - failed_detailsにerror_type / status_code / indexが含まれること
+    - errorフィールドが省略されていること（_classify_errorと同方針）
+    - user_dataフィールドが含まれないこと（PII保護: emailの漏洩防止）
+
+    設計根拠：
+    ログ構造はSentry監視の基盤であり、フィールド削除はリグレッションとして検出する。
+    PII（user_data）がログに混入するとセキュリティインシデントとなるため、
+    不在を明示的にアサートしてセキュリティリグレッションを防止する。
+    """
+    users_to_create = [
+        {"name": "User 1", "email": "user1@test.com"},
+        {"name": "User 2", "email": "user2@test.com"},  # この1件を422エラーで失敗させる
+        {"name": "User 3", "email": "user3@test.com"},
+    ]
+
+    # 2件目のリクエストを422（Unprocessable Entity）で失敗させる
+    # 4xxはリトライなし即失敗 → APIHTTPError を return_exceptions が捕捉
+    post_route = respx.post(f"{BASE_URL}/users")
+    post_route.side_effect = [
+        Response(201, json={"id": 101, "name": "User 1", "email": "user1@test.com"}),
+        Response(422, json={"error": "Unprocessable Entity"}),  # 2件目: 422で即失敗
+        Response(201, json={"id": 103, "name": "User 3", "email": "user3@test.com"}),
+    ]
+
+    with capture_logs() as log_output:
+        async with AsyncJSONPlaceholderClient() as client:
+            await client.bulk_create_users(users_to_create)
+
     # warningログ検証（Sentry監視の保証: ログ削除時のリグレッション検出）
     partial_log = next(
         (log for log in log_output if log.get("event") == "bulk_create_partial_failure"),
         None,
     )
     assert partial_log is not None
+    assert partial_log.get("log_level") == "warning"  # warningレベルであること
     assert partial_log.get("failed_count") == 1
     assert partial_log.get("success_count") == 2
 
+    # failed_details 構造検証（error_type+status_code、error フィールドは省略）
+    failed_details = partial_log.get("failed_details", [])
+    assert len(failed_details) == 1, "1件の失敗詳細が記録されていること"
+    failed_item = failed_details[0]
+    assert "error" not in failed_item  # _classify_error と同方針で省略
+    assert "user_data" not in failed_item  # PII保護: emailは含まれないこと
+    assert failed_item.get("error_type") == "APIHTTPError", "エラー種別が記録されていること"
+    assert failed_item.get("status_code") == 422, "HTTPステータスコードが記録されていること"
+    assert "index" in failed_item, "失敗ユーザーのインデックスが記録されていること"
+
 
 @respx.mock
-async def test_async_bulk_create_users_partial_failure_5xx() -> None:
+async def test_async_bulk_create_users_partial_failure_5xx_returns_only_successful() -> None:
     """
-    5xxエラー（サーバーエラー）時の部分失敗テスト（APIRetryError経路の検証）
+    5xx部分失敗時の返却値テスト（silent partial failure + 成功分のみ返却）
 
     検証項目：
     - 一部リクエストが5xxエラーで失敗してもbulk_create_usersは例外を発生させない
@@ -574,10 +631,9 @@ async def test_async_bulk_create_users_partial_failure_5xx() -> None:
     ]
 
     # retry_count=0: 5xxリトライなし → 即APIRetryError → side_effectは3件で決定論的
-    with capture_logs() as log_output:
-        async with AsyncJSONPlaceholderClient(retry_count=0) as client:
-            # 例外なく完了することを確認（silent partial failure）
-            results = await client.bulk_create_users(users_to_create)
+    async with AsyncJSONPlaceholderClient(retry_count=0) as client:
+        # 例外なく完了することを確認（silent partial failure）
+        results = await client.bulk_create_users(users_to_create)
 
     # 部分失敗: 3件中1件(500→APIRetryError)が失敗するため成功件数は正確に2件
     assert len(results) == 2, (
@@ -593,14 +649,69 @@ async def test_async_bulk_create_users_partial_failure_5xx() -> None:
     assert "User 3" in created_names  # 3件目成功
     assert "User 2" not in created_names  # 2件目は500エラーで失敗、返却されない
 
+
+@respx.mock
+async def test_async_bulk_create_users_partial_failure_5xx_log_structure() -> None:
+    """
+    5xx部分失敗時のwarningログ構造テスト（Sentry監視 + PII保護）
+
+    検証項目：
+    - bulk_create_partial_failure warningログが出力されること
+    - failed_count / success_count が正しいこと
+    - failed_detailsにerror_type / indexが含まれること
+    - status_codeが含まれないこと（5xxはAPIRetryErrorのためstatus_code不在）
+    - errorフィールドが省略されていること（_classify_errorと同方針）
+    - user_dataフィールドが含まれないこと（PII保護: emailの漏洩防止）
+
+    設計根拠：
+    ログ構造はSentry監視の基盤であり、フィールド削除はリグレッションとして検出する。
+    PII（user_data）がログに混入するとセキュリティインシデントとなるため、
+    不在を明示的にアサートしてセキュリティリグレッションを防止する。
+    5xxはAPIRetryError（リトライ上限到達後の例外）であり、APIHTTPErrorと異なり
+    status_codeを保持しないため、status_code不在もアサートする。
+    """
+    users_to_create = [
+        {"name": "User 1", "email": "user1@test.com"},
+        {"name": "User 2", "email": "user2@test.com"},  # この1件を500エラーで失敗させる
+        {"name": "User 3", "email": "user3@test.com"},
+    ]
+
+    # 2件目のリクエストを500（Internal Server Error）で失敗させる
+    # 5xxはリトライ対象だが、retry_count=0でリトライを無効化 → 即APIRetryErrorに変換
+    # → return_exceptionsで捕捉され、成功分のみ返却される
+    # side_effectリスト要素数は並行タスク数と一致させること。
+    # retry_count=0 の場合: 各タスクは初回(1) のみ = 3タスク × 1リクエスト = 3要素。
+    # 不一致時はStopIterationが発生しデバッグが困難になる。
+    post_route = respx.post(f"{BASE_URL}/users")
+    post_route.side_effect = [
+        Response(201, json={"id": 101, "name": "User 1", "email": "user1@test.com"}),
+        Response(500, json={"error": "Internal Server Error"}),  # 2件目: 500で失敗
+        Response(201, json={"id": 103, "name": "User 3", "email": "user3@test.com"}),
+    ]
+
+    # retry_count=0: 5xxリトライなし → 即APIRetryError → side_effectは3件で決定論的
+    with capture_logs() as log_output:
+        async with AsyncJSONPlaceholderClient(retry_count=0) as client:
+            await client.bulk_create_users(users_to_create)
+
     # warningログ検証（Sentry監視の保証: ログ削除時のリグレッション検出）
     partial_log = next(
         (log for log in log_output if log.get("event") == "bulk_create_partial_failure"),
         None,
     )
     assert partial_log is not None
+    assert partial_log.get("log_level") == "warning"  # warningレベルであること
     assert partial_log.get("failed_count") == 1
     assert partial_log.get("success_count") == 2
+    # failed_details構造検証: 5xx→APIRetryError のためstatus_codeは含まれない
+    failed_details = partial_log.get("failed_details", [])
+    assert len(failed_details) == 1
+    failed_item = failed_details[0]
+    assert "error" not in failed_item  # _classify_error と同方針で省略
+    assert "user_data" not in failed_item  # PII保護: emailは含まれないこと
+    assert failed_item.get("error_type") == "APIRetryError"
+    assert "status_code" not in failed_item  # 5xxはAPIHTTPErrorでないためstatus_code不在
+    assert "index" in failed_item, "失敗ユーザーのインデックスが記録されていること"
 
 
 async def test_async_bulk_create_users_cancelled_error_propagates() -> None:
@@ -689,15 +800,24 @@ async def test_async_bulk_create_users_multiple_cancelled_errors_logged() -> Non
         assert all(isinstance(e, asyncio.CancelledError) for e in exc_info.value.exceptions)
 
 
-async def test_async_bulk_create_users_memory_error_propagates() -> None:
-    """MemoryError が gather 後に再発生されることを確認
+@pytest.mark.parametrize(
+    "fatal_exc",
+    [MemoryError("OOM"), RecursionError("max depth")],
+)
+async def test_async_bulk_create_users_fatal_exception_propagates(
+    fatal_exc: BaseException,
+) -> None:
+    """MemoryError / RecursionError が gather 後に再発生されることを確認
 
-    bulk_create_users は asyncio.CancelledError だけでなく MemoryError も
-    fatal_exceptions として収集して再発生させる（OOM 保護）。
+    bulk_create_users は asyncio.CancelledError だけでなく ASYNC_FATAL_EXCEPTIONS
+    （MemoryError / RecursionError 等）も fatal_exceptions として収集して再発生させる
+    （OOM / スタック枯渇保護）。_close_async_client の
+    test_aclose_fatal_exception_propagates_not_suppressed が parametrize で
+    両方をカバーしているため、設計の一貫性を保つよう本テストも parametrize 化する。
 
-    実装の isinstance チェック対象4種:
+    実装の isinstance チェック対象（ASYNC_FATAL_EXCEPTIONS）:
     - asyncio.CancelledError: test_async_bulk_create_users_cancelled_error_propagates でカバー
-    - MemoryError: 本テストでカバー
+    - MemoryError / RecursionError: 本テストでカバー
     - KeyboardInterrupt: pytest がシグナルとして処理するため unit test 内での再現が困難。
       pytest.raises(KeyboardInterrupt) を使っても pytest 自体のシグナルハンドラが先に捕捉する。
     - SystemExit: 同様の理由で unit test での再現が困難。
@@ -707,9 +827,9 @@ async def test_async_bulk_create_users_memory_error_propagates() -> None:
         "create_user",
         new_callable=AsyncMock,
     ) as mock_create:
-        mock_create.side_effect = MemoryError("OOM")
+        mock_create.side_effect = fatal_exc
         async with AsyncJSONPlaceholderClient() as client:
-            with pytest.raises(MemoryError):
+            with pytest.raises(type(fatal_exc)):
                 await client.bulk_create_users([{"name": "A"}])
 
 
@@ -801,6 +921,301 @@ async def test_async_context_manager_cleanup_on_exception():
         mock_client_instance.aclose.assert_called_once()
 
 
+@pytest.mark.parametrize(
+    "close_exc,expected_type,expected_module",
+    [
+        (httpx.CloseError("close-failed"), "CloseError", "httpx"),
+        (OSError("connection reset"), "OSError", "builtins"),
+    ],
+)
+async def test_async_api_client_aexit_aclose_exception_is_suppressed_with_warning(
+    close_exc: httpx.CloseError | OSError,
+    expected_type: str,
+    expected_module: str,
+) -> None:
+    """__aexit__ で aclose() が例外を投げても警告ログのみ出力する"""
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(client._client, "aclose", new=AsyncMock(side_effect=close_exc)),
+        capture_logs() as log_output,
+    ):
+        await client.__aexit__(None, None, None)
+
+    warning_logs = [
+        log for log in log_output if log.get("event") == "async_api_client_aclose_failed"
+    ]
+    assert len(warning_logs) == 1
+    assert warning_logs[0]["error_type"] == expected_type
+    assert warning_logs[0]["error_module"] == expected_module
+    assert client._client is None
+
+
+async def test_async_api_client_aexit_body_exception_not_overridden_by_close_exception() -> None:
+    """__aexit__ で本体例外発生中に aclose() も例外を出すケース。
+
+    body 例外 (exc_val) が close 例外で上書きされないこと
+    (warning log only, no re-raise) を end-to-end で検証する。設計意図:
+    ``async with`` body 例外 + aclose 例外の両発生時、原因情報 (body 例外) を
+    優先伝播させて debuggability を維持する (CWE-755 例外マスク回避)。
+    """
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(
+            client._client,
+            "aclose",
+            new=AsyncMock(side_effect=httpx.CloseError("close-failed")),
+        ),
+        pytest.raises(ValueError, match="body-error"),
+        capture_logs() as log_output,
+    ):
+        async with client:
+            raise ValueError("body-error")
+
+    # close 例外は warning log のみ。body 例外は ValueError として外側に伝播。
+    warning_logs = [
+        log for log in log_output if log.get("event") == "async_api_client_aclose_failed"
+    ]
+    assert len(warning_logs) == 1
+    assert warning_logs[0]["error_type"] == "CloseError"
+    assert warning_logs[0]["error_module"] == "httpx"
+
+
+async def test_aexit_unexpected_exception_reraises_when_no_body_exception() -> None:
+    """__aexit__ で body 例外なし + 予期しない close 例外 → close_exc を re-raise する。
+
+    github_client.py L698 のテストを api_client 用に移植
+
+    body 例外がない状態（exc_type is None）では、aclose() の予期しない例外は
+    実装バグとして呼び出し元に伝播させる。
+    error ログ（has_body_exception=False, exc_info=True）が記録されてから re-raise。
+    """
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(
+            client._client,
+            "aclose",
+            new=AsyncMock(side_effect=RuntimeError("close-failed")),
+        ),
+        pytest.raises(RuntimeError, match="close-failed"),
+        capture_logs() as log_output,
+    ):
+        await client.__aexit__(None, None, None)
+
+    unexpected_event = "async_api_client_aclose_unexpected_error"
+    error_logs = [log for log in log_output if log.get("event") == unexpected_event]
+    assert len(error_logs) == 1
+    assert error_logs[0]["error_type"] == "RuntimeError"
+    assert error_logs[0]["error_module"] == "builtins"
+    assert error_logs[0]["has_body_exception"] is False
+    # exc_info=True によりスタックトレースが記録される
+    assert error_logs[0].get("exc_info") is True
+    # 予期しない例外では warning ログは出ない
+    failed_event = "async_api_client_aclose_failed"
+    warning_logs = [log for log in log_output if log.get("event") == failed_event]
+    assert len(warning_logs) == 0
+
+
+async def test_aexit_unexpected_exception_suppressed_when_body_exception() -> None:
+    """__aexit__ で body 例外あり + 予期しない close 例外 → re-raise しない（body 例外優先）。
+
+    github_client.py L728 のテストを api_client 用に移植
+
+    body 例外がある状態（exc_type is not None）では close_exc を re-raise せず、
+    body 例外を優先伝播させて debuggability を維持する（CWE-755 例外マスク回避）。
+    RuntimeError は予期しない例外ブランチ → error ログ + has_body_exception=True。
+    """
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(
+            client._client,
+            "aclose",
+            new=AsyncMock(side_effect=RuntimeError("close-failed")),
+        ),
+        pytest.raises(ValueError, match="body-error"),
+        capture_logs() as log_output,
+    ):
+        async with client:
+            raise ValueError("body-error")
+
+    # close 例外は re-raise しない。body 例外は ValueError として外側に伝播。
+    unexpected_event = "async_api_client_aclose_unexpected_error"
+    error_logs = [log for log in log_output if log.get("event") == unexpected_event]
+    assert len(error_logs) == 1
+    assert error_logs[0]["error_type"] == "RuntimeError"
+    assert error_logs[0]["error_module"] == "builtins"
+    assert error_logs[0]["has_body_exception"] is True
+    # exc_info=True によりスタックトレースが記録される
+    assert error_logs[0].get("exc_info") is True
+    # warning ログは出ない
+    failed_event = "async_api_client_aclose_failed"
+    warning_logs = [log for log in log_output if log.get("event") == failed_event]
+    assert len(warning_logs) == 0
+
+
+async def test_aclose_logger_info_failure_propagates_without_misclassification() -> None:
+    """aclose() 単独呼び出し: logger.info 失敗が close 失敗として誤分類されないことを検証。
+
+    close 処理は __aexit__ と共通化されるが、logger 例外はそのまま caller に
+    propagate し、aclose_unexpected_error には記録されない (Codex Q-1 recommendation: both paths)。
+    """
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(client._client, "aclose", new=AsyncMock()),
+        patch.object(client.logger, "info", side_effect=RuntimeError("logger-failed")),
+        patch.object(client.logger, "error") as mock_error,
+        pytest.raises(RuntimeError, match="logger-failed"),
+    ):
+        await client.aclose()
+
+    mock_error.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("close_exc", "expected_type", "expected_module"),
+    [
+        (httpx.CloseError("close-failed"), "CloseError", "httpx"),
+        (OSError("close-failed"), "OSError", "builtins"),
+    ],
+)
+async def test_aclose_exception_is_suppressed_with_warning(
+    close_exc: httpx.CloseError | OSError,
+    expected_type: str,
+    expected_module: str,
+) -> None:
+    """aclose() 単独呼び出しでも close 例外は warning のみで抑止する。"""
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(client._client, "aclose", new=AsyncMock(side_effect=close_exc)),
+        capture_logs() as log_output,
+    ):
+        await client.aclose()
+
+    warning_logs = [
+        log for log in log_output if log.get("event") == "async_api_client_aclose_failed"
+    ]
+    assert len(warning_logs) == 1
+    assert warning_logs[0]["error_type"] == expected_type
+    assert warning_logs[0]["error_module"] == expected_module
+    closed_logs = [log for log in log_output if log.get("event") == "async_api_client_closed"]
+    assert len(closed_logs) == 0
+
+
+async def test_aclose_normal_close_logs_info() -> None:
+    """aclose() 単独呼び出し時に async_api_client_closed の info ログが1回出力される。"""
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(client._client, "aclose", new=AsyncMock()),
+        capture_logs() as log_output,
+    ):
+        await client.aclose()
+
+    closed_logs = [log for log in log_output if log.get("event") == "async_api_client_closed"]
+    assert len(closed_logs) == 1
+    assert closed_logs[0]["log_level"] == "info"
+
+
+async def test_aclose_unexpected_exception_suppressed_with_warning() -> None:
+    """aclose() 単独呼び出しで予期しない例外 (RuntimeError) は warning ログのみで抑止される。
+
+    既存の ``test_aclose_exception_is_suppressed_with_warning`` は CloseError/OSError で
+    第1 except 分岐 (async_api_client_aclose_failed) をヒットするのに対し、本テストは
+    ``except Exception`` 第2分岐 (suppress_unexpected=True パス /
+    async_api_client_aclose_unexpected_error_suppressed) を明示的にカバーする回帰防止テスト。
+    aclose() は finally ブロック等での安全な呼び出しを保証するため、実装バグ起因の
+    予期しない例外も re-raise せず握りつぶす設計。
+    """
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(
+            client._client,
+            "aclose",
+            new=AsyncMock(side_effect=RuntimeError("unexpected-boom")),
+        ),
+        capture_logs() as log_output,
+    ):
+        await client.aclose()  # 例外が伝播しないこと（伝播すればこのテストは失敗する）
+
+    suppressed_logs = [
+        log
+        for log in log_output
+        if log.get("event") == "async_api_client_aclose_unexpected_error_suppressed"
+    ]
+    assert len(suppressed_logs) == 1
+    assert suppressed_logs[0]["error_type"] == "RuntimeError"
+    assert suppressed_logs[0]["error_module"] == "builtins"
+    # aclose 失敗のため else 節 (closed ログ) は未到達
+    closed_logs = [log for log in log_output if log.get("event") == "async_api_client_closed"]
+    assert len(closed_logs) == 0
+    # suppress 経路でも状態一貫性のため _client が None になること（壊れたクライアント再利用防止）
+    assert client._client is None
+
+
+@pytest.mark.parametrize(
+    "fatal_exc",
+    [MemoryError("OOM"), RecursionError("maximum recursion depth exceeded")],
+)
+async def test_aclose_fatal_exception_propagates_not_suppressed(
+    fatal_exc: MemoryError | RecursionError,
+) -> None:
+    """aclose() 単独呼出 (suppress_unexpected=True 経路) でも MemoryError /
+    RecursionError は握りつぶさず fail-fast で伝播する。
+
+    両者は ``Exception`` 派生 (MemoryError は ``Exception`` 直系、RecursionError は
+    ``RuntimeError`` 派生) のため ``except Exception`` に捕捉されうるが、専用 except 句で
+    先取りし即時 re-raise する設計 (github_client / sentry_init と同一方針)。
+    ``test_aclose_unexpected_exception_suppressed_with_warning`` (RuntimeError は
+    suppress) と対になり、「fatal のみ選択的に伝播」する不変条件を固定する回帰防止テスト。
+    """
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(client._client, "aclose", new=AsyncMock(side_effect=fatal_exc)),
+        pytest.raises(type(fatal_exc)),
+        capture_logs() as log_output,
+    ):
+        await client.aclose()  # 専用 except 句で即時 re-raise されること
+
+    # 専用句が except Exception より先に re-raise するため suppress ログは出ない
+    suppressed_logs = [
+        log
+        for log in log_output
+        if log.get("event") == "async_api_client_aclose_unexpected_error_suppressed"
+    ]
+    assert len(suppressed_logs) == 0
+    # aclose 失敗のため closed ログも未到達
+    closed_logs = [log for log in log_output if log.get("event") == "async_api_client_closed"]
+    assert len(closed_logs) == 0
+
+
+async def test_aexit_logger_info_failure_not_misclassified_as_close_failure() -> None:
+    """__aexit__: _client.aclose() 成功後に logger.info が例外を投げても
+    aclose_unexpected_error として誤分類されないことを検証 (Codex Q-1 regression)。
+
+    else 節に logger.info を分離したため、logger 例外は try-except 外から propagate し、
+    close 失敗 (aclose_unexpected_error) として記録されない。
+    """
+    client = AsyncAPIClient()
+
+    with (
+        patch.object(client._client, "aclose", new=AsyncMock()),
+        patch.object(client.logger, "info", side_effect=RuntimeError("logger-failed")),
+        patch.object(client.logger, "error") as mock_error,
+        pytest.raises(RuntimeError, match="logger-failed"),
+    ):
+        await client.__aexit__(None, None, None)
+
+    # close 失敗として誤分類されていない = error ログ（unexpected_error）未呼び出し
+    mock_error.assert_not_called()
+
+
 @respx.mock
 async def test_async_health_check_success():
     """
@@ -849,6 +1264,40 @@ async def test_async_health_check_connection_error():
 
     assert result is False
     assert route.call_count == 1  # retry_count=0なのでリトライなし（1回のみ実行）
+
+
+@respx.mock
+async def test_async_health_check_log_structure() -> None:
+    """health_check失敗時のログ構造検証（error_type/endpointフィールド）"""
+    respx.get(f"{BASE_URL}/users", params={"_limit": 1}).mock(
+        side_effect=httpx.ConnectError("Connection refused to secret-host.internal")
+    )
+
+    async with AsyncJSONPlaceholderClient(retry_count=0) as client:
+        with patch.object(client, "logger") as mock_logger:
+            result = await client.health_check()
+
+    assert result is False
+    # warning は request_error と health_check_failed の2回呼ばれる
+    assert mock_logger.warning.call_count == 2
+    # health_check_failed の呼び出しを抽出
+    health_check_call = next(
+        (c for c in mock_logger.warning.call_args_list if c[0][0] == "health_check_failed"),
+        None,
+    )
+    assert health_check_call is not None, "health_check_failed ログが出力されていない"
+    # 必須フィールドの検証
+    assert health_check_call[1]["error_type"] == "APIRetryError"
+    assert health_check_call[1]["endpoint"] == "/users"
+    # セキュリティ: error フィールド省略（_classify_error と同方針）
+    assert "error" not in health_check_call[1]
+    # async_all_retries_failed の error フィールド省略検証（機密情報保護）
+    all_retries_call = next(
+        (c for c in mock_logger.error.call_args_list if c[0][0] == "async_all_retries_failed"),
+        None,
+    )
+    assert all_retries_call is not None, "async_all_retries_failed ログが出力されていること"
+    assert "error" not in all_retries_call[1]
 
 
 # ===============================================================================
@@ -914,8 +1363,7 @@ async def test_async_performance_benchmark():
 #   pytest tests/unit/test_async_client.py -n 4 -v
 #
 # 9. Dockerコンテナ内でのテスト実行
-#   docker-compose -f docker-compose.test.yml run --rm unit-tests \
-#       pytest tests/unit/test_async_client.py -v
+#   docker compose --profile test run --rm test
 #
 # 10. 継続的テスト実行（ファイル変更監視）
 #   pytest-watch tests/unit/test_async_client.py
@@ -2156,38 +2604,49 @@ async def test_async_update_todo_multiple_fields() -> None:
 # ===============================================================================
 
 
-def test_async_client_empty_base_url_raises_value_error() -> None:
-    """base_url に空文字列を渡すと初期化時に ValueError が発生する
+@pytest.mark.parametrize(
+    "base_url",
+    INVALID_BASE_URLS,
+    ids=["empty", "whitespace", "tab", "newline"],
+)
+def test_async_client_base_url_validation_raises_value_error(base_url: str) -> None:
+    """base_url が空・空白・タブ・改行の場合、初期化時に ValueError が発生する
 
     Security Rationale:
-        空文字列がhttpx.AsyncClientに渡ると、リクエスト実行時に初めて InvalidURL が
-        発生し、原因特定が困難になる。初期化時に早期検証することで、
-        設定ミスを即座に検出する。
+        空文字列: httpx.AsyncClient に渡ると実行時に InvalidURL が発生し原因特定が困難。
+        初期化時の早期検証で設定ミスを即座に検出する。
+
+        空白バイパス: bool("   ") == True のため `if not self.base_url` を通過する。
+        str.strip() による追加検証が必要。
+
+        タブ・改行: URL設定時の見えない制御文字バイパスを防ぐ。
     """
     with pytest.raises(ValueError, match="base_url が空です"):
-        AsyncAPIClient(base_url="")
-
-
-def test_async_client_whitespace_base_url_raises_value_error() -> None:
-    """空白文字のみの base_url を渡すと初期化時に ValueError が発生する
-
-    Security Rationale:
-        bool("   ") == True のため、空白文字列は `if not self.base_url` を通過する。
-        `str.strip()` による追加検証で空白のみの文字列も早期拒否する。
-    """
-    with pytest.raises(ValueError, match="base_url が空です"):
-        AsyncAPIClient(base_url="   ")
+        AsyncAPIClient(base_url=base_url)
 
 
 async def test_async_client_falsy_values_not_overridden() -> None:
-    """retry_count=0, timeout=0.0, retry_delay=0.0 がFalsy判定で設定値に上書きされないことを検証
+    """falsy値(0, 0.0)がデフォルト設定値に上書きされないことを検証
 
-    退行防止: 修正前の `x or default` パターンでは retry_count=0 や
+    退行防止（r2850768833回帰テスト）:
+    修正前の `x or default` パターンでは retry_count=0 や
     timeout=0.0 がFalsyと判定され設定値で上書きされていた。
     `x if x is not None else default` への修正が正しく動作することを保証する。
+
+    学習ポイント:
+    - is not None パターンの必要性: 0/0.0/False 等の有効なfalsy値を保護する
+    - retry_delay=0.0: コンストラクタ直接指定時のみ有効
+      （Pydantic ge=0.1制約を迂回）
+    - 環境変数 API__RETRY_DELAY=0.0 では
+      Pydantic Field制約(ge=0.1)によりValidationErrorとなる
+    - timeout=0.0: コンストラクタ直接指定時のみ有効
+      （Pydantic ge=1.0制約を迂回）
+    - 環境変数 API__TIMEOUT=0.0 では
+      Pydantic Field制約(ge=1.0)によりValidationErrorとなる
+    - retry_count=0 の用途: リトライを行わず即座に失敗させたい場合に使用
     """
     async with AsyncAPIClient(
-        base_url="https://jsonplaceholder.typicode.com",
+        base_url=BASE_URL,
         retry_count=0,
         timeout=0.0,
         retry_delay=0.0,
@@ -2235,8 +2694,7 @@ async def test_async_client_falsy_values_not_overridden() -> None:
 #   pytest tests/unit/test_async_client.py -n 4 -v
 #
 # 9. Dockerコンテナ内でのテスト実行
-#   docker-compose -f docker-compose.test.yml run --rm unit-tests \
-#       pytest tests/unit/test_async_client.py -v
+#   docker compose --profile test run --rm test
 #
 # 10. 継続的テスト実行（ファイル変更監視）
 #   pytest-watch tests/unit/test_async_client.py

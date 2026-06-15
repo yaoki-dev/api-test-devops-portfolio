@@ -15,16 +15,148 @@ from config.settings import (
     SecurityConfig,
     SentryConfig,
     Settings,
-    TestConfig,
     _resolve_hostname,
     _resolve_hostname_cached,
+    _validate_base_url_with_allowed_domains,
     get_settings,
     is_private_ip,
     reload_settings,
 )
+from config.settings import (
+    TestConfig as SettingsTestConfig,
+)
 
 # Module-level marker: All tests in this file are unit tests
 pytestmark = pytest.mark.unit
+
+
+class TestAPIConfigBaseUrlDependencyInjection:
+    """base_url検証の許可ドメイン注入テスト。"""
+
+    def test_validate_base_url_accepts_injected_allowed_domain(self) -> None:
+        """ALLOWED_DOMAINSのモンキーパッチなしで許可ドメインを注入できる。"""
+        result = _validate_base_url_with_allowed_domains(
+            "https://example.com/",
+            frozenset({"example.com"}),
+        )
+
+        assert result == "https://example.com"
+
+    def test_validate_base_url_rejects_domain_missing_from_injected_allowlist(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """注入された許可リスト外のドメインは拒否される。"""
+        # 外部DNSに依存させず公開IPへ解決させ、is_private_ip()先行チェックを通過させて
+        # allowlist分岐へ確実に到達させる（CIのDNS状態に左右されない決定的テスト）。
+        monkeypatch.setattr(socket, "gethostbyname", lambda _: "1.2.3.4")
+        with pytest.raises(ValueError, match="Domain not in allowlist"):
+            _validate_base_url_with_allowed_domains(
+                "https://evil.com",
+                frozenset({"example.com"}),
+            )
+
+    def test_validate_base_url_rejects_missing_hostname(self) -> None:
+        """hostname が取れない URL は拒否される。"""
+        with pytest.raises(ValueError, match="Invalid URL: hostname not found"):
+            _validate_base_url_with_allowed_domains(
+                "https://",
+                frozenset({"example.com"}),
+            )
+
+    def test_validate_base_url_private_ip_log_includes_operator_guidance(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """DNS fail-closed時の切り分けに必要な運用者向け案内をログへ残す。"""
+        with caplog.at_level(logging.WARNING, logger="config.settings"):
+            with pytest.raises(ValueError, match="Private/loopback IP addresses are not allowed"):
+                _validate_base_url_with_allowed_domains(
+                    "http://192.168.1.1",
+                    frozenset({"192.168.1.1"}),
+                )
+
+        assert any(
+            "check DNS resolution and ALLOWED_DOMAINS setting" in record.getMessage()
+            and record.levelno == logging.WARNING
+            for record in caplog.records
+        )
+
+    def test_validate_base_url_allowlist_log_includes_operator_guidance(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """許可ドメイン不一致時はALLOWED_DOMAINS確認をログへ残す。"""
+        # 外部DNSに依存させず公開IPへ解決させ、is_private_ip()先行チェックを通過させて
+        # allowlist分岐へ確実に到達させる（CIのDNS状態に左右されない決定的テスト）。
+        monkeypatch.setattr(socket, "gethostbyname", lambda _: "1.2.3.4")
+        with caplog.at_level(logging.WARNING, logger="config.settings"):
+            with pytest.raises(ValueError, match="Domain not in allowlist"):
+                _validate_base_url_with_allowed_domains(
+                    "https://evil.com",
+                    frozenset({"example.com"}),
+                )
+
+        assert any(
+            "Check ALLOWED_DOMAINS setting" in record.getMessage()
+            and record.levelno == logging.WARNING
+            for record in caplog.records
+        )
+
+    def test_validate_base_url_blocks_private_ip_regardless_of_allowlist(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """プライベートIPは許可リストに含まれていてもブロックされる。
+
+        SSRF Prevention: DIパスの契約テスト。
+        許可リストにプライベートIPが含まれていても、
+        is_private_ip()による先行チェックでブロックされることを検証する。
+        """
+        with caplog.at_level(logging.WARNING, logger="config.settings"):
+            with pytest.raises(ValueError, match="Private/loopback IP addresses are not allowed"):
+                _validate_base_url_with_allowed_domains(
+                    "http://192.168.1.1",
+                    frozenset({"192.168.1.1"}),  # 許可リストに入れても無効
+                )
+
+        assert any(
+            "SSRF Prevention: private or loopback IP blocked" in record.getMessage()
+            and record.levelno == logging.WARNING
+            for record in caplog.records
+        )
+
+    def test_validate_base_url_blocks_private_ip_before_allowlist(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """プライベートIPは許可リスト外でも攻撃ベクターとして記録される。"""
+        with caplog.at_level(logging.WARNING, logger="config.settings"):
+            with pytest.raises(ValueError, match="Private/loopback IP addresses are not allowed"):
+                _validate_base_url_with_allowed_domains(
+                    "http://192.168.1.1",
+                    frozenset({"example.com"}),
+                )
+
+        assert any(
+            "SSRF Prevention: private or loopback IP blocked" in record.getMessage()
+            and record.levelno == logging.WARNING
+            for record in caplog.records
+        )
+
+    def test_validate_base_url_logs_warning_for_domain_not_in_allowlist(
+        self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """許可ドメイン外アクセス試行時にSSRFセキュリティ証跡が記録される。"""
+        monkeypatch.setattr(socket, "gethostbyname", lambda _: "1.2.3.4")
+        with caplog.at_level(logging.WARNING, logger="config.settings"):
+            with pytest.raises(ValueError, match="Domain not in allowlist"):
+                _validate_base_url_with_allowed_domains(
+                    "https://evil.com", frozenset({"example.com"})
+                )
+        assert any(
+            "SSRF Prevention: Domain not in allowlist" in record.getMessage()
+            and record.levelno == logging.WARNING
+            for record in caplog.records
+        )
 
 
 class TestAPIConfigBoundaryValues:
@@ -179,7 +311,7 @@ class TestSettingsEnvironmentValidation:
             settings = Settings(
                 environment=env_input,  # type: ignore[arg-type]
                 security=SecurityConfig(api_key=SecretStr("test-key")),
-                api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),
+                api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),  # https:// 必須
             )
         else:
             settings = Settings(environment=env_input)  # type: ignore[arg-type]
@@ -233,6 +365,30 @@ class TestSettingsEnvironmentValidation:
         """validate_environment: str/Environment以外の型はValidationErrorを発生させる"""
         with pytest.raises(ValidationError):
             Settings(environment=123)  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize(
+        "short_form",
+        [
+            pytest.param("dev", id="short_dev_raises"),
+            pytest.param("test", id="short_test_raises"),
+            pytest.param("stg", id="short_stg_raises"),
+            pytest.param("prod", id="short_prod_raises"),
+        ],
+    )
+    def test_environment_validation_short_forms_raise(self, short_form: str) -> None:
+        """validate_environment: 短縮形 (dev/test/stg/prod) は ValidationError を発生させる.
+
+        .env.example および docker-compose.yml で「Pydantic Environment enum は
+        development/testing/staging/production の 4 値のみ。短縮形は不可」と明示している。
+        本テストはその契約を保護する。
+
+        Note:
+            dev/test/stg/prod は互換マッピングせず、Pydantic層で常に reject される。
+            本テストは「直接 python から Settings を instantiate する」シナリオ
+            (CI script, smoke test 等) を検証する。
+        """
+        with pytest.raises(ValidationError):
+            Settings(environment=short_form)  # type: ignore[arg-type]
 
 
 class TestSettingsEnvironmentMethods:
@@ -340,18 +496,27 @@ class TestProductionSecretValidation:
 
     def test_staging_without_secrets_raises_error(self):
         """ステージング環境でシークレット未設定時にエラー (STAGING=本番同等ポリシー)"""
-        with pytest.raises(ValidationError) as exc_info:
+        with pytest.raises(ValidationError, match="SECURITY__API_KEY or SECURITY__JWT_SECRET"):
             Settings(
                 environment=Environment.STAGING,
                 api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),
             )
-        assert "SECURITY__API_KEY or SECURITY__JWT_SECRET" in str(exc_info.value)
 
     def test_staging_with_api_key_valid(self):
         """ステージング環境でapi_key設定時は有効"""
         settings = Settings(
             environment=Environment.STAGING,
             security=SecurityConfig(api_key=SecretStr("test-key")),
+            api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),
+        )
+        assert settings.environment == Environment.STAGING
+
+    def test_staging_with_jwt_secret_valid(self):
+        """ステージング環境でjwt_secret設定時は有効"""
+        settings = Settings(
+            environment=Environment.STAGING,
+            security=SecurityConfig(jwt_secret=SecretStr("test-secret")),
+            # validate_production_https のためHTTPS必須
             api=APIConfig(base_url="https://jsonplaceholder.typicode.com"),
         )
         assert settings.environment == Environment.STAGING
@@ -560,7 +725,7 @@ class TestNestedConfigDefaults:
         [
             pytest.param("api", APIConfig, id="api_config"),
             pytest.param("log", LogConfig, id="log_config"),
-            pytest.param("test", TestConfig, id="test_config"),
+            pytest.param("test", SettingsTestConfig, id="test_config"),
             pytest.param("security", SecurityConfig, id="security_config"),
         ],
     )
@@ -570,6 +735,24 @@ class TestNestedConfigDefaults:
         assert isinstance(getattr(settings, attr), expected_type)
 
 
+class TestTestConfigDefaults:
+    """TestConfig のデフォルト値テスト"""
+
+    @pytest.mark.parametrize(
+        ("attr", "expected"),
+        [
+            pytest.param("external_api_enabled", True, id="external_api_enabled_true"),
+            pytest.param("performance_test_enabled", False, id="performance_test_enabled_false"),
+            pytest.param("security_test_enabled", False, id="security_test_enabled_false"),
+            pytest.param("test_data_cleanup", True, id="test_data_cleanup_true"),
+        ],
+    )
+    def test_test_config_boolean_defaults(self, attr: str, expected: bool) -> None:
+        """TestConfig の bool デフォルトが退行しないことを保護する"""
+        config = SettingsTestConfig()
+        assert getattr(config, attr) is expected
+
+
 class TestEnvironmentVariableLoading:
     """環境変数からの設定読み込みテスト"""
 
@@ -577,7 +760,9 @@ class TestEnvironmentVariableLoading:
         """ネスト記法（API__BASE_URL）での環境変数読み込み"""
         # Note: DNS解決可能なドメインを使用（example.com系はFail-Closedでブロック）
         monkeypatch.setenv("API__BASE_URL", "https://httpbin.org")
-        monkeypatch.delattr("config.settings._settings", raising=False)
+        import config.settings
+
+        monkeypatch.setattr(config.settings, "_settings", None)
 
         settings = reload_settings()
         assert settings.api.base_url == "https://httpbin.org"
@@ -585,7 +770,9 @@ class TestEnvironmentVariableLoading:
     def test_case_insensitive_environment_variables(self, monkeypatch):
         """大小文字を区別しない環境変数読み込み (case_sensitive=False)"""
         monkeypatch.setenv("project_name", "Test Project")
-        monkeypatch.delattr("config.settings._settings", raising=False)
+        import config.settings
+
+        monkeypatch.setattr(config.settings, "_settings", None)
 
         settings = reload_settings()
         assert settings.project_name == "Test Project"
@@ -593,7 +780,9 @@ class TestEnvironmentVariableLoading:
     def test_debug_mode_from_environment(self, monkeypatch):
         """DEBUG環境変数からのdebugモード設定"""
         monkeypatch.setenv("DEBUG", "false")
-        monkeypatch.delattr("config.settings._settings", raising=False)
+        import config.settings
+
+        monkeypatch.setattr(config.settings, "_settings", None)
 
         settings = reload_settings()
         assert settings.debug is False
@@ -863,6 +1052,17 @@ class TestSSRFPrevention(DNSCacheClearMixin):
             # 127.0.0.0/8 境界（ループバック）
             pytest.param("127.0.0.1", True, "standard loopback", id="loopback_standard"),
             pytest.param("127.255.255.255", True, "loopback end", id="loopback_end"),
+            # RFC 1122 / RFC 6598 ranges that should never be accepted as public API hosts.
+            pytest.param(
+                "0.0.0.0",  # noqa: S104 - SSRF boundary test data, not a bind address.
+                True,
+                "current network start",
+                id="current_network_start",
+            ),
+            pytest.param("0.255.255.255", True, "current network end", id="current_network_end"),
+            pytest.param("100.64.0.0", True, "carrier-grade NAT start", id="cgnat_start"),
+            pytest.param("100.127.255.255", True, "carrier-grade NAT end", id="cgnat_end"),
+            pytest.param("100.128.0.0", False, "just above carrier-grade NAT", id="above_cgnat"),
         ],
     )
     def test_is_private_ip_boundary_values(
@@ -1027,67 +1227,181 @@ class TestResolveHostname(DNSCacheClearMixin):
         assert result is None
         assert "SSRF試行の可能性" in caplog.text
 
-    def test_resolve_hostname_gaierror_logs_dns_warning(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    @pytest.mark.parametrize(
+        ("exc_factory", "expected_log_message"),
+        [
+            pytest.param(
+                lambda: socket.gaierror("Name resolution failed"),
+                "DNS解決失敗",
+                id="gaierror",
+            ),
+            pytest.param(
+                lambda: socket.herror("Host resolution failed"),
+                "DNS解決失敗",
+                id="herror",
+            ),
+            pytest.param(
+                lambda: OSError("Network error"),
+                "予期しないネットワークエラー",
+                id="os_error",
+            ),
+        ],
+    )
+    def test_resolve_hostname_network_exception_logs_warning(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        exc_factory: Callable[[], Exception],
+        expected_log_message: str,
     ) -> None:
-        """socket.gaierror（DNS解決失敗）時にwarningレベルでログが出力される
+        """ネットワーク関連例外時にwarningレベルでログが出力されNoneを返す
 
         Design Rationale:
-            DNS解決失敗はFail-Closedを発動し正当なリクエストをブロックするため、
-            サービス影響度に基づきwarningレベルで記録する。
-            本番環境（INFO以上）でも可視化され、運用チームによる障害検知が可能。
+            socket.gaierror/herror（DNS解決失敗）と汎用OSError（ネットワーク障害）は
+            いずれもNone返却+warningログ出力だが、ログメッセージで区別する。
+            各例外型を個別ケースとしてテストし、将来のリファクタリングで
+            except節から誤って除外されないことを保証する（退行防止）。
         """
 
-        def raise_gaierror(hostname: str) -> str:
-            raise socket.gaierror(f"Name resolution failed: {hostname}")
+        def raise_exc(hostname: str) -> str:
+            raise exc_factory()
 
-        monkeypatch.setattr(socket, "gethostbyname", raise_gaierror)
+        monkeypatch.setattr(socket, "gethostbyname", raise_exc)
 
         with caplog.at_level(logging.WARNING, logger="config.settings"):
             result = _resolve_hostname("nonexistent.invalid")
 
         assert result is None
-        assert "DNS解決失敗" in caplog.text
+        assert expected_log_message in caplog.text
 
-    def test_resolve_hostname_herror_logs_dns_warning(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+
+# ── Boundary value + ALLOWED_DOMAINS tests ──
+
+
+class TestTestConfigBoundaryValues:
+    """TestConfig 数値フィールドの境界値テスト.
+
+    SettingsTestConfig フィールド検証:
+    - slow_test_threshold: ge=0.1 (float)
+    - max_concurrent_requests: ge=1, le=50 (int)
+    """
+
+    @pytest.mark.parametrize(
+        ("value", "expected_valid"),
+        [
+            pytest.param(0.09, False, id="slow_test_threshold_below_min"),
+            pytest.param(0.1, True, id="slow_test_threshold_at_min"),
+            pytest.param(5.0, True, id="slow_test_threshold_default"),
+        ],
+    )
+    def test_slow_test_threshold_boundary(self, value: float, expected_valid: bool) -> None:
+        """slow_test_threshold: ge=0.1 境界値検証"""
+        if expected_valid:
+            config = SettingsTestConfig(slow_test_threshold=value)
+            assert config.slow_test_threshold == value
+        else:
+            with pytest.raises(ValidationError):
+                SettingsTestConfig(slow_test_threshold=value)
+
+    @pytest.mark.parametrize(
+        ("value", "expected_valid"),
+        [
+            pytest.param(0, False, id="max_concurrent_below_min"),
+            pytest.param(1, True, id="max_concurrent_at_min"),
+            pytest.param(50, True, id="max_concurrent_at_max"),
+            pytest.param(51, False, id="max_concurrent_above_max"),
+        ],
+    )
+    def test_max_concurrent_requests_boundary(self, value: int, expected_valid: bool) -> None:
+        """max_concurrent_requests: ge=1, le=50 境界値検証"""
+        if expected_valid:
+            config = SettingsTestConfig(max_concurrent_requests=value)
+            assert config.max_concurrent_requests == value
+        else:
+            with pytest.raises(ValidationError):
+                SettingsTestConfig(max_concurrent_requests=value)
+
+
+class TestAllowedDomainsEnvOverride:
+    """ALLOWED_DOMAINS 環境変数 override テスト.
+
+    _get_allowed_domains() は環境変数 ALLOWED_DOMAINS を参照し、
+    カンマ区切りで許可ドメインを上書き可能。
+
+    重要な制約 (開発者向け注意):
+        モジュールレベル変数 ALLOWED_DOMAINS (config/settings.py L59)
+        は module import 時に _get_allowed_domains() の戻り値で確定する。
+        validate_base_url() は ALLOWED_DOMAINS 変数を参照するため、
+        起動後 (= import 後) の monkeypatch.setenv による環境変数変更は
+        validate_base_url() の挙動に反映されない。
+
+        テストで動的に変更する場合は以下のいずれかを使う:
+        1. _get_allowed_domains() を直接呼ぶ (本クラスの既存テスト方式)
+        2. importlib.reload(config.settings) でモジュール再読み込み
+        3. モジュールインポート前に環境変数を設定 (pytest-env 等)
+
+        本制約の保護テストは test_allowed_domains_override_does_not_affect_validate_base_url
+        を参照。
+    """
+
+    def test_allowed_domains_env_override(self, monkeypatch):
+        """環境変数 ALLOWED_DOMAINS で許可ドメインを上書き"""
+        from config.settings import _get_allowed_domains
+
+        monkeypatch.setenv("ALLOWED_DOMAINS", "custom.example.com,api.custom.com")
+        result = _get_allowed_domains()
+        assert isinstance(result, frozenset)
+        assert result == frozenset({"custom.example.com", "api.custom.com"})
+
+    def test_allowed_domains_env_empty_returns_default(self, monkeypatch):
+        """環境変数未設定時はデフォルトドメインを返す"""
+        from config.settings import _get_allowed_domains
+
+        monkeypatch.delenv("ALLOWED_DOMAINS", raising=False)
+        result = _get_allowed_domains()
+        assert isinstance(result, frozenset)
+        # マジックナンバー len(result) >= 7 を避け、必須デフォルトドメインの subset を検証する。
+        assert {
+            "jsonplaceholder.typicode.com",
+            "api.github.com",
+            "httpbin.org",
+        }.issubset(result)
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            pytest.param("", id="empty_string"),
+            pytest.param("  ", id="whitespace_only"),
+            pytest.param(",", id="comma_only"),
+            pytest.param(" , ", id="blank_entries_only"),
+        ],
+    )
+    def test_allowed_domains_blank_env_entries_return_empty_set(
+        self, monkeypatch: pytest.MonkeyPatch, value: str
     ) -> None:
-        """socket.herror（DNSサーバーエラー）時にwarningレベルでログが出力される
+        """空白・空要素のみの ALLOWED_DOMAINS は deny-all (空セット) を返す"""
+        from config.settings import _get_allowed_domains
 
-        Design Rationale:
-            socket.herror はDNSサーバー自体のエラー（SERVFAIL等）で発生する。
-            gaierror と同じ except 節で捕捉されるが、将来のリファクタリングで
-            誤って除外されないよう個別にテストする（退行防止）。
-        """
+        monkeypatch.setenv("ALLOWED_DOMAINS", value)
+        result = _get_allowed_domains()
+        assert result == frozenset()
 
-        def raise_herror(hostname: str) -> str:
-            raise socket.herror(f"Host resolution failed: {hostname}")
-
-        monkeypatch.setattr(socket, "gethostbyname", raise_herror)
-
-        with caplog.at_level(logging.WARNING, logger="config.settings"):
-            result = _resolve_hostname("invalid")
-
-        assert result is None
-        assert "DNS解決失敗" in caplog.text
-
-    def test_resolve_hostname_os_error_logs_network_warning(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    def test_allowed_domains_override_does_not_affect_validate_base_url(
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """汎用OSError時に「予期しないネットワークエラー」のwarningログが出力される
+        """ALLOWED_DOMAINS 動的変更は validate_base_url() に反映されない契約を保護する.
 
-        Design Rationale:
-            socket.herror/gaierror以外のOSError（PermissionError, TimeoutError等）は
-            DNS解決失敗として誤分類しないよう、別メッセージで記録する。
+        config.settings.ALLOWED_DOMAINS は module-level で _get_allowed_domains() の戻り値で
+        確定する (module import 時に1度のみ評価)。validate_base_url() は ALLOWED_DOMAINS を
+        参照するため、起動後の monkeypatch.setenv("ALLOWED_DOMAINS", ...) は反映されない。
+
+        本テストは「monkeypatch で custom ドメインを追加しても、APIConfig(base_url=) の
+        バリデーションで ValidationError が出る」ことを確認し、この重要な制約を退行から保護する。
         """
-
-        def raise_os_error(hostname: str) -> str:
-            raise OSError(f"Network error: {hostname}")
-
-        monkeypatch.setattr(socket, "gethostbyname", raise_os_error)
-
-        with caplog.at_level(logging.WARNING, logger="config.settings"):
-            result = _resolve_hostname("nonexistent.invalid")
-
-        assert result is None
-        assert "予期しないネットワークエラー" in caplog.text
+        # custom.example.com を ALLOWED_DOMAINS に追加しても、
+        # モジュールは既に評価済みのため反映されない
+        monkeypatch.setenv("ALLOWED_DOMAINS", "custom.example.com")
+        # validate_base_url() は ALLOWED_DOMAINS 既存値 (import時確定) を参照するため
+        # custom.example.com は許可ドメインに含まれず ValidationError になる
+        with pytest.raises(ValidationError):
+            APIConfig(base_url="https://custom.example.com")

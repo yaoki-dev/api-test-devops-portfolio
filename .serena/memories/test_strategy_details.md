@@ -1,6 +1,6 @@
 # テスト戦略・詳細実装ガイド
 
-*最終更新: 2025年12月27日*
+*最終更新: 2026年06月07日*
 
 > **概要版**: @memory:test_strategy を参照
 
@@ -13,8 +13,7 @@
 | テスト層 | 比率 | 実行時間 | 環境 | 目的 |
 |---------|------|---------|------|------|
 | Unit | 70% | <0.5s/test | ローカル | モック中心、外部依存排除 |
-| Integration | 25% | 1-3s/test | docker-compose | 実API、コンポーネント連携 |
-| E2E | 5% | 10-30s/test | Playwright | ユーザージャーニー |
+| Integration | 30% | 1-3s/test | docker compose | 実API、コンポーネント連携 |
 
 **設計根拠**: Mike Cohn提唱（2009年）、Google Testing Blog推奨構成
 
@@ -23,7 +22,8 @@
 #### Unit Test (モック中心)
 ```python
 @pytest.mark.unit
-@pytest.mark.asyncio
+# @pytest.mark.asyncio: asyncio_mode = "auto" (pyproject.toml) のため、@pytest.mark.asyncio は不要
+# pytest-asyncio が async テストを自動検出する
 async def test_async_get_user_with_mock(mock_httpx_client, sample_user_data):
     """モックを使った非同期ユーザー取得テスト"""
     mock_httpx_client.get.return_value = mock_response(
@@ -40,7 +40,8 @@ async def test_async_get_user_with_mock(mock_httpx_client, sample_user_data):
 ```python
 @pytest.mark.integration
 @pytest.mark.external
-@pytest.mark.asyncio
+# @pytest.mark.asyncio: asyncio_mode = "auto" (pyproject.toml) のため、@pytest.mark.asyncio は不要
+# pytest-asyncio が async テストを自動検出する
 async def test_real_api_user_workflow():
     """実API使用: ユーザーデータ取得ワークフロー"""
     async with AsyncJSONPlaceholderClient() as client:
@@ -59,9 +60,9 @@ async def test_real_api_user_workflow():
 @pytest.fixture
 def todo_data_factory():
     """TODOテストデータファクトリー"""
-    def create_todo(user_id: int = 1, todo_id: int = 1, 
+    def create_todo(user_id: int = 1, todo_id: int = 1,
                     title: str = "Test TODO", completed: bool = False):
-        return {"userId": user_id, "id": todo_id, 
+        return {"userId": user_id, "id": todo_id,
                 "title": title, "completed": completed}
     return create_todo
 ```
@@ -87,30 +88,20 @@ async def async_client(test_config) -> AsyncGenerator[AsyncAPIClient, None]:
 
 ## 3. カバレッジ戦略
 
-### 3.1 6週プラン目標
+### 3.1 優先モジュール
 
-| Week | 目標 | テスト増加 | 主要実装 |
-|------|------|-----------|---------|
-| 1 | 40% | +25件 | 単体テスト基盤 |
-| 2 | 60% | +20件 | エラーハンドリング |
-| 3 | 60% | 維持 | Docker基盤構築 |
-| 4 | 60% | 維持 | CI/CD統合 |
-| 5 | 80% | +30件 | 非同期テスト |
-| 6 | 85% | +25件 | e2e |
-
-### 3.2 優先モジュール
-
-1. **utils/api_client.py** (~970行)
+1. **utils/api_client.py** (1,653行 wc -l / 435 stmts)
    - リトライロジック (lines 117-247)
    - 非同期並行処理 (lines 509-582)
    - エラーハンドリング (lines 324-395)
+   - **カバレッジ: 92.22%**（残未カバー: 437, 636-637, 827-828, 1307-1308, 1317-1319, 1518, 1562, 1595, 1612-1637, 1641-1646）
 
 2. **models/responses.py** (~350行)
    - Pydanticモデル
    - @field_validator
    - sanitize_user_content() XSS保護
 
-3. **config/settings.py** (~450行) ✅ 96%達成
+3. **config/settings.py** (~450行 wc -l / 205 stmts) ✅ 97.59%達成
 
 ### 3.3 除外パターン
 ```python
@@ -140,7 +131,7 @@ uv run bandit -r utils/ config/ models/ -f json -o reports/bandit.json
 
 ```bash
 # TrivyによるDockerイメージスキャン
-trivy image --severity HIGH,CRITICAL api-test:latest
+trivy image --severity HIGH,CRITICAL api-test-devops:latest
 ```
 
 ### 4.3 シークレット検出（gitleaks）
@@ -203,7 +194,8 @@ asyncio_mode = "auto"  # 非同期テスト自動検出
 
 ### 6.2 並行テスト
 ```python
-@pytest.mark.asyncio
+# @pytest.mark.asyncio: asyncio_mode = "auto" (pyproject.toml) のため、@pytest.mark.asyncio は不要
+# pytest-asyncio が async テストを自動検出する
 async def test_concurrent_requests(async_client):
     users = await asyncio.gather(
         async_client.get("/users/1"),
@@ -281,16 +273,16 @@ def test_future_feature():
 
 ---
 
-## 10. 将来計画 (Week 6完了後)
+## 10. 将来計画
 
 ### 検討項目
-- **E2Eテスト**: Playwright統合
 - **負荷テスト**: Locust統合
 - **Mutation Testing**: mutmut導入
 - **Property-Based Testing**: Hypothesis
+- **E2Eテスト**: Web UI 実装時に再評価（現状スコープ外）
 
 ### 成功の定義
-1. カバレッジ85%達成
+1. カバレッジ85%達成 (実績: 96.15%)
 2. CI/CD品質ゲート自動化
 3. OWASP API Security Top 10準拠
 4. P95応答時間 <500ms

@@ -105,7 +105,7 @@ security: セキュリティ修正
 ```
 
 **不合格時の対応**:
-- 未コミット: `git add` + `/commit` スキル使用（**生 `git commit` 禁止** - CLAUDE.md CRITICAL RULE #4）
+- 未コミット: `git add` + `Skill(commit)` スキル使用（**生 `git commit` 禁止** - CLAUDE.md CRITICAL RULE #4）
 - 一時ファイル混入: `.gitignore`追加、`git rm --cached`で除外
 
 ---
@@ -164,7 +164,7 @@ Gate 3 (mypy) → 失敗?
   └─ NO → Gate 4へ
   ↓
 Gate 4 (git commit) → 未コミット?
-  ├─ YES → /commit スキル実行 → 再確認
+  ├─ YES → Skill(commit) 実行 → 再確認
   └─ NO → 実装活動認定 ✅
 ```
 
@@ -189,7 +189,7 @@ Gate 4 (git commit) → 未コミット?
 
 **完了タスク**:
 - [x] Docker 4-stage実装
-- [x] docker-compose dev環境構築
+- [x] docker compose dev環境構築
 
 **メトリクス変化**（※数値は例）:
 - カバレッジ: 80% → 83%

@@ -1,7 +1,7 @@
 ---
 name: code-simplicity-reviewer
 description: "Final review pass to ensure code is as simple and minimal as possible. Use after implementation is complete to identify YAGNI violations and simplification opportunities."
-tools: Glob, Grep, Bash(mgrep:*), Read, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__find_code, mcp__ast-grep__find_code_by_rule, mcp__morph-mcp__warpgrep_codebase_search
+tools: Read, Glob, Grep, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__*, mcp__morph-mcp__codebase_search, mcp__code-review-graph__*, mcp__serena__initial_instructions, mcp__serena__find_symbol, mcp__serena__find_referencing_symbols, mcp__serena__get_symbols_overview, mcp__serena__search_for_pattern, mcp__serena__list_dir, mcp__serena__find_file, mcp__serena__read_memory, mcp__serena__list_memories
 model: inherit
 ---
 
@@ -97,6 +97,16 @@ Output format:
 複雑度スコア: [高/中/低]
 推奨アクション: [簡潔化を実施する/軽微な調整のみ/既に最小限]
 ```
+## ツール使用ガイダンス
+
+- `mcp__serena__find_referencing_symbols`: シンボル参照数 → inline 候補判定 (主軸)
+  - 使用条件: 単一用途抽象化を疑う場合 → 参照1つなら inline 推奨
+- `mcp__ast-grep__find_code_by_rule`: 重複 pattern 検出 (DRY指摘の根拠)
+  - DRY指摘の閾値: 同一ロジックが4箇所以上 (review-pr.md ガイドラインと統一)
+  - 不要条件: 重複3箇所以下では指摘しない
+- `mcp__code-review-graph__find_large_functions_tool`: 過剰肥大関数検出
+  - 使用条件: 既存関数の大幅変更を含むPR
+  - フォールバック (グラフ未構築時): `build_or_update_graph_tool` を1度実行してから利用、または ast-grepで関数長手動計測
 
 Remember: Perfect is the enemy of good. The simplest code that works is often the best code. Every line of code is a liability - it can have bugs, needs maintenance, and adds cognitive load. Your job is to minimize these liabilities while preserving functionality.
 

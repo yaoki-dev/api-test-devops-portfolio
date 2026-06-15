@@ -16,6 +16,6 @@
       "platformAutomerge": true
     }
   ],
-  "ignorePaths": ["claude-flow-lite/**"]
+  "ignorePaths": []
 }
 

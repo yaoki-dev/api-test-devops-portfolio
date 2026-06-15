@@ -22,11 +22,10 @@ from unittest.mock import Mock, patch
 import pytest
 import respx
 
+from tests.constants import BASE_URL
 from utils.api_client import APIHTTPError, APIRetryError, AsyncJSONPlaceholderClient
 
 pytestmark = pytest.mark.unit
-
-BASE_URL = "https://jsonplaceholder.typicode.com"
 
 # ===============================================================================
 # テスト用フィクスチャ

@@ -1,6 +1,6 @@
 docs/archive/**
 docs/coverage/**
-docs/guides/performance_monitor_implementation.md
+docs/reference/performance_monitor_implementation.md
 docs/main/6週プラン/**
 docs/main/learning/**
 docs/main/Skills作成/**
@@ -9,17 +9,31 @@ docs/tools/**
 reports/**
 node_modules/**
 .venv/**
-.worktrees/**
 .taskmaster/**
 .spec-workflow/**
 obsidian-vault-local/**
+docs/main/interview_docs/skillsheet_yuta-aoki-yyyymmdd.md
 # Cache directories
 .pre-commit-cache/**
-# Claude-flow generated files
-.claude-flow/**
 # Serena memories (dynamic content)
 .serena/**
 # Claude Code working documents (local only)
 claudedocs/**
 # Claude agent definitions (technical specs, not Japanese documentation)
 .claude/**
+# AI agent instruction files (same category as .claude/**)
+AGENTS.md
+CLAUDE.md
+# GSD planning documents (auto-generated working documents)
+.planning/**
+graphify-out/**
+# Agent working files (auto-generated)
+.remember/**
+# Internal brainstorm/design documents
+docs/brainstorms/**
+# Gemini/Codex agent skill definitions (English technical specs)
+.gemini/**
+# opencode
+opencode-studio/**
+.opencode/**
+.omo/**

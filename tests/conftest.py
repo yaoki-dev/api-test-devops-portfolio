@@ -9,22 +9,56 @@ pytest共通設定とフィクスチャ定義
 """
 
 import logging
-from collections.abc import AsyncGenerator
+import time
+from collections.abc import AsyncGenerator, Callable, Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
 import pytest_asyncio
 
-from config.settings import reload_settings
+from config.settings import _resolve_hostname_cached, reload_settings
+from tests.constants import BASE_URL
+from tests.types import _IntegrationTestData, _PostData, _TodoData, _UserData
 from utils.api_client import AsyncAPIClient
+
+
+class PerformanceTimer:
+    """PerformanceTimer fixture 用計測ヘルパー.
+
+    fixture スコープ外に抽出して `-> PerformanceTimer` 戻り型注釈を可能にする
+    （内部クラスのままだと return 型注釈で参照不可のため）.
+    """
+
+    def __init__(self) -> None:
+        self.start_time: float | None = None
+        self.end_time: float | None = None
+
+    def start(self) -> None:
+        self.start_time = time.perf_counter()
+
+    def stop(self) -> None:
+        self.end_time = time.perf_counter()
+
+    @property
+    def elapsed(self) -> float:
+        if self.start_time is None or self.end_time is None:
+            raise ValueError("Timer not properly started/stopped")
+        return self.end_time - self.start_time
+
+    def assert_faster_than(self, threshold: float, message: str = "") -> None:
+        if self.elapsed > threshold:
+            pytest.fail(
+                f"Performance test failed: {self.elapsed:.3f}s > {threshold:.3f}s. {message}",
+            )
+
 
 # =============================================================================
 # Pytest設定
 # =============================================================================
 
 
-def pytest_configure(config):
+def pytest_configure(config: pytest.Config) -> None:
     """pytest実行時の共通設定"""
     # ログ設定
     logging.basicConfig(
@@ -41,23 +75,24 @@ def pytest_configure(config):
     # テストマーカーの登録
     config.addinivalue_line("markers", "unit: 単体テスト")
     config.addinivalue_line("markers", "integration: 統合テスト")
-    config.addinivalue_line("markers", "e2e: E2Eテスト")
+    config.addinivalue_line("markers", "performance: パフォーマンステスト")
     config.addinivalue_line("markers", "slow: 実行時間の長いテスト")
     config.addinivalue_line("markers", "external: 外部API依存テスト")
-    config.addinivalue_line("markers", "performance: パフォーマンステスト")
     config.addinivalue_line("markers", "smoke: スモークテスト（main PR用、基本機能の動作確認）")
 
 
-def pytest_collection_modifyitems(config, items):
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     """テスト実行順序の最適化"""
+
     # 高速テストを先に実行
-    items.sort(
-        key=lambda item: (
-            "slow" in [mark.name for mark in item.iter_markers()],
-            "external" in [mark.name for mark in item.iter_markers()],
+    def _sort_key(item: pytest.Item) -> tuple[bool, bool, str]:
+        return (
+            item.get_closest_marker("slow") is not None,
+            item.get_closest_marker("external") is not None,
             item.name,
-        ),
-    )
+        )
+
+    items.sort(key=_sort_key)
 
 
 # =============================================================================
@@ -66,7 +101,7 @@ def pytest_collection_modifyitems(config, items):
 
 
 @pytest.fixture(autouse=True)
-def disable_sentry_for_tests(monkeypatch):
+def disable_sentry_for_tests(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     テスト実行時にSentry SDKを無効化。
 
@@ -92,7 +127,7 @@ def test_config() -> dict[str, Any]:
     """テスト用設定データ"""
     return {
         "api": {
-            "base_url": "https://jsonplaceholder.typicode.com",
+            "base_url": BASE_URL,
             "timeout": 10,
             "retry_count": 1,
             "retry_delay": 0.5,
@@ -106,7 +141,7 @@ def test_config() -> dict[str, Any]:
 
 
 @pytest.fixture
-def logger():
+def logger() -> logging.Logger:
     """テスト用ロガー"""
     return logging.getLogger("test")
 
@@ -124,9 +159,15 @@ async def async_client(
     async with AsyncAPIClient(
         base_url=test_config["api"]["base_url"],
         timeout=test_config["api"]["timeout"],
-        headers={"User-Agent": "API-Test-Portfolio/0.1.0"},
+        headers={"User-Agent": "api-test-devops-portfolio/0.1.0"},
     ) as client:
         yield client
+
+
+@pytest.fixture
+def mock_base_url() -> str:
+    """unit テスト用ダミーURL（外部通信なし）"""
+    return "https://test.local"
 
 
 @pytest.fixture
@@ -141,7 +182,7 @@ def sample_api_response() -> dict[str, Any]:
 
 
 @pytest.fixture
-def todo_data_factory():
+def todo_data_factory() -> Callable[..., _TodoData]:
     """TODOテストデータファクトリー"""
 
     def create_todo(
@@ -149,7 +190,7 @@ def todo_data_factory():
         todo_id: int = 1,
         title: str = "Test TODO",
         completed: bool = False,
-    ) -> dict[str, Any]:
+    ) -> _TodoData:
         return {
             "userId": user_id,
             "id": todo_id,
@@ -161,7 +202,7 @@ def todo_data_factory():
 
 
 @pytest.fixture
-def user_data_factory():
+def user_data_factory() -> Callable[..., _UserData]:
     """ユーザーテストデータファクトリー"""
 
     def create_user(
@@ -169,7 +210,7 @@ def user_data_factory():
         name: str = "Test User",
         username: str = "testuser",
         email: str = "test@example.com",
-    ) -> dict[str, Any]:
+    ) -> _UserData:
         return {
             "id": user_id,
             "name": name,
@@ -195,7 +236,7 @@ def user_data_factory():
 
 
 @pytest.fixture
-def post_data_factory():
+def post_data_factory() -> Callable[..., _PostData]:
     """投稿テストデータファクトリー"""
 
     def create_post(
@@ -203,7 +244,7 @@ def post_data_factory():
         post_id: int = 1,
         title: str = "Test Post",
         body: str = "Test post body content",
-    ) -> dict[str, Any]:
+    ) -> _PostData:
         return {"userId": user_id, "id": post_id, "title": title, "body": body}
 
     return create_post
@@ -215,66 +256,9 @@ def post_data_factory():
 
 
 @pytest.fixture
-def performance_timer():
+def performance_timer() -> PerformanceTimer:
     """パフォーマンス計測用タイマー"""
-    import time
-
-    class Timer:
-        def __init__(self):
-            self.start_time: float | None = None
-            self.end_time: float | None = None
-
-        def start(self):
-            self.start_time = time.perf_counter()
-
-        def stop(self):
-            self.end_time = time.perf_counter()
-
-        @property
-        def elapsed(self) -> float:
-            if self.start_time is None or self.end_time is None:
-                raise ValueError("Timer not properly started/stopped")
-            return self.end_time - self.start_time
-
-        def assert_faster_than(self, threshold: float, message: str = "") -> None:
-            if self.elapsed > threshold:
-                pytest.fail(
-                    f"Performance test failed: {self.elapsed:.3f}s > {threshold:.3f}s. {message}",
-                )
-
-    return Timer()
-
-
-# =============================================================================
-# セキュリティテスト用フィクスチャ
-# =============================================================================
-
-
-@pytest.fixture
-def security_payloads():
-    """セキュリティテスト用のペイロード"""
-    return {
-        "sql_injection": [
-            "'; DROP TABLE users; --",
-            "1' OR '1'='1",
-            "admin'--",
-        ],
-        "xss": [
-            "<script>alert('xss')</script>",
-            "javascript:alert(1)",
-            "<img src=x onerror=alert(1)>",
-        ],
-        "command_injection": [
-            "; ls -la",
-            "| cat /etc/passwd",
-            "&& whoami",
-        ],
-        "path_traversal": [
-            "../../../etc/passwd",
-            "..\\..\\..\\windows\\system32\\drivers\\etc\\hosts",
-            "....//....//....//etc/passwd",
-        ],
-    }
+    return PerformanceTimer()
 
 
 # =============================================================================
@@ -283,7 +267,7 @@ def security_payloads():
 
 
 @pytest.fixture
-def integration_test_data():
+def integration_test_data() -> _IntegrationTestData:
     """統合テスト用の大量データセット"""
     return {
         "todos": [
@@ -309,7 +293,7 @@ def integration_test_data():
 
 
 @pytest.fixture(autouse=True)
-def cleanup_test_files():
+def cleanup_test_files() -> Iterator[None]:
     """テスト後のファイルクリーンアップ"""
     yield
 
@@ -320,16 +304,52 @@ def cleanup_test_files():
 
 
 @pytest.fixture(scope="function", autouse=True)
-def reset_settings():
+def reset_settings() -> Iterator[None]:
     """
     各テスト実行前に設定をリロードしてテスト独立性を保証
 
-    将来的な並列実行（pytest -n auto）導入時に、
-    グローバルシングルトンsettingsのテスト間汚染を防止
+    同一プロセス内での逐次テスト間、
+    グローバルシングルトンsettingsのテスト間汚染（環境変数変更の残留等）を防止
     """
+    _resolve_hostname_cached.cache_clear()
     reload_settings()
     yield
-    reload_settings()
+
+
+@pytest.fixture(autouse=True)
+def reset_sentry_warning_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[None]:
+    """utils.logger の sentry warning throttle 状態をテスト前後でリセット
+
+    6 つの permanent throttle マーカー
+    ("settings"/"sdk"/"bug"/"outside_except"/"invalid_exc_info"/"safe_error_summary") を
+    保持する `_sentry_warnings_emitted: set[str]` を空集合に、
+    `_sentry_send_error_last_warned` timestamp を float("-inf") にリセットする。
+    `_is_sentry_debug_enabled` は lru_cache 削除済みのためリアルタイム取得。
+    monkeypatch.setenv/delenv との整合性は自動的に保たれる。
+
+    `_sentry_warning_lock` (threading.Lock) はリセット対象外:
+    Lock インスタンス自体を差し替えるとモジュール内の他参照と整合しなくなり、また
+    ロック状態は test 間で leak しない (各テスト内でロック取得・解放が完結する) ため
+    リセット不要。
+
+    monkeypatch.setattr は test 終了時に自動復元され、環境変数変更も即時反映される。
+    lru_cache 削除済みのため teardown での cache_clear() は不要。
+
+    autouse=True により全テストで自動適用し、TestSentryProcessor 以外のクラスでも
+    モジュールレベル throttle 状態の汚染を防止する (同一プロセス内の逐次テスト間
+    におけるフラグ汚染による偽陽性回避)。
+
+    Note: pytest-xdist は各ワーカーが別プロセスで動作するためモジュールレベルの
+    グローバル変数はプロセス間で共有されない。本 fixture の主目的は同一プロセス内
+    の逐次テスト間の汚染防止であり、xdist による並列実行は副次的な恩恵。
+    """
+
+    monkeypatch.setattr("utils.logger._sentry_warnings_emitted", set())
+    monkeypatch.setattr("utils.logger._sentry_send_error_last_warned", float("-inf"))
+    # SENTRY_DEBUG は環境変数をリアルタイム取得するため、キャッシュリセット不要
+    yield
 
 
 # =============================================================================

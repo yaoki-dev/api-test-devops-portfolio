@@ -28,7 +28,7 @@
 - レスポンス構造チェック
 - エラーハンドリング
 
-### Users API  
+### Users API
 
 #### Users エンドポイント
 
@@ -124,7 +124,7 @@
 ### 基本パターン
 
 - 正常系テスト
-- 異常系テスト  
+- 異常系テスト
 - 境界値テスト
 
 ### 高度パターン
@@ -347,9 +347,9 @@ uv run bandit -r utils/ config/ models/ -q
 #### パフォーマンス工学
 
 - **テスト実行回数**: 10,000+ (自動化CI/CD)
-- **総テストケース数**: 414件 (unit/performance/security/integration/e2e)
-- **テストファイル数**: 32ファイル (分散テスト設計)
-- **カバレッジ**: 85%以上 (ブランチカバレッジ有効)
+- **総テストケース数**: 1,372件 (unit/integration/performance/smoke、CI計測対象: 1,358件)
+- **テストファイル数**: 23ファイル (分散テスト設計)
+- **カバレッジ**: 96.15%達成 (ブランチカバレッジ有効、2026年6月時点)
 - **実測レスポンス時間**: 43-101ms (JSONPlaceholder API平均)
 - **並行処理能力**: 50リクエスト/秒、セマフォ制御
 - **カバーしたエンドポイント**: 17個 (albums/photosを含む全JSONPlaceholder API)
@@ -387,7 +387,7 @@ uv run bandit -r utils/ config/ models/ -q
 - **セキュリティ専門性**: CI/CD品質ゲート + 0脆弱性（bandit/Trivy）
 - **DevOps統合**: Docker最適化 + マルチ環境CI/CD
 - **高性能実装**: 非同期・並行処理マスタリー
-- **品質基準**: 85%カバレッジ + 414テスト
+- **品質基準**: 96.15%カバレッジ + 1,358件テスト（CI計測対象: unit + integration）
 
 #### 実証可能な技術価値
 
@@ -486,7 +486,7 @@ jobs:
     - name: Security Testing (CI/CD品質ゲート)
       run: |
         uv run bandit -r . -ll
-        uv run safety check
+        uv run safety scan
         uv run pip-audit
 
     - name: Performance Testing

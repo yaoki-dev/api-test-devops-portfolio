@@ -1,7 +1,7 @@
 ---
 name: test-coverage-reviewer
 description: Use this agent when you need to review testing implementation and coverage.
-tools: Glob, Grep, Bash(mgrep:*), Bash(git diff:*), Read, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__find_code, mcp__ast-grep__find_code_by_rule, mcp__morph-mcp__warpgrep_codebase_search
+tools: Read, Glob, Grep, WebFetch, TodoWrite, WebSearch, mcp__ast-grep__*, mcp__morph-mcp__codebase_search, mcp__code-review-graph__*, mcp__serena__initial_instructions, mcp__serena__find_symbol, mcp__serena__find_referencing_symbols, mcp__serena__get_symbols_overview, mcp__serena__search_for_pattern, mcp__serena__list_dir, mcp__serena__find_file, mcp__serena__read_memory, mcp__serena__list_memories
 model: inherit
 ---
 
@@ -45,5 +45,22 @@ Rate each issue from 0-100:
 - **91-100**: Critical test coverage gap
 
 **Only report issues with confidence >= 90**
+
+**本test-coverage-reviewerのレビュー不要な場合**: docs のみの変更、設定ファイルのみの変更
+
+## ツール使用ガイダンス
+
+- `mcp__ast-grep__find_code`: テスト構造検出 (parametrize/fixture/AAA pattern) (主軸)
+  - 使用条件: テストファイル変更を含むPR
+- `mcp__serena__find_symbol`: 公開API列挙 → テストカバレッジgap照合 (主軸)
+  - 使用条件: 公開API追加・変更
+  - 手順: 公開API一覧 − test fileから参照されるシンボル = テスト未存在API
+- `mcp__code-review-graph__get_knowledge_gaps_tool`: 未テスト領域推測 (実利用検証中)
+  - 使用条件: 大規模リファクタリング、関数削除を含むPR
+  - フォールバック (出力品質低い場合 / グラフ未構築時):
+    1. `build_or_update_graph_tool` を1度実行
+    2. それでも品質低い場合は上記 ast-grep + serena 手動照合に切り替え
+    3. コメントに「knowledge gap分析未実施 (理由: [エラー種別/品質低], 代替: ast-grep+serena手動照合)」を**必ず**注記
+- **本test-coverage-reviewerのレビュー不要な場合**: docs のみの変更、設定ファイルのみの変更 (既存記述継続)
 
 Output should be in Japanese (日本語で出力).

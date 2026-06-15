@@ -73,49 +73,45 @@ reports/
 # Claude Code
 .claude/settings.local.json
 
-# Git Worktrees (parallel development branches)
-.worktrees/
-
 # MCP and AI Tools
 .mcp.json
 .serena/*
 !.serena/memories/
 .memory_mcp/
-.claude-flow/
-claude-flow-lite/
 .hive-mind/
 memory/
 .taskmaster/
-claude-flow.config.json
 .spec-workflow/templates/
+.claude/skill-report/
+.swarm/
 
 # Obsidian Vault (contains personal notes and potentially sensitive data)
 obsidian-vault-local/
 
-# claude flow
-.swarm/
-
 # Node.js (if any JS tooling)
 node_modules/
-
-# UV Lock (commit this for reproducibility)
-# uv.lock
 
 # Generated Documentation
 docs/search_index.json
 
 # Backup Files
 *.backup
+*.bak
+*.bk
 
 # Internal Project Management
 docs/text.md
 
 # Environment variables
-.env
+# .env*: per-environment files (.env.development/.env.testing/.env.staging/.env.production/.env.local 等) を一括で ignore
+# !.env*.example: コミット対象のプレースホルダーテンプレートのみ追跡(.env.development.example/.env.testing.example/.env.staging.example/.env.production.example/.env.local.example 等) を一括で ignore
+.env*
+!.env*.example
 
 # Claude MCP auto-generated files (claude-mem)
 # Excludes all CLAUDE.md in subdirectories, preserves root CLAUDE.md
 **/CLAUDE.md
+!CLAUDE.md
 
 # Other project-specific ignores
 docs/main/6週プラン/技術記事/技術記事作成.md
@@ -129,6 +125,43 @@ coverage.json
 
 # Claude Code working documents (local only)
 claudedocs/
+docs/brainstorms/
+docs/plans/
 docs/agent-teams/
 docs/ai_collaboration/
 docs/analysis/
+docs/main/interview
+docs/main/interview_docs/
+
+# GSD - local planning artifacts
+.planning/
+gsd-local-patches/
+
+# gemini-cli settings
+.gemini/
+
+# OMS (oh-my-claudecode)
+.oms/
+.omc/state/
+.omc/sessions/
+.omc/project-memory.json
+
+# CGC (CodeGraphContext)
+cgc_mcp_wrapper.sh
+cgc_watch_safe.sh
+
+# Added by code-review-graph
+.code-review-graph/
+
+# commit graph outputs, ignore the extraction cache
+graphify-out/
+
+# Compound Engineering local config
+.compound-engineering/*.local.yaml
+.context/compound-engineering/ce-code-review/
+
+# Understand Anything - knowledge graph artifacts (auto-generated, reproducible)
+.understand-anything/
+
+# opencode
+opencode-studio

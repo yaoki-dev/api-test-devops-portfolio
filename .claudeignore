@@ -19,17 +19,14 @@ Users/                         # 誤配置ディレクトリ
 .serena/                       # Serena MCP内部DB
 !.serena/memories/             # メモリファイルは保持
 .memory_mcp/                   # Memory MCP内部データ
-.claude-flow/                  # Claude Flow状態
 .taskmaster/                   # Task Master管理データ
 .hive-mind/                    # Hive Mind協働データ
 .swarm/                        # Swarm MCP内部DB
 memory/                        # 旧Memory実装
 .spec-workflow/                # Spec Workflow（テンプレート含む）
+.claude/skill-report/          # Skill監査レポート（大容量JSON、173MB）
 
-# === 3. Git Worktrees（Important） ===
-.worktrees/                    # 並列開発ブランチ（重複コンテキスト防止）
-
-# === 4. レポート・生成物（Important） ===
+# === 3. レポート・生成物（Important） ===
 reports/                         # テスト・カバレッジレポート（大容量HTML）
 docs/coverage/                   # カバレッジドキュメント
 coverage.json                    # カバレッジデータ
@@ -40,7 +37,7 @@ claudedocs/                      # Claude生成ドキュメント
 **/CLAUDE.md                     # サブディレクトリのCLAUDE.md
 .github/instructions/snyk_rules.instructions.md  # Snyk自動生成
 
-# === 5. Python開発環境 ===
+# === 4. Python開発環境 ===
 .venv/
 venv/
 __pycache__/
@@ -54,12 +51,12 @@ htmlcov/
 .ruff_cache/
 .pre-commit-cache/
 
-# === 6. Node.js依存関係 ===
+# === 5. Node.js依存関係 ===
 node_modules/
 .npm/
 .pnpm-store/
 
-# === 7. ビルド・キャッシュ・システム ===
+# === 6. ビルド・キャッシュ・システム ===
 dist/
 build/
 *.egg-info/

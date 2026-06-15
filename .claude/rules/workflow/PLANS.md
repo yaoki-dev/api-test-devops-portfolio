@@ -18,7 +18,6 @@ paths:
 | **本テンプレート** | フィーチャー単位の計画・決定記録 | Within-task |
 | **execution-efficiency.md** | 実行効率化・並列判定の手法詳細 | How to execute |
 | **TodoWrite** | セッション内タスク進捗UI表示 | 揮発性 |
-| **~/.claude/tasks/todo.md** | 大規模タスクの永続追跡 | Cross-session |
 | **lessons.md** (Rule 15) | セッション横断の教訓蓄積 | Cross-project |
 
 ### 使用閾値
@@ -90,15 +89,18 @@ AskUserQuestion の回答・設計判断を記録する。
 - [ ] `uv run pytest -n auto -m "(unit or integration) and not external"` 全pass
 - [ ] `uv run ruff check .` エラー0件
 - [ ] `uv run mypy utils/ config/ models/` エラー0件
-- [ ] `/reflexion:reflect`（信頼度90%以上）
-- [ ] `/code-review:review-local-changes`（80点閾値通過）
+- [ ] `Skill(superpowers:verification-before-completion)`（全タスク完了確認 — 未完了検出時: 修正 → 品質ゲート → 再実行 - 最大3回まで）
+- [ ] `Skill(reflexion:reflect)` （信頼度90%以上）
+- [ ] `Skill(code-review:review-local-changes)`（80点閾値通過）
 
-**ドキュメント実装（.md 変更）**:
+**ドキュメント実装（.md OR .html 変更）**:
 
 - [ ] `npm run lint:md && npm run lint:text` 全pass
-- [ ] `/reflexion:reflect`（信頼度90%以上）
-- [ ] `/pr-review-toolkit:review-pr`
-- ※ PRレビューは CLAUDE.md Step 7-8（`/pr-review-toolkit:review-pr`）に委譲
+- [ ] `Skill(superpowers:verification-before-completion)`（全タスク完了確認 — 未完了検出時: 修正 → 品質ゲート → 再実行 - 最大3回まで）
+- ※ 事実主張・数値データを含む変更の場合は CLAUDE.md Medium「Skill(fact-checker)」を参照
+- [ ] `Skill(reflexion:reflect)`（信頼度90%以上）
+- [ ] `Skill(pr-review-toolkit:review-pr)`
+- ※ PRレビューは CLAUDE.md Step 8 ELSE節（`Skill(pr-review-toolkit:review-pr)`）に委譲
 
 **設定ファイル変更（*.yml / pyproject.toml / config/）**:
 
@@ -141,8 +143,7 @@ AskUserQuestion の回答・設計判断を記録する。
 ## ファイル命名・保存先
 
 ```
-claudedocs/plans/YYYY-MM-DD-<topic>.md   # フィーチャー別計画
-~/.claude/tasks/todo.md                  # 大規模タスク併用
+claudedocs/plans/YYYY-MM-DD-<topic>.html   # フィーチャー別計画
 ```
 
 ---
@@ -151,4 +152,4 @@ claudedocs/plans/YYYY-MM-DD-<topic>.md   # フィーチャー別計画
 
 - `@memory:execution-efficiency` - 実行効率化詳細（Phase 0/1/2）
 - `.claude/rules/workflow/RULES.md` - Planning Efficiency ルール
-- `~/.claude/tasks/lessons.md` - Rule 15 教訓蓄積ファイル
+- `~/.claude/lessons/lessons.md` - Rule 15 教訓蓄積ファイル

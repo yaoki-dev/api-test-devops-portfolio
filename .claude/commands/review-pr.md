@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(gh api repos/*/issues/*/comments:*),Bash(gh api repos/*/pulls/*/comments:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh repo view:*),Bash(mgrep:*),mcp__ast-grep__find_code,mcp__ast-grep__find_code_by_rule,mcp__morph-mcp__warpgrep_codebase_search
+allowed-tools:  Read, Bash(gh api repos/*/issues/*/comments:*),Bash(gh api repos/*/pulls/*/comments:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh repo view:*), Bash(jq:*), Bash(mgrep:*), mcp__ast-grep__*, mcp__morph-mcp__codebase_search, mcp__plugin_semgrep_semgrep__*, mcp__code-review-graph__*, mcp__serena__initial_instructions, mcp__serena__find_symbol, mcp__serena__find_referencing_symbols, mcp__serena__get_symbols_overview, mcp__serena__search_for_pattern, mcp__serena__list_dir, mcp__serena__find_file, mcp__serena__read_memory, mcp__serena__list_memories
 description: Review a pull request
 argument-hint: "[owner/repo] [pr-number]"
 ---
@@ -67,6 +67,11 @@ Launch these 7 agents in a single message, with the following **additional instr
 各指摘に以下のラベルを付けること:
 - 🔴 マージブロッカー: セキュリティ脆弱性 / API契約違反 / データ損失 / 正確性バグ / サイレント障害
 - 🟡 品質改善推奨: 可読性 / 命名 / テストカバレッジ向上 / 軽微なリファクタリング / パフォーマンス示唆
+
+**⚠️ DRY改善** は以下の条件をすべて満たす場合にのみ指摘する：
+  1. 同一ロジックの重複が4箇所以上存在する
+  2. 共通化しても可読性が低下しない
+  3. テストや仕様理解が難しくならない
 
 【対応不要リスト - 再フラグ禁止】
 以下の指摘は作者が「対応不要」と判断済みです。

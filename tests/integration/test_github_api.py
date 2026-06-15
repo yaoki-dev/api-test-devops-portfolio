@@ -18,7 +18,6 @@ from utils.github_client import AsyncGitHubClient, NotFoundError
 
 @pytest.mark.external
 @pytest.mark.integration
-@pytest.mark.asyncio
 async def test_get_user_real_api():
     """実API: ユーザー情報取得
 
@@ -44,7 +43,6 @@ async def test_get_user_real_api():
 
 @pytest.mark.external
 @pytest.mark.integration
-@pytest.mark.asyncio
 async def test_get_repos_real_api():
     """実API: リポジトリ一覧取得
 
@@ -71,7 +69,6 @@ async def test_get_repos_real_api():
 
 @pytest.mark.external
 @pytest.mark.integration
-@pytest.mark.asyncio
 async def test_get_repo_real_api():
     """実API: リポジトリ詳細取得
 
@@ -97,7 +94,6 @@ async def test_get_repo_real_api():
 
 @pytest.mark.external
 @pytest.mark.integration
-@pytest.mark.asyncio
 async def test_not_found_error_real_api():
     """実API: 404エラーハンドリング
 
@@ -119,7 +115,6 @@ async def test_not_found_error_real_api():
 
 @pytest.mark.external
 @pytest.mark.integration
-@pytest.mark.asyncio
 async def test_integration_checklist():
     """統合確認チェックリスト自動化
 

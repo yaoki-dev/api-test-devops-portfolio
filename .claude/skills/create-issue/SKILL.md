@@ -67,6 +67,8 @@ digraph issue_flow {
 
 Issue本文生成後、`gh issue create` 実行**前**に必ずセルフレビューを実施。
 
+> **⚠️ pre-filled args免除禁止**: 本ゲートはpre-filled argsで引数が事前入力されている場合でも**スキップ不可**。ステップ1-3は情報収集（入力依存）だが、本ステップは品質保証（入力非依存）であり性質が異なる。
+
 ### Review Command
 
 ```
@@ -376,6 +378,7 @@ gh issue create --assignee "@me"
 | 完了基準が曖昧 | チェックリスト形式で検証可能に |
 | 関連PRリンク漏れ | `Refs #XX (PR)` または `発見元:` に明記 |
 | ラベル未設定 | `--label` で必ず1つ以上設定 |
+| pre-filled argsでself-review省略 | ステップ1-3のスキップはステップ4に波及しない。品質保証は常時必須 |
 
 ## Integration with Workflow
 

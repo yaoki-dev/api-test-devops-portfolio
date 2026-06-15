@@ -11,9 +11,8 @@
 # 変更履歴:
 #   2026-02-17: Python 3.12→3.13 (セキュリティサポート延長)
 #   2026-03-07: Python 3.13→3.14 (プロジェクト全体統一移行 PR#228)
-# 注意: CVE-2025-8869はPEP 706対応Python（3.9.17+/3.10.12+/3.11.4+/3.12+を含む）
-#        では影響を受けない。pip 26.x（>=26,<27 でアップグレード済み）でも修正済み（詳細: .trivyignore参照）
-FROM python:3.14-slim@sha256:6a27522252aef8432841f224d9baaa6e9fce07b07584154fa0b9a96603af7456 AS base
+#   2026-06-13: digest更新 (CVE-2026-45447 openssl-provider-legacy HIGH / 修正版 3.5.6-1~deb13u2 取込)
+FROM python:3.14-slim@sha256:44dd04494ee8f3b538294360e7c4b3acb87c8268e4d0a4828a6500b1eff50061 AS base
 
 WORKDIR /app
 
@@ -41,7 +40,7 @@ RUN groupadd --gid 1000 appgroup && \
 FROM base AS dependencies
 
 # uv インストール
-RUN pip install --no-cache-dir uv
+RUN pip install --no-cache-dir "uv==0.11.17"
 
 # 依存関係ファイルのみコピー（キャッシュ効率化）
 COPY pyproject.toml uv.lock ./
@@ -66,10 +65,6 @@ COPY config/ ./config/
 COPY utils/ ./utils/
 COPY models/ ./models/
 
-# 不要ファイル削除（イメージサイズ最適化）
-RUN find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
-    find . -type f -name "*.pyc" -delete 2>/dev/null || true
-
 # 非rootユーザーに切り替え
 USER appuser
 
@@ -82,32 +77,47 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # ============================================================
 FROM base AS test
 
-# uv インストール
-RUN pip install --no-cache-dir uv
+# uv インストール (root権限が必要: グローバル site-packages 配置)
+# Note: test ステージは FROM base AS test で base から直接分岐するため、
+# FROM base AS dependencies で生成された uv レイヤーを継承しない。
+# 独立インストールは設計上必要（runtime ステージに uv が漏れないよう
+# dependencies と test を別ブランチで構成する意図的設計）。
+RUN pip install --no-cache-dir "uv==0.11.17"
 
-# 依存関係ファイルコピー
-COPY pyproject.toml uv.lock ./
+# pytest-cov が cwd (/app) に .coverage SQLite DB を書くため、appuser に WORKDIR
+# 書込権限を付与する。非再帰 chown のみで十分 (.venv とアプリコードは以降の
+# `--chown=appuser:appgroup` 付き COPY と appuser 権限での `uv sync` で適切な所有に配置)。
+RUN chown appuser:appgroup /app
+
+# 非rootユーザーに切替 (uv sync 以降は appuser 権限で実行 → .venv も appuser 所有で生成)
+USER appuser
+
+# 依存関係ファイルコピー (appuser 所有で配置)
+# pytest設定は pyproject.toml の [tool.pytest.ini_options] に統合済 (pytest.ini は不要)
+COPY --chown=appuser:appgroup pyproject.toml uv.lock ./
+
+# dependencies stage の本番依存 .venv をベースにキャッシュ流用 (コードのみ変更時のCI高速化)
+# 後続 `uv sync` が dev 依存関係を差分追加するため、`pyproject.toml`/`uv.lock` 未変更時の
+# フル再インストールを回避できる
+COPY --chown=appuser:appgroup --from=dependencies /app/.venv /app/.venv
+
+# PATH設定（uv sync 前に設定。uv は絶対パスで実行されるため動作上必須ではないが、
+# 後続の COPY/RUN で .venv/bin が PATH に含まれていることを明示）
+ENV PATH="/app/.venv/bin:$PATH"
 
 # 全依存関係インストール（devパッケージ含む）
 # --no-install-project: ソース未コピー状態でhatchlingエラー回避（dependencies stageと同様）
 RUN uv sync --frozen --no-install-project
 
-# PATH設定
-ENV PATH="/app/.venv/bin:$PATH"
-
-# アプリケーションコード全体をコピー
-COPY config/ ./config/
-COPY utils/ ./utils/
-COPY models/ ./models/
-COPY tests/ ./tests/
-COPY pytest.ini ./
-
-# 不要ファイル削除
-RUN find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
-    find . -type f -name "*.pyc" -delete 2>/dev/null || true
-
-# 非rootユーザーに切り替え（最小権限原則）
-USER appuser
+# アプリケーションコード全体をコピー (appuser 所有で配置)
+COPY --chown=appuser:appgroup config/ ./config/
+COPY --chown=appuser:appgroup utils/ ./utils/
+COPY --chown=appuser:appgroup models/ ./models/
+COPY --chown=appuser:appgroup tests/ ./tests/
+# docker-compose.yml は tests/integration/test_docker_compose_contract.py が
+# request.config.rootdir / "docker-compose.yml" で読み込むため、test ステージへ配置する。
+COPY --chown=appuser:appgroup docker-compose.yml ./
 
 # デフォルトコマンド: テスト実行
-CMD ["pytest", "--cov=.", "--cov-report=term-missing", "-v"]
+# カバレッジ scope は CI 品質ゲート (--cov=utils --cov=config --cov=models) と統一
+CMD ["pytest", "--cov=utils", "--cov=config", "--cov=models", "--cov-report=term-missing", "-v"]

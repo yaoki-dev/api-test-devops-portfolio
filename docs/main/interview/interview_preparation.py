@@ -408,10 +408,10 @@ Python・httpx・structlog・pydantic、Docker、GitHub Actions、OWASP準拠セ
 #### Docker環境の起動
 ```bash
 # リアルタイム実行
-docker-compose up -d
+docker compose up -d
 
 # 構成説明
-docker-compose ps
+docker compose ps
 docker images | grep api-test
 ```
 
@@ -423,11 +423,10 @@ docker images | grep api-test
 #### テスト実行デモ
 ```bash
 # 基本テスト実行
-docker-compose -f docker-compose.test.yml run tests pytest tests/unit/ -v
+docker compose --profile test run --rm test
 
 # カバレッジレポート生成
-docker-compose -f docker-compose.test.yml run tests pytest \
-    --cov=utils --cov=config --cov-report=html
+docker compose --profile test run --rm test pytest --cov=utils --cov=config --cov-report=html
 ```
 
 **説明ポイント**:
@@ -579,12 +578,12 @@ Docker環境により環境依存を解消し、CI/CDにより品質を担保、
 
 実際にこのプロジェクトでは、フルサイズから60%のサイズ削減を実現しました。
 
-#### Q: docker-composeとKubernetesの使い分けは？
+#### Q: docker composeとKubernetesの使い分けは？
 **A**:
-- **docker-compose**: 開発・小規模運用、単一ホスト環境
+- **docker compose**: 開発・小規模運用、単一ホスト環境
 - **Kubernetes**: 本番・大規模運用、クラスター環境、高可用性要求
 
-現在のプロジェクトはdocker-composeですが、
+現在のプロジェクトはdocker composeですが、
 Kubernetesへの移行も設計を考慮しています。
 
 ### CI/CD関連

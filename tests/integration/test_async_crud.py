@@ -3,11 +3,6 @@
 # ===============================================================================
 #
 # このファイルは AsyncJSONPlaceholderClient の実API統合テスト
-# 学習ポイント：
-# 1. 実際のJSONPlaceholder APIへの非同期リクエスト
-# 2. CRUD操作の統合フロー（Create → Read → Update → Delete）
-# 3. ネットワークエラー・タイムアウトの実践的処理
-# 4. 統合テストとE2Eテストの違い
 #
 # 注意事項：
 # - このテストは外部APIに依存します
@@ -39,7 +34,6 @@ SKIP_REASON = "settings.test.external_api_enabled is False - skipping external A
 
 
 @pytest.mark.integration
-@pytest.mark.asyncio
 @pytest.mark.skipif(SKIP_INTEGRATION, reason=SKIP_REASON)
 async def test_real_async_create_post():
     """
@@ -75,7 +69,6 @@ async def test_real_async_create_post():
 
 
 @pytest.mark.integration
-@pytest.mark.asyncio
 @pytest.mark.skipif(SKIP_INTEGRATION, reason=SKIP_REASON)
 async def test_real_async_update_post():
     """
@@ -107,7 +100,6 @@ async def test_real_async_update_post():
 
 
 @pytest.mark.integration
-@pytest.mark.asyncio
 @pytest.mark.skipif(SKIP_INTEGRATION, reason=SKIP_REASON)
 async def test_real_async_delete_post():
     """
@@ -130,7 +122,6 @@ async def test_real_async_delete_post():
 
 
 @pytest.mark.integration
-@pytest.mark.asyncio
 @pytest.mark.skipif(SKIP_INTEGRATION, reason=SKIP_REASON)
 async def test_real_async_crud_integration():
     """
@@ -185,7 +176,6 @@ async def test_real_async_crud_integration():
 
 
 @pytest.mark.integration
-@pytest.mark.asyncio
 @pytest.mark.skipif(SKIP_INTEGRATION, reason=SKIP_REASON)
 async def test_real_async_404_error():
     """
@@ -209,7 +199,6 @@ async def test_real_async_404_error():
 
 
 @pytest.mark.integration
-@pytest.mark.asyncio
 @pytest.mark.skipif(SKIP_INTEGRATION, reason=SKIP_REASON)
 async def test_real_async_concurrent_crud():
     """
@@ -244,7 +233,6 @@ async def test_real_async_concurrent_crud():
 
 
 @pytest.mark.integration
-@pytest.mark.asyncio
 @pytest.mark.skipif(SKIP_INTEGRATION, reason=SKIP_REASON)
 async def test_real_async_with_timeout():
     """

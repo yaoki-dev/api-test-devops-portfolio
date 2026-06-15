@@ -8,12 +8,16 @@ Note:
     例外クラス・_safe_parse_json・_map_request_error のテストは
     test_api_client_shared.py に統合済み。
 
-テストケース一覧（12件）:
+テストケース一覧（15件）:
     - Retry (3件): server_error_then_success, exhausted, 4xx_no_retry
     - Timeout (2件): timeout_error_retry, timeout_then_success
     - Connection (2件): connection_error_retry, connection_then_success
     - Mixed Errors (2件): mixed_then_success, mixed_exhaust_retries
     - HTTP Methods (3件): post_with_retry, put_4xx_no_retry, delete_with_retry
+    - Log Bypass (3件):
+        non_retryable_error_logs_before_raise[TooManyRedirects-Max redirects exceeded],
+        non_retryable_error_logs_before_raise[InvalidURL-Invalid URL format],
+        non_retryable_error_skips_retry
 """
 
 from unittest.mock import Mock, patch
@@ -21,8 +25,11 @@ from unittest.mock import Mock, patch
 import httpx
 import pytest
 import respx
+from structlog.testing import capture_logs
 
+from tests.constants import BASE_URL
 from utils.api_client import (
+    APIClientError,
     APIConnectionError,
     APIHTTPError,
     APIRetryError,
@@ -32,8 +39,6 @@ from utils.api_client import (
 
 # Module-level marker: All tests in this file are unit tests
 pytestmark = pytest.mark.unit
-
-BASE_URL = "https://jsonplaceholder.typicode.com"
 
 
 # =============================================================================
@@ -303,6 +308,68 @@ async def test_async_delete_with_retry(mock_backoff: Mock) -> None:
     assert response.status_code == 200
     # バックオフが1回呼ばれることを確認（attempt 0でTimeout失敗→backoff、attempt 1で成功）
     assert mock_backoff.call_count == 1
+
+
+# =============================================================================
+# Log Bypass Tests（Issue #224: _map_request_error raiseでログが失われない検証）
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        httpx.TooManyRedirects("Max redirects exceeded"),
+        httpx.InvalidURL("Invalid URL format"),
+    ],
+)
+@respx.mock
+async def test_async_non_retryable_error_logs_before_raise(
+    exc: httpx.TooManyRedirects | httpx.InvalidURL,
+) -> None:
+    """非リトライエラー時にlogger.errorが_map_request_error前に実行される
+
+    _map_request_errorは非リトライエラーで即座にraiseするが、
+    ログ出力はその前に実行されるため、デバッグ情報が失われない。
+    非リトライエラー（TooManyRedirects/InvalidURL）はERRORレベルで記録される。
+    """
+    route = respx.get(f"{BASE_URL}/posts/1")
+    route.side_effect = exc
+
+    with capture_logs() as log_output:
+        with pytest.raises(APIClientError, match="Non-retryable request error"):
+            async with AsyncAPIClient(retry_count=0) as client:
+                await client.get("/posts/1")
+
+    # ERRORレベルのログが出力されていることを検証（ログバイパスが修正済み）
+    error_logs = [
+        log
+        for log in log_output
+        if log.get("log_level") == "error" and log.get("event") == "request_error_non_retryable"  # noqa: E501
+    ]
+    assert len(error_logs) == 1, f"Expected 1 error log, got: {log_output}"
+    assert error_logs[0]["method"] == "GET"
+    assert error_logs[0]["endpoint"] == "/posts/1"
+    assert "error" not in error_logs[0]  # security: 認証情報漏洩防止
+    assert "error_type" in error_logs[0]  # error_type フィールドの存在確認
+    assert error_logs[0]["is_async"] is True  # AsyncAPIClient 呼び出しの確認
+
+
+@respx.mock
+async def test_async_non_retryable_error_skips_retry() -> None:
+    """retry_count>=1設定時でも非リトライエラーはリトライループを即 raise で脱出する
+
+    TooManyRedirects/InvalidURL は即 raise のため、
+    retry_count を増やしても1回のみの試行で APIClientError が発生する。
+    """
+    route = respx.get(f"{BASE_URL}/posts/1")
+    route.side_effect = httpx.TooManyRedirects("Max redirects exceeded")
+
+    with pytest.raises(APIClientError, match="Non-retryable request error"):
+        async with AsyncAPIClient(retry_count=2) as client:
+            await client.get("/posts/1")
+
+    # リトライされていないことを確認
+    assert route.call_count == 1, "非リトライエラーは1回のみ試行される"
 
 
 # =============================================================================

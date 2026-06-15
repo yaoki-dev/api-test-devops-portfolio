@@ -36,7 +36,9 @@ paths: ["**/*.py"]
 
 ## 3. 型ヒント
 
-全関数・メソッドに型ヒント必須（テストコード除外、mypy: `disallow_untyped_defs = true`）
+全関数・メソッドに型ヒント必須（mypy: `disallow_untyped_defs = true`）
+
+**適用範囲**: `utils/`, `config/`, `models/`, `tests/conftest.py`, `tests/**/__init__.py` は強制対象。`tests/unit/test_*.py` 等のテスト本体は推奨（CI mypy invocation 対象外、漸次型付与方針）
 
 ```python
 def __init__(self, base_url: str | None = None) -> None: ...  # Python 3.10+ Union
@@ -44,7 +46,7 @@ type JSONResponse = dict[str, Any]  # Python 3.12+ 型エイリアス
 async def __aenter__(self) -> Self: ...  # Python 3.11+ Self型
 ```
 
-自動検証: `uv run mypy utils/ config/ models/`
+自動検証: `uv run mypy utils/ config/ models/ tests/conftest.py`
 
 ---
 
@@ -78,6 +80,12 @@ except json.JSONDecodeError as e:
 
 **規則**: 階層的例外設計、`from e`でチェーン維持、4xx即失敗/5xxリトライ
 
+**セキュリティ規則**: 例外クラス名には PII（個人識別情報）を連想させる語を含めないこと。
+例: `UserEmailValidationError` のようなクラス名は、`__qualname__` 経由で Sentry に
+送信される際に「email」等を機密カテゴリ語として誤検知されたり、PII の存在を
+示唆したりするリスクがある（クラス名自体に実データは含まれないが、語が誤解を招く）。
+`ValidationError` のような汎用名を使用すること。
+
 ---
 
 ## 6. 非同期処理
@@ -104,7 +112,7 @@ result = "".join(str(item) for item in items)  # 文字列結合 O(n)
 ## 8. テスト規約
 
 ```python
-@pytest.mark.asyncio
+# pytest-asyncio が async テストを自動検出する (asyncio_mode = "auto")
 async def test_async_get_user(sample_user_data, mock_response): ...
 
 @pytest.fixture

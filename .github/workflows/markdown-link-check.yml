@@ -1,5 +1,7 @@
 # Markdown Link Check Workflow
 # Validates internal and external links in all markdown files
+# Role: Gate check — fails the workflow on broken links (pass/fail verdict)
+# Counterpart: ci.yml weekly-link-check job collects detailed per-file logs as artifact
 # Runs on PR (markdown changes), weekly schedule, and manual dispatch
 
 name: Markdown Link Check
@@ -23,10 +25,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: '20'
           cache: 'npm'
@@ -36,8 +38,7 @@ jobs:
 
       - name: Run markdown link check
         run: npm run lint:links
-        continue-on-error: ${{ github.event_name == 'schedule' }}
 
       - name: Run verbose check on failure (debug)
         if: failure()
-        run: npm run lint:links:verbose || true
+        run: npm run lint:links:verbose

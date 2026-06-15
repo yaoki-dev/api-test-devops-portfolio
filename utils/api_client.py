@@ -1,23 +1,35 @@
-"""基本的な同期HTTPAPIクライアント
-
-学習目標:
-- HTTPクライアントの設計パターン
-- エラーハンドリング戦略
-- リトライロジックの実装
-- 設定管理との統合
-"""
+"""同期・非同期HTTPAPIクライアント"""
 
 import asyncio
 import json
 import random
+import sys
 import time
 from types import TracebackType
-from typing import Any, Self
+from typing import Any, Final, Self
 
 import httpx
+from structlog.typing import FilteringBoundLogger
 
 from config.settings import settings
 from utils.logger import get_logger
+
+# httpx 例外（NetworkError, RemoteProtocolError 等）をここに追加してはならない。
+# github_client.py の _request では except 句の順序で先行キャッチしており、
+# この定数に httpx 例外を追加すると NetworkError のリトライが壊れる。
+ASYNC_FATAL_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    KeyboardInterrupt,
+    SystemExit,
+    MemoryError,
+    RecursionError,
+    asyncio.CancelledError,
+)
+SYNC_FATAL_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    KeyboardInterrupt,
+    SystemExit,
+    MemoryError,
+    RecursionError,
+)
 
 
 def exponential_backoff_with_jitter(
@@ -45,6 +57,21 @@ def exponential_backoff_with_jitter(
     delay = delay + random.uniform(-jitter, jitter)  # noqa: S311
     # 最小値保証
     return max(0.1, delay)
+
+
+def _validate_optional_int(value: int | None, name: str, min_value: int) -> None:
+    """オプショナルな整数パラメータの最小値バリデーション。
+
+    Args:
+        value: 検証対象の値（Noneの場合はスキップ）
+        name: パラメータ名（エラーメッセージ用）
+        min_value: 最小許容値（含む）
+
+    Raises:
+        ValueError: valueがmin_valueより小さい場合
+    """
+    if value is not None and value < min_value:
+        raise ValueError(f"{name} must be >= {min_value}")
 
 
 # =============================================================================
@@ -97,6 +124,16 @@ def _safe_parse_json(response: httpx.Response) -> Any:
     Raises:
         APIJSONDecodeError: JSONパース失敗時
 
+    Notes:
+        ``json.JSONDecodeError`` の ``str(e)`` にはパース位置情報（行番号・
+        文字位置）が含まれるが、httpx例外と異なりホスト名・プロキシ設定等の
+        機密情報は含まれない。デバッグに有用な診断情報を保持するため
+        ``str(e)`` をそのまま使用する。
+        また、``APIJSONDecodeError.response`` に元の ``httpx.Response``
+        オブジェクトを保持するが、レスポンスボディには機密データが含まれる
+        可能性があるためログには出力しない。デバッグ時は呼び出し元で
+        ``e.response`` を通じてアクセス可能。
+
     """
     try:
         return response.json()
@@ -111,33 +148,174 @@ def _map_request_error(e: httpx.RequestError | httpx.InvalidURL) -> APIClientErr
     """httpxネットワーク例外をカスタム例外にマッピング
 
     Args:
-        e: httpx.RequestError または そのサブクラス
+        e: httpx.RequestError または httpx.InvalidURL（またはそのサブクラス）
 
     Returns:
-        適切なAPIClientErrorサブクラス
+        APIClientErrorサブクラス（リトライ可能エラーの場合のみ。
+        非リトライ時（TooManyRedirects / InvalidURL）は
+        APIClientError 基底クラスを raise するため返らない）。
 
     Raises:
         APIClientError: 非リトライ可能エラー（TooManyRedirects, InvalidURL）
 
     Note:
-        httpx.RequestError階層:
-        - TimeoutException (ConnectTimeout, ReadTimeout) → リトライ可能
-        - ConnectError → リトライ可能
-        - NetworkError → リトライ可能
-        - TooManyRedirects, InvalidURL → 非リトライ（即座にraise）
+        httpx例外の扱い:
+        - RequestError サブクラス（リトライ可能）:
+          TimeoutException (ConnectTimeout, ReadTimeout),
+          NetworkError (ConnectError, ReadError, WriteError 等のサブクラスを含む)
+          ※ ConnectError は NetworkError のサブクラスだが個別分岐で処理
+        - RequestError サブクラス（非リトライ）:
+          TooManyRedirects → 即座にraise
+        - 独立例外（RequestError のサブクラスではない、非リトライ）:
+          InvalidURL → 即座にraise
+        生成される例外メッセージは固定プレフィックスと ``type(e).__name__``
+        （例外クラス名）のみで構成され、``str(e)`` は含めない。
+        非リトライエラーは ``raise ... from e`` により即座にスローされる。
+        リトライ可能エラーは ``__cause__ = e`` 手動設定後に返され、
+        呼び出し元で ``raise`` された際にトレースバックで確認できる。
+        なお、``__cause__`` に保持される httpx 例外の文字列には
+        ホスト名・プロキシ設定等の機密情報が含まれることがあり、
+        ``traceback.print_exception(chain=True)``（デフォルト）では
+        この ``__cause__`` チェーンが展開されるため、表示用途では
+        ``chain=False`` を指定して機密漏洩を防ぐこと。
+        ``main()`` で受け取る ``e`` は ``APIClientError`` なので、
+        ``chain=False`` が抑止するのは ``__cause__`` 側の httpx 例外チェーンであり、
+        ``APIClientError`` 本体のスタックトレースは引き続き表示される。
+        参照: ``main()`` の ``traceback.print_exception(e, chain=False)`` 実装。
 
     """
     # Non-retryable errors - raise immediately (no point in retrying)
     if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
-        raise APIClientError(f"Non-retryable request error: {e}") from e
+        raise APIClientError(f"Non-retryable request error: {type(e).__name__}") from e
 
-    # Retryable errors
+    # Retryable errors: returnするため `raise ... from e` は使えず __cause__ を手動設定する。
+    # PEP 3134: exc.__cause__ = e を設定すると __suppress_context__ が自動で True になり、
+    # 呼び出し元が raise した際に `raise exc from e` と同じ例外チェーン表示になる。
     if isinstance(e, httpx.TimeoutException):
-        return APITimeoutError(f"Request timeout: {e}")
+        timeout_exc = APITimeoutError(f"Request timeout: {type(e).__name__}")
+        timeout_exc.__cause__ = e
+        return timeout_exc
     if isinstance(e, httpx.ConnectError):
-        return APIConnectionError(f"Connection failed: {e}")
+        connect_exc = APIConnectionError(f"Connection failed: {type(e).__name__}")
+        connect_exc.__cause__ = e
+        return connect_exc
     # NetworkError, etc. - retryable network issues
-    return APIConnectionError(f"Network error: {e}")
+    network_exc = APIConnectionError(f"Network error: {type(e).__name__}")
+    network_exc.__cause__ = e
+    return network_exc
+
+
+def _resolve_client_config(
+    base_url: str | None,
+    timeout: float | None,
+    retry_count: int | None,
+    retry_delay: float | None,
+    headers: dict[str, str] | None,
+) -> tuple[str, float, int, float, dict[str, str]]:
+    """Sync/Async共通の設定解決ロジック。
+
+    引数またはsettingsから設定値を解決し、バリデーションを実行する。
+    HTTPクライアント初期化・ロガー初期化は呼び出し元の責務。
+
+    Args:
+        base_url: APIのベースURL（Noneの場合settings.api.base_urlを使用）
+        timeout: タイムアウト秒数（Noneの場合settings.api.timeoutを使用）
+        retry_count: リトライ回数（Noneの場合settings.api.retry_countを使用）
+        retry_delay: リトライ間隔秒数（Noneの場合settings.api.retry_delayを使用）
+        headers: 追加ヘッダー（デフォルトヘッダーにマージ）
+
+    Returns:
+        (base_url, timeout, retry_count, retry_delay, default_headers) のタプル
+
+    Raises:
+        ValueError: base_urlが空文字列またはホワイトスペース
+            （str.strip() で除去される文字）のみの文字列の場合
+
+    """
+    base_url = base_url if base_url is not None else settings.api.base_url
+    if not base_url.strip():
+        raise ValueError("base_url が空です。引数または API__BASE_URL 環境変数を確認してください。")
+    timeout = timeout if timeout is not None else settings.api.timeout
+    retry_count = retry_count if retry_count is not None else settings.api.retry_count
+    retry_delay = retry_delay if retry_delay is not None else settings.api.retry_delay
+
+    default_headers = {
+        "User-Agent": settings.api.user_agent,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    # `if headers:` ではなく `is not None` を使用: 空辞書({})を渡した場合も
+    # update()を実行する（no-opだが、Noneと空辞書の意味論を明確に区別するため）
+    if headers is not None:
+        default_headers.update(headers)
+
+    return (
+        base_url,
+        timeout,
+        retry_count,
+        retry_delay,
+        default_headers,
+    )
+
+
+def _classify_error(
+    e: httpx.RequestError | httpx.InvalidURL,
+    logger: FilteringBoundLogger,
+    *,
+    is_async: bool,
+    method: str,
+    endpoint: str,
+) -> APIClientError:
+    """Sync/Async共通のネットワークエラー分類・ログ出力。
+
+    エラー種別に応じてERROR/WARNINGログを出力し、_map_request_error()を呼び出す。
+    非リトライエラー(TooManyRedirects/InvalidURL)は_map_request_error()内で即座にraiseされる。
+
+    Args:
+        e: httpxのリクエストエラーまたはInvalidURL
+        logger: structlogロガーインスタンス
+        is_async: 非同期クライアントからの呼び出しかどうか
+        method: HTTPメソッド名
+        endpoint: APIエンドポイント
+
+    Returns:
+        APIClientErrorサブクラス（リトライ可能エラーの場合）。
+        TooManyRedirects / InvalidURL の場合は _map_request_error() 内で
+        raise されるため、呼び出し元には値が返らない。
+
+    Raises:
+        APIClientError: TooManyRedirects または InvalidURL の場合
+            （logger.error でログ出力後、_map_request_error() を経由して raise される）。
+            注: サブクラスではなく APIClientError 基底クラスが raise される。
+            リトライ可能エラーは logger.warning でログ出力し、raise されない。
+
+    Notes:
+        本関数のログ出力（``request_error_non_retryable`` / ``request_error`` イベント）では
+        ``error`` フィールドを省略している。httpx 例外の文字列には
+        ホスト名、プロキシ設定等の機密情報が含まれるため、``error_type``
+        （例外クラス名）のみ記録してエラー分類に必須情報を確保する。
+        非リトライエラー（``request_error_non_retryable``）は ``logger.error``、
+        リトライ可能エラー（``request_error``）は ``logger.warning`` でログ出力される。
+        例外の生成・チェーン設定の詳細は ``_map_request_error()`` 参照。
+
+    """
+    if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
+        logger.error(
+            "request_error_non_retryable",
+            is_async=is_async,
+            method=method,
+            endpoint=endpoint,
+            error_type=type(e).__name__,
+        )
+    else:
+        logger.warning(
+            "request_error",
+            is_async=is_async,
+            method=method,
+            endpoint=endpoint,
+            error_type=type(e).__name__,
+        )
+    return _map_request_error(e)
 
 
 # =============================================================================
@@ -146,13 +324,7 @@ def _map_request_error(e: httpx.RequestError | httpx.InvalidURL) -> APIClientErr
 
 
 class SyncAPIClient:
-    """基本的な同期HTTPクライアント
-
-    学習目標:
-    - クライアント設計の基本パターン
-    - 設定との統合方法
-    - エラーハンドリングの実装
-    """
+    """基本的な同期HTTPクライアント"""
 
     def __init__(
         self,
@@ -170,35 +342,28 @@ class SyncAPIClient:
         headers: 追加HTTPヘッダー
 
         Raises:
-            ValueError: base_urlが空文字列の場合
+            ValueError: base_urlが空文字列またはホワイトスペース
+                （スペース・タブ・改行等）のみの文字列の場合
 
         """
-        # 設定から値を取得（引数で上書き可能）
+        # 設定解決・バリデーション（Sync/Async共通ロジック）
         # NOTE: retry_count=0, retry_delay=0.0, timeout=0.0 は有効な設定値のため is not None で判定
         # timeout=0.0: 即座にタイムアウト（無効化は timeout=None）
-        self.base_url = base_url if base_url is not None else settings.api.base_url
-        if not self.base_url.strip():
-            raise ValueError(
-                "base_url が空です。引数または API__BASE_URL 環境変数を確認してください。"
-            )
-        self.timeout = timeout if timeout is not None else settings.api.timeout
-        self.retry_count = retry_count if retry_count is not None else settings.api.retry_count
-        self.retry_delay = retry_delay if retry_delay is not None else settings.api.retry_delay
-
-        # デフォルトヘッダーの設定
-        self.default_headers = {
-            "User-Agent": settings.api.user_agent,
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        }
-        if headers:
-            self.default_headers.update(headers)
+        (
+            self.base_url,
+            self.timeout,
+            self.retry_count,
+            self.retry_delay,
+            self.default_headers,
+        ) = _resolve_client_config(base_url, timeout, retry_count, retry_delay, headers)
 
         # ロガーの初期化（structlog統合）
         self.logger = get_logger(__name__)
 
         # HTTPクライアントの初期化
-        self._client = httpx.Client(
+        # close() 後に None を代入するため Optional 宣言
+        # （AsyncAPIClient._client と対称, PR#347 CQ-6）。
+        self._client: httpx.Client | None = httpx.Client(
             base_url=self.base_url,
             timeout=self.timeout,
             headers=self.default_headers,
@@ -221,9 +386,25 @@ class SyncAPIClient:
         self.close()
 
     def close(self) -> None:
-        """クライアントのクローズ"""
-        if self._client:
-            self._client.close()
+        """クライアントのクローズ
+
+        ``AsyncAPIClient`` / ``AsyncGitHubClient.__aexit__`` と同様に、close 後は
+        ``self._client = None`` を設定してダブルクローズを防止する（PR#347 CQ-6）。
+        truthy チェックではなく ``is not None`` で他箇所の規約と統一する。
+
+        ``self._client.close()`` が例外（``httpx.CloseError`` / ``OSError`` 等）を投げても、
+        ``finally`` 節で ``self._client = None`` を必ず設定する。これにより ``_request`` 冒頭の
+        use-after-close ガード（``_client is None`` 判定）の前提が保たれ、close 失敗後に壊れた
+        クライアントへリクエストが発行される状態不整合を防ぐ。``AsyncAPIClient._close_async_client``
+        が全 except 経路で ``_client=None`` を設定するのと対称（PR#347 review）。例外は従来通り
+        呼び出し元へ伝播させる（``finally`` は抑制しない）。``api_client_closed`` info ログは
+        close 成功時のみ出力する（``finally`` の外に置くため、例外時はスキップされる）。
+        """
+        if self._client is not None:
+            try:
+                self._client.close()
+            finally:
+                self._client = None
             self.logger.info("api_client_closed")
 
     def _make_request_with_retry(self, method: str, endpoint: str, **kwargs: Any) -> httpx.Response:
@@ -242,8 +423,19 @@ class SyncAPIClient:
             APITimeoutError: タイムアウトエラー
             APIHTTPError: HTTPステータスエラー
             APIRetryError: リトライ上限エラー
+            APIClientError: 非リトライエラー（TooManyRedirects / InvalidURL）
+
+        Note:
+            TooManyRedirects/InvalidURL は _map_request_error() 内で即 raise されるため、
+            APIRetryError ではなく APIClientError として呼び出し元に届く。
+            呼び出し元は APIClientError で捕捉すること。
 
         """
+        # close 後の use-after-close を明示エラー化（AsyncAPIClient._request と同一パターン）。
+        # 型注釈 _client: httpx.Client | None に対する None 絞り込みも兼ねる（PR#347 CQ-6）。
+        if self._client is None:
+            raise RuntimeError("Client not initialized or already closed.")
+
         last_exception: APIClientError | None = None
 
         for attempt in range(self.retry_count + 1):
@@ -265,8 +457,14 @@ class SyncAPIClient:
                 response = self._client.request(method, endpoint, **kwargs)
             except (httpx.RequestError, httpx.InvalidURL) as e:
                 # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
-                last_exception = _map_request_error(e)
-                self.logger.warning("Request error", method=method, endpoint=endpoint, error=str(e))
+                # TooManyRedirects/InvalidURL は _classify_error → _map_request_error 内で即 raise
+                last_exception = _classify_error(
+                    e,
+                    self.logger,
+                    is_async=False,
+                    method=method,
+                    endpoint=endpoint,
+                )
             else:
                 # ネットワーク成功時のみHTTPステータス処理
                 try:
@@ -389,13 +587,7 @@ class SyncAPIClient:
 
 
 class SyncJSONPlaceholderClient(SyncAPIClient):
-    """JSONPlaceholder API専用クライアント
-
-    学習目標:
-    - 特化型クライアントの設計
-    - APIスキーマとの統合
-    - 便利メソッドの実装
-    """
+    """JSONPlaceholder API専用クライアント"""
 
     # Posts API
     def get_posts(
@@ -410,10 +602,8 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         Raises:
             ValueError: limit < 0 または user_id < 1 の場合
         """
-        if limit is not None and limit < 0:
-            raise ValueError("limit must be >= 0")
-        if user_id is not None and user_id < 1:
-            raise ValueError("user_id must be >= 1")
+        _validate_optional_int(limit, "limit", 0)
+        _validate_optional_int(user_id, "user_id", 1)
 
         params = {}
         if limit is not None:
@@ -463,10 +653,8 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         Raises:
             ValueError: limit < 0 または user_id < 1 の場合
         """
-        if limit is not None and limit < 0:
-            raise ValueError("limit must be >= 0")
-        if user_id is not None and user_id < 1:
-            raise ValueError("user_id must be >= 1")
+        _validate_optional_int(limit, "limit", 0)
+        _validate_optional_int(user_id, "user_id", 1)
 
         params = {}
         if user_id is not None:
@@ -505,8 +693,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         Raises:
             ValueError: post_id < 1 の場合
         """
-        if post_id is not None and post_id < 1:
-            raise ValueError("post_id must be >= 1")
+        _validate_optional_int(post_id, "post_id", 1)
 
         if post_id is not None:
             response = self.get(f"/posts/{post_id}/comments")
@@ -524,8 +711,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         Raises:
             ValueError: user_id < 1 の場合
         """
-        if user_id is not None and user_id < 1:
-            raise ValueError("user_id must be >= 1")
+        _validate_optional_int(user_id, "user_id", 1)
 
         params = {}
         if user_id is not None:
@@ -543,8 +729,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         Raises:
             ValueError: album_id < 1 の場合
         """
-        if album_id is not None and album_id < 1:
-            raise ValueError("album_id must be >= 1")
+        _validate_optional_int(album_id, "album_id", 1)
 
         if album_id is not None:
             response = self.get(f"/albums/{album_id}/photos")
@@ -565,6 +750,11 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         Note:
             Async版と同一インターフェースで統一。
             CLI、スクリプト、レガシーシステム統合時に使用。
+            同期版はasyncioタスクキャンセル文脈を持たないため、
+            Async版と異なりCancelledErrorの再発生処理は不要。
+            ログ出力（``health_check_failed`` イベント）では ``error`` フィールドを省略し、
+            ``error_type`` のみ記録する（``_classify_error()`` は経由せず
+            直接 ``logger.warning`` を呼び出す）。
 
         Example:
             >>> with SyncJSONPlaceholderClient() as client:
@@ -575,17 +765,67 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         try:
             response = self.get("/users", params={"_limit": 1})
             return response.status_code == 200
-        except KeyboardInterrupt, SystemExit, MemoryError:
+        except SYNC_FATAL_EXCEPTIONS:
             # システム例外は再発生（K8s OOMKilled検知、graceful shutdown対応）
             raise
         except APIClientError as e:
             # 予期されるAPI例外のみキャッチ
             self.logger.warning(
                 "health_check_failed",
-                error=str(e),
                 error_type=type(e).__name__,
+                endpoint="/users",  # health_check は常に固定エンドポイント（非機密）
             )
             return False
+
+
+def _log_error_with_stderr_fallback(
+    logger: FilteringBoundLogger,
+    source: str,
+    context: str,
+    exc: BaseException,
+    event: str,
+    **fields: Any,
+) -> None:
+    """logger.error 記録 + 失敗時 stderr フォールバック (PR#347 B-3 / Q-8 DRY)。
+
+    ``api_client`` / ``github_client`` の close・cache 失敗ログで共通する
+    「``logger.error`` → 失敗時 ``stderr``」パターンをモジュールレベルに集約する。
+    ``AsyncGitHubClient`` は ``AsyncAPIClient`` を継承しないため、メソッドではなく
+    モジュール関数として共有する (PR#347 Q-8: インライン重複による修正漏れを防ぐ)。
+
+    ロガー自体が致命例外 (``MemoryError`` / ``RecursionError``) を投げた場合は
+    fail-fast で再 raise し、それ以外のロガー例外は握りつぶした ``exc`` の型名を
+    ``stderr`` へ再露出させて監視可能性を保つ。
+
+    Args:
+        logger: structlog ロガー。
+        source: stderr メッセージのソース識別子 (例 ``"api_client"``)。
+        context: 失敗箇所の短い識別子 (例 ``"aclose"`` / ``"etag_cache"``)。
+        exc: 既に握りつぶされている元例外 (型名のみ stderr 出力, PII 非含)。
+        event: ``logger.error`` へ渡すイベント名。
+        **fields: ``logger.error`` へ渡す構造化フィールド。
+
+    Raises:
+        MemoryError: ``logger`` が ``MemoryError`` を投げた場合に再 raise（fail-fast）。
+        RecursionError: ``logger`` が ``RecursionError`` を投げた場合に再 raise（fail-fast）。
+    """
+    try:
+        logger.error(event, **fields)
+    except (MemoryError, RecursionError):  # fmt: skip
+        # 致命例外は握りつぶさず再raise（fail-fast）。両者は Exception 派生のため、
+        # 下の except Exception より先に明示的に先取りする
+        # （sentry_init._safe_log_warning / _close_async_client と同一方針）。
+        raise
+    except Exception:  # noqa: BLE001
+        # ロガー例外が握りつぶした exc を再露出させない保険。
+        try:
+            print(
+                f"[{source}] {context} logger failed: {type(exc).__name__}",
+                file=sys.stderr,
+                flush=True,
+            )
+        except Exception:  # noqa: BLE001, S110
+            pass
 
 
 # =============================================================================
@@ -594,13 +834,9 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
 
 
 class AsyncAPIClient:
-    """非同期HTTPクライアント
+    """非同期HTTPクライアント"""
 
-    学習目標:
-    - 非同期プログラミングパターン
-    - httpx.AsyncClientの活用
-    - async/awaitによる並行処理
-    """
+    _client: httpx.AsyncClient | None  # aclose() 後に None を代入するため明示宣言
 
     def __init__(
         self,
@@ -618,29 +854,20 @@ class AsyncAPIClient:
         headers: 追加HTTPヘッダー
 
         Raises:
-            ValueError: base_urlが空文字列の場合
+            ValueError: base_urlが空文字列またはホワイトスペース
+                （スペース・タブ・改行等）のみの文字列の場合
 
         """
-        # 設定から値を取得（引数で上書き可能）
+        # 設定解決・バリデーション（Sync/Async共通ロジック）
         # NOTE: retry_count=0, retry_delay=0.0, timeout=0.0 は有効な設定値のため is not None で判定
         # timeout=0.0: 即座にタイムアウト（無効化は timeout=None）
-        self.base_url = base_url if base_url is not None else settings.api.base_url
-        if not self.base_url.strip():
-            raise ValueError(
-                "base_url が空です。引数または API__BASE_URL 環境変数を確認してください。"
-            )
-        self.timeout = timeout if timeout is not None else settings.api.timeout
-        self.retry_count = retry_count if retry_count is not None else settings.api.retry_count
-        self.retry_delay = retry_delay if retry_delay is not None else settings.api.retry_delay
-
-        # デフォルトヘッダーの設定
-        self.default_headers = {
-            "User-Agent": settings.api.user_agent,
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        }
-        if headers:
-            self.default_headers.update(headers)
+        (
+            self.base_url,
+            self.timeout,
+            self.retry_count,
+            self.retry_delay,
+            self.default_headers,
+        ) = _resolve_client_config(base_url, timeout, retry_count, retry_delay, headers)
 
         # ロガーの初期化（structlog統合）
         self.logger = get_logger(__name__)
@@ -659,6 +886,118 @@ class AsyncAPIClient:
         """非同期コンテキストマネージャーのエントリー"""
         return self
 
+    def _log_aclose_error_with_fallback(
+        self, event: str, close_exc: BaseException, **fields: Any
+    ) -> None:
+        """aclose エラーを記録し、失敗時は stderr へフォールバック (PR#347 B-3 / Q-8)。
+
+        モジュールレベル ``_log_error_with_stderr_fallback`` への薄いラッパー。
+        ``github_client`` とロジック (logger.error → 失敗時 stderr) を共有し、
+        インライン重複による修正漏れを防ぐ (PR#347 Q-8 DRY)。
+        """
+        _log_error_with_stderr_fallback(
+            self.logger, "api_client", "aclose", close_exc, event, **fields
+        )
+
+    async def _close_async_client(
+        self,
+        body_exc_type: type[BaseException] | None,
+        *,
+        suppress_unexpected: bool = False,
+    ) -> None:
+        """``__aexit__`` と ``aclose()`` で共有する close 処理.
+
+        Args:
+            body_exc_type: ``__aexit__`` 経路では context manager の body 内で発生した
+                例外型を渡す (例外無しなら ``None``)。``aclose()`` 直接呼び出し経路では
+                常に ``None`` を渡す。``aclose()`` 失敗時に予期しない close 例外
+                (``Exception`` 派生) を捕捉した際、body 例外の上書き防止のため
+                ``has_body_exception = body_exc_type is not None`` を判定材料として
+                利用する。``None`` の場合のみ実装バグとして bare ``raise`` で再送出する。
+            suppress_unexpected: ``True`` の場合、予期しない close 例外を error ログ
+                のみ記録して握りつぶす (re-raise しない)。``aclose()`` 直接呼び出し経路
+                で ``True`` を渡すことで finally ブロック等での安全な呼び出しを保証する。
+                ``__aexit__`` 経路では ``False`` (デフォルト) のまま ``has_body_exception``
+                ロジックによる従来の re-raise 判定を維持する。
+        """
+        if self._client is not None:
+            try:
+                await self._client.aclose()
+            except (httpx.CloseError, OSError) as close_exc:
+                # 既知のクローズ時例外 — 警告のみ（body 例外を上書きしない）
+                self._client = None
+                self.logger.warning(
+                    "async_api_client_aclose_failed",
+                    error_type=type(close_exc).__name__,
+                    error_module=type(close_exc).__module__,
+                )
+            except (MemoryError, RecursionError):  # fmt: skip
+                # MemoryError/RecursionError も Exception 派生のため、再raise しないと
+                # 下流の except Exception に捕捉されサイレント隠蔽される
+                # （github_client / sentry_init と同一方針）。
+                # 致命的エラーとして必ず再raise（fail-fast）。
+                # ASYNC_FATAL_EXCEPTIONS は流用しない（close 文脈で asyncio.CancelledError
+                # は捕捉対象外＝BaseException 直系で素通りさせるのが正しいため）。
+                raise
+            except Exception as close_exc:  # noqa: BLE001
+                # 予期しない例外（AttributeError, RuntimeError, ValueError, TypeError 等の
+                # 実装バグ可能性）を捕捉。以下は本句より先に処理済み / 境界外:
+                #   - RecursionError / MemoryError: 上の専用句で先取り捕捉し
+                #     即時 re-raise（fail-fast）。
+                #   - KeyboardInterrupt / SystemExit / asyncio.CancelledError は
+                #     BaseException 直系で `except Exception` の境界外。
+                #     ユーザー停止/プロセス終了/cancellation を妨げない。
+                has_body_exception = body_exc_type is not None
+                if suppress_unexpected:
+                    # aclose() 直接呼び出し経路: finally ブロック等での安全な呼び出しを保証するため
+                    # 予期しない例外を握りつぶし、error ログで本番監視対象にする。
+                    # suppress_unexpected=True は has_body_exception より優先して評価する。
+                    # suppress 経路でも状態一貫性のため None セット。
+                    # aclose 失敗後の壊れたクライアント再利用を防止
+                    # （github_client __aexit__ L356 / 成功時 else 節と同一方針）。
+                    self._client = None
+                    self._log_aclose_error_with_fallback(
+                        "async_api_client_aclose_unexpected_error_suppressed",
+                        close_exc,
+                        error_type=type(close_exc).__name__,
+                        error_module=type(close_exc).__module__,
+                        exc_info=True,  # スタックトレースをログに残す
+                    )
+                else:
+                    # __aexit__ 経路（context manager）: 従来の has_body_exception ロジックを維持。
+                    # PR#347 review SF-2: close_exc が body 例外を上書きしないため
+                    # __context__ チェーンは切断される。代わりに body 例外の型名を
+                    # 同一ログイベント内に記録し、close 失敗と body 例外の対応関係を
+                    # 追跡可能にする (PII 非含: __qualname__ はクラス名のみ)。
+                    self._log_aclose_error_with_fallback(
+                        "async_api_client_aclose_unexpected_error",
+                        close_exc,
+                        error_type=type(close_exc).__name__,
+                        error_module=type(close_exc).__module__,
+                        has_body_exception=has_body_exception,
+                        action=(
+                            "suppressed_due_to_body_exception"
+                            if has_body_exception
+                            else "re_raised"
+                        ),
+                        body_exception_type=(
+                            body_exc_type.__qualname__ if body_exc_type is not None else None
+                        ),
+                        exc_info=True,  # スタックトレースをログに残す
+                    )
+                    # body 例外がない場合のみ実装バグとして re-raise。
+                    # body 例外がある場合は本質的原因の上書きを防ぐため raise しない。
+                    # bare ``raise`` で active exception の traceback を完全保持
+                    # （``raise close_exc`` への回帰防止: 余分な frame を追加せず Python idiom）。
+                    if not has_body_exception:
+                        raise
+            else:
+                # aclose() 成功時のみ closed ログを出す。logger.info を try 内に置くと
+                # logger 自体の例外が aclose 失敗として誤検知されるため else 節に分離。
+                # github_client.py / Sync close() と同一パターン (PR#347 Q-1 Codex fix)。
+                self._client = None  # double-close 防止（_client 型は | None 宣言済み）
+                self.logger.info("async_api_client_closed")
+
     async def __aexit__(
         self,
         exc_type: type[BaseException] | None,
@@ -666,13 +1005,22 @@ class AsyncAPIClient:
         exc_tb: TracebackType | None,
     ) -> None:
         """非同期コンテキストマネージャーの終了処理"""
-        await self.aclose()
+        await self._close_async_client(exc_type)
 
     async def aclose(self) -> None:
-        """クライアントのクローズ"""
-        if self._client:
-            await self._client.aclose()
-            self.logger.info("AsyncAPIClient closed")
+        """クライアントのクローズ
+
+        async with パターンと aclose() 単独呼び出しの両経路で
+        ``async_api_client_closed`` ログを出力し、Sync (``SyncAPIClient.close()``)
+        との observability 対称性を保つ (PR#347 review Q-1)。
+
+        Note: 直接呼び出し時 (async context manager 経由でない場合)、予期しない close 例外は
+        error ログ記録の上で抑制される (re-raise しない)。これにより finally ブロックでの
+        安全な呼び出しを保証し、アプリクラッシュリスクを回避する。
+        async with 経由では body 例外保護ロジック (has_body_exception) が適用され、
+        body 例外がない場合のみ close 例外を re-raise する従来の挙動を維持する。
+        """
+        await self._close_async_client(None, suppress_unexpected=True)
 
     async def _make_request_with_retry(
         self,
@@ -695,8 +1043,19 @@ class AsyncAPIClient:
             APITimeoutError: タイムアウトエラー
             APIHTTPError: HTTPステータスエラー
             APIRetryError: リトライ上限エラー
+            APIClientError: 非リトライエラー（TooManyRedirects / InvalidURL）
+
+        Note:
+            TooManyRedirects/InvalidURL は _map_request_error() 内で即 raise されるため、
+            APIRetryError ではなく APIClientError として呼び出し元に届く。
+            呼び出し元は APIClientError で捕捉すること。
 
         """
+        # close 後の use-after-close を明示エラー化（github_client.py L878 と同一パターン）。
+        # 型注釈 _client: AsyncClient | None に対する None 絞り込みも兼ねる。
+        if self._client is None:
+            raise RuntimeError("Client not initialized. Use 'async with' context.")
+
         last_exception: APIClientError | None = None
 
         for attempt in range(self.retry_count + 1):
@@ -718,12 +1077,13 @@ class AsyncAPIClient:
                 response = await self._client.request(method, endpoint, **kwargs)
             except (httpx.RequestError, httpx.InvalidURL) as e:
                 # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
-                last_exception = _map_request_error(e)
-                self.logger.warning(
-                    "Async request error",
+                # TooManyRedirects/InvalidURL は _classify_error → _map_request_error 内で即 raise
+                last_exception = _classify_error(
+                    e,
+                    self.logger,
+                    is_async=True,
                     method=method,
                     endpoint=endpoint,
-                    error=str(e),
                 )
             else:
                 # ネットワーク成功時のみHTTPステータス処理
@@ -847,14 +1207,12 @@ class AsyncAPIClient:
         )
 
 
-class AsyncJSONPlaceholderClient(AsyncAPIClient):
-    """JSONPlaceholder API専用非同期クライアント
+# 一括作成の部分失敗ログで記録する詳細の上限件数
+_MAX_LOGGED_FAILURE_DETAILS: Final[int] = 5
 
-    学習目標:
-    - 非同期API操作の実践
-    - 並行処理による効率化
-    - async/awaitパターンの理解
-    """
+
+class AsyncJSONPlaceholderClient(AsyncAPIClient):
+    """JSONPlaceholder API専用非同期クライアント"""
 
     # Posts API
     async def get_posts(
@@ -869,10 +1227,8 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         Raises:
             ValueError: limit < 0 または user_id < 1 の場合
         """
-        if limit is not None and limit < 0:
-            raise ValueError("limit must be >= 0")
-        if user_id is not None and user_id < 1:
-            raise ValueError("user_id must be >= 1")
+        _validate_optional_int(limit, "limit", 0)
+        _validate_optional_int(user_id, "user_id", 1)
 
         params = {}
         if limit is not None:
@@ -932,10 +1288,8 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         Raises:
             ValueError: limit < 0 または user_id < 1 の場合
         """
-        if limit is not None and limit < 0:
-            raise ValueError("limit must be >= 0")
-        if user_id is not None and user_id < 1:
-            raise ValueError("user_id must be >= 1")
+        _validate_optional_int(limit, "limit", 0)
+        _validate_optional_int(user_id, "user_id", 1)
 
         params = {}
         if user_id is not None:
@@ -979,7 +1333,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         """複数ユーザーの非同期一括作成
 
         個別失敗を許容し、成功したユーザーのみ返却。
-        失敗時はwarningログを出力（最初の5件まで詳細表示）。
+        失敗時はwarningログを出力（詳細は _MAX_LOGGED_FAILURE_DETAILS 件まで記録）。
         K8s SIGTERM等で複数タスクが同時キャンセルされた場合はerrorログを出力後、
         CancelledError等のfatal例外を再発生させる（graceful shutdown保護）。
 
@@ -987,7 +1341,8 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             users_data: 作成するユーザーデータのリスト（各要素はname/emailを含むdict）
 
         Returns:
-            成功したユーザーデータのリスト（失敗した分は除外される）
+            成功したユーザーデータのリスト（失敗した分は除外される）。
+            部分失敗時は入力件数より短いリストを返す。
 
         Raises:
             asyncio.CancelledError: 単一タスクがキャンセルされた場合（K8s graceful shutdown等）
@@ -1003,11 +1358,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         # システム例外はgather後に再発生させる（graceful shutdown保護）
         # asyncio.CancelledError（Python 3.8+ は BaseException サブクラス）を吸収しない
         # 複数タスクが同時キャンセルされる場合（K8s SIGTERM等）に全件収集してログ出力
-        fatal_exceptions = [
-            r
-            for r in results
-            if isinstance(r, (KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError))
-        ]
+        fatal_exceptions = [r for r in results if isinstance(r, ASYNC_FATAL_EXCEPTIONS)]
         if fatal_exceptions:
             if len(fatal_exceptions) > 1:
                 # Python convention: 複数同時例外はBaseExceptionGroupで伝播（TaskGroup同パターン）
@@ -1033,32 +1384,29 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 
         # 失敗時はログ出力（A1: デバッグ改善）
         if failed:
-            # 失敗したユーザーデータのコンテキストを収集（リトライ可能性向上）
-            # Note: user_dataにはPII含まれる可能性あり。Sentryスクラブで保護済み。
             failed_details = []
             for i, result in enumerate(results):
                 if isinstance(result, BaseException):
-                    # PIIリスク軽減: nameとemailのみ抽出（password等は除外）
-                    user_data_safe = None
-                    if i < len(users_data):
-                        raw = users_data[i]
-                        user_data_safe = {
-                            "name": raw.get("name"),
-                            "email": raw.get("email"),
-                        }
                     failed_details.append(
                         {
                             "index": i,
-                            "user_data": user_data_safe,
-                            "error": str(result),
                             "error_type": type(result).__name__,
+                            # 422 vs 503 を区別
+                            **(
+                                {"status_code": result.status_code}
+                                if isinstance(result, APIHTTPError)
+                                else {}
+                            ),
                         }
                     )
+            # PII除去設計: ログには index/error_type/status_code のみ記録。
+            # index はリクエスト配列内の元位置を示す（失敗行の特定・照合用）。
             self.logger.warning(
                 "bulk_create_partial_failure",
                 failed_count=len(failed),
                 success_count=len(successful),
-                failed_details=failed_details[:5],  # 最初の5件の詳細
+                failed_details=failed_details[:_MAX_LOGGED_FAILURE_DETAILS],
+                details_truncated=len(failed_details) > _MAX_LOGGED_FAILURE_DETAILS,
             )
 
         return successful
@@ -1073,8 +1421,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         Raises:
             ValueError: post_id < 1 の場合
         """
-        if post_id is not None and post_id < 1:
-            raise ValueError("post_id must be >= 1")
+        _validate_optional_int(post_id, "post_id", 1)
 
         if post_id is not None:
             response = await self.get(f"/posts/{post_id}/comments")
@@ -1092,8 +1439,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         Raises:
             ValueError: user_id < 1 の場合
         """
-        if user_id is not None and user_id < 1:
-            raise ValueError("user_id must be >= 1")
+        _validate_optional_int(user_id, "user_id", 1)
 
         params = {}
         if user_id is not None:
@@ -1111,8 +1457,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         Raises:
             ValueError: album_id < 1 の場合
         """
-        if album_id is not None and album_id < 1:
-            raise ValueError("album_id must be >= 1")
+        _validate_optional_int(album_id, "album_id", 1)
 
         if album_id is not None:
             response = await self.get(f"/albums/{album_id}/photos")
@@ -1154,10 +1499,10 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         Returns:
             bool: API到達可能ならTrue、エラー時はFalse
 
-        学習ポイント:
-        - Readiness Probe: コンテナがトラフィックを受け入れ可能か確認
-        - Liveness Probe: コンテナが正常に動作しているか確認
-        - 軽量クエリ（_limit=1）でサーバー負荷を最小化
+        Note:
+            ログ出力（``health_check_failed`` イベント）では ``error`` フィールドを省略し、
+            ``error_type`` のみ記録する（``_classify_error()`` は経由せず
+            直接 ``logger.warning`` を呼び出す）。
 
         Example:
             >>> async with AsyncJSONPlaceholderClient() as client:
@@ -1168,15 +1513,15 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         try:
             response = await self.get("/users", params={"_limit": 1})
             return response.status_code == 200
-        except KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError:
+        except ASYNC_FATAL_EXCEPTIONS:
             # システム例外・タスクキャンセルは再発生（K8s対応、graceful shutdown）
             raise
         except APIClientError as e:
             # 予期されるAPI例外のみキャッチ
             self.logger.warning(
                 "health_check_failed",
-                error=str(e),
                 error_type=type(e).__name__,
+                endpoint="/users",  # health_check は常に固定エンドポイント（非機密）
             )
             return False
 
@@ -1199,11 +1544,6 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             list[dict]: 取得成功したユーザー情報リスト
                        （取得失敗したIDはスキップ、warningログ出力）
 
-        学習ポイント:
-        - asyncio.Semaphore: 同時実行数を制限するロック機構
-        - Rate Limit対策: 外部APIへの過剰リクエスト防止
-        - Graceful degradation: 一部失敗しても残りの結果を返す
-
         Example:
             >>> async with AsyncJSONPlaceholderClient() as client:
             ...     users = await client.get_multiple_users([1, 2, 3], max_concurrent=2)
@@ -1217,7 +1557,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             async with semaphore:
                 try:
                     return await self.get_user(user_id)
-                except KeyboardInterrupt, SystemExit, MemoryError, asyncio.CancelledError:
+                except ASYNC_FATAL_EXCEPTIONS:
                     # システム例外・タスクキャンセルは再発生（並行処理全体を停止）
                     raise
                 except APIClientError as e:
@@ -1225,7 +1565,6 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
                     self.logger.warning(
                         "get_user_failed",
                         user_id=user_id,
-                        error=str(e),
                         error_type=type(e).__name__,
                     )
                     return None
@@ -1234,7 +1573,16 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         results = await asyncio.gather(*[fetch_with_semaphore(uid) for uid in user_ids])
 
         # None除外（失敗分）
-        return [r for r in results if r is not None]
+        successful = [r for r in results if r is not None]
+        failed_count = len(user_ids) - len(successful)
+        if failed_count:
+            self.logger.warning(
+                "get_multiple_users_partial_failure_summary",
+                failed_count=failed_count,
+                success_count=len(successful),
+                requested_count=len(user_ids),
+            )
+        return successful
 
 
 # =============================================================================
@@ -1288,12 +1636,14 @@ def main() -> None:
             print(f"  - Created post ID: {new_post.get('id', 'N/A')}")
             print(f"  - Title: {new_post.get('title', 'N/A')}")
 
-        except Exception as e:
-            print(f"エラーが発生しました: {e}")
+        except APIClientError as e:
+            # {e}: _map_request_error()経由の場合は固定プレフィックス+クラス名のみ。デモ用表示のみ
+            print(f"エラーが発生しました: {type(e).__name__}: {e}")
             if settings.debug:
                 import traceback
 
-                traceback.print_exc()
+                # chain=False: __cause__のhttpx例外チェーンのみ非表示。本体のスタックトレースは表示される  # noqa: E501
+                traceback.print_exception(e, chain=False)
 
     print("\n=== Demo completed ===")
 
@@ -1301,33 +1651,3 @@ def main() -> None:
 if __name__ == "__main__":
     # structlogはget_logger()初回呼び出し時に自動設定されるため、手動設定不要
     main()
-
-
-# =============================================================================
-# 学習ポイント:
-#
-# 1. クライアント設計パターン:
-#    - ベースクライアントと特化クライアントの分離
-#    - 設定との統合
-#    - コンテキストマネージャー対応
-#
-# 2. エラーハンドリング戦略:
-#    - 階層的な例外クラス設計
-#    - HTTPステータスコード別の処理
-#    - 詳細なログ出力
-#
-# 3. リトライロジック:
-#    - 指数バックオフの実装可能性
-#    - エラー種別による制御
-#    - 設定可能なパラメータ
-#
-# 4. 実用性:
-#    - APIスキーマとの対応
-#    - 便利メソッドの提供
-#    - デバッグ支援機能
-#
-# 5. 拡張性:
-#    - 認証機能の追加可能性
-#    - カスタムヘッダー対応
-#    - 非同期版への拡張基盤
-# =============================================================================

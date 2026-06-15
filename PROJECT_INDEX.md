@@ -23,18 +23,12 @@ api-test-devops-portfolio/
 │   ├── github_client.py   # GitHub API 専用クライアント
 │   ├── logger.py          # 構造化ログ（structlog）
 │   └── sentry_init.py     # エラー監視（Sentry SDK）
-├── tests/                  # テストスイート（19 test files）
-│   ├── unit/              # ユニットテスト（14 files）
-│   ├── integration/       # 統合テスト（3 files）
+├── tests/                  # テストスイート（全23 test files）
+│   ├── unit/              # ユニットテスト（16 files）
+│   ├── integration/       # 統合テスト（5 files）
 │   ├── performance/       # パフォーマンステスト（1 file）
-│   ├── e2e/               # E2Eテスト（準備中）
 │   ├── conftest.py        # pytest fixtures
 │   └── test_smoke.py      # スモークテスト（1 file）
-├── scripts/                # 自動化スクリプト
-│   ├── error_tracker.py   # エラー追跡
-│   ├── evaluate_4dimensions.py
-│   ├── update_readme_metrics.py
-│   └── week_improver.py
 ├── docs/                   # プロジェクトドキュメント
 ├── .github/                # CI/CD workflows
 ├── reports/                # テスト・カバレッジレポート
@@ -44,11 +38,6 @@ api-test-devops-portfolio/
 ---
 
 ## 🚀 Entry Points
-
-### CLI / Scripts
-- **Error Tracker**: `scripts/error_tracker.py` - エラー発生履歴の記録・分析
-- **Metrics Updater**: `scripts/update_readme_metrics.py` - README.md メトリクス自動更新
-- **4-Dimension Evaluator**: `scripts/evaluate_4dimensions.py` - 学習進捗4次元評価
 
 ### API Clients
 - **Generic API Client**: `utils/api_client.py` - 汎用HTTP API クライアント
@@ -65,32 +54,33 @@ api-test-devops-portfolio/
 
 ### Module: config
 - **Path**: `config/settings.py`
-- **Exports**: `Settings`, `settings` (singleton)
+- **Exports**: `Settings`, `get_settings()`, `reload_settings()`
 - **Purpose**: Pydantic Settingsによる型安全な環境変数管理。ネスト構造（`__`区切り）対応。
 
 ### Module: utils.api_client
 - **Path**: `utils/api_client.py`
-- **Exports**: `APIClient` (同期), `AsyncAPIClient` (非同期)
+- **Exports**（`utils` パッケージ）: `SyncAPIClient` (同期), `AsyncAPIClient` (非同期), `SyncJSONPlaceholderClient`, `AsyncJSONPlaceholderClient`, `APIClientError`, `APIJSONDecodeError`。個別例外クラス（`APIConnectionError`, `APITimeoutError`, `APIHTTPError`, `APIRetryError`）は `utils.api_client` から直接 import
 - **Purpose**: HTTP API クライアント。リトライロジック・エラーハンドリング・コネクションプール実装。
 
 ### Module: utils.github_client
 - **Path**: `utils/github_client.py`
-- **Exports**: `GitHubClient` (同期), `AsyncGitHubClient` (非同期)
-- **Purpose**: GitHub API 専用クライアント。認証ヘッダー自動付与。
+- **Exports**: `AsyncGitHubClient` (非同期), `GitHubAPIError`, `RateLimitError`, `NotFoundError`, `GitHubServerError`, `validate_github_username`, `validate_github_repo`
+- **Purpose**: GitHub API 専用の非同期クライアント。ETagキャッシュ・Rate Limit管理・PII保護対応。認証拡張可能設計（未認証: 60 req/h）。
 
 ### Module: utils.logger
 - **Path**: `utils/logger.py`
-- **Exports**: `get_logger()`, `configure_logging()`
+- **Exports**: `get_logger()`
 - **Purpose**: structlogベースの構造化ログ。ERROR以上をSentryに自動送信（opt-in）。
 
 ### Module: utils.sentry_init
 - **Path**: `utils/sentry_init.py`
 - **Exports**: `init_sentry()`
-- **Purpose**: Sentry SDK初期化。29種類の機密キー自動スクラブ。httpx統合。
+- **Purpose**: Sentry SDK初期化。44種類の機密キー自動スクラブ。httpx統合。
 
 ### Module: models.responses
 - **Path**: `models/responses.py`
-- **Exports**: `TodoResponse`, `PostResponse`, `UserResponse`
+- **Exports**: `Post`, `Comment`, `User`, `Geo`, `Address`,
+               `Company`, `Todo`, `Album`, `Photo`
 - **Purpose**: Pydantic モデルによるAPIレスポンス型定義・バリデーション。
 
 ---
@@ -137,16 +127,15 @@ api-test-devops-portfolio/
 ## 🧪 Test Coverage
 
 ### Test Statistics
-- **Total Test Files**: 19
-- **Unit Tests**: 14 files (tests/unit/)
-- **Integration Tests**: 3 files (tests/integration/)
+- **Total Test Files**: 23
+- **Unit Tests**: 16 files (tests/unit/)
+- **Integration Tests**: 5 files (tests/integration/)
 - **Performance Tests**: 1 file (tests/performance/)
 - **Smoke Tests**: 1 file (tests/test_smoke.py)
-- **E2E Tests**: 0 files (tests/e2e/ - prepared but empty)
 
 ### Coverage Metrics
-- **Current Coverage**: 92.73%（unit+integration条件）
-- **Target Coverage**: 85% (Week 7-10 goal) ✅ 達成済み
+- **Current Coverage**: 96.15%（unit+integration条件）
+- **Target Coverage**: 85% (Week 5-6 goal) ✅ 達成済み
 - **Coverage Reports**: `reports/coverage.json`, `reports/htmlcov/`
 
 ### Test Execution
@@ -169,21 +158,21 @@ uv run pytest -m "not slow"      # 高速テストのみ
 
 ### Production
 - **httpx** (>=0.27.0): 非同期HTTPクライアント
-- **structlog** (>=23.1.0): 構造化ログ
+- **structlog** (>=26.1.0): 構造化ログ
 - **pydantic** (>=2.0.0): データバリデーション
 - **pydantic-settings** (>=2.0.0): 型安全な設定管理
-- **sentry-sdk[httpx]** (>=2.48.0): エラー監視（httpx統合）
+- **sentry-sdk[httpx]** (>=2.61.1,<3.0.0): エラー監視（httpx統合）
 - **psutil** (>=6.1.1): システムメトリクス
 - **pyyaml** (>=6.0): YAML設定ファイル読み込み
 
 ### Development
-- **pytest** (>=8.0.0): テストフレームワーク
+- **pytest** (>=9.0.3): テストフレームワーク
 - **pytest-asyncio** (>=1.1.0): 非同期テスト対応
 - **pytest-cov** (>=4.1.0): カバレッジ測定
 - **pytest-xdist** (>=3.5.0): 並列テスト実行
-- **respx** (>=0.22.0): httpx用モックライブラリ
-- **ruff** (>=0.8.0): Linter + Formatter
-- **mypy** (>=1.13.0): 型チェッカー
+- **respx** (>=0.23.1): httpx用モックライブラリ
+- **ruff** (>=0.15.12,<0.16): Linter + Formatter
+- **mypy** (>=1.20.2): 型チェッカー
 
 ---
 
@@ -206,8 +195,8 @@ cp .env.example .env
 ```bash
 # APIクライアント使用例（対話モード）
 uv run python
->>> from utils.api_client import APIClient
->>> client = APIClient()
+>>> from utils.api_client import SyncAPIClient
+>>> client = SyncAPIClient()
 >>> response = client.get("/todos/1")
 >>> print(response)
 ```
@@ -255,14 +244,14 @@ uv run pytest && uv run ruff check . && uv run mypy utils/ config/ models/
 ## 🔍 Key Features
 
 ### 1. API クライアント設計パターン
-- **同期/非同期の統一インターフェース**: `APIClient` / `AsyncAPIClient`
+- **同期/非同期の統一インターフェース**: `SyncAPIClient` / `AsyncAPIClient`
 - **リトライロジック**: 指数バックオフ + 30%ジッター
 - **エラーハンドリング階層**: 4xx即失敗、5xxリトライ
 - **コネクションプール**: 最大10接続（設定可能）
 
 ### 2. エラー監視（Sentry統合）
 - **自動エラー送信**: ERROR以上のログをSentryに送信
-- **機密情報スクラブ**: 29種類のキー（API_KEY, PASSWORD等）自動除外
+- **機密情報スクラブ**: 44種類のキー（API_KEY, PASSWORD等）自動除外
 - **環境別制御**: `SENTRY__ENABLED=false` で開発時無効化
 
 ### 3. 設定管理ベストプラクティス
@@ -283,12 +272,12 @@ uv run pytest && uv run ruff check . && uv run mypy utils/ config/ models/
 
 ---
 
-## 📊 Project Metrics
+## 📊 Project Metrics　(CI計測対象: unit + integration)
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Test Coverage | 92.73% | 85% (Week 7-10) |
-| Test Files | 19 | - |
+| Test Coverage | 96.15% | 85% |
+| CI Test Files (unit+integration) | 21 | - |
 | Python Version | 3.14 | - |
 | Code Quality | ruff + mypy | 0 errors |
 | Documentation | CLAUDE.md + README | - |

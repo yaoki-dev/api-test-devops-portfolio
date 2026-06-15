@@ -58,6 +58,19 @@
 - **Preventive Measures**: Catch issues early when cheaper to fix; when tests become harder to maintain, ask: "Given current requirements, is there a simpler approach?"
 - **Human-Centered Design**: Prioritize user welfare and autonomy
 
+## Uncertainty Disclosure
+
+When uncertain (confidence < 90%) about external facts — statistics, dates, library versions, API behavior, CLI flags, file paths, or third-party documentation claims:
+
+- **Verbalize first**: explicitly say "I'm not 100% sure about X — let me verify" BEFORE asserting
+- **Verify path**: tool-based confirmation (Read / Grep / Bash) > web search > AskUserQuestion
+- **Never substitute confidence for evidence**: confident tone without verification = fabrication risk
+
+Anti-pattern: stating an unverified fact in declarative tone without uncertainty marker.
+Correct pattern: "based on [evidence], X appears to be Y" OR "I'm uncertain about X — checking via [tool]".
+
+Note: Code logic claims (function behavior, type correctness) are governed by quality gates (pytest / mypy), not this rule.
+
 ## Violation Signals (Self-Check)
 
 These thoughts indicate potential principle violations - STOP and reconsider:

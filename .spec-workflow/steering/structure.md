@@ -2037,8 +2037,7 @@ tests/
 │   ├── mock_todo_repository # モック化Repository（単体テスト用）
 │   ├── todo_data_factory    # テストデータ生成
 │   ├── user_data_factory    # テストデータ生成
-│   ├── performance_timer    # パフォーマンス計測
-│   └── security_payloads    # セキュリティテスト用ペイロード
+│   └── performance_timer    # パフォーマンス計測
 ├── unit/                    # 単体テスト（モック中心、開発環境）
 │   ├── domain/              # Domain層テスト
 │   ├── services/            # Service層テスト
@@ -2281,9 +2280,9 @@ jobs:
     env:
       ENVIRONMENT: staging
     steps:
-      - run: docker-compose -f docker-compose.stg.yml up -d
+      - run: ENVIRONMENT=staging docker compose up -d
       - run: uv run pytest -m system --env=staging  # stg環境検証
-      - run: docker-compose down
+      - run: docker compose down
 ```
 
 ### フィクスチャスコープ

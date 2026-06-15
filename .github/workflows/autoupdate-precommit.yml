@@ -18,17 +18,17 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.14'
 
       - name: Update pre-commit hooks
         run: |
           pip install pre-commit
-          pre-commit autoupdate
+          pre-commit autoupdate --freeze
 
       # gitleaksインストール（pre-commit language: system用）
       # NOTE: .pre-commit-config.yamlでlanguage: systemを使用しているため
@@ -55,16 +55,17 @@ jobs:
         id: git-check
         run: |
           if git diff --quiet .pre-commit-config.yaml; then
-            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           else
-            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
       # NOTE: 企業環境ではSHA pinning推奨（例: @67ccf781d68cd99b580ae25a5c18a1cc84ffff1f）
       # ポートフォリオではメジャーバージョンタグで保守性とセキュリティをバランス
       - name: Create Pull Request
+        id: create-pr
         if: steps.git-check.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v8
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "chore(deps): update pre-commit hooks"
@@ -72,7 +73,7 @@ jobs:
           body: |
             ## Automated pre-commit hooks update
             
-            Updated by `pre-commit autoupdate`.
+            Updated by `pre-commit autoupdate --freeze`.
             
             ### Verification
             ```bash
@@ -83,3 +84,35 @@ jobs:
             dependencies
             pre-commit
           delete-branch: true
+
+      - name: Verify pull request output
+        if: steps.git-check.outputs.changed == 'true'
+        env:
+          PULL_REQUEST_OPERATION: ${{ steps.create-pr.outputs.pull-request-operation }}
+          PULL_REQUEST_URL: ${{ steps.create-pr.outputs.pull-request-url }}
+        run: |
+          case "$PULL_REQUEST_OPERATION" in
+            created|updated)
+              if [ -z "$PULL_REQUEST_URL" ]; then
+                echo "::error::pull-request-operation='${PULL_REQUEST_OPERATION}' but pull-request-url is empty" >&2
+                exit 1
+              fi
+              echo "Pull request ${PULL_REQUEST_OPERATION}: ${PULL_REQUEST_URL}"
+              ;;
+            closed)
+              echo "::error::Create Pull Request step closed the pull request (url=${PULL_REQUEST_URL})" >&2
+              exit 1
+              ;;
+            none)
+              echo "Create Pull Request step reported no pull request changes (operation=none)"
+              exit 0
+              ;;
+            "")
+              echo "::error::Create Pull Request step did not produce pull-request-operation output (step may have failed)" >&2
+              exit 1
+              ;;
+            *)
+              echo "::error::Unexpected pull-request-operation value: '${PULL_REQUEST_OPERATION}'" >&2
+              exit 1
+              ;;
+          esac

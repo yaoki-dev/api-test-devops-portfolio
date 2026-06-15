@@ -1,8 +1,8 @@
 # .gitleaks.toml
-# gitleaks configuration for api-test-portfolio
+# gitleaks configuration for api-test-devops-portfolio
 # Reference: https://github.com/gitleaks/gitleaks
 
-title = "api-test-portfolio gitleaks config"
+title = "api-test-devops-portfolio gitleaks config"
 
 [allowlist]
 description = "Allowlisted files and patterns"

@@ -14,14 +14,14 @@
 
 実際にこのプロジェクトでは、フルサイズから60%のサイズ削減を実現しました。
 
-#### Q: docker-composeとKubernetesの使い分けは？
+#### Q: docker composeとKubernetesの使い分けは？
 
 **A**:
 
-- **docker-compose**: 開発・小規模運用、単一ホスト環境
+- **docker compose**: 開発・小規模運用、単一ホスト環境
 - **Kubernetes**: 本番・大規模運用、クラスター環境、高可用性要求
 
-現在のプロジェクトはdocker-composeですが、
+現在のプロジェクトはdocker composeですが、
 Kubernetesへの移行も設計を考慮しています。
 
 ### CI/CD関連
@@ -76,24 +76,22 @@ Kubernetesへの移行も設計を考慮しています。
 
 #### Q: OWASP API Security Top 10の対応は？
 
-**A**: 包括的にテストを実装しています。
+**A**: 複数のツールを組み合わせてセキュリティ検証を実施しています。
 
-- **API1 (認証)**: 認証バイパステスト
-- **API2 (認可)**: 権限昇格テスト
-- **API3 (データ露出)**: 機密情報漏洩チェック
-- **API4 (リソース消費)**: レート制限テスト
-- **API5 (機能レベル認可)**: 管理機能アクセステスト
+- **gitleaks**: シークレット検出（pre-commit）
+- **Trivy**: 依存関係CVE・コンテナイメージ脆弱性スキャン（全PR + main）
+- **ruff (S rules)**: flake8-bandit互換セキュリティLint（pre-commit）
+- **bandit**: Python SAST（ローカル手動実行）
 
-自動化により継続的なセキュリティ監視を実現しています。
+CI/CDに統合し、プルリクエスト時とスケジュール実行で継続的なセキュリティチェックを実現しています。
 
 #### Q: セキュリティスキャンの自動化方法は？
 
 **A**: 複数ツールを組み合わせています。
 
-- **bandit**: Python SAST
-- **safety**: 依存関係脆弱性
-- **semgrep**: 高度な静的解析
-- **カスタムチェック**: 設定ファイル・機密情報
+- **gitleaks**: シークレット検出（pre-commit）
+- **Trivy**: 依存関係CVE・コンテナイメージ脆弱性スキャン（全PR + main）
+- **ruff (S rules)**: flake8-bandit互換セキュリティLint（ローカル開発・pre-commit）
 
 CI/CDに統合し、プルリクエスト時とスケジュール実行で
 継続的なセキュリティチェックを実現しています。
