@@ -136,36 +136,6 @@ jobs:
           echo "textlint: ${{ steps.textlint.outcome }}"
           exit 1
 
-  # TEMPORARY — Legacy job stubs (PR#351 deadlock resolution)
-  # pr-mypy-check / post-mypy-check: merged into pr-validation / post-validation
-  # post-merge-validation: renamed to post-validation
-  # REMOVE after all open PRs pick up this commit
-  # Scheduled for removal after merging PRs #347, #351, #361 into develop and #340 into main
-  pr-mypy-check:
-    name: mypy Check (PR Validation)
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 1
-    steps:
-      - run: 'echo "Legacy stub — mypy now in pr-validation (PR #351)"'
-
-  post-mypy-check:
-    name: mypy Check (Post Merge)
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
-    runs-on: ubuntu-latest
-    timeout-minutes: 1
-    steps:
-      - run: 'echo "Legacy stub — mypy now in post-validation (PR #351)"'
-
-  post-merge-validation:
-    name: Post Merge Validation
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
-    runs-on: ubuntu-latest
-    timeout-minutes: 1
-    steps:
-      - run: 'echo "Legacy stub — renamed to post-validation (PR #351)"'
-  # NOTE: post-validation uses Python 3.14 only (matches Dockerfile)
-
   # ============================================================
   # Stage 1.2: PR Trivy Scan
   # Triggers: pull_request (develop, main)
