@@ -16,7 +16,7 @@ on:
   pull_request:
     branches: [main, develop]
   schedule:
-    - cron: '0 0 * * 0'  # Weekly (Sunday 00:00 UTC)
+    - cron: "0 0 * * 0" # Weekly (Sunday 00:00 UTC)
 
 jobs:
   # ============================================================
@@ -29,7 +29,7 @@ jobs:
     name: PR Validation
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 20  # 単一Python版（3.14固定、Dockerfile一致、matrix不要）
+    timeout-minutes: 20 # 単一Python版（3.14固定、Dockerfile一致、matrix不要）
 
     steps:
       - name: Checkout code
@@ -40,7 +40,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
-          python-version: '3.14'
+          python-version: "3.14"
 
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
@@ -112,8 +112,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci
@@ -168,14 +168,14 @@ jobs:
         env:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
         with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-fs-scan.sarif'
-          exit-code: '1'
+          scan-type: "fs"
+          scan-ref: "."
+          format: "sarif"
+          output: "trivy-fs-scan.sarif"
+          exit-code: "1"
           ignore-unfixed: true
-          severity: 'CRITICAL,HIGH'
-          trivyignores: '.trivyignore'
+          severity: "CRITICAL,HIGH"
+          trivyignores: ".trivyignore"
           # Trivyキャッシュ戦略: 週次スケジュール実行時のみDB再ダウンロード、通常PRではキャッシュ利用
           cache: ${{ github.event_name != 'schedule' }}
         continue-on-error: true
@@ -185,15 +185,15 @@ jobs:
         if: always()
         uses: ./.github/actions/trivy-sarif-verify
         with:
-          sarif-file: 'trivy-fs-scan.sarif'
-          scan-type: 'filesystem'
+          sarif-file: "trivy-fs-scan.sarif"
+          scan-type: "filesystem"
 
       - name: Upload filesystem scan results to Security tab
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         if: always() && steps.verify-fs-scan.outcome == 'success' && steps.fs-scan.outcome != 'cancelled' && steps.fs-scan.outcome != 'skipped'
         with:
-          sarif_file: 'trivy-fs-scan.sarif'
-          category: 'trivy-pr-fs-scan'
+          sarif_file: "trivy-fs-scan.sarif"
+          category: "trivy-pr-fs-scan"
 
       - name: Fail job if vulnerabilities found or verification failed
         if: |
@@ -257,13 +257,13 @@ jobs:
         env:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
         with:
-          image-ref: 'security-scan:${{ github.sha }}'
-          format: 'sarif'
-          output: 'trivy-image-scan.sarif'
-          exit-code: '1'
+          image-ref: "security-scan:${{ github.sha }}"
+          format: "sarif"
+          output: "trivy-image-scan.sarif"
+          exit-code: "1"
           ignore-unfixed: true
-          severity: 'CRITICAL,HIGH'
-          trivyignores: '.trivyignore'
+          severity: "CRITICAL,HIGH"
+          trivyignores: ".trivyignore"
           # Trivyキャッシュ戦略: 週次スケジュール実行時のみDB再ダウンロード、通常PRではキャッシュ利用
           cache: ${{ github.event_name != 'schedule' }}
         continue-on-error: true
@@ -273,24 +273,24 @@ jobs:
         if: always() && steps.image-scan.outcome != 'skipped'
         uses: ./.github/actions/trivy-sarif-verify
         with:
-          sarif-file: 'trivy-image-scan.sarif'
-          scan-type: 'image'
+          sarif-file: "trivy-image-scan.sarif"
+          scan-type: "image"
 
       - name: Upload image scan results to Security tab
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         if: always() && steps.verify-image-scan.outcome == 'success' && steps.image-scan.outcome != 'cancelled' && steps.image-scan.outcome != 'skipped'
         with:
-          sarif_file: 'trivy-image-scan.sarif'
-          category: 'trivy-pr-image-scan'
+          sarif_file: "trivy-image-scan.sarif"
+          category: "trivy-pr-image-scan"
 
       - name: Fail job if vulnerabilities found or verification failed
         if: |
-            always() && !cancelled() && (
-            steps.image-scan.outcome == 'failure' ||
-            steps.image-scan.outcome == 'cancelled' ||
-            steps.verify-image-scan.outcome == 'failure' ||
-            steps.verify-image-scan.outcome == 'cancelled'
-            )
+          always() && !cancelled() && (
+          steps.image-scan.outcome == 'failure' ||
+          steps.image-scan.outcome == 'cancelled' ||
+          steps.verify-image-scan.outcome == 'failure' ||
+          steps.verify-image-scan.outcome == 'cancelled'
+          )
         run: |
           # 優先度1: SARIF検証失敗（インフラ問題の可能性）
           if [ "${{ steps.verify-image-scan.outcome }}" == "failure" ]; then
@@ -434,9 +434,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: read      # artifact download requires read access
-      pages: write        # GitHub Pages deployment
-      id-token: write     # OIDC token for Pages deployment
+      contents: read # artifact download requires read access
+      pages: write # GitHub Pages deployment
+      id-token: write # OIDC token for Pages deployment
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -501,7 +501,7 @@ jobs:
     name: Publish runtime image to GHCR
     if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
     # compose-healthcheck の必要性: 防御的に追加
-    # GHCR 公開前に、アプリケーションが実際に正常であることを確認します (docker compose up --wait verified)。   
+    # GHCR 公開前に、アプリケーションが実際に正常であることを確認します (docker compose up --wait verified)。
     needs: [compose-test, compose-healthcheck, post-trivy-scan]
 
     runs-on: ubuntu-latest
@@ -511,6 +511,7 @@ jobs:
       cancel-in-progress: true
     permissions:
       contents: read
+      # docker/build-push-action で GHCR に push するために必要
       packages: write
     steps:
       - name: Checkout code
@@ -567,9 +568,12 @@ jobs:
       # GITHUB_TOKEN を使わず利用者と同じ匿名取得経路で「公開されている」ことを証明する。
     steps:
       - name: Pull and run published image (smoke, anonymous)
+        env:
+          IMAGE_REPOSITORY: ghcr.io/${{ github.repository }}
+          IMAGE_TAG: sha-${{ github.sha }}
         run: |
           set -euo pipefail
-          IMAGE="ghcr.io/${{ github.repository }}:sha-${{ github.sha }}"
+          IMAGE="${IMAGE_REPOSITORY}:${IMAGE_TAG}"
           docker pull "$IMAGE"
           docker run --rm "$IMAGE" \
             python -c "from config.settings import settings; assert settings.environment; print('SMOKE_OK')"
@@ -679,7 +683,7 @@ jobs:
     name: Post Validation (mypy + Smoke)
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     runs-on: ubuntu-latest
-    timeout-minutes: 10  # mypy + Smoke（直列、pr-validationと同等構成。mypy初回キャッシュ未生成時の余裕確保）
+    timeout-minutes: 10 # mypy + Smoke（直列、pr-validationと同等構成。mypy初回キャッシュ未生成時の余裕確保）
     permissions:
       contents: read
 
@@ -692,7 +696,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
-          python-version: '3.14'
+          python-version: "3.14"
 
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
@@ -762,14 +766,14 @@ jobs:
         env:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
         with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-post-fs-scan.sarif'
-          exit-code: '1'
+          scan-type: "fs"
+          scan-ref: "."
+          format: "sarif"
+          output: "trivy-post-fs-scan.sarif"
+          exit-code: "1"
           ignore-unfixed: true
-          severity: 'CRITICAL,HIGH'
-          trivyignores: '.trivyignore'
+          severity: "CRITICAL,HIGH"
+          trivyignores: ".trivyignore"
           cache: ${{ github.event_name != 'schedule' }}
         continue-on-error: true
 
@@ -778,15 +782,15 @@ jobs:
         if: always()
         uses: ./.github/actions/trivy-sarif-verify
         with:
-          sarif-file: 'trivy-post-fs-scan.sarif'
-          scan-type: 'filesystem'
+          sarif-file: "trivy-post-fs-scan.sarif"
+          scan-type: "filesystem"
 
       - name: Upload filesystem scan results to Security tab (Post Trivy Scan)
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         if: always() && steps.verify-fs-scan.outcome == 'success' && steps.fs-scan.outcome != 'cancelled' && steps.fs-scan.outcome != 'skipped'
         with:
-          sarif_file: 'trivy-post-fs-scan.sarif'
-          category: 'trivy-post-fs-scan'
+          sarif_file: "trivy-post-fs-scan.sarif"
+          category: "trivy-post-fs-scan"
 
       - name: Fail job if fs vulnerabilities found or verification failed (Post Trivy Scan)
         if: |
@@ -853,12 +857,12 @@ jobs:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
         with:
           image-ref: ${{ steps.image-tag.outputs.tag }}
-          format: 'sarif'
-          output: 'trivy-post-image-scan.sarif'
-          exit-code: '1'
+          format: "sarif"
+          output: "trivy-post-image-scan.sarif"
+          exit-code: "1"
           ignore-unfixed: true
-          severity: 'CRITICAL,HIGH'
-          trivyignores: '.trivyignore'
+          severity: "CRITICAL,HIGH"
+          trivyignores: ".trivyignore"
           cache: ${{ github.event_name != 'schedule' }}
         continue-on-error: true
 
@@ -867,15 +871,15 @@ jobs:
         if: always() && steps.image-scan.outcome != 'skipped'
         uses: ./.github/actions/trivy-sarif-verify
         with:
-          sarif-file: 'trivy-post-image-scan.sarif'
-          scan-type: 'image'
+          sarif-file: "trivy-post-image-scan.sarif"
+          scan-type: "image"
 
       - name: Upload image scan results to Security tab (Post Trivy Scan)
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         if: always() && steps.verify-image-scan.outcome == 'success' && steps.image-scan.outcome != 'cancelled' && steps.image-scan.outcome != 'skipped'
         with:
-          sarif_file: 'trivy-post-image-scan.sarif'
-          category: 'trivy-post-image-scan'
+          sarif_file: "trivy-post-image-scan.sarif"
+          category: "trivy-post-image-scan"
 
       # 'skipped'チェックは Docker build security gate (上記) が先に exit する shielding により
       # 通常重複だが、将来の条件分岐変更時の防御的セーフネット（pr-trivy-scan fs-scan L464と対称）
@@ -927,7 +931,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
-          python-version: '3.14'
+          python-version: "3.14"
 
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
@@ -1010,8 +1014,8 @@ jobs:
       - name: Setup Node.js (Weekly Link Check)
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
 
       - name: Install dependencies (Weekly Link Check)
         run: npm ci
@@ -1075,7 +1079,21 @@ jobs:
     runs-on: ubuntu-latest
     # Note: Skipped jobs are treated as 'success' by GitHub Actions
     # !cancelled() overrides implicit success() check, allowing execution after success/failure/skipped
-    needs: [pr-validation, pr-trivy-scan, pr-md-quality-check, post-validation, post-trivy-scan, weekly-extended-test, weekly-link-check, compose-test, deploy-pages, compose-healthcheck, publish-image, verify-published-image]
+    needs:
+      [
+        pr-validation,
+        pr-trivy-scan,
+        pr-md-quality-check,
+        post-validation,
+        post-trivy-scan,
+        weekly-extended-test,
+        weekly-link-check,
+        compose-test,
+        deploy-pages,
+        compose-healthcheck,
+        publish-image,
+        verify-published-image,
+      ]
     if: "!cancelled()"
     timeout-minutes: 5
 
