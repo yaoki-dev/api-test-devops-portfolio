@@ -535,7 +535,9 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=raw,value=latest
-            type=sha,prefix=sha-
+            type=sha,prefix=sha-,format=long
+          # format=long で 40-char full SHA を生成し、verify-published-image の
+          # sha-${{ github.sha }} と一致させる
 
       - name: Build and push runtime image
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
@@ -548,6 +550,29 @@ jobs:
           provenance: false
           cache-from: type=gha,scope=api-test-runtime
           cache-to: type=gha,mode=max,scope=api-test-runtime
+
+  # ============================================================
+  # CD Stage: publish した image を pull+run して実行可能性を検証（"deploy & verify"）
+  # Trigger: main への push のみ。publish-image グリーン後に実行
+  # ============================================================
+  verify-published-image:
+    name: Verify published image (pull & run)
+    if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [publish-image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # 匿名 public pull で検証するため packages: read / login は不要。
+      # GITHUB_TOKEN を使わず利用者と同じ匿名取得経路で「公開されている」ことを証明する。
+    steps:
+      - name: Pull and run published image (smoke, anonymous)
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/${{ github.repository }}:sha-${{ github.sha }}"
+          docker pull "$IMAGE"
+          docker run --rm "$IMAGE" \
+            python -c "from config.settings import settings; assert settings.environment; print('SMOKE_OK')"
 
   compose-healthcheck:
     needs: [compose-test]
@@ -1050,7 +1075,7 @@ jobs:
     runs-on: ubuntu-latest
     # Note: Skipped jobs are treated as 'success' by GitHub Actions
     # !cancelled() overrides implicit success() check, allowing execution after success/failure/skipped
-    needs: [pr-validation, pr-trivy-scan, pr-md-quality-check, post-validation, post-trivy-scan, weekly-extended-test, weekly-link-check, compose-test, deploy-pages, compose-healthcheck]
+    needs: [pr-validation, pr-trivy-scan, pr-md-quality-check, post-validation, post-trivy-scan, weekly-extended-test, weekly-link-check, compose-test, deploy-pages, compose-healthcheck, publish-image, verify-published-image]
     if: "!cancelled()"
     timeout-minutes: 5
 
@@ -1080,6 +1105,8 @@ jobs:
             echo "- Weekly Link Check: ${{ needs.weekly-link-check.result }}"
             echo "- Compose Test (pytest + coverage): ${{ needs.compose-test.result }}"
             echo "- Deploy Pages (CD): ${{ needs.deploy-pages.result }}"
+            echo "- Publish Image (CD): ${{ needs.publish-image.result }}"
+            echo "- Verify Published Image (CD): ${{ needs.verify-published-image.result }}"
             echo "- Compose Healthcheck: ${{ needs.compose-healthcheck.result }}"
             echo ""
             echo "## Triggered By: ${{ github.event_name }}"
