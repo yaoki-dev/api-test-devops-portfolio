@@ -72,6 +72,9 @@ USER appuser
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "from config.settings import settings; assert settings.environment" || exit 1
 
+# 既定実行: config ロードを検証・可視化（pull && run だけで CD 成果物が自己実証）
+CMD ["python", "-c", "from config.settings import settings; print('[runtime] config loaded:', settings.environment, settings.project_name, flush=True)"]
+
 # ============================================================
 # Stage 4: Test - テスト実行環境
 # ============================================================

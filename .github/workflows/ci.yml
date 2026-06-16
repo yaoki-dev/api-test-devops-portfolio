@@ -66,8 +66,8 @@ jobs:
       - name: Set test markers
         id: markers
         run: |
-          echo "smoke_marker=smoke and not external" >> $GITHUB_OUTPUT
-          echo "test_filter=(unit or integration) and not external" >> $GITHUB_OUTPUT
+          echo "smoke_marker=smoke and not external" >> "$GITHUB_OUTPUT"
+          echo "test_filter=(unit or integration) and not external" >> "$GITHUB_OUTPUT"
           echo "🎯 PR Validation: Unit + Integration (with coverage) → Smoke (no coverage)"
 
       - name: Run tests (unit + integration + smoke)
@@ -391,6 +391,16 @@ jobs:
             exit 1
           fi
 
+      - name: Generate coverage badge SVG
+        # Cosmetic artifact: genbadge失敗でテスト結果やCDを止めず、deploy-pages側のfallback SVGへ委譲する。
+        run: |
+          docker compose --profile test run --rm --entrypoint genbadge test \
+            coverage --local -i reports/coverage.xml -o reports/coverage.svg \
+            || echo "::warning::genbadge 失敗 — coverage.svg 未生成（deploy-pages は n/a fallback SVG を使用）"
+          if [ ! -s reports/coverage.svg ]; then
+            echo "::warning::coverage.svg が空または未生成 — deploy-pages が n/a fallback を表示します"
+          fi
+
       - name: Upload coverage artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -412,6 +422,157 @@ jobs:
             docker compose ps || true
             true
           }
+
+  # ============================================================
+  # CD Stage: Coverage HTML を GitHub Pages へ公開
+  # Trigger: main への push のみ。compose-test の coverage-reports artifact 再利用
+  # ============================================================
+  deploy-pages:
+    name: Deploy coverage to GitHub Pages
+    if: success() && github.ref == 'refs/heads/main'
+    needs: [compose-test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read      # artifact download requires read access
+      pages: write        # GitHub Pages deployment
+      id-token: write     # OIDC token for Pages deployment
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    steps:
+      - name: Download coverage artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: coverage-reports
+          path: artifact/
+
+      - name: Stage Pages site
+        run: |
+          set -euo pipefail
+          if [ ! -d artifact/htmlcov ]; then
+            echo "::error::artifact/htmlcov が見つかりません"
+            exit 1
+          fi
+          mkdir -p _site
+          cp -r artifact/htmlcov _site/htmlcov
+          cat > _site/index.html <<'HTML'
+          <!doctype html><html><head>
+          <meta http-equiv="refresh" content="0; url=./htmlcov/">
+          <title>Coverage Report</title></head>
+          <body>Redirecting to <a href="./htmlcov/">coverage report</a>...</body></html>
+          HTML
+
+      - name: Stage coverage badge SVG
+        run: |
+          set -euo pipefail
+          cat > _site/coverage.svg <<'SVG'
+          <svg xmlns="http://www.w3.org/2000/svg" width="114" height="20" role="img" aria-label="coverage: n/a">
+          <rect width="114" height="20" fill="#555"/><rect x="62" width="52" height="20" fill="#9f9f9f"/>
+          <g fill="#fff" font-family="Verdana,sans-serif" font-size="11" text-anchor="middle">
+          <text x="31" y="14">coverage</text><text x="88" y="14">n/a</text></g></svg>
+          SVG
+          if [ -f artifact/coverage.svg ]; then
+            cp artifact/coverage.svg _site/coverage.svg
+          else
+            echo "::warning::artifact/coverage.svg 不在 — fallback SVG を維持します"
+          fi
+
+      - name: Setup Pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
+
+  # ============================================================
+  # CD Stage: runtime イメージを GHCR へ publish
+  # Trigger: main への push のみ。compose-test + post-trivy-scan グリーン後に実行（CVEゲート）
+  # ============================================================
+  publish-image:
+    name: Publish runtime image to GHCR
+    if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # compose-healthcheck の必要性: 防御的に追加
+    # GHCR 公開前に、アプリケーションが実際に正常であることを確認します (docker compose up --wait verified)。   
+    needs: [compose-test, compose-healthcheck, post-trivy-scan]
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: ghcr-publish
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=sha-,format=long
+          # format=long で 40-char full SHA を生成し、verify-published-image の
+          # sha-${{ github.sha }} と一致させる
+
+      - name: Build and push runtime image
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: .
+          target: runtime
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
+          cache-from: type=gha,scope=api-test-runtime
+          cache-to: type=gha,mode=max,scope=api-test-runtime
+
+  # ============================================================
+  # CD Stage: publish した image を pull+run して実行可能性を検証（"deploy & verify"）
+  # Trigger: main への push のみ。publish-image グリーン後に実行
+  # ============================================================
+  verify-published-image:
+    name: Verify published image (pull & run)
+    if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [publish-image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # 匿名 public pull で検証するため packages: read / login は不要。
+      # GITHUB_TOKEN を使わず利用者と同じ匿名取得経路で「公開されている」ことを証明する。
+    steps:
+      - name: Pull and run published image (smoke, anonymous)
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/${{ github.repository }}:sha-${{ github.sha }}"
+          docker pull "$IMAGE"
+          docker run --rm "$IMAGE" \
+            python -c "from config.settings import settings; assert settings.environment; print('SMOKE_OK')"
 
   compose-healthcheck:
     needs: [compose-test]
@@ -657,7 +818,7 @@ jobs:
 
       - name: Set image tag
         id: image-tag
-        run: echo "tag=myapp:${{ github.sha }}" >> $GITHUB_OUTPUT
+        run: echo "tag=myapp:${{ github.sha }}" >> "$GITHUB_OUTPUT"
 
       - name: Build production Docker image
         id: docker-build
@@ -914,7 +1075,7 @@ jobs:
     runs-on: ubuntu-latest
     # Note: Skipped jobs are treated as 'success' by GitHub Actions
     # !cancelled() overrides implicit success() check, allowing execution after success/failure/skipped
-    needs: [pr-validation, pr-trivy-scan, pr-md-quality-check, post-validation, post-trivy-scan, weekly-extended-test, weekly-link-check, compose-test, compose-healthcheck]
+    needs: [pr-validation, pr-trivy-scan, pr-md-quality-check, post-validation, post-trivy-scan, weekly-extended-test, weekly-link-check, compose-test, deploy-pages, compose-healthcheck, publish-image, verify-published-image]
     if: "!cancelled()"
     timeout-minutes: 5
 
@@ -927,24 +1088,29 @@ jobs:
 
       - name: Generate status report
         run: |
-          echo "# CI/CD Pipeline Status Report" > status_report.md
-          echo "" >> status_report.md
-          echo "## Test Pyramid Strategy" >> status_report.md
-          echo "- Unit 70% / Integration 30%" >> status_report.md
-          echo "- Coverage Target: 96.15% (achieved)" >> status_report.md
-          echo "" >> status_report.md
-          echo "## Stage Results" >> status_report.md
-          echo "- PR Validation: ${{ needs.pr-validation.result }}" >> status_report.md
-          echo "- PR Trivy Scan: ${{ needs.pr-trivy-scan.result }}" >> status_report.md
-          echo "- PR MD Quality Check: ${{ needs.pr-md-quality-check.result }}" >> status_report.md
-          echo "- Post Validation: ${{ needs.post-validation.result }}" >> status_report.md
-          echo "- Post Trivy Scan: ${{ needs.post-trivy-scan.result }}" >> status_report.md
-          echo "- Weekly Extended Test: ${{ needs.weekly-extended-test.result }}" >> status_report.md
-          echo "- Weekly Link Check: ${{ needs.weekly-link-check.result }}" >> status_report.md
-          echo "- Compose Test (pytest + coverage): ${{ needs.compose-test.result }}" >> status_report.md
-          echo "- Compose Healthcheck: ${{ needs.compose-healthcheck.result }}" >> status_report.md
-          echo "" >> status_report.md
-          echo "## Triggered By: ${{ github.event_name }}" >> status_report.md
+          {
+            echo "# CI/CD Pipeline Status Report"
+            echo ""
+            echo "## Test Pyramid Strategy"
+            echo "- Unit 70% / Integration 30%"
+            echo "- Coverage Target: 96.15% (achieved)"
+            echo ""
+            echo "## Stage Results"
+            echo "- PR Validation: ${{ needs.pr-validation.result }}"
+            echo "- PR Trivy Scan: ${{ needs.pr-trivy-scan.result }}"
+            echo "- PR MD Quality Check: ${{ needs.pr-md-quality-check.result }}"
+            echo "- Post Validation: ${{ needs.post-validation.result }}"
+            echo "- Post Trivy Scan: ${{ needs.post-trivy-scan.result }}"
+            echo "- Weekly Extended Test: ${{ needs.weekly-extended-test.result }}"
+            echo "- Weekly Link Check: ${{ needs.weekly-link-check.result }}"
+            echo "- Compose Test (pytest + coverage): ${{ needs.compose-test.result }}"
+            echo "- Deploy Pages (CD): ${{ needs.deploy-pages.result }}"
+            echo "- Publish Image (CD): ${{ needs.publish-image.result }}"
+            echo "- Verify Published Image (CD): ${{ needs.verify-published-image.result }}"
+            echo "- Compose Healthcheck: ${{ needs.compose-healthcheck.result }}"
+            echo ""
+            echo "## Triggered By: ${{ github.event_name }}"
+          } > status_report.md
           cat status_report.md
 
       - name: Upload status report

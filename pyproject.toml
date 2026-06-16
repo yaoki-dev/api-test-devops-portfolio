@@ -46,6 +46,7 @@ dev = [
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=4.1.0",
     "pytest-xdist>=3.5.0",
+    "genbadge[coverage]==1.1.3",  # Coverage badge生成（Q19 C3: uv.lock管理）
     "respx>=0.23.1",            # httpx用モックライブラリ
     "socksio>=1.0.0",           # SOCKS5 proxy support for httpx
     # 品質管理
