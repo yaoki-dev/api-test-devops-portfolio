@@ -434,9 +434,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: read
-      pages: write
-      id-token: write
+      contents: read      # artifact download requires read access
+      pages: write        # GitHub Pages deployment
+      id-token: write     # OIDC token for Pages deployment
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
