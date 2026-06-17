@@ -30,6 +30,38 @@ from config.settings import (
 pytestmark = pytest.mark.unit
 
 
+@pytest.fixture(autouse=True)
+def deterministic_ssrf_validator_dns(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """SSRF validator 専用の DNS 決定論化
+
+    NOTE: これは unit 全域の DNS stub ではなく、本ファイルの SSRF validator
+    テスト専用の決定論化である。tests/unit/conftest.py の socket blocker により
+    実 socket.gethostbyname が SocketBlockedError になるため、SSRF validator が
+    本番コードで呼ぶ DNS 解決を固定 IP に差し替える。is_private_ip 等の判定
+    ロジック自体は実コードのまま検証される（DNS 解決結果のみ決定論化）。
+
+    設計:
+        - fake map で `localhost -> 127.0.0.1` を返し、private/loopback 判定を維持。
+          未登録ホスト名は public IP `1.2.3.4` を返し、ドメイン allowlist 判定を検証。
+          固定値 1 つだけでは localhost の private 判定が壊れるため fake map にする。
+        - patch 対象は `socket.gethostbyname` seam（既存の個別 monkeypatch と同層）。
+          `_resolve_hostname_cached` は patch せず実コードのまま動かす。
+        - lru_cache 汚染防止のため patch 前と teardown 後に cache_clear する。
+        - 個別テストが `socket.gethostbyname` を再 monkeypatch する場合、pytest の
+          後勝ち規則によりテスト側が優先される（衝突しない）。
+    """
+    fake_dns = {"localhost": "127.0.0.1"}
+
+    def fake_gethostbyname(hostname: str) -> str:
+        # public dummy IP for SSRF allowlist/IP判定テスト
+        return fake_dns.get(hostname, "1.2.3.4")
+
+    _resolve_hostname_cached.cache_clear()
+    monkeypatch.setattr(socket, "gethostbyname", fake_gethostbyname)
+    yield
+    _resolve_hostname_cached.cache_clear()
+
+
 class TestAPIConfigBaseUrlDependencyInjection:
     """base_url検証の許可ドメイン注入テスト。"""
 
