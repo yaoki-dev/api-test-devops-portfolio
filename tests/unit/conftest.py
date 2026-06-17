@@ -21,9 +21,15 @@ def block_network_socket() -> Generator[None]:
       イベントループが Unix domain socket を使うため許可する。
     - function スコープで disable→enable を都度トグルし、グローバル socket
       パッチが unit 層の外へ漏れないようにする。
+    - pytest-socket v0.8.0でgethostbynameが遮断される
+    - pytest fixture 解決順序の制約: session または module スコープのfixture は、 function スコープの本 fixture より先に解決されるため、
+      それらの setup 中に発生した socket 操作は遮断されない。
+      現在の tests/unit/ 配下に該当 fixture は存在しないが、将来追加時の注意点として明記する。
 
-    NOTE: socket.gethostbyname() による DNS 解決は pytest-socket で遮断されない（Cレベル呼び出しのため）。
-    DNS 決定論化が必要なテストは file-local fixture で socket.gethostbyname seam を patch すること
+    # NOTE: pytest-socket v0.8.0 は socket.gethostbyname() も SocketBlockedError で遮断する。
+    # SSRF validator のように DNS 解決結果を制御する必要があるテストでは、
+    # deterministic_ssrf_validator_dns fixture が socket.gethostbyname を fake に差し替え、
+    # テスト実行中のみ決定論的な DNS 解決結果（localhost→127.0.0.1, その他→1.2.3.4）を提供する。
     """  # noqa: E501
     disable_socket(allow_unix_socket=True)
     yield
