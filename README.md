@@ -6,15 +6,16 @@
 SSRFやPII漏洩、不安定なリトライといった連携特有のアンチパターンを排除し、1,300件超の自動テストを品質ゲートとして構築・運用しています。
 
 [![CI/CD Pipeline](https://github.com/yaoki-dev/api-test-devops-portfolio/actions/workflows/ci.yml/badge.svg)](https://github.com/yaoki-dev/api-test-devops-portfolio/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/badge/coverage-96.15%25-brightgreen)](https://yaoki-dev.github.io/api-test-devops-portfolio/htmlcov/)
+[![Coverage](https://yaoki-dev.github.io/api-test-devops-portfolio/coverage.svg)](https://yaoki-dev.github.io/api-test-devops-portfolio/htmlcov/)
 [![Python](https://img.shields.io/badge/Python-3.14-blue)](https://www.python.org/)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 [![Type checked: mypy](https://img.shields.io/badge/type%20checked-mypy-blue.svg)](https://mypy-lang.org/)
 [![Docker](https://img.shields.io/badge/docker-multi--stage-blue)](./Dockerfile)
+[![GHCR](https://img.shields.io/static/v1?label=ghcr.io&message=api-test-devops-portfolio&color=blue&logo=docker)](https://github.com/yaoki-dev/api-test-devops-portfolio/pkgs/container/api-test-devops-portfolio)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
  **CI/CD / Python / Docker** を統合したAPIテスト自動化ポートフォリオ。
- **1,372**件のテスト（CI品質ゲート: **1,358件/96.15%**）
+ **1,372**件のテスト（CI品質ゲート: **1,358件/96.16%**）
 
 ## Demo
 

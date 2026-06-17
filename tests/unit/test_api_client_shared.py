@@ -30,6 +30,7 @@ from unittest.mock import Mock, patch
 
 import httpx
 import pytest
+from pydantic import BaseModel, Field
 
 from tests.constants import INVALID_BASE_URLS
 from utils.api_client import (
@@ -44,12 +45,88 @@ from utils.api_client import (
     _classify_error,
     _log_error_with_stderr_fallback,
     _map_request_error,
+    _parse_response_model,
+    _parse_response_model_list,
     _resolve_client_config,
     _safe_parse_json,
 )
 
 # Module-level marker: All tests in this file are unit tests
 pytestmark = pytest.mark.unit
+
+
+# =============================================================================
+# Pydantic Parsing Tests（_parse_response_model / _parse_response_model_list の検証）
+# =============================================================================
+
+
+class DummyModel(BaseModel):
+    """テスト用のシンプルなPydanticモデル"""
+
+    id: int = Field(..., ge=1)
+    name: str
+
+
+def test_parse_response_model_success() -> None:
+    """_parse_response_model: 正常系（dict -> model）"""
+    mock_response = Mock(spec=httpx.Response)
+    mock_response.json.return_value = {"id": 1, "name": "test"}
+
+    result = _parse_response_model(mock_response, DummyModel)
+
+    assert isinstance(result, DummyModel)
+    assert result.id == 1
+    assert result.name == "test"
+
+
+def test_parse_response_model_invalid_type() -> None:
+    """_parse_response_model: 異常系（配列が返ってきた場合）"""
+    mock_response = Mock(spec=httpx.Response)
+    mock_response.json.return_value = [{"id": 1, "name": "test"}]
+
+    with pytest.raises(APIJSONDecodeError, match="Expected object JSON for DummyModel, got list"):
+        _parse_response_model(mock_response, DummyModel)
+
+
+def test_parse_response_model_validation_error() -> None:
+    """_parse_response_model: 異常系（バリデーションエラー）"""
+    mock_response = Mock(spec=httpx.Response)
+    mock_response.json.return_value = {"id": 0, "name": "test"}  # id < 1
+
+    with pytest.raises(APIJSONDecodeError, match="Invalid DummyModel response schema"):
+        _parse_response_model(mock_response, DummyModel)
+
+
+def test_parse_response_model_list_success() -> None:
+    """_parse_response_model_list: 正常系（list -> list[model]）"""
+    mock_response = Mock(spec=httpx.Response)
+    mock_response.json.return_value = [{"id": 1, "name": "test1"}, {"id": 2, "name": "test2"}]
+
+    result = _parse_response_model_list(mock_response, DummyModel)
+
+    assert isinstance(result, list)
+    assert len(result) == 2
+    assert all(isinstance(item, DummyModel) for item in result)
+    assert result[0].id == 1
+    assert result[1].name == "test2"
+
+
+def test_parse_response_model_list_invalid_type() -> None:
+    """_parse_response_model_list: 異常系（オブジェクトが返ってきた場合）"""
+    mock_response = Mock(spec=httpx.Response)
+    mock_response.json.return_value = {"id": 1, "name": "test"}
+
+    with pytest.raises(APIJSONDecodeError, match="Expected array JSON for DummyModel, got dict"):
+        _parse_response_model_list(mock_response, DummyModel)
+
+
+def test_parse_response_model_list_validation_error() -> None:
+    """_parse_response_model_list: 異常系（要素にバリデーションエラーがある場合）"""
+    mock_response = Mock(spec=httpx.Response)
+    mock_response.json.return_value = [{"id": 1, "name": "test1"}, {"id": -1, "name": "test2"}]
+
+    with pytest.raises(APIJSONDecodeError, match="Invalid DummyModel response schema"):
+        _parse_response_model_list(mock_response, DummyModel)
 
 
 # =============================================================================

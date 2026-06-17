@@ -29,11 +29,12 @@ import respx
 from httpx import Response
 from structlog.testing import capture_logs
 
+# プロジェクト内モジュール
+from models.responses import Album, Photo, Post, Todo, User, UserDataResponse
+
 # テストヘルパー
 from tests.constants import BASE_URL, INVALID_BASE_URLS
-from tests.unit.helpers import assert_warning_log_count
-
-# プロジェクト内モジュール
+from tests.unit.helpers import assert_warning_log_count, make_mock_user
 from utils.api_client import (
     APIHTTPError,
     APIRetryError,
@@ -65,7 +66,7 @@ def sample_user_data():
             "geo": {"lat": "-37.3159", "lng": "81.1496"},
         },
         "phone": "1-770-736-8031 x56442",
-        "website": "hildegard.org",
+        "website": "https://hildegard.org",
         "company": {
             "name": "Romaguera-Crona",
             "catchPhrase": "Multi-layered client-server neural-net",
@@ -78,9 +79,66 @@ def sample_user_data():
 def sample_users_list():
     """テスト用ユーザーリスト"""
     return [
-        {"id": 1, "name": "Leanne Graham", "email": "Sincere@april.biz"},
-        {"id": 2, "name": "Ervin Howell", "email": "Shanna@melissa.tv"},
-        {"id": 3, "name": "Clementine Bauch", "email": "Nathan@yesenia.net"},
+        {
+            "id": 1,
+            "name": "Leanne Graham",
+            "username": "Bret",
+            "email": "Sincere@april.biz",
+            "address": {
+                "street": "Kulas Light",
+                "suite": "Apt. 556",
+                "city": "Gwenborough",
+                "zipcode": "92998-3874",
+                "geo": {"lat": "-37.3159", "lng": "81.1496"},
+            },
+            "phone": "1-770-736-8031 x56442",
+            "website": "https://hildegard.org",
+            "company": {
+                "name": "Romaguera-Crona",
+                "catchPhrase": "Multi-layered client-server neural-net",
+                "bs": "harness real-time e-markets",
+            },
+        },
+        {
+            "id": 2,
+            "name": "Ervin Howell",
+            "username": "Antonette",
+            "email": "Shanna@melissa.tv",
+            "address": {
+                "street": "Victor Plains",
+                "suite": "Suite 879",
+                "city": "Wisokyburgh",
+                "zipcode": "90566-7771",
+                "geo": {"lat": "-43.9509", "lng": "-34.4618"},
+            },
+            "phone": "010-692-6593 x09125",
+            "website": "https://anastasia.net",
+            "company": {
+                "name": "Deckow-Crist",
+                "catchPhrase": "Proactive didactic contingency",
+                "bs": "synergize scalable supply-chains",
+            },
+        },
+        {
+            "id": 3,
+            "name": "Clementine Bauch",
+            "username": "Samantha",
+            "email": "Nathan@yesenia.net",
+            "address": {
+                "street": "Douglas Extension",
+                "suite": "Suite 847",
+                "city": "McKenziehaven",
+                "zipcode": "59590-4157",
+                "geo": {"lat": "-68.6102", "lng": "-47.0653"},
+            },
+            "phone": "1-463-123-4447",
+            "website": "https://ramiro.info",
+            "company": {
+                "name": "Romaguera-Jacobson",
+                "catchPhrase": "Face to face bifurcated interface",
+                "bs": "e-enable strategic applications",
+            },
+        },
     ]
 
 
@@ -108,10 +166,10 @@ async def test_async_get_user(sample_user_data):
         result = await client.get_user(1)
 
         # 結果検証
-        assert result == sample_user_data
-        assert result["id"] == 1
-        assert result["name"] == "Leanne Graham"
-        assert result["email"] == "Sincere@april.biz"
+        assert result.model_dump(by_alias=True) == sample_user_data
+        assert result.id == 1
+        assert result.name == "Leanne Graham"
+        assert result.email == "Sincere@april.biz"
 
     # リクエストが1回発行されたことを確認（ルート固有）
     assert route.call_count == 1
@@ -146,10 +204,10 @@ async def test_async_concurrent_requests(sample_users_list):
 
         # 結果検証
         assert len(results) == 3
-        assert all(isinstance(result, dict) for result in results)
-        assert results[0]["id"] == 1
-        assert results[1]["id"] == 2
-        assert results[2]["id"] == 3
+        assert all(isinstance(result, User) for result in results)
+        assert results[0].id == 1
+        assert results[1].id == 2
+        assert results[2].id == 3
 
     # 各ルートが1回ずつ呼ばれたことを確認（ルート固有）
     assert route_user1.call_count == 1
@@ -181,7 +239,7 @@ async def test_async_multiple_users_with_semaphore():
     # 各ユーザーエンドポイントをrespxでモック化（ルート固有のcall_countで検証）
     routes = {}
     for i in [1, 2, 3, 4, 5]:
-        routes[i] = respx.get(f"{BASE_URL}/users/{i}").respond(json={"id": i, "name": f"User {i}"})
+        routes[i] = respx.get(f"{BASE_URL}/users/{i}").respond(json=make_mock_user(i))
 
     async with AsyncJSONPlaceholderClient() as client:
         # max_concurrent=2でSemaphore制御
@@ -189,9 +247,9 @@ async def test_async_multiple_users_with_semaphore():
 
         # 結果検証
         assert len(results) == 5
-        assert all(isinstance(result, dict) for result in results)
-        assert results[0]["id"] == 1
-        assert results[4]["id"] == 5
+        assert all(isinstance(result, User) for result in results)
+        assert results[0].id == 1
+        assert results[4].id == 5
 
     # 全ユーザー取得成功確認（各ルート1回ずつ、計5回のHTTPリクエスト）
     assert all(r.call_count == 1 for r in routes.values())
@@ -215,7 +273,7 @@ async def test_semaphore_initialized_with_correct_max_concurrent():
 
     original_get_user = AsyncJSONPlaceholderClient.get_user
 
-    async def spy_get_user(self: AsyncJSONPlaceholderClient, user_id: int) -> dict:
+    async def spy_get_user(self: AsyncJSONPlaceholderClient, user_id: int) -> User:
         nonlocal max_concurrent_observed, current_concurrent
         current_concurrent += 1
         max_concurrent_observed = max(max_concurrent_observed, current_concurrent)
@@ -255,12 +313,13 @@ async def test_partial_failure_graceful_degradation():
     - respx: 宣言的HTTPモッキング（低レベルモック排除）
     - URL-to-Responseマッピングによる明確なテスト意図表現
     """
+
     # 宣言的なエンドポイントマッピング（成功: 1,3,5 / 失敗: 2,4）
-    route1 = respx.get(f"{BASE_URL}/users/1").respond(json={"id": 1, "name": "User 1"})
+    route1 = respx.get(f"{BASE_URL}/users/1").respond(json=make_mock_user(1))
     route2 = respx.get(f"{BASE_URL}/users/2").respond(status_code=500)
-    route3 = respx.get(f"{BASE_URL}/users/3").respond(json={"id": 3, "name": "User 3"})
+    route3 = respx.get(f"{BASE_URL}/users/3").respond(json=make_mock_user(3))
     route4 = respx.get(f"{BASE_URL}/users/4").respond(status_code=500)
-    route5 = respx.get(f"{BASE_URL}/users/5").respond(json={"id": 5, "name": "User 5"})
+    route5 = respx.get(f"{BASE_URL}/users/5").respond(json=make_mock_user(5))
 
     # retry_count=0: リトライなし設定でgraceful degradationのみ検証（リトライ挙動は別テストで担保）
     with capture_logs() as log_output:
@@ -269,10 +328,10 @@ async def test_partial_failure_graceful_degradation():
 
     # graceful degradation検証（成功分のみ返却パターン）
     assert len(results) == 3, f"Expected 3 successful results, got {len(results)}"
-    assert all(isinstance(r, dict) for r in results)
+    assert all(isinstance(r, User) for r in results)
 
     # Expected IDs [1,3,5] in any order, no duplicates
-    result_ids = [r["id"] for r in results]
+    result_ids = [r.id for r in results]
     assert sorted(result_ids) == [1, 3, 5], f"Expected IDs [1,3,5], got {result_ids}"
 
     # 全5エンドポイントが各1回ずつ呼ばれたことを確認（retry_count=0のため決定論的に==1）
@@ -1402,9 +1461,28 @@ async def test_get_user_data_parallel_requests():
     user_id = 1
 
     # 4つのAPIエンドポイントをモック化
-    # User API
+    # User API（Userモデルに必要な全フィールドを含む）
     route_user = respx.get(f"{BASE_URL}/users/{user_id}").respond(
-        json={"id": 1, "name": "Leanne Graham", "email": "Sincere@april.biz"}
+        json={
+            "id": 1,
+            "name": "Leanne Graham",
+            "username": "Bret",
+            "email": "Sincere@april.biz",
+            "address": {
+                "street": "Kulas Light",
+                "suite": "Apt. 556",
+                "city": "Gwenborough",
+                "zipcode": "92998-3874",
+                "geo": {"lat": "-37.3159", "lng": "81.1496"},
+            },
+            "phone": "1-770-736-8031 x56442",
+            "website": "https://hildegard.org",
+            "company": {
+                "name": "Romaguera-Crona",
+                "catchPhrase": "Multi-layered client-server neural-net",
+                "bs": "harness real-time e-markets",
+            },
+        }
     )
 
     # Posts API（user_id=1のみ - API側フィルタリング）
@@ -1436,28 +1514,25 @@ async def test_get_user_data_parallel_requests():
         result = await client.get_user_data(user_id)
 
     # データ構造検証
-    assert "user" in result
-    assert "posts" in result
-    assert "todos" in result
-    assert "albums" in result
+    assert isinstance(result, UserDataResponse)
 
     # ユーザー情報検証
-    assert result["user"]["id"] == 1
-    assert result["user"]["name"] == "Leanne Graham"
+    assert result.user.id == 1
+    assert result.user.name == "Leanne Graham"
 
     # postsフィルタリング検証（userId=1のみが含まれる）
-    assert len(result["posts"]) == 2
-    assert all(post["userId"] == 1 for post in result["posts"])
-    assert result["posts"][0]["id"] == 1
-    assert result["posts"][1]["id"] == 3
+    assert len(result.posts) == 2
+    assert all(post.user_id == 1 for post in result.posts)
+    assert result.posts[0].id == 1
+    assert result.posts[1].id == 3
 
     # todos検証
-    assert len(result["todos"]) == 2
-    assert all(todo["userId"] == 1 for todo in result["todos"])
+    assert len(result.todos) == 2
+    assert all(todo.user_id == 1 for todo in result.todos)
 
     # albums検証
-    assert len(result["albums"]) == 2
-    assert all(album["userId"] == 1 for album in result["albums"])
+    assert len(result.albums) == 2
+    assert all(album.user_id == 1 for album in result.albums)
 
     # 4つのAPIが各1回ずつ呼ばれたことを確認（asyncio.gatherによる並行実行の証明）
     assert route_user.call_count == 1
@@ -1482,9 +1557,28 @@ async def test_get_user_data_with_empty_posts():
     """
     user_id = 1
 
-    # User API
+    # User API（Userモデルに必要な全フィールドを含む）
     route_user = respx.get(f"{BASE_URL}/users/{user_id}").respond(
-        json={"id": 1, "name": "Leanne Graham", "email": "Sincere@april.biz"}
+        json={
+            "id": 1,
+            "name": "Leanne Graham",
+            "username": "Bret",
+            "email": "Sincere@april.biz",
+            "address": {
+                "street": "Kulas Light",
+                "suite": "Apt. 556",
+                "city": "Gwenborough",
+                "zipcode": "92998-3874",
+                "geo": {"lat": "-37.3159", "lng": "81.1496"},
+            },
+            "phone": "1-770-736-8031 x56442",
+            "website": "https://hildegard.org",
+            "company": {
+                "name": "Romaguera-Crona",
+                "catchPhrase": "Multi-layered client-server neural-net",
+                "bs": "harness real-time e-markets",
+            },
+        }
     )
 
     # Posts API: userId=1 でフィルタされた結果が空
@@ -1505,9 +1599,9 @@ async def test_get_user_data_with_empty_posts():
         result = await client.get_user_data(user_id)
 
     # posts が空リストでも正常動作
-    assert result["posts"] == []
-    assert len(result["todos"]) == 1
-    assert len(result["albums"]) == 1
+    assert result.posts == []
+    assert len(result.todos) == 1
+    assert len(result.albums) == 1
 
     # 4つのAPIが各1回ずつ呼ばれたことを確認（asyncio.gatherによる並行実行の証明）
     assert route_user.call_count == 1
@@ -1575,9 +1669,28 @@ async def test_get_user_data_posts_server_error():
     """
     user_id = 1
 
-    # /users/1 は正常応答
+    # /users/1 は正常応答（Userモデルに必要な全フィールドを含む）
     route_user = respx.get(f"{BASE_URL}/users/{user_id}").respond(
-        json={"id": 1, "name": "Leanne Graham", "email": "Sincere@april.biz"}
+        json={
+            "id": 1,
+            "name": "Leanne Graham",
+            "username": "Bret",
+            "email": "Sincere@april.biz",
+            "address": {
+                "street": "Kulas Light",
+                "suite": "Apt. 556",
+                "city": "Gwenborough",
+                "zipcode": "92998-3874",
+                "geo": {"lat": "-37.3159", "lng": "81.1496"},
+            },
+            "phone": "1-770-736-8031 x56442",
+            "website": "https://hildegard.org",
+            "company": {
+                "name": "Romaguera-Crona",
+                "catchPhrase": "Multi-layered client-server neural-net",
+                "bs": "harness real-time e-markets",
+            },
+        }
     )
 
     # /posts は 500 エラー（userId フィルタ付き）
@@ -1662,8 +1775,8 @@ async def test_get_posts_with_various_limits(limit, expected_count, test_descrip
     assert len(result) == actual_expected, (
         f"{test_description}: expected {actual_expected}, got {len(result)}"
     )
-    assert result == expected_posts
-    assert all(isinstance(post, dict) for post in result)
+    assert [post.model_dump(by_alias=True) for post in result] == expected_posts
+    assert all(isinstance(post, Post) for post in result)
 
 
 @pytest.mark.parametrize(
@@ -1723,10 +1836,10 @@ async def test_async_get_posts_user_filter(user_id, expected_count, test_descrip
     assert len(result) == expected_count, (
         f"{test_description}: expected {expected_count}, got {len(result)}"
     )
-    assert result == expected_posts
+    assert [post.model_dump(by_alias=True) for post in result] == expected_posts
     if user_id is not None and user_id != 999:
         # user_id指定時は全投稿が指定ユーザーのものであることを確認
-        assert all(post["userId"] == user_id for post in result)
+        assert all(post.user_id == user_id for post in result)
 
 
 # ===============================================================================
@@ -1799,10 +1912,10 @@ async def test_get_post_by_id_success():
         result = await client.get_post(post_id)
 
     # 結果検証
-    assert result == expected_post
-    assert result["id"] == post_id
-    assert "title" in result
-    assert "body" in result
+    assert result.model_dump(by_alias=True) == expected_post
+    assert result.id == post_id
+    assert result.title is not None
+    assert result.body is not None
     assert route.call_count == 1  # HTTPリクエストが1回発行されたことを確認
 
 
@@ -1875,10 +1988,10 @@ async def test_create_post_success():
         result = await client.create_post(title=title, body=body, user_id=user_id)
 
     # 結果検証
-    assert result["id"] == 101
-    assert result["userId"] == user_id
-    assert result["title"] == title
-    assert result["body"] == body
+    assert result.id == 101
+    assert result.user_id == user_id
+    assert result.title == title
+    assert result.body == body
 
     # リクエストボディの内容を検証（フィールド名変更の退行検出）
     request_body = json.loads(route.calls[0].request.content)
@@ -1916,8 +2029,8 @@ async def test_create_post_with_empty_body():
         result = await client.create_post(title=title, body=body, user_id=user_id)
 
     # レスポンス検証
-    assert result["id"] == 102
-    assert result["body"] == ""  # 空文字列が保持される
+    assert result.id == 102
+    assert result.body == ""  # 空文字列が保持される
 
     # リクエストボディ検証: 空文字列が実際に送信されているか確認
     request_body = json.loads(route.calls[0].request.content)
@@ -1996,15 +2109,15 @@ async def test_get_todos_with_filters(
     assert len(result) == expected_count, (
         f"{test_description}: expected {expected_count}, got {len(result)}"
     )
-    assert result == filtered_todos
-    assert all(isinstance(todo, dict) for todo in result)
+    assert [todo.model_dump(by_alias=True) for todo in result] == filtered_todos
+    assert all(isinstance(todo, Todo) for todo in result)
     assert route.call_count == 1  # HTTPリクエストが1回発行されたことを確認
 
     # 追加検証: フィルタ条件が結果に反映されている
     if user_id is not None:
-        assert all(t["userId"] == user_id for t in result)
+        assert all(t.user_id == user_id for t in result)
     if completed is not None:
-        assert all(t["completed"] == completed for t in result)
+        assert all(t.completed == completed for t in result)
 
 
 # ===============================================================================
@@ -2241,13 +2354,13 @@ async def test_get_albums_with_filters(user_id, expected_count, test_description
     assert len(result) == expected_count, (
         f"{test_description}: expected {expected_count}, got {len(result)}"
     )
-    assert result == filtered_albums
-    assert all(isinstance(album, dict) for album in result)
+    assert [album.model_dump(by_alias=True) for album in result] == filtered_albums
+    assert all(isinstance(album, Album) for album in result)
     assert route.call_count == 1  # HTTPリクエストが1回発行されたことを確認
 
     # user_idフィルタ検証
     if user_id is not None:
-        assert all(a["userId"] == user_id for a in result)
+        assert all(a.user_id == user_id for a in result)
 
 
 # ===============================================================================
@@ -2309,12 +2422,48 @@ async def test_get_photos_with_filters(album_id, expected_count, test_descriptio
     """
     # モックデータ（6件の写真、複数アルバム）
     all_photos = [
-        {"id": 1, "albumId": 1, "title": "Photo 1", "url": "https://example.com/1.jpg"},
-        {"id": 2, "albumId": 1, "title": "Photo 2", "url": "https://example.com/2.jpg"},
-        {"id": 3, "albumId": 2, "title": "Photo 3", "url": "https://example.com/3.jpg"},
-        {"id": 4, "albumId": 3, "title": "Photo 4", "url": "https://example.com/4.jpg"},
-        {"id": 5, "albumId": 3, "title": "Photo 5", "url": "https://example.com/5.jpg"},
-        {"id": 6, "albumId": 3, "title": "Photo 6", "url": "https://example.com/6.jpg"},
+        {
+            "id": 1,
+            "albumId": 1,
+            "title": "Photo 1",
+            "url": "https://example.com/1.jpg",
+            "thumbnailUrl": "https://example.com/1-thumb.jpg",
+        },
+        {
+            "id": 2,
+            "albumId": 1,
+            "title": "Photo 2",
+            "url": "https://example.com/2.jpg",
+            "thumbnailUrl": "https://example.com/2-thumb.jpg",
+        },
+        {
+            "id": 3,
+            "albumId": 2,
+            "title": "Photo 3",
+            "url": "https://example.com/3.jpg",
+            "thumbnailUrl": "https://example.com/3-thumb.jpg",
+        },
+        {
+            "id": 4,
+            "albumId": 3,
+            "title": "Photo 4",
+            "url": "https://example.com/4.jpg",
+            "thumbnailUrl": "https://example.com/4-thumb.jpg",
+        },
+        {
+            "id": 5,
+            "albumId": 3,
+            "title": "Photo 5",
+            "url": "https://example.com/5.jpg",
+            "thumbnailUrl": "https://example.com/5-thumb.jpg",
+        },
+        {
+            "id": 6,
+            "albumId": 3,
+            "title": "Photo 6",
+            "url": "https://example.com/6.jpg",
+            "thumbnailUrl": "https://example.com/6-thumb.jpg",
+        },
     ]
 
     # パラメータに応じてフィルタとURL構築
@@ -2336,12 +2485,12 @@ async def test_get_photos_with_filters(album_id, expected_count, test_descriptio
     assert len(result) == expected_count, (
         f"{test_description}: expected {expected_count}, got {len(result)}"
     )
-    assert result == filtered_photos
-    assert all(isinstance(photo, dict) for photo in result)
+    assert [photo.model_dump(by_alias=True) for photo in result] == filtered_photos
+    assert all(isinstance(photo, Photo) for photo in result)
 
     # album_idフィルタ検証
     if album_id is not None:
-        assert all(p["albumId"] == album_id for p in result)
+        assert all(p.album_id == album_id for p in result)
 
 
 # ===============================================================================
@@ -2372,7 +2521,7 @@ async def test_async_get_comments_with_post_id() -> None:
         result = await client.get_comments(post_id=1)
 
     assert route.call_count == 1
-    assert result == mock_comments
+    assert [comment.model_dump(by_alias=True) for comment in result] == mock_comments
 
 
 @respx.mock
@@ -2399,7 +2548,7 @@ async def test_async_get_comments_without_post_id() -> None:
         result = await client.get_comments()
 
     assert route.call_count == 1
-    assert result == mock_comments
+    assert [comment.model_dump(by_alias=True) for comment in result] == mock_comments
 
 
 # ===============================================================================
@@ -2502,8 +2651,8 @@ async def test_async_get_users(sample_users_list: list[dict[str, Any]]) -> None:
         result = await client.get_users()
 
     assert len(result) == 2
-    assert result[0]["name"] == "Leanne Graham"
-    assert result[1]["id"] == 2
+    assert result[0].name == "Leanne Graham"
+    assert result[1].id == 2
     assert route.call_count == 1
 
 
