@@ -21,6 +21,7 @@ import asyncio
 import pytest
 
 from config.settings import settings
+from models.responses import Post
 from utils.api_client import APIClientError, AsyncJSONPlaceholderClient
 
 # Pydantic Settings経由で統合テスト実行を制御（.envのTEST__EXTERNAL_API_ENABLEDを参照）
@@ -54,13 +55,13 @@ async def test_real_async_create_post():
         )
 
         # 結果検証
-        assert "id" in post
-        assert post["title"] == "Integration Test Post"
-        assert post["body"] == "This is a test post from integration tests"
-        assert post["userId"] == 1
+        assert isinstance(post, Post)
+        assert post.title == "Integration Test Post"
+        assert post.body == "This is a test post from integration tests"
+        assert post.user_id == 1
 
         # JSONPlaceholder API の仕様: 新規作成時は id=101 が返る
-        assert post["id"] == 101
+        assert post.id == 101
 
 
 # ===============================================================================
@@ -145,9 +146,9 @@ async def test_real_async_crud_integration():
             body="Testing full CRUD flow with real API",
             user_id=1,
         )
-        post_id = post["id"]
+        post_id = post.id
         assert post_id == 101  # JSONPlaceholder API の仕様
-        assert post["title"] == "E2E Integration Test"
+        assert post.title == "E2E Integration Test"
 
         # Step 2: Read - 投稿一覧取得
         # JSONPlaceholder API の仕様: 新規作成データは永続化されないため、
@@ -222,9 +223,9 @@ async def test_real_async_concurrent_crud():
         # 結果検証
         assert len(results) == 3
         for i, post in enumerate(results, start=1):
-            assert post["title"] == f"Concurrent Post {i}"
-            assert post["userId"] == 1
-            assert post["id"] == 101  # JSONPlaceholder の仕様: 常に101
+            assert post.title == f"Concurrent Post {i}"
+            assert post.user_id == 1
+            assert post.id == 101  # JSONPlaceholder の仕様: 常に101
 
 
 # ===============================================================================

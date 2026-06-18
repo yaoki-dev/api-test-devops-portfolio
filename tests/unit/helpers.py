@@ -55,3 +55,40 @@ def assert_warning_log_count(log_output: list, event_name: str, expected_count: 
     assert warning_events.count(event_name) == expected_count, (
         f"Expected {expected_count} '{event_name}' warnings, got: {warning_events}"
     )
+
+
+def make_mock_user(uid: int, **overrides: Any) -> dict[str, Any]:
+    """テスト用ユーザーデータのモック生成ファクトリ
+
+    DRY原則に基づき、テストコード間でのモックデータ重複を排除する。
+    デフォルトで完全なユーザー構造を生成し、**overridesで特定フィールドを上書き可能。
+
+    Args:
+        uid: ユーザーID
+        **overrides: 上書きするフィールド名と値
+
+    Returns:
+        dict[str, Any]: 生成されたユーザーデータ辞書
+    """
+    user = {
+        "id": uid,
+        "name": f"User {uid}",
+        "username": f"user{uid}",
+        "email": f"user{uid}@example.com",
+        "address": {
+            "street": f"Street {uid}",
+            "suite": f"Suite {uid}",
+            "city": f"City {uid}",
+            "zipcode": f"1000{uid}",
+            "geo": {"lat": "0.0000", "lng": "0.0000"},
+        },
+        "phone": f"123-456-000{uid}",
+        "website": f"https://user{uid}.example.com",
+        "company": {
+            "name": f"Company {uid}",
+            "catchPhrase": f"Phrase {uid}",
+            "bs": f"bs {uid}",
+        },
+    }
+    user.update(overrides)
+    return user

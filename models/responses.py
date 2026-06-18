@@ -724,6 +724,32 @@ class Photo(BaseModel):
 
 
 # =============================================================================
+# 複合レスポンスモデル
+# =============================================================================
+
+
+class UserDataResponse(BaseModel):
+    """ユーザー関連データの一括レスポンスモデル
+
+    get_user_data() の戻り値。
+    複数のリソース（User, Post, Todo, Album）を統合。
+
+    Attributes:
+        user: ユーザー情報
+        posts: ユーザーの投稿一覧
+        todos: ユーザーのTODO一覧
+        albums: ユーザーのアルバム一覧
+    """
+
+    user: User = Field(..., description="ユーザー情報")
+    posts: list[Post] = Field(..., description="ユーザーの投稿一覧")
+    todos: list[Todo] = Field(..., description="ユーザーのTODO一覧")
+    albums: list[Album] = Field(..., description="ユーザーのアルバム一覧")
+
+    model_config = ConfigDict(extra="forbid")
+
+
+# =============================================================================
 # 学習ポイント:
 #
 # 1. XSS保護の実務パターン:
