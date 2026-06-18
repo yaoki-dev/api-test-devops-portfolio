@@ -146,6 +146,17 @@ def _safe_parse_json(response: httpx.Response) -> Any:
         ) from e
 
 
+def _format_validation_error(e: ValidationError) -> str:
+    details = "; ".join(
+        f"{'.'.join(map(str, err.get('loc', ()))) or '<root>'}: "
+        f"{err.get('msg', 'validation error')} ({err.get('type', 'unknown')})"
+        for err in e.errors(include_input=False)[:3]
+    )
+    more = e.error_count() - 3
+    suffix = f"; ... +{more} more" if more > 0 else ""
+    return f"{e.error_count()} validation error(s): {details}{suffix}"
+
+
 def _parse_response_model[ResponseModelT: BaseModel](
     response: httpx.Response, model_type: type[ResponseModelT]
 ) -> ResponseModelT:
@@ -160,7 +171,7 @@ def _parse_response_model[ResponseModelT: BaseModel](
         return model_type.model_validate(data)
     except ValidationError as e:
         raise APIJSONDecodeError(
-            f"Invalid {model_type.__name__} response schema: {e}",
+            f"Invalid {model_type.__name__} response schema: {_format_validation_error(e)}",
             response=response,
         ) from e
 
@@ -179,7 +190,7 @@ def _parse_response_model_list[ResponseModelT: BaseModel](
         return [model_type.model_validate(item) for item in data]
     except ValidationError as e:
         raise APIJSONDecodeError(
-            f"Invalid {model_type.__name__} response schema: {e}",
+            f"Invalid {model_type.__name__} response schema: {_format_validation_error(e)}",
             response=response,
         ) from e
 
@@ -1598,7 +1609,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             max_concurrent: 同時実行数の上限（デフォルト5）
 
         Returns:
-            list[dict]: 取得成功したユーザー情報リスト
+            list[User]: 取得成功したユーザー情報リスト
                        （取得失敗したIDはスキップ、warningログ出力）
 
         Example:

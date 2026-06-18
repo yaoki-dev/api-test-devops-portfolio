@@ -6,26 +6,10 @@ which are module-level utility functions independent of AsyncAPIClient/SyncAPICl
 
 Consolidated from test_async_client_error_handling.py and
 test_sync_client_error_handling.py to eliminate duplication.
-
-テストケース一覧（31件）:
-    - Exception (3件): hierarchy, http_error_status_preservation, retry_error_message
-    - JSON Parsing (3件): invalid_json, json_error_init, json_error_without_response
-    - Request Error Mapping (5件): too_many_redirects, invalid_url, timeout,
-      connect_error, network_error
-    - Classify Error (5件): non_retryable_logs_error, non_retryable_async_field,
-      retryable_logs_warning, retryable_timeout, retryable_network_error
-    - Resolve Client Config (13件): base_url_none_uses_settings, empty_base_url_raises,
-      whitespace_base_url_raises, none_timeout_uses_settings,
-      none_retry_count_uses_settings, none_retry_delay_uses_settings,
-      headers_none_returns_defaults_only, headers_empty_dict_triggers_update,
-      headers_merged_with_defaults,
-      custom_headers_override_defaults, zero_timeout_not_overridden,
-      zero_retry_count_not_overridden, zero_retry_delay_not_overridden
-    - Client Init (2件): sync_client_headers_empty_dict_preserves_defaults,
-      async_client_headers_empty_dict_preserves_defaults
 """
 
 import json
+from collections.abc import Callable
 from unittest.mock import Mock, patch
 
 import httpx
@@ -53,6 +37,35 @@ from utils.api_client import (
 
 # Module-level marker: All tests in this file are unit tests
 pytestmark = pytest.mark.unit
+
+
+# =============================================================================
+# 型定義（Type Alias）
+# =============================================================================
+
+# 引数に Optional[object] を受け取り、戻り値として Mock を返す
+MockResponseFactory = Callable[[object | None], Mock]
+
+
+@pytest.fixture()
+def mock_response_factory() -> MockResponseFactory:
+    """テスト用 Mock(spec=httpx.Response) を生成する factory fixture
+
+    テスト間で mock 生成ロジックを集約し、httpx.Response 仕様変更時の
+    修正を1箇所に限定する。
+
+    Returns:
+        payload（省略可）を受け取り、json.return_value を設定した
+        Mock(spec=httpx.Response) を返す callable
+    """
+
+    def _factory(payload: object | None = None) -> Mock:
+        response = Mock(spec=httpx.Response)
+        if payload is not None:
+            response.json.return_value = payload
+        return response
+
+    return _factory
 
 
 # =============================================================================
@@ -144,9 +157,11 @@ def test_exception_hierarchy() -> None:
     assert issubclass(APIClientError, Exception)
 
 
-def test_http_error_status_preservation() -> None:
+def test_http_error_status_preservation(
+    mock_response_factory: MockResponseFactory,
+) -> None:
     """APIHTTPError がステータスコードを保持することを確認"""
-    mock_response = Mock(spec=httpx.Response)
+    mock_response = mock_response_factory()
     mock_response.status_code = 404
 
     error = APIHTTPError("Not Found", status_code=404, response=mock_response)
@@ -167,9 +182,11 @@ def test_retry_error_message() -> None:
 # =============================================================================
 
 
-def test_safe_parse_json_invalid_json() -> None:
+def test_safe_parse_json_invalid_json(
+    mock_response_factory: MockResponseFactory,
+) -> None:
     """不正なJSONでAPIJSONDecodeErrorが発生（エラーパス）"""
-    mock_response = Mock(spec=httpx.Response)
+    mock_response = mock_response_factory()
     mock_response.json.side_effect = json.JSONDecodeError("Invalid JSON", "doc", 0)
 
     with pytest.raises(APIJSONDecodeError) as exc_info:
@@ -180,9 +197,9 @@ def test_safe_parse_json_invalid_json() -> None:
     assert exc_info.value.response == mock_response
 
 
-def test_api_json_decode_error_init() -> None:
+def test_api_json_decode_error_init(mock_response_factory: MockResponseFactory) -> None:
     """APIJSONDecodeErrorのコンストラクタテスト"""
-    mock_response = Mock(spec=httpx.Response)
+    mock_response = mock_response_factory()
     error = APIJSONDecodeError("Parse error", response=mock_response)
 
     assert str(error) == "Parse error"

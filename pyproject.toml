@@ -120,6 +120,7 @@ precision = 2
 target-version = "py314"
 line-length = 100  # DevOps軽量化: コミット時の厳密度緩和
 fix = true
+extend-exclude = [".history"]
 
 [tool.ruff.format]
 quote-style = "double"
