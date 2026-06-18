@@ -92,3 +92,48 @@ def make_mock_user(uid: int, **overrides: Any) -> dict[str, Any]:
     }
     user.update(overrides)
     return user
+
+
+def make_canonical_user(
+    user_id: int = 1,
+    name: str = "Leanne Graham",
+    username: str = "Bret",
+    email: str = "Sincere@april.biz",
+    website: str = "https://hildegard.org",
+) -> dict[str, Any]:
+    """正準（JSONPlaceholder準拠）の User ペイロードを生成するヘルパー関数
+
+    `make_mock_user`（uid連動の合成データ）とは別用途で、JSONPlaceholder実APIに
+    近い実在風データを返す。Pydantic User モデルへ検証可能な完全構造を提供し、
+    name/username/email/website は部分的に上書き可能。
+
+    Args:
+        user_id: ユーザーID
+        name: ユーザー名
+        username: ユーザー名（ハンドル）
+        email: メールアドレス
+        website: WebサイトURL
+
+    Returns:
+        完全な User ペイロード辞書
+    """
+    return {
+        "id": user_id,
+        "name": name,
+        "username": username,
+        "email": email,
+        "address": {
+            "street": "Kulas Light",
+            "suite": "Apt. 556",
+            "city": "Gwenborough",
+            "zipcode": "92998-3874",
+            "geo": {"lat": "-37.3159", "lng": "81.1496"},
+        },
+        "phone": "1-770-736-8031 x56442",
+        "website": website,
+        "company": {
+            "name": "Romaguera-Crona",
+            "catchPhrase": "Multi-layered client-server neural-net",
+            "bs": "harness real-time e-markets",
+        },
+    }

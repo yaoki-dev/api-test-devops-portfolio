@@ -6,26 +6,10 @@ which are module-level utility functions independent of AsyncAPIClient/SyncAPICl
 
 Consolidated from test_async_client_error_handling.py and
 test_sync_client_error_handling.py to eliminate duplication.
-
-テストケース一覧（31件）:
-    - Exception (3件): hierarchy, http_error_status_preservation, retry_error_message
-    - JSON Parsing (3件): invalid_json, json_error_init, json_error_without_response
-    - Request Error Mapping (5件): too_many_redirects, invalid_url, timeout,
-      connect_error, network_error
-    - Classify Error (5件): non_retryable_logs_error, non_retryable_async_field,
-      retryable_logs_warning, retryable_timeout, retryable_network_error
-    - Resolve Client Config (13件): base_url_none_uses_settings, empty_base_url_raises,
-      whitespace_base_url_raises, none_timeout_uses_settings,
-      none_retry_count_uses_settings, none_retry_delay_uses_settings,
-      headers_none_returns_defaults_only, headers_empty_dict_triggers_update,
-      headers_merged_with_defaults,
-      custom_headers_override_defaults, zero_timeout_not_overridden,
-      zero_retry_count_not_overridden, zero_retry_delay_not_overridden
-    - Client Init (2件): sync_client_headers_empty_dict_preserves_defaults,
-      async_client_headers_empty_dict_preserves_defaults
 """
 
 import json
+from collections.abc import Callable
 from unittest.mock import Mock, patch
 
 import httpx
@@ -56,6 +40,35 @@ pytestmark = pytest.mark.unit
 
 
 # =============================================================================
+# 型定義（Type Alias）
+# =============================================================================
+
+# 引数に Optional[object] を受け取り、戻り値として Mock を返す
+MockResponseFactory = Callable[[object | None], Mock]
+
+
+@pytest.fixture()
+def mock_response_factory() -> MockResponseFactory:
+    """テスト用 Mock(spec=httpx.Response) を生成する factory fixture
+
+    テスト間で mock 生成ロジックを集約し、httpx.Response 仕様変更時の
+    修正を1箇所に限定する。
+
+    Returns:
+        payload（省略可）を受け取り、json.return_value を設定した
+        Mock(spec=httpx.Response) を返す callable
+    """
+
+    def _factory(payload: object | None = None) -> Mock:
+        response = Mock(spec=httpx.Response)
+        if payload is not None:
+            response.json.return_value = payload
+        return response
+
+    return _factory
+
+
+# =============================================================================
 # Pydantic Parsing Tests（_parse_response_model / _parse_response_model_list の検証）
 # =============================================================================
 
@@ -67,10 +80,9 @@ class DummyModel(BaseModel):
     name: str
 
 
-def test_parse_response_model_success() -> None:
+def test_parse_response_model_success(mock_response_factory: MockResponseFactory) -> None:
     """_parse_response_model: 正常系（dict -> model）"""
-    mock_response = Mock(spec=httpx.Response)
-    mock_response.json.return_value = {"id": 1, "name": "test"}
+    mock_response = mock_response_factory({"id": 1, "name": "test"})
 
     result = _parse_response_model(mock_response, DummyModel)
 
@@ -79,28 +91,25 @@ def test_parse_response_model_success() -> None:
     assert result.name == "test"
 
 
-def test_parse_response_model_invalid_type() -> None:
+def test_parse_response_model_invalid_type(mock_response_factory: MockResponseFactory) -> None:
     """_parse_response_model: 異常系（配列が返ってきた場合）"""
-    mock_response = Mock(spec=httpx.Response)
-    mock_response.json.return_value = [{"id": 1, "name": "test"}]
+    mock_response = mock_response_factory([{"id": 1, "name": "test"}])
 
     with pytest.raises(APIJSONDecodeError, match="Expected object JSON for DummyModel, got list"):
         _parse_response_model(mock_response, DummyModel)
 
 
-def test_parse_response_model_validation_error() -> None:
+def test_parse_response_model_validation_error(mock_response_factory: MockResponseFactory) -> None:
     """_parse_response_model: 異常系（バリデーションエラー）"""
-    mock_response = Mock(spec=httpx.Response)
-    mock_response.json.return_value = {"id": 0, "name": "test"}  # id < 1
+    mock_response = mock_response_factory({"id": 0, "name": "test"})  # id < 1
 
     with pytest.raises(APIJSONDecodeError, match="Invalid DummyModel response schema"):
         _parse_response_model(mock_response, DummyModel)
 
 
-def test_parse_response_model_list_success() -> None:
+def test_parse_response_model_list_success(mock_response_factory: MockResponseFactory) -> None:
     """_parse_response_model_list: 正常系（list -> list[model]）"""
-    mock_response = Mock(spec=httpx.Response)
-    mock_response.json.return_value = [{"id": 1, "name": "test1"}, {"id": 2, "name": "test2"}]
+    mock_response = mock_response_factory([{"id": 1, "name": "test1"}, {"id": 2, "name": "test2"}])
 
     result = _parse_response_model_list(mock_response, DummyModel)
 
@@ -111,22 +120,29 @@ def test_parse_response_model_list_success() -> None:
     assert result[1].name == "test2"
 
 
-def test_parse_response_model_list_invalid_type() -> None:
+def test_parse_response_model_list_invalid_type(mock_response_factory: MockResponseFactory) -> None:
     """_parse_response_model_list: 異常系（オブジェクトが返ってきた場合）"""
-    mock_response = Mock(spec=httpx.Response)
-    mock_response.json.return_value = {"id": 1, "name": "test"}
+    mock_response = mock_response_factory({"id": 1, "name": "test"})
 
     with pytest.raises(APIJSONDecodeError, match="Expected array JSON for DummyModel, got dict"):
         _parse_response_model_list(mock_response, DummyModel)
 
 
-def test_parse_response_model_list_validation_error() -> None:
-    """_parse_response_model_list: 異常系（要素にバリデーションエラーがある場合）"""
-    mock_response = Mock(spec=httpx.Response)
-    mock_response.json.return_value = [{"id": 1, "name": "test1"}, {"id": -1, "name": "test2"}]
+def test_parse_response_model_list_validation_error(
+    mock_response_factory: MockResponseFactory,
+) -> None:
+    """_parse_response_model_list: 異常系（要素にバリデーションエラーがある場合）
 
-    with pytest.raises(APIJSONDecodeError, match="Invalid DummyModel response schema"):
+    エラーメッセージに失敗要素の index（loc 先頭）が含まれ、配列内の
+    どの要素が原因か診断できることを検証する（TypeAdapter による index 付与）。
+    """
+    mock_response = mock_response_factory([{"id": 1, "name": "test1"}, {"id": -1, "name": "test2"}])
+
+    with pytest.raises(APIJSONDecodeError, match="Invalid DummyModel response schema") as exc_info:
         _parse_response_model_list(mock_response, DummyModel)
+
+    # index=1（2番目の要素）が失敗したことが loc 先頭に表れる
+    assert "1.id" in str(exc_info.value)
 
 
 # =============================================================================
@@ -144,9 +160,11 @@ def test_exception_hierarchy() -> None:
     assert issubclass(APIClientError, Exception)
 
 
-def test_http_error_status_preservation() -> None:
+def test_http_error_status_preservation(
+    mock_response_factory: MockResponseFactory,
+) -> None:
     """APIHTTPError がステータスコードを保持することを確認"""
-    mock_response = Mock(spec=httpx.Response)
+    mock_response = mock_response_factory()
     mock_response.status_code = 404
 
     error = APIHTTPError("Not Found", status_code=404, response=mock_response)
@@ -167,9 +185,11 @@ def test_retry_error_message() -> None:
 # =============================================================================
 
 
-def test_safe_parse_json_invalid_json() -> None:
+def test_safe_parse_json_invalid_json(
+    mock_response_factory: MockResponseFactory,
+) -> None:
     """不正なJSONでAPIJSONDecodeErrorが発生（エラーパス）"""
-    mock_response = Mock(spec=httpx.Response)
+    mock_response = mock_response_factory()
     mock_response.json.side_effect = json.JSONDecodeError("Invalid JSON", "doc", 0)
 
     with pytest.raises(APIJSONDecodeError) as exc_info:
@@ -180,9 +200,9 @@ def test_safe_parse_json_invalid_json() -> None:
     assert exc_info.value.response == mock_response
 
 
-def test_api_json_decode_error_init() -> None:
+def test_api_json_decode_error_init(mock_response_factory: MockResponseFactory) -> None:
     """APIJSONDecodeErrorのコンストラクタテスト"""
-    mock_response = Mock(spec=httpx.Response)
+    mock_response = mock_response_factory()
     error = APIJSONDecodeError("Parse error", response=mock_response)
 
     assert str(error) == "Parse error"

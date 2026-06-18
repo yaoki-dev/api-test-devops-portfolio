@@ -9,7 +9,7 @@ from types import TracebackType
 from typing import Any, Final, Self
 
 import httpx
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 from structlog.typing import FilteringBoundLogger
 
 from config.settings import settings
@@ -146,6 +146,17 @@ def _safe_parse_json(response: httpx.Response) -> Any:
         ) from e
 
 
+def _format_validation_error(e: ValidationError) -> str:
+    details = "; ".join(
+        f"{'.'.join(map(str, err.get('loc', ()))) or '<root>'}: "
+        f"{err.get('msg', 'validation error')} ({err.get('type', 'unknown')})"
+        for err in e.errors(include_input=False)[:3]
+    )
+    more = e.error_count() - 3
+    suffix = f"; ... +{more} more" if more > 0 else ""
+    return f"{e.error_count()} validation error(s): {details}{suffix}"
+
+
 def _parse_response_model[ResponseModelT: BaseModel](
     response: httpx.Response, model_type: type[ResponseModelT]
 ) -> ResponseModelT:
@@ -160,7 +171,7 @@ def _parse_response_model[ResponseModelT: BaseModel](
         return model_type.model_validate(data)
     except ValidationError as e:
         raise APIJSONDecodeError(
-            f"Invalid {model_type.__name__} response schema: {e}",
+            f"Invalid {model_type.__name__} response schema: {_format_validation_error(e)}",
             response=response,
         ) from e
 
@@ -176,10 +187,17 @@ def _parse_response_model_list[ResponseModelT: BaseModel](
             response=response,
         )
     try:
-        return [model_type.model_validate(item) for item in data]
+        # TypeAdapter(list[model]) を使うと ValidationError の loc に
+        # 失敗要素の index が自動付与される（例: loc=("0", "user_id")）。
+        # _format_validation_error が loc を "." 結合するため "0.user_id: ..."
+        # のように、配列内のどの要素が失敗したか診断可能になる。
+        # NOTE: model_type は実行時には具象クラスだが、mypy は変数を型添字
+        #   list[...] に使えない（valid-type）。実行時の正しさはテストで担保済みのため
+        #   この行に限り type: ignore を付与する（Pydantic + mypy の既知の制約）。
+        return TypeAdapter(list[model_type]).validate_python(data)  # type: ignore[valid-type]
     except ValidationError as e:
         raise APIJSONDecodeError(
-            f"Invalid {model_type.__name__} response schema: {e}",
+            f"Invalid {model_type.__name__} response schema: {_format_validation_error(e)}",
             response=response,
         ) from e
 
@@ -1598,7 +1616,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             max_concurrent: 同時実行数の上限（デフォルト5）
 
         Returns:
-            list[dict]: 取得成功したユーザー情報リスト
+            list[User]: 取得成功したユーザー情報リスト
                        （取得失敗したIDはスキップ、warningログ出力）
 
         Example:

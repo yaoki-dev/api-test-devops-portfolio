@@ -912,8 +912,14 @@ def test_sync_get_users() -> None:
         result = client.get_users()
 
     assert len(result) == 2
+    # 全属性を検証し、フィールドマッピングの回帰（属性の取りこぼし）を防ぐ
+    assert result[0].id == 1
     assert result[0].name == "Leanne Graham"
+    assert result[0].username == "Bret"
+    assert result[0].email == "sincere@april.biz"
     assert result[1].id == 2
+    assert result[1].name == "Ervin Howell"
+    assert result[1].username == "Antonette"
     assert route.call_count == 1
 
 
@@ -959,9 +965,12 @@ def test_sync_create_todo() -> None:
     with SyncJSONPlaceholderClient() as client:
         result = client.create_todo(title="Buy groceries", user_id=1, completed=False)
 
-        # レスポンス検証
+        # レスポンス検証: userId -> user_id の alias マッピングと
+        # completed フィールドまで含め、全属性の契約を検証する
         assert result.id == 201
         assert result.title == "Buy groceries"
+        assert result.user_id == 1
+        assert result.completed is False
     assert route.call_count == 1
 
     # リクエストボディ検証: title/userId/completedが正しく送信されたか
