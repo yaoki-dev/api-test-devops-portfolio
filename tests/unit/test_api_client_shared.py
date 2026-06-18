@@ -80,10 +80,9 @@ class DummyModel(BaseModel):
     name: str
 
 
-def test_parse_response_model_success() -> None:
+def test_parse_response_model_success(mock_response_factory: MockResponseFactory) -> None:
     """_parse_response_model: 正常系（dict -> model）"""
-    mock_response = Mock(spec=httpx.Response)
-    mock_response.json.return_value = {"id": 1, "name": "test"}
+    mock_response = mock_response_factory({"id": 1, "name": "test"})
 
     result = _parse_response_model(mock_response, DummyModel)
 
@@ -92,28 +91,25 @@ def test_parse_response_model_success() -> None:
     assert result.name == "test"
 
 
-def test_parse_response_model_invalid_type() -> None:
+def test_parse_response_model_invalid_type(mock_response_factory: MockResponseFactory) -> None:
     """_parse_response_model: 異常系（配列が返ってきた場合）"""
-    mock_response = Mock(spec=httpx.Response)
-    mock_response.json.return_value = [{"id": 1, "name": "test"}]
+    mock_response = mock_response_factory([{"id": 1, "name": "test"}])
 
     with pytest.raises(APIJSONDecodeError, match="Expected object JSON for DummyModel, got list"):
         _parse_response_model(mock_response, DummyModel)
 
 
-def test_parse_response_model_validation_error() -> None:
+def test_parse_response_model_validation_error(mock_response_factory: MockResponseFactory) -> None:
     """_parse_response_model: 異常系（バリデーションエラー）"""
-    mock_response = Mock(spec=httpx.Response)
-    mock_response.json.return_value = {"id": 0, "name": "test"}  # id < 1
+    mock_response = mock_response_factory({"id": 0, "name": "test"})  # id < 1
 
     with pytest.raises(APIJSONDecodeError, match="Invalid DummyModel response schema"):
         _parse_response_model(mock_response, DummyModel)
 
 
-def test_parse_response_model_list_success() -> None:
+def test_parse_response_model_list_success(mock_response_factory: MockResponseFactory) -> None:
     """_parse_response_model_list: 正常系（list -> list[model]）"""
-    mock_response = Mock(spec=httpx.Response)
-    mock_response.json.return_value = [{"id": 1, "name": "test1"}, {"id": 2, "name": "test2"}]
+    mock_response = mock_response_factory([{"id": 1, "name": "test1"}, {"id": 2, "name": "test2"}])
 
     result = _parse_response_model_list(mock_response, DummyModel)
 
@@ -124,22 +120,29 @@ def test_parse_response_model_list_success() -> None:
     assert result[1].name == "test2"
 
 
-def test_parse_response_model_list_invalid_type() -> None:
+def test_parse_response_model_list_invalid_type(mock_response_factory: MockResponseFactory) -> None:
     """_parse_response_model_list: 異常系（オブジェクトが返ってきた場合）"""
-    mock_response = Mock(spec=httpx.Response)
-    mock_response.json.return_value = {"id": 1, "name": "test"}
+    mock_response = mock_response_factory({"id": 1, "name": "test"})
 
     with pytest.raises(APIJSONDecodeError, match="Expected array JSON for DummyModel, got dict"):
         _parse_response_model_list(mock_response, DummyModel)
 
 
-def test_parse_response_model_list_validation_error() -> None:
-    """_parse_response_model_list: 異常系（要素にバリデーションエラーがある場合）"""
-    mock_response = Mock(spec=httpx.Response)
-    mock_response.json.return_value = [{"id": 1, "name": "test1"}, {"id": -1, "name": "test2"}]
+def test_parse_response_model_list_validation_error(
+    mock_response_factory: MockResponseFactory,
+) -> None:
+    """_parse_response_model_list: 異常系（要素にバリデーションエラーがある場合）
 
-    with pytest.raises(APIJSONDecodeError, match="Invalid DummyModel response schema"):
+    エラーメッセージに失敗要素の index（loc 先頭）が含まれ、配列内の
+    どの要素が原因か診断できることを検証する（TypeAdapter による index 付与）。
+    """
+    mock_response = mock_response_factory([{"id": 1, "name": "test1"}, {"id": -1, "name": "test2"}])
+
+    with pytest.raises(APIJSONDecodeError, match="Invalid DummyModel response schema") as exc_info:
         _parse_response_model_list(mock_response, DummyModel)
+
+    # index=1（2番目の要素）が失敗したことが loc 先頭に表れる
+    assert "1.id" in str(exc_info.value)
 
 
 # =============================================================================

@@ -9,7 +9,7 @@ from types import TracebackType
 from typing import Any, Final, Self
 
 import httpx
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 from structlog.typing import FilteringBoundLogger
 
 from config.settings import settings
@@ -187,7 +187,14 @@ def _parse_response_model_list[ResponseModelT: BaseModel](
             response=response,
         )
     try:
-        return [model_type.model_validate(item) for item in data]
+        # TypeAdapter(list[model]) を使うと ValidationError の loc に
+        # 失敗要素の index が自動付与される（例: loc=("0", "user_id")）。
+        # _format_validation_error が loc を "." 結合するため "0.user_id: ..."
+        # のように、配列内のどの要素が失敗したか診断可能になる。
+        # NOTE: model_type は実行時には具象クラスだが、mypy は変数を型添字
+        #   list[...] に使えない（valid-type）。実行時の正しさはテストで担保済みのため
+        #   この行に限り type: ignore を付与する（Pydantic + mypy の既知の制約）。
+        return TypeAdapter(list[model_type]).validate_python(data)  # type: ignore[valid-type]
     except ValidationError as e:
         raise APIJSONDecodeError(
             f"Invalid {model_type.__name__} response schema: {_format_validation_error(e)}",
