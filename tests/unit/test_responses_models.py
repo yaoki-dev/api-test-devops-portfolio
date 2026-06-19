@@ -1846,6 +1846,7 @@ class TestPhotoModel:
             pytest.param("java\u2028script:alert(1)", id="line_separator_mid_alias"),
             pytest.param("java\u2029script:alert(1)", id="paragraph_separator_mid_alias"),
             pytest.param("java\ufe00script:alert(1)", id="variation_selector_mn_alias"),
+            pytest.param("java\ufe0fscript:alert(1)", id="variation_selector_mn_upper_alias"),
             pytest.param(
                 "java\U000e0100script:alert(1)",
                 id="variation_selector_supplement_mn_alias",
