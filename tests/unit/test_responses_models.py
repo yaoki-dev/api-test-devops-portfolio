@@ -1808,13 +1808,6 @@ class TestPhotoModel:
             Photo(album_id=1, id=1, title="Test", url=url, thumbnail_url=thumbnail_url)
 
     @pytest.mark.parametrize(
-        "target_field",
-        [
-            pytest.param("url", id="field_url"),
-            pytest.param("thumbnailUrl", id="field_thumbnail_url"),
-        ],
-    )
-    @pytest.mark.parametrize(
         "dangerous_url",
         [
             pytest.param("\u200bjavascript:alert(1)", id="zwsp_prefix"),
@@ -1823,21 +1816,60 @@ class TestPhotoModel:
             pytest.param("java\u2028script:alert(1)", id="line_separator_mid"),
             pytest.param("java\u2029script:alert(1)", id="paragraph_separator_mid"),
             pytest.param("java\ufe00script:alert(1)", id="variation_selector_mn"),
+            pytest.param("java\ufe0fscript:alert(1)", id="variation_selector_mn_upper"),
             pytest.param("java\U000e0100script:alert(1)", id="variation_selector_supplement_mn"),
+            pytest.param(
+                "java\U000e01efscript:alert(1)",
+                id="variation_selector_supplement_mn_upper",
+            ),
         ],
     )
-    def test_photo_url_fields_reject_invisible_char_dangerous_scheme(
-        self, target_field: str, dangerous_url: str
-    ) -> None:
-        """PhotoのURL系フィールドが不可視文字で難読化された危険スキームを拒否すること。"""
-        # 指定されたフィールド（url または thumbnailUrl）にのみ危険なURLを設定
-        payload = dict(_PHOTO_BASE)
-        payload[target_field] = dangerous_url
-
+    def test_photo_url_rejects_invisible_char_dangerous_scheme(self, dangerous_url: str) -> None:
+        """Photo.urlが不可視文字で難読化された危険スキームを拒否すること。"""
         with pytest.raises(
             ValidationError, match="URLはhttp://またはhttps://で始まる必要があります"
         ):
-            Photo.model_validate(payload)
+            Photo(
+                album_id=1,
+                id=1,
+                title="Test",
+                url=dangerous_url,
+                thumbnail_url="https://example.com/thumb.jpg",
+            )
+
+    @pytest.mark.parametrize(
+        "dangerous_thumbnail_url",
+        [
+            pytest.param("\u200bjavascript:alert(1)", id="zwsp_prefix_alias"),
+            pytest.param("java\u200bscript:alert(1)", id="zwsp_mid_scheme_alias"),
+            pytest.param("\u202ejavascript:alert(1)", id="bidi_override_alias"),
+            pytest.param("java\u2028script:alert(1)", id="line_separator_mid_alias"),
+            pytest.param("java\u2029script:alert(1)", id="paragraph_separator_mid_alias"),
+            pytest.param("java\ufe00script:alert(1)", id="variation_selector_mn_alias"),
+            pytest.param(
+                "java\U000e0100script:alert(1)",
+                id="variation_selector_supplement_mn_alias",
+            ),
+            pytest.param(
+                "java\U000e01efscript:alert(1)",
+                id="variation_selector_supplement_upper_alias",
+            ),
+        ],
+    )
+    def test_photo_thumbnail_url_alias_rejects_invisible_char_dangerous_scheme(
+        self, dangerous_thumbnail_url: str
+    ) -> None:
+        """Photo.thumbnailUrl(alias)も同一URLバリデータで危険スキームを拒否すること。"""
+        with pytest.raises(
+            ValidationError, match="URLはhttp://またはhttps://で始まる必要があります"
+        ):
+            Photo(
+                album_id=1,
+                id=1,
+                title="Test",
+                url="https://example.com/photo.jpg",
+                thumbnail_url=dangerous_thumbnail_url,
+            )
 
     def test_photo_url_rejects_surrogate_codepoint(self) -> None:
         """孤立サロゲートを含むURLはPydanticのUnicodeバリデーションで拒否されること（E2E）
