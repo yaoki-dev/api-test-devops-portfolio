@@ -5,16 +5,6 @@ html.escape()サニタイゼーションを適用したPydanticモデル。
 （email・websiteはhtml.escape対象外: emailはEmailStr RFC準拠バリデーション、
 websiteはURL形式のためhtmlコンテキスト出力時は呼び出し元でエスケープ）
 モデル値はAPIレスポンスの意味論を保つ。HTML等への出力時のエスケープ責務は呼び出し元が持つ。
-
-実務推奨パターン:
-1. Defense in Depth: 型検証 + サニタイゼーション + 長さ制限
-2. Fail-Safe: バリデーションエラーは明確なエラーメッセージで
-3. 最小権限: 必要最小限のフィールドのみ公開
-
-学習目標:
-- Pydantic field_validatorによるカスタムバリデーション
-- XSS保護のベストプラクティス
-- 型安全なAPIレスポンス処理
 """
 
 import html

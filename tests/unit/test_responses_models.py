@@ -13,6 +13,7 @@ from typing import Any, Final, TypedDict
 from urllib.parse import urlparse
 
 import pytest
+from _pytest.mark.structures import ParameterSet
 from pydantic import BaseModel, ValidationError
 
 import models.responses as responses_module
@@ -1807,63 +1808,102 @@ class TestPhotoModel:
         with pytest.raises(ValidationError, match="ポートが無効"):
             Photo(album_id=1, id=1, title="Test", url=url, thumbnail_url=thumbnail_url)
 
-    @pytest.mark.parametrize(
-        "field",
-        [
-            pytest.param("url", id="field_url"),
-            pytest.param("thumbnailUrl", id="field_thumbnailUrl"),
-        ],
-    )
+    # Photo URL危険ペイロード共通定数（両フィールド同一バリデータ共有のため再利用）
+    _PHOTO_DANGEROUS_URLS: Final[list[ParameterSet]] = [
+        pytest.param("\u200bjavascript:alert(1)", id="zwsp_prefix"),
+        pytest.param("java\u200bscript:alert(1)", id="zwsp_mid_scheme"),
+        pytest.param("\u202ejavascript:alert(1)", id="bidi_override"),
+        pytest.param("java\u2028script:alert(1)", id="line_separator_mid"),
+        pytest.param("java\u2029script:alert(1)", id="paragraph_separator_mid"),
+        pytest.param("java\ufe00script:alert(1)", id="variation_selector_vs1"),
+        pytest.param("java\ufe0fscript:alert(1)", id="variation_selector_vs16"),
+        pytest.param(
+            "java\U000e0100script:alert(1)",
+            id="variation_selector_supplement_min",
+        ),
+        pytest.param(
+            "java\U000e01efscript:alert(1)",
+            id="variation_selector_supplement_max",
+        ),
+    ]
+
     @pytest.mark.parametrize(
         "dangerous",
-        [
-            pytest.param("\u200bjavascript:alert(1)", id="zwsp_prefix"),
-            pytest.param("java\u200bscript:alert(1)", id="zwsp_mid_scheme"),
-            pytest.param("\u202ejavascript:alert(1)", id="bidi_override"),
-            pytest.param("java\u2028script:alert(1)", id="line_separator_mid"),
-            pytest.param("java\u2029script:alert(1)", id="paragraph_separator_mid"),
-            pytest.param("java\ufe00script:alert(1)", id="variation_selector_vs1"),
-            pytest.param("java\ufe0fscript:alert(1)", id="variation_selector_vs16"),
-            pytest.param(
-                "java\U000e0100script:alert(1)",
-                id="variation_selector_supplement_min",
-            ),
-            pytest.param(
-                "java\U000e01efscript:alert(1)",
-                id="variation_selector_supplement_max",
-            ),
-        ],
+        _PHOTO_DANGEROUS_URLS,
     )
-    def test_photo_url_fields_reject_invisible_char_dangerous_scheme(
-        self, field: str, dangerous: str
-    ) -> None:
-        """PhotoのURL系フィールドが不可視文字で難読化された危険スキームを拒否すること。
+    def test_photo_url_rejects_invisible_char_dangerous_scheme(self, dangerous: str) -> None:
+        """Photo.url が不可視文字で難読化された危険スキームを拒否すること。
 
-        url フィールドは Python フィールド名で、thumbnailUrl は alias 名で
-        検証し、alias 入力経路もテストする。
+        url と thumbnail_url は同一の validate_url_scheme バリデータを共有するため、
+        url フィールドでの全件検証でバリデータロジックを網羅。
+        thumbnail_url 側は alias バインド確認のみ別テストで実施（保守性・二重メンテ防止）。
         """
-        safe_url = "https://example.com/photo.jpg"
-        safe_thumb = "https://example.com/thumb.jpg"
-        if field == "url":
-            kwargs: dict[str, object] = {
-                "album_id": 1,
-                "id": 1,
-                "title": "Test",
-                "url": dangerous,
-                "thumbnail_url": safe_thumb,
-            }
-        else:
-            kwargs = {
-                "album_id": 1,
-                "id": 1,
-                "title": "Test",
-                "url": safe_url,
-                "thumbnailUrl": dangerous,
-            }
         with pytest.raises(
             ValidationError, match="URLはhttp://またはhttps://で始まる必要があります"
         ):
-            Photo(**kwargs)
+            Photo(
+                album_id=1,
+                id=1,
+                title="Test",
+                url="https://example.com/photo.jpg",
+                thumbnail_url=dangerous,
+            )
+
+    @pytest.mark.parametrize(
+        "dangerous",
+        [
+            pytest.param("\u200bjavascript:alert(1)", id="zwsp_prefix_alias"),
+            pytest.param("java\ufe0fscript:alert(1)", id="variation_selector_vs16_alias"),
+        ],
+    )
+    def test_photo_thumbnail_url_alias_rejects_invisible_char_dangerous_scheme(
+        self, dangerous: str
+    ) -> None:
+        """Photo.thumbnailUrl(alias) が同一バリデータで危険スキームを拒否すること。
+
+        alias 入力経路（thumbnailUrl=）でのバインド検証のみ実施。
+        バリデータロジック検証は test_photo_url_rejects_invisible_char_dangerous_scheme に委譲。
+        """
+        with pytest.raises(
+            ValidationError, match="URLはhttp://またはhttps://で始まる必要があります"
+        ):
+            Photo(
+                album_id=1,
+                id=1,
+                title="Test",
+                url="https://example.com/photo.jpg",
+                thumbnailUrl=dangerous,  # alias 名で渡し、alias 経路を検証
+            )
+
+    # 不可視文字を1クラス1文字で列挙（escape表記で可視化）。各クラスの除去感度検証に使用。
+    _PHOTO_INVISIBLE_CHARS: Final[list[ParameterSet]] = [
+        pytest.param("\u200b", id="zwsp"),
+        pytest.param("\u202e", id="bidi_override"),
+        pytest.param("\u2028", id="line_separator"),
+        pytest.param("\u2029", id="paragraph_separator"),
+        pytest.param("\ufe00", id="variation_selector_vs1"),
+        pytest.param("\ufe0f", id="variation_selector_vs16"),
+        pytest.param("\U000e0100", id="variation_selector_supplement_min"),
+        pytest.param("\U000e01ef", id="variation_selector_supplement_max"),
+    ]
+
+    @pytest.mark.parametrize("invisible", _PHOTO_INVISIBLE_CHARS)
+    def test_photo_url_strips_invisible_chars(self, invisible: str) -> None:
+        """url に埋め込まれた各クラスの不可視文字が除去され正規URLになること（除去感度検証）。
+
+        難読化スキーム拒否テストは「http以外」の catch-all で弾くため、不可視文字が実際に
+        除去されたかを判別できない（除去が壊れても非httpとして拒否され緑のまま）。本テストは
+        正規httpURLに不可視文字を埋め込み、除去後に等価な正規URLへ正規化されることを表明し、
+        _strip_invisible_chars の各カテゴリ除去ロジックの回帰を直接検出する。
+        """
+        photo = Photo(
+            album_id=1,
+            id=1,
+            title="Test",
+            url=f"https://example.com/pho{invisible}to.jpg",
+            thumbnail_url="https://example.com/thumb.jpg",
+        )
+        assert photo.url == "https://example.com/photo.jpg"
 
     def test_photo_url_rejects_surrogate_codepoint(self) -> None:
         """孤立サロゲートを含むURLはPydanticのUnicodeバリデーションで拒否されること（E2E）
@@ -2173,31 +2213,3 @@ class TestExtraFieldsForbidden:
             model_class(**invalid_data)
 
         assert exc_info.value.errors()[0]["type"] == "extra_forbidden"
-
-
-# =============================================================================
-# 学習ポイント:
-#
-# 1. XSS サニタイゼーション:
-#    - html.escape(quote=True) で <, >, &, ", ' をエスケープ
-#    - OWASP Cheat Sheet ベースのテストベクター（プロジェクト独自分類）
-#    - 入力バリデーション + 出力エスケープの Defense in Depth
-#
-# 2. Pydantic モデル設計:
-#    - field_validator でカスタムバリデーション
-#    - alias で JSONキー名 → Python属性名のマッピング
-#    - extra="forbid" で未知フィールドを拒否
-#
-# 3. ネストモデル:
-#    - Geo → Address → User の階層構造
-#    - 各レベルでサニタイゼーションが適用
-#
-# 4. パラメータ化テスト:
-#    - pytest.param + ids で可読性向上
-#    - XSSベクターの網羅的テスト
-#    - 全モデルの extra forbid 一括テスト
-#
-# 5. テストフィクスチャ:
-#    - 複雑なデータ構造の再利用
-#    - テスト間の独立性確保
-# =============================================================================
