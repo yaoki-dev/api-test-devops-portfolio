@@ -9,9 +9,11 @@ from types import TracebackType
 from typing import Any, Final, Self
 
 import httpx
+from pydantic import BaseModel, TypeAdapter, ValidationError
 from structlog.typing import FilteringBoundLogger
 
 from config.settings import settings
+from models.responses import Album, Comment, Photo, Post, Todo, User, UserDataResponse
 from utils.logger import get_logger
 
 # httpx 例外（NetworkError, RemoteProtocolError 等）をここに追加してはならない。
@@ -140,6 +142,62 @@ def _safe_parse_json(response: httpx.Response) -> Any:
     except json.JSONDecodeError as e:
         raise APIJSONDecodeError(
             f"Failed to parse JSON response: {e}",
+            response=response,
+        ) from e
+
+
+def _format_validation_error(e: ValidationError) -> str:
+    details = "; ".join(
+        f"{'.'.join(map(str, err.get('loc', ()))) or '<root>'}: "
+        f"{err.get('msg', 'validation error')} ({err.get('type', 'unknown')})"
+        for err in e.errors(include_input=False)[:3]
+    )
+    more = e.error_count() - 3
+    suffix = f"; ... +{more} more" if more > 0 else ""
+    return f"{e.error_count()} validation error(s): {details}{suffix}"
+
+
+def _parse_response_model[ResponseModelT: BaseModel](
+    response: httpx.Response, model_type: type[ResponseModelT]
+) -> ResponseModelT:
+    """レスポンスJSONをPydanticモデルへ検証して変換する。"""
+    data = _safe_parse_json(response)
+    if not isinstance(data, dict):
+        raise APIJSONDecodeError(
+            f"Expected object JSON for {model_type.__name__}, got {type(data).__name__}",
+            response=response,
+        )
+    try:
+        return model_type.model_validate(data)
+    except ValidationError as e:
+        raise APIJSONDecodeError(
+            f"Invalid {model_type.__name__} response schema: {_format_validation_error(e)}",
+            response=response,
+        ) from e
+
+
+def _parse_response_model_list[ResponseModelT: BaseModel](
+    response: httpx.Response, model_type: type[ResponseModelT]
+) -> list[ResponseModelT]:
+    """レスポンスJSON配列をPydanticモデル配列へ検証して変換する。"""
+    data = _safe_parse_json(response)
+    if not isinstance(data, list):
+        raise APIJSONDecodeError(
+            f"Expected array JSON for {model_type.__name__}, got {type(data).__name__}",
+            response=response,
+        )
+    try:
+        # TypeAdapter(list[model]) を使うと ValidationError の loc に
+        # 失敗要素の index が自動付与される（例: loc=("0", "user_id")）。
+        # _format_validation_error が loc を "." 結合するため "0.user_id: ..."
+        # のように、配列内のどの要素が失敗したか診断可能になる。
+        # NOTE: model_type は実行時には具象クラスだが、mypy は変数を型添字
+        #   list[...] に使えない（valid-type）。実行時の正しさはテストで担保済みのため
+        #   この行に限り type: ignore を付与する（Pydantic + mypy の既知の制約）。
+        return TypeAdapter(list[model_type]).validate_python(data)  # type: ignore[valid-type]
+    except ValidationError as e:
+        raise APIJSONDecodeError(
+            f"Invalid {model_type.__name__} response schema: {_format_validation_error(e)}",
             response=response,
         ) from e
 
@@ -590,9 +648,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
     """JSONPlaceholder API専用クライアント"""
 
     # Posts API
-    def get_posts(
-        self, limit: int | None = None, user_id: int | None = None
-    ) -> list[dict[str, Any]]:
+    def get_posts(self, limit: int | None = None, user_id: int | None = None) -> list[Post]:
         """投稿一覧の取得
 
         Args:
@@ -612,29 +668,29 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
             params["userId"] = user_id
 
         response = self.get("/posts", params=params)
-        return _safe_parse_json(response)
+        return _parse_response_model_list(response, Post)
 
-    def get_post(self, post_id: int) -> dict[str, Any]:
+    def get_post(self, post_id: int) -> Post:
         """特定投稿の取得"""
         response = self.get(f"/posts/{post_id}")
-        return _safe_parse_json(response)
+        return _parse_response_model(response, Post)
 
-    def create_post(self, title: str, body: str, user_id: int) -> dict[str, Any]:
+    def create_post(self, title: str, body: str, user_id: int) -> Post:
         """新規投稿の作成"""
         data = {"title": title, "body": body, "userId": user_id}
         response = self.post("/posts", json=data)
-        return _safe_parse_json(response)
+        return _parse_response_model(response, Post)
 
     # Users API
-    def get_users(self) -> list[dict[str, Any]]:
+    def get_users(self) -> list[User]:
         """ユーザー一覧の取得"""
         response = self.get("/users")
-        return _safe_parse_json(response)
+        return _parse_response_model_list(response, User)
 
-    def get_user(self, user_id: int) -> dict[str, Any]:
+    def get_user(self, user_id: int) -> User:
         """特定ユーザーの取得"""
         response = self.get(f"/users/{user_id}")
-        return _safe_parse_json(response)
+        return _parse_response_model(response, User)
 
     # Todos API
     def get_todos(
@@ -642,7 +698,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         user_id: int | None = None,
         completed: bool | None = None,
         limit: int | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[Todo]:
         """TODO一覧の取得
 
         Args:
@@ -665,26 +721,33 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
             params["_limit"] = limit
 
         response = self.get("/todos", params=params)
-        return _safe_parse_json(response)
+        return _parse_response_model_list(response, Todo)
 
-    def get_todo(self, todo_id: int) -> dict[str, Any]:
+    def get_todo(self, todo_id: int) -> Todo:
         """特定TODOの取得"""
         response = self.get(f"/todos/{todo_id}")
-        return _safe_parse_json(response)
+        return _parse_response_model(response, Todo)
 
-    def create_todo(self, title: str, user_id: int, completed: bool = False) -> dict[str, Any]:
+    def create_todo(self, title: str, user_id: int, completed: bool = False) -> Todo:
         """新規TODOの作成"""
         data = {"title": title, "userId": user_id, "completed": completed}
         response = self.post("/todos", json=data)
-        return _safe_parse_json(response)
+        return _parse_response_model(response, Todo)
 
     def update_todo(self, todo_id: int, **kwargs: Any) -> dict[str, Any]:
-        """TODOの更新"""
+        """TODOの更新
+
+        Note:
+            ``**kwargs`` による部分更新（PATCH）のため、レスポンスは可変な
+            部分オブジェクトになりうる。検証モデル（Todo）に固定せず生のdictを
+            返すのは意図的な設計（必須フィールド欠落で ``extra="forbid"`` の
+            検証が失敗するのを避けるため）。
+        """
         response = self.patch(f"/todos/{todo_id}", json=kwargs)
         return _safe_parse_json(response)
 
     # Comments API
-    def get_comments(self, post_id: int | None = None) -> list[dict[str, Any]]:
+    def get_comments(self, post_id: int | None = None) -> list[Comment]:
         """コメント一覧の取得
 
         Args:
@@ -699,10 +762,10 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
             response = self.get(f"/posts/{post_id}/comments")
         else:
             response = self.get("/comments")
-        return _safe_parse_json(response)
+        return _parse_response_model_list(response, Comment)
 
     # Albums & Photos API
-    def get_albums(self, user_id: int | None = None) -> list[dict[str, Any]]:
+    def get_albums(self, user_id: int | None = None) -> list[Album]:
         """アルバム一覧の取得
 
         Args:
@@ -718,9 +781,9 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
             params["userId"] = user_id
 
         response = self.get("/albums", params=params)
-        return _safe_parse_json(response)
+        return _parse_response_model_list(response, Album)
 
-    def get_photos(self, album_id: int | None = None) -> list[dict[str, Any]]:
+    def get_photos(self, album_id: int | None = None) -> list[Photo]:
         """写真一覧の取得
 
         Args:
@@ -735,7 +798,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
             response = self.get(f"/albums/{album_id}/photos")
         else:
             response = self.get("/photos")
-        return _safe_parse_json(response)
+        return _parse_response_model_list(response, Photo)
 
     # ヘルスチェック（DevOps/K8s readiness対応）
     def health_check(self) -> bool:
@@ -1215,9 +1278,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
     """JSONPlaceholder API専用非同期クライアント"""
 
     # Posts API
-    async def get_posts(
-        self, limit: int | None = None, user_id: int | None = None
-    ) -> list[dict[str, Any]]:
+    async def get_posts(self, limit: int | None = None, user_id: int | None = None) -> list[Post]:
         """投稿一覧の非同期取得
 
         Args:
@@ -1237,21 +1298,28 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             params["userId"] = user_id
 
         response = await self.get("/posts", params=params)
-        return _safe_parse_json(response)
+        return _parse_response_model_list(response, Post)
 
-    async def get_post(self, post_id: int) -> dict[str, Any]:
+    async def get_post(self, post_id: int) -> Post:
         """特定投稿の非同期取得"""
         response = await self.get(f"/posts/{post_id}")
-        return _safe_parse_json(response)
+        return _parse_response_model(response, Post)
 
-    async def create_post(self, title: str, body: str, user_id: int) -> dict[str, Any]:
+    async def create_post(self, title: str, body: str, user_id: int) -> Post:
         """新規投稿の非同期作成"""
         data = {"title": title, "body": body, "userId": user_id}
         response = await self.post("/posts", json=data)
-        return _safe_parse_json(response)
+        return _parse_response_model(response, Post)
 
     async def update_post(self, post_id: int, title: str, body: str) -> dict[str, Any]:
-        """投稿更新の非同期実行"""
+        """投稿更新の非同期実行
+
+        Note:
+            更新系（PUT/PATCH）の応答は送信フィールドを反映した部分的な
+            オブジェクトになりうるため、Postモデル（必須フィールド ＋
+            ``extra="forbid"``）の検証で失敗する可能性がある。検証モデルに
+            固定せず生のdictを返すのは意図的な設計。
+        """
         data = {"title": title, "body": body}
         response = await self.put(f"/posts/{post_id}", json=data)
         return _safe_parse_json(response)
@@ -1261,15 +1329,15 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         await self.delete(f"/posts/{post_id}")
 
     # Users API
-    async def get_users(self) -> list[dict[str, Any]]:
+    async def get_users(self) -> list[User]:
         """ユーザー一覧の非同期取得"""
         response = await self.get("/users")
-        return _safe_parse_json(response)
+        return _parse_response_model_list(response, User)
 
-    async def get_user(self, user_id: int) -> dict[str, Any]:
+    async def get_user(self, user_id: int) -> User:
         """特定ユーザーの非同期取得"""
         response = await self.get(f"/users/{user_id}")
-        return _safe_parse_json(response)
+        return _parse_response_model(response, User)
 
     # Todos API
     async def get_todos(
@@ -1277,7 +1345,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         user_id: int | None = None,
         completed: bool | None = None,
         limit: int | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[Todo]:
         """TODO一覧の非同期取得
 
         Args:
@@ -1300,26 +1368,33 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             params["_limit"] = limit
 
         response = await self.get("/todos", params=params)
-        return _safe_parse_json(response)
+        return _parse_response_model_list(response, Todo)
 
-    async def get_todo(self, todo_id: int) -> dict[str, Any]:
+    async def get_todo(self, todo_id: int) -> Todo:
         """特定TODOの非同期取得"""
         response = await self.get(f"/todos/{todo_id}")
-        return _safe_parse_json(response)
+        return _parse_response_model(response, Todo)
 
     async def create_todo(
         self,
         title: str,
         user_id: int,
         completed: bool = False,
-    ) -> dict[str, Any]:
+    ) -> Todo:
         """新規TODOの非同期作成"""
         data = {"title": title, "userId": user_id, "completed": completed}
         response = await self.post("/todos", json=data)
-        return _safe_parse_json(response)
+        return _parse_response_model(response, Todo)
 
     async def update_todo(self, todo_id: int, **kwargs: Any) -> dict[str, Any]:
-        """TODOの非同期更新"""
+        """TODOの非同期更新
+
+        Note:
+            ``**kwargs`` による部分更新（PATCH）のため、レスポンスは可変な
+            部分オブジェクトになりうる。検証モデル（Todo）に固定せず生のdictを
+            返すのは意図的な設計（必須フィールド欠落で ``extra="forbid"`` の
+            検証が失敗するのを避けるため）。
+        """
         response = await self.patch(f"/todos/{todo_id}", json=kwargs)
         return _safe_parse_json(response)
 
@@ -1412,7 +1487,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         return successful
 
     # Comments API
-    async def get_comments(self, post_id: int | None = None) -> list[dict[str, Any]]:
+    async def get_comments(self, post_id: int | None = None) -> list[Comment]:
         """コメント一覧の非同期取得
 
         Args:
@@ -1427,10 +1502,10 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             response = await self.get(f"/posts/{post_id}/comments")
         else:
             response = await self.get("/comments")
-        return _safe_parse_json(response)
+        return _parse_response_model_list(response, Comment)
 
     # Albums & Photos API
-    async def get_albums(self, user_id: int | None = None) -> list[dict[str, Any]]:
+    async def get_albums(self, user_id: int | None = None) -> list[Album]:
         """アルバム一覧の非同期取得
 
         Args:
@@ -1446,9 +1521,9 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             params["userId"] = user_id
 
         response = await self.get("/albums", params=params)
-        return _safe_parse_json(response)
+        return _parse_response_model_list(response, Album)
 
-    async def get_photos(self, album_id: int | None = None) -> list[dict[str, Any]]:
+    async def get_photos(self, album_id: int | None = None) -> list[Photo]:
         """写真一覧の非同期取得
 
         Args:
@@ -1463,10 +1538,10 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             response = await self.get(f"/albums/{album_id}/photos")
         else:
             response = await self.get("/photos")
-        return _safe_parse_json(response)
+        return _parse_response_model_list(response, Photo)
 
     # 並行処理の例
-    async def get_user_data(self, user_id: int) -> dict[str, Any]:
+    async def get_user_data(self, user_id: int) -> UserDataResponse:
         """ユーザーに関連するデータを並行取得"""
         # 並行してユーザー情報、投稿、TODO、アルバムを取得
         user_task = self.get_user(user_id)
@@ -1482,12 +1557,12 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             albums_task,
         )
 
-        return {
-            "user": user,
-            "posts": posts,
-            "todos": todos,
-            "albums": albums,
-        }
+        return UserDataResponse(
+            user=user,
+            posts=posts,
+            todos=todos,
+            albums=albums,
+        )
 
     # ヘルスチェック（DevOps/K8s readiness対応）
     async def health_check(self) -> bool:
@@ -1530,7 +1605,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         self,
         user_ids: list[int],
         max_concurrent: int = 5,
-    ) -> list[dict[str, Any]]:
+    ) -> list[User]:
         """複数ユーザーを並行取得（Semaphore制御付き）
 
         asyncio.Semaphoreを使用してRate Limit対策。
@@ -1541,7 +1616,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             max_concurrent: 同時実行数の上限（デフォルト5）
 
         Returns:
-            list[dict]: 取得成功したユーザー情報リスト
+            list[User]: 取得成功したユーザー情報リスト
                        （取得失敗したIDはスキップ、warningログ出力）
 
         Example:
@@ -1552,7 +1627,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         """
         semaphore = asyncio.Semaphore(max_concurrent)
 
-        async def fetch_with_semaphore(user_id: int) -> dict[str, Any] | None:
+        async def fetch_with_semaphore(user_id: int) -> User | None:
             """Semaphore制御付きでユーザー取得"""
             async with semaphore:
                 try:
@@ -1610,21 +1685,21 @@ def main() -> None:
             print("\n1. 投稿一覧取得（5件）:")
             posts = client.get_posts(limit=5)
             for post in posts:
-                print(f"  - Post {post['id']}: {post['title'][:50]}...")
+                print(f"  - Post {post.id}: {post.title[:50]}...")
 
             # 特定ユーザーの取得
             print("\n2. ユーザー情報取得（ID: 1）:")
             user = client.get_user(1)
-            print(f"  - Name: {user['name']}")
-            print(f"  - Email: {user['email']}")
-            print(f"  - Company: {user['company']['name']}")
+            print(f"  - Name: {user.name}")
+            print(f"  - Email: {user.email}")
+            print(f"  - Company: {user.company.name}")
 
             # TODOの取得
             print("\n3. TODO取得（完了済み、3件）:")
             todos = client.get_todos(completed=True, limit=3)
             for todo in todos:
-                status = "✓" if todo["completed"] else "✗"
-                print(f"  {status} User {todo['userId']}: {todo['title']}")
+                status = "✓" if todo.completed else "✗"
+                print(f"  {status} User {todo.user_id}: {todo.title}")
 
             # 新規投稿の作成（テスト用）
             print("\n4. 新規投稿作成テスト:")
@@ -1633,8 +1708,8 @@ def main() -> None:
                 body="This is a test post created by our API client.",
                 user_id=1,
             )
-            print(f"  - Created post ID: {new_post.get('id', 'N/A')}")
-            print(f"  - Title: {new_post.get('title', 'N/A')}")
+            print(f"  - Created post ID: {new_post.id}")
+            print(f"  - Title: {new_post.title}")
 
         except APIClientError as e:
             # {e}: _map_request_error()経由の場合は固定プレフィックス+クラス名のみ。デモ用表示のみ

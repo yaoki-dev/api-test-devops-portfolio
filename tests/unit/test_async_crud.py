@@ -73,10 +73,10 @@ async def test_async_create_post(sample_post_data: PostData) -> None:
     assert request_body["userId"] == 1
 
     # レスポンス検証
-    assert post["title"] == "Test Title"
-    assert post["body"] == "Test Body"
-    assert post["userId"] == 1
-    assert post["id"] == 101
+    assert post.title == "Test Title"
+    assert post.body == "Test Body"
+    assert post.user_id == 1
+    assert post.id == 101
 
 
 # ===============================================================================
@@ -196,14 +196,14 @@ async def test_async_crud_integration(sample_post_data: PostData) -> None:
     async with AsyncJSONPlaceholderClient() as client:
         # Create: 新規投稿作成
         post = await client.create_post("Test Title", "Test Body", 1)
-        post_id = post["id"]
+        post_id = post.id
         assert post_id == 101
-        assert post["title"] == "Test Title"
+        assert post.title == "Test Title"
 
         # Read: 投稿一覧取得（user_id=1）
         retrieved_posts = await client.get_posts(limit=None)
         assert len(retrieved_posts) > 0
-        assert retrieved_posts[0]["id"] == post_id
+        assert retrieved_posts[0].id == post_id
 
         # Update: 投稿更新
         updated = await client.update_post(post_id, "Updated", "Updated Body")

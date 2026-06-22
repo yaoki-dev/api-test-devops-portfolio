@@ -1218,6 +1218,18 @@ class TestPostModel:
 
         assert post.user_id == 5
 
+    def test_post_alias_compatibility(self) -> None:
+        """Post モデルの model_validate と model_dump(by_alias=True) が整合すること
+
+        Pydantic 移行の検証: dict→モデル→dict のラウンドトリップで
+        alias（userId）→Python属性（user_id）→alias（userId）が正しく動作する。
+        """
+        data = {"userId": 1, "id": 1, "title": "title", "body": "body"}
+        post = Post.model_validate(data)
+
+        assert post.user_id == data["userId"]
+        assert post.model_dump(by_alias=True)["userId"] == data["userId"]
+
     @pytest.mark.parametrize(
         ("dirty", "expected"),
         _XSS_MODEL_PARAMS,
@@ -1298,6 +1310,24 @@ class TestCommentModel:
 
         assert comment.post_id == 1
         assert comment.email == "test@example.com"
+
+    def test_comment_alias_compatibility(self) -> None:
+        """Comment モデルの model_validate と model_dump(by_alias=True) が整合すること
+
+        Pydantic 移行の検証: dict→モデル→dict のラウンドトリップで
+        alias（postId）→Python属性（post_id）→alias（postId）が正しく動作する。
+        """
+        data = {
+            "postId": 1,
+            "id": 1,
+            "name": "name",
+            "email": "test@example.com",
+            "body": "body",
+        }
+        comment = Comment.model_validate(data)
+
+        assert comment.post_id == data["postId"]
+        assert comment.model_dump(by_alias=True)["postId"] == data["postId"]
 
     @pytest.mark.parametrize(
         ("field", "dirty", "expected"),

@@ -128,7 +128,7 @@ def test_config() -> dict[str, Any]:
         },
         "log": {"level": "DEBUG", "format": "console"},
         "test": {
-            "slow_test_threshold": 5.0,  # 5秒以上で"slow"マーク推奨
+            "slow_test_threshold": 3.0,  # 3秒以上で"slow"マーク推奨
             "max_concurrent_requests": 5,
         },
     }

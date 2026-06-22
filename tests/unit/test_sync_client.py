@@ -15,7 +15,7 @@ import pytest
 import respx
 
 from tests.constants import BASE_URL, INVALID_BASE_URLS
-from tests.unit.helpers import mock_get_route
+from tests.unit.helpers import make_mock_user, mock_get_route
 from utils import api_client
 from utils.api_client import SyncAPIClient, SyncJSONPlaceholderClient
 
@@ -280,7 +280,7 @@ def test_sync_get_posts(limit: int | None, expected_count: int) -> None:
         result = client.get_posts(limit=limit)
 
     assert len(result) == expected_count
-    assert result == mock_data
+    assert [post.model_dump(by_alias=True) for post in result] == mock_data
     assert route.call_count == 1  # GETリクエストが1回のみ発行されたことを確認
 
 
@@ -328,10 +328,10 @@ def test_sync_get_posts_user_filter(user_id: int | None, expected_count: int) ->
         result = client.get_posts(user_id=user_id)
 
     assert len(result) == expected_count
-    assert result == mock_data
+    assert [post.model_dump(by_alias=True) for post in result] == mock_data
     assert route.call_count == 1  # GETリクエストが1回のみ発行されたことを確認
     if user_id is not None and user_id != 999:
-        assert all(post["userId"] == user_id for post in result)
+        assert all(post.user_id == user_id for post in result)
 
 
 @pytest.mark.parametrize(
@@ -383,8 +383,8 @@ def test_sync_get_post_success() -> None:
     with SyncJSONPlaceholderClient() as client:
         result = client.get_post(post_id)
 
-    assert result == expected_post
-    assert result["id"] == post_id
+        assert result.model_dump(by_alias=True) == expected_post
+        assert result.id == post_id
     assert route.call_count == 1  # GETリクエストが1回のみ発行されたことを確認
 
 
@@ -422,10 +422,10 @@ def test_sync_create_post() -> None:
     assert request_body["userId"] == user_id
 
     # レスポンス検証
-    assert result["id"] == 101
-    assert result["userId"] == user_id
-    assert result["title"] == title
-    assert result["body"] == body
+    assert result.id == 101
+    assert result.user_id == user_id
+    assert result.title == title
+    assert result.body == body
 
 
 # =============================================================================
@@ -488,7 +488,7 @@ def test_sync_get_todos(
         result = client.get_todos(user_id=user_id, completed=completed, limit=limit)
 
     assert len(result) == expected_count
-    assert result == filtered_todos
+    assert [todo.model_dump(by_alias=True) for todo in result] == filtered_todos
     assert route.call_count == 1  # GETリクエストが1回のみ発行されたことを確認
 
     # completed パラメータのエンコード検証
@@ -579,7 +579,7 @@ def test_sync_get_albums(user_id: int | None, expected_count: int) -> None:
         result = client.get_albums(user_id=user_id)
 
     assert len(result) == expected_count
-    assert result == mock_data
+    assert [album.model_dump(by_alias=True) for album in result] == mock_data
     assert route.call_count == 1  # GETリクエストが1回のみ発行されたことを確認
 
 
@@ -630,12 +630,48 @@ def test_sync_get_photos(album_id: int | None, expected_count: int) -> None:
     """
     # モックデータ（6件の写真、複数アルバム）
     all_photos = [
-        {"id": 1, "albumId": 1, "title": "Photo 1", "url": "https://example.com/1.jpg"},
-        {"id": 2, "albumId": 1, "title": "Photo 2", "url": "https://example.com/2.jpg"},
-        {"id": 3, "albumId": 2, "title": "Photo 3", "url": "https://example.com/3.jpg"},
-        {"id": 4, "albumId": 3, "title": "Photo 4", "url": "https://example.com/4.jpg"},
-        {"id": 5, "albumId": 3, "title": "Photo 5", "url": "https://example.com/5.jpg"},
-        {"id": 6, "albumId": 3, "title": "Photo 6", "url": "https://example.com/6.jpg"},
+        {
+            "id": 1,
+            "albumId": 1,
+            "title": "Photo 1",
+            "url": "https://example.com/1.jpg",
+            "thumbnailUrl": "https://example.com/1-thumb.jpg",
+        },
+        {
+            "id": 2,
+            "albumId": 1,
+            "title": "Photo 2",
+            "url": "https://example.com/2.jpg",
+            "thumbnailUrl": "https://example.com/2-thumb.jpg",
+        },
+        {
+            "id": 3,
+            "albumId": 2,
+            "title": "Photo 3",
+            "url": "https://example.com/3.jpg",
+            "thumbnailUrl": "https://example.com/3-thumb.jpg",
+        },
+        {
+            "id": 4,
+            "albumId": 3,
+            "title": "Photo 4",
+            "url": "https://example.com/4.jpg",
+            "thumbnailUrl": "https://example.com/4-thumb.jpg",
+        },
+        {
+            "id": 5,
+            "albumId": 3,
+            "title": "Photo 5",
+            "url": "https://example.com/5.jpg",
+            "thumbnailUrl": "https://example.com/5-thumb.jpg",
+        },
+        {
+            "id": 6,
+            "albumId": 3,
+            "title": "Photo 6",
+            "url": "https://example.com/6.jpg",
+            "thumbnailUrl": "https://example.com/6-thumb.jpg",
+        },
     ]
 
     # パラメータに応じてフィルタとエンドポイントを設定
@@ -650,7 +686,7 @@ def test_sync_get_photos(album_id: int | None, expected_count: int) -> None:
         result = client.get_photos(album_id=album_id)
 
     assert len(result) == expected_count
-    assert result == mock_data
+    assert [photo.model_dump(by_alias=True) for photo in result] == mock_data
     assert route.call_count == 1
 
 
@@ -678,7 +714,7 @@ def test_sync_get_comments_with_post_id() -> None:
         result = client.get_comments(post_id=1)
 
     assert route.call_count == 1
-    assert result == mock_comments
+    assert [comment.model_dump(by_alias=True) for comment in result] == mock_comments
 
 
 @respx.mock
@@ -701,7 +737,7 @@ def test_sync_get_comments_without_post_id() -> None:
         result = client.get_comments()
 
     assert route.call_count == 1
-    assert result == mock_comments
+    assert [comment.model_dump(by_alias=True) for comment in result] == mock_comments
 
 
 # =============================================================================
@@ -849,8 +885,20 @@ def test_sync_get_users() -> None:
     - call_count で1回のリクエストを確認
     """
     mock_users = [
-        {"id": 1, "name": "Leanne Graham", "email": "sincere@april.biz"},
-        {"id": 2, "name": "Ervin Howell", "email": "shanna@melissa.tv"},
+        make_mock_user(
+            1,
+            name="Leanne Graham",
+            username="Bret",
+            email="sincere@april.biz",
+            website="https://hildegard.org",
+        ),
+        make_mock_user(
+            2,
+            name="Ervin Howell",
+            username="Antonette",
+            email="shanna@melissa.tv",
+            website="https://anastasia.net",
+        ),
     ]
 
     route = respx.get(f"{BASE_URL}/users").respond(json=mock_users)
@@ -859,8 +907,14 @@ def test_sync_get_users() -> None:
         result = client.get_users()
 
     assert len(result) == 2
-    assert result[0]["name"] == "Leanne Graham"
-    assert result[1]["id"] == 2
+    # 全属性を検証し、フィールドマッピングの回帰（属性の取りこぼし）を防ぐ
+    assert result[0].id == 1
+    assert result[0].name == "Leanne Graham"
+    assert result[0].username == "Bret"
+    assert result[0].email == "sincere@april.biz"
+    assert result[1].id == 2
+    assert result[1].name == "Ervin Howell"
+    assert result[1].username == "Antonette"
     assert route.call_count == 1
 
 
@@ -879,9 +933,9 @@ def test_sync_get_todo() -> None:
     with SyncJSONPlaceholderClient() as client:
         result = client.get_todo(1)
 
-    assert result["id"] == 1
-    assert result["title"] == "delectus aut autem"
-    assert result["completed"] is False
+    assert result.id == 1
+    assert result.title == "delectus aut autem"
+    assert result.completed is False
     assert route.call_count == 1
 
 
@@ -906,9 +960,12 @@ def test_sync_create_todo() -> None:
     with SyncJSONPlaceholderClient() as client:
         result = client.create_todo(title="Buy groceries", user_id=1, completed=False)
 
-    # レスポンス検証
-    assert result["id"] == 201
-    assert result["title"] == "Buy groceries"
+        # レスポンス検証: userId -> user_id の alias マッピングと
+        # completed フィールドまで含め、全属性の契約を検証する
+        assert result.id == 201
+        assert result.title == "Buy groceries"
+        assert result.user_id == 1
+        assert result.completed is False
     assert route.call_count == 1
 
     # リクエストボディ検証: title/userId/completedが正しく送信されたか
