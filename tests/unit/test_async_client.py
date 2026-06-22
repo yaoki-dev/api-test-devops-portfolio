@@ -3,18 +3,6 @@
 # ===============================================================================
 #
 # このファイルは utils.api_client.AsyncAPIClient の包括的なテストを実装
-# 学習ポイント：
-# 1. async/await を使った非同期テストの書き方
-# 2. pytest-asyncio を使った非同期テスト実行
-# 3. respx によるHTTPトランスポートレイヤーのモック
-# 4. 並行処理・コンカレンシーのテスト
-# 5. エラーハンドリングの検証
-# 6. パフォーマンス・タイムアウト測定
-#
-# 実行方法：
-#   pytest tests/unit/test_async_client.py -v
-#   pytest tests/unit/test_async_client.py::test_async_get_user -v
-#   pytest tests/unit/test_async_client.py -k "async" --asyncio-mode=auto
 #
 # ===============================================================================
 
@@ -173,10 +161,6 @@ async def test_async_multiple_users_with_semaphore():
       同時実行数制限が機能している」ことは観測不可能
       （実装上はSemaphoreが機能しているが、このテストでは検証できない）
       → Semaphoreの動作検証は test_semaphore_initialized_with_correct_max_concurrent を参照
-
-    学習ポイント:
-    - asyncio.Semaphore: 同時実行数を制限するロック機構
-    - Rate Limit対策: GitHub API等の外部API制限への対応
     """
     # 各ユーザーエンドポイントをrespxでモック化（ルート固有のcall_countで検証）
     routes = {}
@@ -204,11 +188,6 @@ async def test_semaphore_initialized_with_correct_max_concurrent():
     検証項目：
     - get_multiple_users()が同時に実行するタスク数がmax_concurrent=2以下に抑えられること
     - asyncio.sleep(0)でevent loopにyieldし、並行実行を観測可能にする
-
-    学習ポイント:
-    - nonlocal変数で並行実行カウンターを実装するスパイパターン
-    - asyncio.sleep(0): 実際の遅延なしにevent loopへyieldし、並行実行を許容
-    - patch.object: メソッドを差し替えて内部動作を観測する
     """
     max_concurrent_observed = 0
     current_concurrent = 0
@@ -249,11 +228,6 @@ async def test_partial_failure_graceful_degradation():
     - 5件中2件が失敗するシナリオ
     - 成功したリクエストは正常に取得できる
     - システム全体はクラッシュせず継続動作
-
-    学習ポイント:
-    - graceful degradation: 部分的失敗でもシステム全体は継続動作
-    - respx: 宣言的HTTPモッキング（低レベルモック排除）
-    - URL-to-Responseマッピングによる明確なテスト意図表現
     """
     # 宣言的なエンドポイントマッピング（成功: 1,3,5 / 失敗: 2,4）
     route1 = respx.get(f"{BASE_URL}/users/1").respond(json={"id": 1, "name": "User 1"})
@@ -301,10 +275,6 @@ async def test_all_requests_fail_returns_empty_list():
     - 全件が500エラーの場合、空リスト[]が返却される
     - システム全体がクラッシュせず正常終了
     - graceful degradationの最悪ケース保証
-
-    学習ポイント:
-    - エッジケーステスト: 最悪シナリオでのシステム動作保証
-    - Defense in Depth: 稀なケースこそテストで保護
     """
     # DRY: リスト内包表記で一括設定（全件500エラー）
     routes = [respx.get(f"{BASE_URL}/users/{uid}").respond(status_code=500) for uid in [1, 2, 3]]
@@ -1224,10 +1194,6 @@ async def test_async_health_check_success():
     検証項目：
     - health_check()メソッドの正常動作
     - 正常時: True返却
-
-    学習ポイント:
-    - Docker/Kubernetes readiness probe対応
-    - 軽量クエリ（_limit=1）でサーバー負荷最小化
     """
     route = respx.get(f"{BASE_URL}/users", params={"_limit": 1}).respond(
         json=[{"id": 1, "name": "User 1"}]
@@ -1249,11 +1215,6 @@ async def test_async_health_check_connection_error():
     - 接続エラー時: False返却（graceful degradation）
     - httpx.ConnectError → _make_request_with_retry内でAPIConnectionErrorに変換
       → health_checkでキャッチ
-
-    学習ポイント:
-    - respxのside_effectでhttpxネイティブ例外をシミュレート（patch不要）
-    - 例外伝播チェーン: httpx.ConnectError → APIConnectionError → health_checkでFalse返却
-    - サービス継続性: 例外時はFalse返却
     """
     route = respx.get(f"{BASE_URL}/users", params={"_limit": 1}).mock(
         side_effect=httpx.ConnectError("Connection refused")
@@ -1335,48 +1296,6 @@ async def test_async_performance_benchmark():
 
 
 # ===============================================================================
-# 【学習用】テスト実行とデバッグ方法
-# ===============================================================================
-#
-# 1. 基本テスト実行
-#   pytest tests/unit/test_async_client.py -v
-#
-# 2. 特定のテスト実行
-#   pytest tests/unit/test_async_client.py::test_async_get_user -v
-#
-# 3. 非同期テストのみ実行
-#   pytest tests/unit/test_async_client.py -k "async" -v
-#
-# 4. カバレッジ付きテスト実行
-#   pytest tests/unit/test_async_client.py --cov=utils.api_client --cov-report=html
-#
-# 5. 遅いテストを除外
-#   pytest tests/unit/test_async_client.py -m "not slow" -v
-#
-# 6. 遅いテストのみ実行
-#   pytest tests/unit/test_async_client.py -m slow -v
-#
-# 7. デバッグモード（詳細出力）
-#   pytest tests/unit/test_async_client.py -v -s --tb=short
-#
-# 8. 並列テスト実行（pytest-xdist使用）
-#   pytest tests/unit/test_async_client.py -n 4 -v
-#
-# 9. Dockerコンテナ内でのテスト実行
-#   docker compose --profile test run --rm test
-#
-# 10. 継続的テスト実行（ファイル変更監視）
-#   pytest-watch tests/unit/test_async_client.py
-#
-# ===============================================================================
-
-
-# ===============================================================================
-# Issue #173: 未テストメソッドのカバレッジ追加（60% → 85%目標）
-# ===============================================================================
-
-
-# ===============================================================================
 # Test Critical Priority: get_user_data() - 並行処理データ整合性検証
 # ===============================================================================
 
@@ -1392,12 +1311,6 @@ async def test_get_user_data_parallel_requests():
     - postsのuserIdフィルタリングが正しく機能する
     - 返却データ構造が{user, posts, todos, albums}である
     - 各フィールドに期待されるデータ型が含まれる
-
-    学習ポイント:
-    - asyncio.gather: 複数の非同期タスクを並行実行
-    - respx複数エンドポイント: 1テストで4APIをモック化
-    - データ整合性検証: フィルタリングロジックの正確性確認
-    - 並行処理パフォーマンス: 順次実行より高速
     """
     user_id = 1
 
@@ -1475,10 +1388,6 @@ async def test_get_user_data_with_empty_posts():
     - posts APIが空リストを返す場合でもエラーにならない
     - 他のAPI（todos/albums）は正常に取得される
     - graceful degradation（部分失敗許容）の実装確認
-
-    学習ポイント:
-    - エッジケース: 空データの取り扱い
-    - システム全体の堅牢性: 一部データ欠如時も継続動作
     """
     user_id = 1
 
@@ -1525,11 +1434,6 @@ async def test_get_user_data_user_not_found():
     - /users/999 が404を返す場合、APIHTTPErrorが発生する
     - status_code == 404 が正しく設定される
     - asyncio.gather（return_exceptions=False）により例外がそのまま伝播する
-
-    学習ポイント:
-    - 404エラーの即時失敗: リトライなし
-    - asyncio.gather のデフォルト動作: 最初の例外で即時伝播
-    - pytest.raises: 例外の型とプロパティを同時検証
     """
     user_id = 999
 
@@ -1567,11 +1471,6 @@ async def test_get_user_data_posts_server_error():
     - /posts が500を返す場合、APIRetryErrorが発生する
     - retry_count=0 の場合はリトライせず即時失敗する
     - asyncio.gather（return_exceptions=False）により例外がそのまま伝播する
-
-    学習ポイント:
-    - 5xxエラーのリトライ動作: retry_count=0 で即時失敗
-    - APIRetryError: リトライ上限到達時の例外型
-    - asyncio.gather の例外伝播: 最初に失敗したタスクの例外が伝播
     """
     user_id = 1
 
@@ -1627,12 +1526,6 @@ async def test_get_posts_with_various_limits(limit, expected_count, test_descrip
     - limit=None: パラメータなしで全件取得
     - limit=0: 境界値で0件取得（`if limit is not None`対応後）
     - limit=100: 上限超過時は利用可能な全件取得
-
-    学習ポイント:
-    - pytest.parametrize: 複数ケースを1テストで実行
-    - ids=: 各ケースの意図を明示的に表現
-    - クエリパラメータの正確なマッチング
-    - エッジケース網羅: 境界値/None/過剰値
     """
     # モックデータ（5件の投稿）
     all_posts = [
@@ -1685,11 +1578,6 @@ async def test_async_get_posts_user_filter(user_id, expected_count, test_descrip
     - user_id=None: フィルタなしで全投稿取得
     - user_id=1/2: 指定ユーザーの投稿のみ取得（API側フィルタ）
     - user_id=999: 存在しないユーザーで空配列返却
-
-    学習ポイント:
-    - API側フィルタリング: ネットワーク転送量削減（90%削減効果）
-    - クエリパラメータ: /posts?userId=X
-    - 境界値テスト: 存在しないユーザーID
     """
     # モックデータ（5件の投稿、userId=1が2件、userId=2が1件、userId=3が2件）
     all_posts = [
@@ -1759,10 +1647,6 @@ async def test_async_get_posts_validation_error(limit, user_id, expected_error):
     - limit < 0: ValueError発生
     - user_id < 1: ValueError発生（JSONPlaceholder APIはID=1から）
     - 両方無効な場合: limitが先に検証される
-
-    学習ポイント:
-    - 早期エラー検出: API呼び出し前にクライアント側で検証
-    - Fail-Fast原則: 無効な入力は即座に拒否
     """
     async with AsyncJSONPlaceholderClient() as client:
         with pytest.raises(ValueError, match=expected_error):
@@ -1783,10 +1667,6 @@ async def test_get_post_by_id_success():
     - post_id指定で特定投稿を取得
     - レスポンスデータが正確に返却される
     - エンドポイントが正しく構築される（/posts/{post_id}）
-
-    学習ポイント:
-    - RESTful API設計: リソースIDによる個別取得
-    - URL構築: パスパラメータの正確性
     """
     post_id = 1
     expected_post = {"id": 1, "userId": 1, "title": "Test Post", "body": "Test Content"}
@@ -1815,11 +1695,6 @@ async def test_get_post_not_found():
     - 存在しないpost_idで404エラーが発生
     - APIHTTPErrorが正しく発生する
     - エラーステータスコードが404である
-
-    学習ポイント:
-    - エラーハンドリング: 存在しないリソースへの対応
-    - HTTPステータスコード: 404 Not Foundの意味
-    - エッジケース: 異常系のテスト重要性
     """
     post_id = 999999
 
@@ -1850,11 +1725,6 @@ async def test_create_post_success():
     - レスポンスにidが付与される（サーバー生成）
     - POSTリクエストが正しく送信される
     - JSONデータが正確に送信される
-
-    学習ポイント:
-    - RESTful POST: リソース作成操作
-    - レスポンスデータ: サーバー生成フィールド（id）の確認
-    - リクエストボディ: JSON形式でのデータ送信
     """
     title = "New Post"
     body = "This is a new post content"
@@ -1896,11 +1766,6 @@ async def test_create_post_with_empty_body():
     - body=空文字列でも投稿作成が成功する
     - 必須フィールド（title/user_id）のみで作成可能
     - APIが空文字列を許容する動作確認
-
-    学習ポイント:
-    - エッジケース: 空データの取り扱い
-    - API仕様: フィールドのオプショナル性
-    - バリデーション: クライアント vs サーバーサイド
     """
     title = "Post with Empty Body"
     body = ""  # 空文字列
@@ -1960,12 +1825,6 @@ async def test_get_todos_with_filters(
     - クエリパラメータが正確に構築される
     - Noneパラメータは送信されない（APIデフォルト動作）
     - フィルタ結果が期待通りの件数である
-
-    学習ポイント:
-    - pytest.parametrize応用: 3パラメータの組み合わせテスト
-    - クエリパラメータ処理: Noneの除外ロジック
-    - URLエンコーディング: booleanの文字列変換
-    - テストケース網羅性: 全組み合わせの効率的検証
     """
     # モックデータ（5件のTODO、複数ユーザー/完了状態）
     all_todos = [
@@ -2037,10 +1896,6 @@ async def test_async_get_todos_validation_error(limit, user_id, expected_error):
     - limit < 0: ValueError発生
     - user_id < 1: ValueError発生（JSONPlaceholder APIはID=1から）
     - 両方無効な場合: limitが先に検証される
-
-    学習ポイント:
-    - Fail-Fast原則: 無効な入力は即座に拒否
-    - get_posts()と同一パターンのバリデーション一貫性
     """
     async with AsyncJSONPlaceholderClient() as client:
         with pytest.raises(ValueError, match=expected_error):
@@ -2062,11 +1917,6 @@ async def test_http_put_method():
     - JSONデータが正確に送信される
     - レスポンスが正常に返却される
     - HTTPメソッドが"PUT"である
-
-    学習ポイント:
-    - HTTP PUT: リソース全体の更新操作
-    - RESTful API: PUT vs PATCH の使い分け
-    - 冪等性（idempotence）: 同じリクエストを複数回実行しても結果が同じ
     """
     endpoint = "/posts/1"
     update_data = {"id": 1, "title": "Updated Title", "body": "Updated Content", "userId": 1}
@@ -2094,11 +1944,6 @@ async def test_http_delete_method():
     - DELETEリクエストが正しく送信される
     - 204 No Content または 200 OK が返却される
     - エンドポイントが正確に構築される
-
-    学習ポイント:
-    - HTTP DELETE: リソース削除操作
-    - ステータスコード: 204（No Content）vs 200（OK with body）
-    - 冪等性: 削除済みリソースの再削除は通常エラーにならない（実装依存）
     """
     endpoint = "/posts/1"
 
@@ -2123,11 +1968,6 @@ async def test_http_patch_method():
     - 部分更新データが正確に送信される
     - レスポンスが正常に返却される
     - HTTPメソッドが"PATCH"である
-
-    学習ポイント:
-    - HTTP PATCH: リソースの部分更新操作
-    - PUT vs PATCH: PUTは全体更新、PATCHは部分更新
-    - JSONデータ: 更新フィールドのみ送信（効率的）
     """
     endpoint = "/posts/1"
     partial_data = {"title": "Partially Updated Title"}
@@ -2161,11 +2001,6 @@ async def test_http_put_with_error():
     - 存在しないリソースへのPUTで404エラー
     - APIHTTPErrorが正しく発生する
     - エラーステータスコードが404である
-
-    学習ポイント:
-    - エラーハンドリング: 更新対象リソース不在時の動作
-    - HTTPステータスコード: 404 Not Found
-    - 堅牢性: 異常系テストの重要性
     """
     endpoint = "/posts/999999"
     update_data = {"title": "Non-existent Post"}
@@ -2180,11 +2015,6 @@ async def test_http_put_with_error():
 
         # エラー詳細検証
         assert exc_info.value.status_code == 404
-
-
-# ===============================================================================
-# Issue #173: Albums/Photos API テスト追加（カバレッジ85%達成）
-# ===============================================================================
 
 
 # ===============================================================================
@@ -2210,10 +2040,6 @@ async def test_get_albums_with_filters(user_id, expected_count, test_description
     - user_id指定時に正しくパラメータが送信される
     - user_id=Noneで全件取得
     - フィルタ結果が期待通りの件数である
-
-    学習ポイント:
-    - Albums API: ユーザーごとのアルバム管理
-    - parametrize応用: 複数ユーザーパターンテスト
     """
     # モックデータ（5件のアルバム、複数ユーザー）
     all_albums = [
@@ -2269,10 +2095,6 @@ async def test_async_get_albums_validation_error(user_id, expected_error):
 
     検証項目：
     - user_id < 1: ValueError発生（JSONPlaceholder APIはID=1から）
-
-    学習ポイント:
-    - Fail-Fast原則: 無効な入力は即座に拒否
-    - get_posts()と同一パターンのバリデーション一貫性
     """
     async with AsyncJSONPlaceholderClient() as client:
         with pytest.raises(ValueError, match=expected_error):
@@ -2302,10 +2124,6 @@ async def test_get_photos_with_filters(album_id, expected_count, test_descriptio
     - album_id指定時に正しくエンドポイントが構築される（/albums/{album_id}/photos）
     - album_id=Noneで全件取得（/photos）
     - フィルタ結果が期待通りの件数である
-
-    学習ポイント:
-    - Photos API: アルバムごとの写真管理
-    - エンドポイント分岐ロジック: パラメータ有無で異なるURL
     """
     # モックデータ（6件の写真、複数アルバム）
     all_photos = [
@@ -2358,10 +2176,6 @@ async def test_async_get_comments_with_post_id() -> None:
     - post_id=1 指定時に /posts/1/comments にGETリクエストが送られる
     - レスポンスのコメントリストがそのまま返される
     - リクエストが1回だけ発行される
-
-    学習ポイント:
-    - Comments API: post_id指定時はパスベースのエンドポイント（/posts/{id}/comments）
-    - クエリパラメータではなくパスパラメータでフィルタリングする設計
     """
     mock_comments = [
         {"id": 1, "postId": 1, "name": "Test Comment", "email": "test@example.com", "body": "Body"},
@@ -2384,10 +2198,6 @@ async def test_async_get_comments_without_post_id() -> None:
     - post_id未指定時に /comments にGETリクエストが送られる
     - 全コメントのリストがそのまま返される
     - リクエストが1回だけ発行される
-
-    学習ポイント:
-    - post_id=None の場合は /comments に直接アクセス（全件取得）
-    - Optional引数の有無でエンドポイントが切り替わる分岐ロジック
     """
     mock_comments = [
         {"id": 1, "postId": 1, "name": "Comment 1", "email": "a@b.com", "body": "Body 1"},
@@ -2423,10 +2233,6 @@ async def test_async_get_comments_invalid_post_id(
     - 負数のpost_idも同様に ValueError を発生させる
     - HTTP リクエストは発行されない（ValueError がHTTPリクエスト前に発生するため
       @respx.mock デコレータ・呼び出し検証は不要）
-
-    学習ポイント:
-    - 境界値テスト: 0 は偽値（falsy）であるため `if post_id:` では検出できないバグ
-    - `if post_id is not None and post_id < 1:` による正確な検証パターン
     """
     async with AsyncJSONPlaceholderClient() as client:
         with pytest.raises(ValueError, match="post_id must be >= 1"):
@@ -2447,10 +2253,6 @@ async def test_async_get_photos_invalid_album_id(album_id: int) -> None:
     - 負数のalbum_idも同様に ValueError を発生させる
     - HTTP リクエストは発行されない（ValueError がHTTPリクエスト前に発生するため
       @respx.mock デコレータ・呼び出し検証は不要）
-
-    学習ポイント:
-    - album_id=0 を渡すと API は空配列を返すが、正しいエラーではない（サイレント失敗）
-    - 明示的な ValueError により呼び出し側でバグを早期発見できる
     """
     async with AsyncJSONPlaceholderClient() as client:
         with pytest.raises(ValueError, match="album_id must be >= 1"):
@@ -2465,11 +2267,6 @@ async def test_async_client_timeout_zero_not_overridden() -> None:
 
     AsyncAPIClientは非同期コンテキストマネージャーのため async with で使用するが、
     timeout属性は __init__ で設定されるため、エントリー直後に検証可能。
-
-    学習ポイント:
-    - is not None パターンの必要性: 0/0.0/False 等の有効なfalsy値を保護する
-    - timeout=0.0 の用途: 即座にタイムアウトさせたい場合に使用（無効化には timeout=None）
-    - 非同期クライアントでも同期クライアントと同じコンストラクタ挙動を持つ
     """
     async with AsyncAPIClient(timeout=0.0) as client:
         assert client.timeout == 0.0, (
@@ -2491,10 +2288,6 @@ async def test_async_get_users(sample_users_list: list[dict[str, Any]]) -> None:
     - GET /users リクエストが送信される
     - ユーザーリストが正しく返される
     - call_count で1回のリクエストを確認
-
-    学習ポイント:
-    - respx: パラメータなしのGETリクエストモック
-    - 非同期コンテキストマネージャーによるクライアント管理
     """
     route = respx.get(f"{BASE_URL}/users").respond(json=sample_users_list[:2])
 
@@ -2514,9 +2307,6 @@ async def test_async_get_users_returns_empty_list() -> None:
     検証項目:
     - API が空配列を返す場合、空リストを返す
     - call_count で1回のリクエストを確認
-
-    学習ポイント:
-    - 境界値: 空コレクションのハンドリング
     """
     route = respx.get(f"{BASE_URL}/users").respond(json=[])
 
@@ -2541,11 +2331,6 @@ async def test_async_update_todo() -> None:
     - HTTPメソッドが "PATCH" である
     - リクエストボディに kwargs が正しく含まれる
     - 更新後のデータが正しく返される
-
-    学習ポイント:
-    - HTTP PATCH: リソースの部分更新操作（PUT は全体更新）
-    - respx: PATCHメソッドのモック
-    - **kwargs パターン: 柔軟な更新フィールド指定
     """
     todo_id = 1
     patch_data = {"completed": True}
@@ -2574,7 +2359,6 @@ async def test_async_update_todo_multiple_fields() -> None:
     - 複数の kwargs が正しくリクエストボディに含まれる
     - title と completed の両方が更新される
 
-    学習ポイント:
     - **kwargs の多フィールド展開: 辞書としてリクエストボディに渡される
     """
     todo_id = 1
@@ -2632,18 +2416,6 @@ async def test_async_client_falsy_values_not_overridden() -> None:
     修正前の `x or default` パターンでは retry_count=0 や
     timeout=0.0 がFalsyと判定され設定値で上書きされていた。
     `x if x is not None else default` への修正が正しく動作することを保証する。
-
-    学習ポイント:
-    - is not None パターンの必要性: 0/0.0/False 等の有効なfalsy値を保護する
-    - retry_delay=0.0: コンストラクタ直接指定時のみ有効
-      （Pydantic ge=0.1制約を迂回）
-    - 環境変数 API__RETRY_DELAY=0.0 では
-      Pydantic Field制約(ge=0.1)によりValidationErrorとなる
-    - timeout=0.0: コンストラクタ直接指定時のみ有効
-      （Pydantic ge=1.0制約を迂回）
-    - 環境変数 API__TIMEOUT=0.0 では
-      Pydantic Field制約(ge=1.0)によりValidationErrorとなる
-    - retry_count=0 の用途: リトライを行わず即座に失敗させたい場合に使用
     """
     async with AsyncAPIClient(
         base_url=BASE_URL,
@@ -2663,40 +2435,3 @@ async def test_async_client_falsy_values_not_overridden() -> None:
             "retry_delay=0.0 should NOT be overridden by settings. "
             "Regression guard against `x or default` pattern."
         )
-
-
-# ===============================================================================
-# 【学習用】テスト実行とデバッグ方法
-# ===============================================================================
-#
-# 1. 基本テスト実行
-#   pytest tests/unit/test_async_client.py -v
-#
-# 2. 特定のテスト実行
-#   pytest tests/unit/test_async_client.py::test_async_get_user -v
-#
-# 3. 非同期テストのみ実行
-#   pytest tests/unit/test_async_client.py -k "async" -v
-#
-# 4. カバレッジ付きテスト実行
-#   pytest tests/unit/test_async_client.py --cov=utils.api_client --cov-report=html
-#
-# 5. 遅いテストを除外
-#   pytest tests/unit/test_async_client.py -m "not slow" -v
-#
-# 6. 遅いテストのみ実行
-#   pytest tests/unit/test_async_client.py -m slow -v
-#
-# 7. デバッグモード（詳細出力）
-#   pytest tests/unit/test_async_client.py -v -s --tb=short
-#
-# 8. 並列テスト実行（pytest-xdist使用）
-#   pytest tests/unit/test_async_client.py -n 4 -v
-#
-# 9. Dockerコンテナ内でのテスト実行
-#   docker compose --profile test run --rm test
-#
-# 10. 継続的テスト実行（ファイル変更監視）
-#   pytest-watch tests/unit/test_async_client.py
-#
-# ===============================================================================

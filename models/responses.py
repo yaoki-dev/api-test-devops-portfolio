@@ -5,16 +5,6 @@ html.escape()サニタイゼーションを適用したPydanticモデル。
 （email・websiteはhtml.escape対象外: emailはEmailStr RFC準拠バリデーション、
 websiteはURL形式のためhtmlコンテキスト出力時は呼び出し元でエスケープ）
 モデル値はAPIレスポンスの意味論を保つ。HTML等への出力時のエスケープ責務は呼び出し元が持つ。
-
-実務推奨パターン:
-1. Defense in Depth: 型検証 + サニタイゼーション + 長さ制限
-2. Fail-Safe: バリデーションエラーは明確なエラーメッセージで
-3. 最小権限: 必要最小限のフィールドのみ公開
-
-学習目標:
-- Pydantic field_validatorによるカスタムバリデーション
-- XSS保護のベストプラクティス
-- 型安全なAPIレスポンス処理
 """
 
 import html
@@ -721,28 +711,3 @@ class Photo(BaseModel):
         parsed = urlparse(sanitized)
         _validate_netloc(parsed)
         return _ensure_website_max_length(_normalize_url(parsed))
-
-
-# =============================================================================
-# 学習ポイント:
-#
-# 1. XSS保護の実務パターン:
-#    - Defense in Depth: 型検証 + サニタイゼーション + 長さ制限
-#    - html.escape(quote=True): シングル/ダブルクォートもエスケープ
-#    - 明確なエラーメッセージで問題を早期発見
-#
-# 2. Pydantic field_validator活用:
-#    - @classmethod デコレータで型安全なバリデーション
-#    - 複数フィールドに同一バリデータを適用可能
-#    - カスタムエラーメッセージで開発者体験向上
-#
-# 3. 日本語ドキュメント:
-#    - docstring: 機能の説明、引数、戻り値を明確に
-#    - Field description: フィールドの意味を簡潔に
-#    - コメント: 実装の意図や注意点を記載
-#
-# 4. 実務推奨設計:
-#    - ネストモデル（Company）で複雑なJSONに対応
-#    - alias設定（userId → user_id）でPythonic命名
-#    - 長さ制限で異常データからシステムを保護
-# =============================================================================

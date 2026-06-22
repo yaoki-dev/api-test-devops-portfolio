@@ -1,12 +1,4 @@
-"""utils/logger.py のユニットテスト
-
-テスト対象:
-- get_logger()関数の動作
-- structlog遅延初期化
-- ログフォーマット選択（console/json）
-- FilteringBoundLogger型の検証
-- _sentry_processor()のSentry連携（5分岐カバレッジ）
-"""
+"""utils/logger.py のユニットテスト"""
 
 import sys
 from unittest.mock import MagicMock, patch

@@ -7,6 +7,7 @@ docs/main/Skills作成/**
 docs/ai_collaboration/**
 docs/tools/**
 reports/**
+claudedocs/**
 node_modules/**
 .venv/**
 .taskmaster/**

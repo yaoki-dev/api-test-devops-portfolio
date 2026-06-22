@@ -1,11 +1,5 @@
 """
 Pydantic レスポンスモデル テスト
-
-学習目標:
-- XSS サニタイゼーションの網羅テスト（XSSカバレッジ: OWASP Cheat Sheetベース・プロジェクト独自分類）
-- Pydantic モデルのバリデーション動作確認
-- alias / extra forbid / ネストモデルの検証
-- html.escape() の動作理解
 """
 
 import html
@@ -2115,31 +2109,3 @@ class TestExtraFieldsForbidden:
             model_class(**invalid_data)
 
         assert exc_info.value.errors()[0]["type"] == "extra_forbidden"
-
-
-# =============================================================================
-# 学習ポイント:
-#
-# 1. XSS サニタイゼーション:
-#    - html.escape(quote=True) で <, >, &, ", ' をエスケープ
-#    - OWASP Cheat Sheet ベースのテストベクター（プロジェクト独自分類）
-#    - 入力バリデーション + 出力エスケープの Defense in Depth
-#
-# 2. Pydantic モデル設計:
-#    - field_validator でカスタムバリデーション
-#    - alias で JSONキー名 → Python属性名のマッピング
-#    - extra="forbid" で未知フィールドを拒否
-#
-# 3. ネストモデル:
-#    - Geo → Address → User の階層構造
-#    - 各レベルでサニタイゼーションが適用
-#
-# 4. パラメータ化テスト:
-#    - pytest.param + ids で可読性向上
-#    - XSSベクターの網羅的テスト
-#    - 全モデルの extra forbid 一括テスト
-#
-# 5. テストフィクスチャ:
-#    - 複雑なデータ構造の再利用
-#    - テスト間の独立性確保
-# =============================================================================

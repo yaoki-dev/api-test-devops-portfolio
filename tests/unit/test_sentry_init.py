@@ -3,11 +3,6 @@
 utils/sentry_init.py の単体テスト。
 機密データスクラブ、DSN検証、初期化ロジックをカバー。
 
-テストカテゴリ:
-    - 初期化系: init_sentry()の正常/異常系
-    - スクラブ系: _scrub_sensitive_data()の再帰処理
-    - 状態管理: グローバルフラグの整合性
-    - before_send: イベント前処理フック
 """
 
 from __future__ import annotations
@@ -980,7 +975,7 @@ class TestBeforeSend:
         """tags が非標準 list[dict] 形式でも defense-in-depth で機密キーが redact される
 
         Sentry SDK 標準仕様外だが custom before_send hook 等で生じうるため
-        PII 漏洩を防ぐ目的で dict 要素も再帰スクラブする (PR #347 review iter2)。
+        PII 漏洩を防ぐ目的で dict 要素も再帰スクラブする。
         """
         event = cast(Event, {"tags": [{"authorization": "Bearer X", "label": "public"}]})
         result_dict = self._call_before_send(event)
@@ -999,8 +994,7 @@ class TestBeforeSend:
     def test_scrub_breadcrumbs_2_element_list_not_overscrubbed(self) -> None:
         """breadcrumbs 内の非PII 2要素 list ([label, value]) が誤って tag-pair 扱いされない
 
-        PR #347 review KP-003 / T3 対応の regression test。
-        旧コードでは list[2]+str[0] heuristic が breadcrumbs まで適用され、
+        regression test: 旧コードでは list[2]+str[0] heuristic が breadcrumbs まで適用され、
         非機密の表示用ペアまで [REDACTED] になっていた。
         """
         event = cast(

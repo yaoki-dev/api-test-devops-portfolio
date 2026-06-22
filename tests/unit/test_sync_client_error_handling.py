@@ -7,15 +7,6 @@ Note:
 
     例外クラス・_safe_parse_json・_map_request_error のテストは
     test_api_client_shared.py に統合済み。
-
-テストケース一覧（15件）:
-    - Retry (3件): exponential_backoff, 4xx_no_retry, retry_exhausted
-    - Timeout (2件): timeout_error_retry, timeout_then_success
-    - Connection (2件): connection_error_retry, connection_then_success
-    - Mixed Errors (2件): mixed_then_success, mixed_exhaust_retries
-    - HTTP Methods (3件): post_with_retry, put_4xx_no_retry, delete_with_retry
-    - Log Bypass (3件): non_retryable_error_logs_before_raise[TooManyRedirects-...],
-      non_retryable_error_logs_before_raise[InvalidURL-...], non_retryable_error_skips_retry
 """
 
 from unittest.mock import Mock, patch
@@ -310,7 +301,7 @@ def test_sync_post_with_retry(mock_backoff: Mock) -> None:
 
 
 # =============================================================================
-# Log Bypass Tests（Issue #224: _map_request_error raiseでログが失われない検証）
+# Log Bypass Tests: _map_request_error raiseでログが失われない検証）
 # =============================================================================
 
 
@@ -369,28 +360,3 @@ def test_sync_non_retryable_error_skips_retry() -> None:
 
     # リトライされていないことを確認
     assert route.call_count == 1, "非リトライエラーは1回のみ試行される"
-
-
-# =============================================================================
-# 学習ポイント:
-#
-# 1. リトライロジック実装パターン:
-#    - サーバーエラー（5xx）はリトライ対象
-#    - クライアントエラー（4xx）はリトライしない
-#    - タイムアウト・接続エラーはリトライ対象
-#    - リトライ上限でAPIRetryErrorを発生
-#
-# 2. エラー回復戦略:
-#    - 一時的なエラーからの自動回復
-#    - リトライ間隔の設定（exponential backoffも可能）
-#    - 最終的なエラーハンドリング（リトライ失敗時）
-#
-# 3. respxパターンB（side_effect）の活用:
-#    - side_effectリストで複数回の動作シミュレーション
-#    - 例外とhttpx.Responseの混在が可能
-#    - call_countによるリトライ回数検証
-#    - 例外の適切な検証（pytest.raises）
-#
-# 4. 共通テスト（例外・JSON・エラーマッピング）:
-#    → test_api_client_shared.py に統合済み
-# =============================================================================

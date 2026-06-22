@@ -6,23 +6,6 @@ which are module-level utility functions independent of AsyncAPIClient/SyncAPICl
 
 Consolidated from test_async_client_error_handling.py and
 test_sync_client_error_handling.py to eliminate duplication.
-
-テストケース一覧（31件）:
-    - Exception (3件): hierarchy, http_error_status_preservation, retry_error_message
-    - JSON Parsing (3件): invalid_json, json_error_init, json_error_without_response
-    - Request Error Mapping (5件): too_many_redirects, invalid_url, timeout,
-      connect_error, network_error
-    - Classify Error (5件): non_retryable_logs_error, non_retryable_async_field,
-      retryable_logs_warning, retryable_timeout, retryable_network_error
-    - Resolve Client Config (13件): base_url_none_uses_settings, empty_base_url_raises,
-      whitespace_base_url_raises, none_timeout_uses_settings,
-      none_retry_count_uses_settings, none_retry_delay_uses_settings,
-      headers_none_returns_defaults_only, headers_empty_dict_triggers_update,
-      headers_merged_with_defaults,
-      custom_headers_override_defaults, zero_timeout_not_overridden,
-      zero_retry_count_not_overridden, zero_retry_delay_not_overridden
-    - Client Init (2件): sync_client_headers_empty_dict_preserves_defaults,
-      async_client_headers_empty_dict_preserves_defaults
 """
 
 import json
