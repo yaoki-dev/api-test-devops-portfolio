@@ -1869,7 +1869,7 @@ class TestPhotoModel:
         with pytest.raises(
             ValidationError, match=re.escape("URLはhttp://またはhttps://で始まる必要があります")
         ):
-            # 推奨修正: コンストラクタではなく、外部入力をシミュレートする model_validate を使用する
+            # model_validate で外部入力（alias 名を含む辞書）をシミュレート
             Photo.model_validate(
                 {
                     "album_id": 1,
@@ -1886,6 +1886,7 @@ class TestPhotoModel:
         pytest.param("\u202e", id="bidi_override"),
         pytest.param("\u2028", id="line_separator"),
         pytest.param("\u2029", id="paragraph_separator"),
+        pytest.param("\x01", id="c0_control"),
         pytest.param("\ufe00", id="variation_selector_vs1"),
         pytest.param("\ufe0f", id="variation_selector_vs16"),
         pytest.param("\U000e0100", id="variation_selector_supplement_min"),
@@ -2083,22 +2084,22 @@ class TestValidateSchemeLessUrl:
 
     def test_rejects_incomplete_percent_encoding(self) -> None:
         """不完全なパーセントエンコード（%GG等）を拒否すること"""
-        with pytest.raises(ValueError, match=r"不完全なパーセントエンコード"):
+        with pytest.raises(ValueError, match=re.escape("不完全なパーセントエンコード")):
             _validate_scheme_less_url("example%GG.com")
 
     def test_rejects_path_separator(self) -> None:
         """パス区切り（/）を含むURLを拒否すること"""
-        with pytest.raises(ValueError, match=r"パス"):
+        with pytest.raises(ValueError, match=re.escape("パス")):
             _validate_scheme_less_url("example.com/path")
 
     def test_rejects_fragment(self) -> None:
         """フラグメント（#）を含むURLを拒否すること"""
-        with pytest.raises(ValueError, match=r"フラグメント"):
+        with pytest.raises(ValueError, match=re.escape("フラグメント")):
             _validate_scheme_less_url("example.com#section")
 
     def test_rejects_query(self) -> None:
         """クエリ（?）を含むURLを拒否すること"""
-        with pytest.raises(ValueError, match=r"クエリ"):
+        with pytest.raises(ValueError, match=re.escape("クエリ")):
             _validate_scheme_less_url("example.com?key=val")
 
     def test_accepts_valid_domain(self) -> None:
