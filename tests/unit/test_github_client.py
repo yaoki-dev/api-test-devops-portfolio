@@ -1007,7 +1007,7 @@ async def test_httpx_status_error_4xx():
 async def test_httpx_status_error_5xx(mock_sleep: AsyncMock, mock_backoff: Mock) -> None:
     """5xxステータスコード（response.status_code >= 500）リトライパスの検証
 
-    リトライ動作に加え、retrying_server_error ログ出力を検証する（Issue #229）。
+    リトライ動作に加え、retrying_server_error ログ出力を検証する。
 
     検証項目:
     - attempt 値の連続性・順序・件数（list(range(1, MAX_RETRIES)) との等価比較）
@@ -1034,7 +1034,7 @@ async def test_httpx_status_error_5xx(mock_sleep: AsyncMock, mock_backoff: Mock)
     assert mock_backoff.call_count == MAX_RETRIES - 1  # MAX_RETRIES試行 → 最終試行以外でバックオフ
     assert mock_sleep.await_count == MAX_RETRIES - 1
 
-    # リトライ中間試行のログ出力検証（Issue #229）
+    # リトライ中間試行のログ出力検証
     retry_logs = [log for log in log_output if log.get("event") == "retrying_server_error"]
     assert len(retry_logs) == MAX_RETRIES - 1, (
         f"retrying_server_error ログが{MAX_RETRIES - 1}件を期待 (実際: {len(retry_logs)}件)"
@@ -1367,7 +1367,7 @@ async def test_get_repo_type_guard_rejects_non_dict():
 
 
 # =============================================================================
-# システム例外伝播テスト（Issue #222）
+# システム例外伝播テスト
 # =============================================================================
 # KeyboardInterruptはpytest自体がSIGINTハンドラとして処理するためunitテストでの検証は省略
 # SystemExit / MemoryError / CancelledError の3種で例外伝播パスをカバー
@@ -1404,7 +1404,7 @@ async def test_base_exception_propagates_through_request(
 
 
 # =============================================================================
-# Rate Limitヘッダー不正値テスト（Issue #230）
+# Rate Limitヘッダー不正値テスト
 # =============================================================================
 
 

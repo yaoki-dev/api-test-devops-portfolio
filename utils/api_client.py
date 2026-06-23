@@ -6,14 +6,14 @@ import random
 import sys
 import time
 from types import TracebackType
-from typing import Any, Final, Self
+from typing import Any, Final, Self, TypedDict
 
 import httpx
 from pydantic import BaseModel, TypeAdapter, ValidationError
 from structlog.typing import FilteringBoundLogger
 
 from config.settings import settings
-from models.responses import Album, Comment, Photo, Post, Todo, User, UserDataResponse
+from models.responses import Album, Comment, Photo, Post, Todo, User
 from utils.logger import get_logger
 
 # httpx 例外（NetworkError, RemoteProtocolError 等）をここに追加してはならない。
@@ -107,7 +107,7 @@ class APIRetryError(APIClientError):
 
 
 class APIJSONDecodeError(APIClientError):
-    """JSONパースエラー"""
+    """JSONパース＋スキーマ検証エラー"""
 
     def __init__(self, message: str, response: httpx.Response | None = None):
         super().__init__(message)
@@ -1274,6 +1274,20 @@ class AsyncAPIClient:
 _MAX_LOGGED_FAILURE_DETAILS: Final[int] = 5
 
 
+class UserDataDict(TypedDict):
+    """get_user_data() の戻り値型
+
+    asyncio.gather で並行取得した4リソースを集約。
+    TypedDict により mypy の型チェックを通過させつつ、
+    ランタイムオーバーヘッドゼロで dict 互換性を維持。
+    """
+
+    user: User
+    posts: list[Post]
+    todos: list[Todo]
+    albums: list[Album]
+
+
 class AsyncJSONPlaceholderClient(AsyncAPIClient):
     """JSONPlaceholder API専用非同期クライアント"""
 
@@ -1315,10 +1329,12 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         """投稿更新の非同期実行
 
         Note:
-            更新系（PUT/PATCH）の応答は送信フィールドを反映した部分的な
-            オブジェクトになりうるため、Postモデル（必須フィールド ＋
-            ``extra="forbid"``）の検証で失敗する可能性がある。検証モデルに
-            固定せず生のdictを返すのは意図的な設計。
+            本メソッドは ``title`` と ``body`` のみ送信し ``userId`` を含めない。
+            JSONPlaceholder の PUT は送信フィールド ＋ ``id`` のみをエコーするため
+            （実測: ``PUT /posts/1`` で ``{"title", "body", "id"}`` を返却、
+            ``userId`` は欠落）、必須フィールド ``user_id`` ＋ ``extra="forbid"`` を
+            持つ Post モデルでは検証が失敗する。``update_todo`` (PATCH) と同様、
+            部分的なレスポンスを検証モデルに固定せず生のdictで返すのは意図的な設計。
         """
         data = {"title": title, "body": body}
         response = await self.put(f"/posts/{post_id}", json=data)
@@ -1541,7 +1557,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         return _parse_response_model_list(response, Photo)
 
     # 並行処理の例
-    async def get_user_data(self, user_id: int) -> UserDataResponse:
+    async def get_user_data(self, user_id: int) -> UserDataDict:
         """ユーザーに関連するデータを並行取得"""
         # 並行してユーザー情報、投稿、TODO、アルバムを取得
         user_task = self.get_user(user_id)
@@ -1549,7 +1565,6 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         todos_task = self.get_todos(user_id=user_id)
         albums_task = self.get_albums(user_id=user_id)
 
-        # 全ての結果を待機
         user, posts, todos, albums = await asyncio.gather(
             user_task,
             posts_task,
@@ -1557,14 +1572,13 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             albums_task,
         )
 
-        return UserDataResponse(
-            user=user,
-            posts=posts,
-            todos=todos,
-            albums=albums,
-        )
+        return {
+            "user": user,
+            "posts": posts,
+            "todos": todos,
+            "albums": albums,
+        }
 
-    # ヘルスチェック（DevOps/K8s readiness対応）
     async def health_check(self) -> bool:
         """API接続の健全性チェック
 

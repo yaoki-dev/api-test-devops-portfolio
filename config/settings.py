@@ -1,11 +1,4 @@
-"""アプリケーション設定管理
-
-学習目標:
-- Pydantic Settingsを使った環境設定管理
-- 環境ごとの設定分離パターン
-- 設定値のバリデーション
-- セキュリティベストプラクティス
-"""
+"""アプリケーション設定管理"""
 
 import ipaddress
 import logging
@@ -384,7 +377,7 @@ class TestConfig(BaseModel):
     """テスト関連の設定"""
 
     slow_test_threshold: float = Field(
-        default=5.0,
+        default=3.0,
         ge=0.1,
         description="スローテストの判定閾値（秒）",
     )

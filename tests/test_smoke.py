@@ -1,12 +1,12 @@
-"""Smoke Tests (Issue #81)
+"""Smoke Tests
 
-真のSmoke Test: デプロイ後の最小生存確認。
+デプロイ後の最小生存確認:
 - 外部API（JSONPlaceholder）への疎通確認
 - 設定ロード（get_settings）の健全性確認
 
-責務外のテスト（404例外契約検証・ログ内省）は移設済み:
-- 404例外契約 → tests/integration/test_api_client_integration.py（Issue #82）
-- ログ出力検証 → tests/unit/test_api_client_logging.py（Issue #83）
+責務外のテスト:
+- 404例外契約 → tests/integration/test_api_client_integration.py
+- ログ出力検証 → tests/unit/test_api_client_logging.py
 """
 
 from collections.abc import Generator

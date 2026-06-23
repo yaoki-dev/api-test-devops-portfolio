@@ -4,11 +4,6 @@ SyncAPIClient 基本機能テスト
 Note:
     test_async_client.py と対称構造で設計。
     責務: 基本CRUD操作 + Edge Cases + DevOps
-
-テストケース一覧（9件）:
-    - Basic Operations (4件): GET, POST, PUT, DELETE
-    - Edge Cases (4件): context_manager, empty_response, malformed_json, boundary
-    - DevOps (1件): health_check
 """
 
 import json
@@ -505,7 +500,7 @@ def test_sync_get_todos(
 
 
 # =============================================================================
-# Issue #173: get_todos() 入力値バリデーション
+# get_todos() 入力値バリデーション
 # =============================================================================
 
 
@@ -542,7 +537,7 @@ def test_sync_get_todos_validation_error(
 
 
 # =============================================================================
-# Issue #173: Albums API テスト追加（カバレッジ85%達成）
+# Albums API テスト
 # =============================================================================
 
 
@@ -589,7 +584,7 @@ def test_sync_get_albums(user_id: int | None, expected_count: int) -> None:
 
 
 # =============================================================================
-# Issue #173: get_albums() 入力値バリデーション
+# get_albums() 入力値バリデーション
 # =============================================================================
 
 
@@ -981,7 +976,7 @@ def test_sync_create_todo() -> None:
 
 
 # =============================================================================
-# システム例外伝播テスト（Issue #222 — S4対応）
+# システム例外伝播テスト
 # =============================================================================
 # AsyncAPIClient (test_async_client.py) との対称性維持。
 # KeyboardInterruptはpytest自体がSIGINTハンドラとして処理するためunitテストでの検証は省略。

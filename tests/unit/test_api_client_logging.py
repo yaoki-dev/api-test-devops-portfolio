@@ -1,8 +1,5 @@
-"""SyncAPIClient ログ出力テスト (Issue #83)
-
+"""SyncAPIClient ログ出力テスト
 API呼び出し時に構造化ログ（structlog）が出力されることを検証する。
-スモーク（最小生存確認）の責務を超えるため test_smoke.py から移設し、
-実APIに依存しないようモックレスポンス（respx）で決定論化した。
 """
 
 import logging

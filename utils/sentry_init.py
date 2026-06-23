@@ -768,10 +768,10 @@ def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
             # （JSON経由で list[list[str, str]] にもなり得る）なので tag pair として処理。
             # 加えて非標準だが custom before_send hook 等で生じうる list[dict] / list[list]
             # 形態でも defense-in-depth で内部の機密キーを redact する
-            # （PR #347 review reflexion iter2: tags-as-list-of-dicts 退行修正）。
+            # tags-as-list-of-dicts 退行修正
             # 他フィールド（breadcrumbs/contexts/extra/user）は汎用要素として
             # 処理し、list[2] with str[0] の偶発的 tag-pair 誤判定で過剰 redact
-            # しない（PR #347 review: KP-003 / T3 対応）。
+            # しない。
             if field == "exception":
                 # exception が list 形式（Sentry 標準は dict だが custom before_send
                 # 等で生じうる）でも values[*].value の REDACTION と stackframe vars
