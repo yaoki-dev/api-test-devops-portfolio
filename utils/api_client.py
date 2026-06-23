@@ -6,7 +6,7 @@ import random
 import sys
 import time
 from types import TracebackType
-from typing import Any, Final, Self
+from typing import Any, Final, Self, TypedDict
 
 import httpx
 from pydantic import BaseModel, TypeAdapter, ValidationError
@@ -1274,6 +1274,20 @@ class AsyncAPIClient:
 _MAX_LOGGED_FAILURE_DETAILS: Final[int] = 5
 
 
+class UserDataDict(TypedDict):
+    """get_user_data() の戻り値型
+
+    asyncio.gather で並行取得した4リソースを集約。
+    TypedDict により mypy の型チェックを通過させつつ、
+    ランタイムオーバーヘッドゼロで dict 互換性を維持。
+    """
+
+    user: User
+    posts: list[Post]
+    todos: list[Todo]
+    albums: list[Album]
+
+
 class AsyncJSONPlaceholderClient(AsyncAPIClient):
     """JSONPlaceholder API専用非同期クライアント"""
 
@@ -1543,7 +1557,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         return _parse_response_model_list(response, Photo)
 
     # 並行処理の例
-    async def get_user_data(self, user_id: int) -> dict[str, Any]:
+    async def get_user_data(self, user_id: int) -> UserDataDict:
         """ユーザーに関連するデータを並行取得"""
         # 並行してユーザー情報、投稿、TODO、アルバムを取得
         user_task = self.get_user(user_id)
