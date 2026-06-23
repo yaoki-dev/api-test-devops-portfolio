@@ -1,11 +1,5 @@
 """
 Pydantic レスポンスモデル テスト
-
-学習目標:
-- XSS サニタイゼーションの網羅テスト（XSSカバレッジ: OWASP Cheat Sheetベース・プロジェクト独自分類）
-- Pydantic モデルのバリデーション動作確認
-- alias / extra forbid / ネストモデルの検証
-- html.escape() の動作理解
 """
 
 import html

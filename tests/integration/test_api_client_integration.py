@@ -1,9 +1,5 @@
-"""JSONPlaceholder API (SyncAPIClient) 統合テスト — 公開例外契約の検証 (Issue #82)
-
-JSONPlaceholder の実APIに対し、SyncAPIClient の公開例外契約を検証する。
-スモーク（最小生存確認）の責務を超えるため、test_smoke.py から移設した。
-
-- 404レスポンス → APIHTTPError（status_code=404）が送出される公開契約
+"""JSONPlaceholder API (SyncAPIClient) 統合テスト
+JSONPlaceholder の実APIに対し、SyncAPIClient の公開例外契約の検証
 """
 
 import pytest
@@ -23,7 +19,7 @@ pytestmark = pytest.mark.integration
 
 
 def test_api_404_raises_http_error() -> None:
-    """#82: 存在しないリソースでAPIHTTPErrorが発生する（二相分離: 到達性確認→契約検証）
+    """存在しないリソースでAPIHTTPErrorが発生する（二相分離: 到達性確認→契約検証）
 
     二相構成:
       Phase 1 (到達性確認): 既存リソース /posts/1 へ疎通し、接続障害は skip

@@ -2,18 +2,7 @@
 # test_async_crud.py - 非同期CRUD操作の単体テスト（respxモック使用）
 # ===============================================================================
 #
-# このファイルは AsyncJSONPlaceholderClient の CRUD 操作をテスト
-# 学習ポイント：
-# 1. respxによる外部API依存の排除（HTTPレベルモック）
-# 2. 非同期CRUD操作（Create/Read/Update/Delete）のテスト
-# 3. エラーハンドリングの検証（400/404/500）
-# 4. 型ヒントとPydanticによる型安全性
-#
-# 実行方法：
-#   pytest tests/unit/test_async_crud.py -v
-#   pytest tests/unit/test_async_crud.py::test_async_create_post -v
-#
-# ===============================================================================
+# AsyncJSONPlaceholderClient の CRUD 操作をテスト
 
 import json
 from typing import TypedDict

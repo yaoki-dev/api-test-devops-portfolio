@@ -1,19 +1,8 @@
 # ===============================================================================
 # test_retry_logic.py - Statistical Distribution Tests for Retry Jitter
 # ===============================================================================
-#
-# このファイルはutils/api_client.pyのexponential_backoff_with_jitter()の統計的検証を行う
-# 学習ポイント：
-# 1. ジッター分散の統計的証明（90%+ユニーク遅延）
-# 2. Thundering Herd問題の防止検証
-# 3. 平均値の理論値との整合性確認
-#
-# 実行方法：
-#   pytest tests/unit/test_retry_logic.py -v
-#   pytest tests/unit/test_retry_logic.py::test_jitter_distribution_uniqueness -v
-#
-# ===============================================================================
 
+# utils/api_client.pyのexponential_backoff_with_jitter()の統計的検証を行う
 
 import random
 
@@ -47,7 +36,7 @@ def test_jitter_distribution_uniqueness():
     - 30% ジッター実装: delay = base_delay * 2^attempt * (1 + random.uniform(-0.3, 0.3))
     - attempt=3, base_delay=1.0 の理論範囲: 8.0 * 0.7 ~ 8.0 * 1.3 = 5.6 ~ 10.4 秒
     - 仕様ベース範囲検証は seed 値に依存しないため、jitter 範囲縮小の regression
-      （例: ±0.3 → ±0.01）を seed 固定下でも検出可能（PR #347 review: T2 対応）
+      （例: ±0.3 → ±0.01）を seed 固定下でも検出可能
     """
     # 100 回の遅延生成（attempt=3, base_delay=1.0）
     delays = [exponential_backoff_with_jitter(attempt=3, base_delay=1.0) for _ in range(100)]
@@ -135,7 +124,7 @@ def test_thundering_herd_prevention():
     - Thundering Herd 防止には十分な jitter 範囲（30%）が必要
     - attempt=1, base_delay=1.0 の理論範囲: 2.0 * 0.7 ~ 2.0 * 1.3 = 1.4 ~ 2.6 秒
     - jitter 範囲縮小（例: ±0.3 → ±0.01）は Thundering Herd リスク増大に直結
-      仕様ベース範囲検証は seed 値に依存しない regression 検出を提供（PR #347 review: T2 対応）
+      仕様ベース範囲検証は seed 値に依存しない regression 検出を提供
     """
     # 100 回の遅延生成（attempt=1, base_delay=1.0; 初回リトライ時を想定）
     delays = [exponential_backoff_with_jitter(attempt=1, base_delay=1.0) for _ in range(100)]
@@ -291,27 +280,3 @@ def test_jitter_consistency_across_attempts():
             f"Attempt {attempt}: mean {mean_delay:.2f}s not within ±10% of {expected:.2f}s\n"
             f"Jitter implementation shows inconsistent behavior."
         )
-
-
-# ===============================================================================
-# 学習ポイント:
-#
-# 1. 統計的検証の重要性:
-#    - 90%+ユニーク遅延: Thundering Herd問題の確実な防止
-#    - 平均値±10%: 実装の正確性とバイアス検出
-#    - 範囲境界値: ジッター範囲の正確性保証
-#    - 一貫性検証: 異なる条件下での安定性確認
-#
-# 2. テストデータサイズ:
-#    - 100回試行: ユニーク性検証（誕生日のパラドックス考慮）
-#    - 1000回試行: 平均値検証（中心極限定理による収束）
-#    - サンプルサイズは検証目的に応じて調整
-#
-# 3. 実務での活用:
-#    - 詳細なアサーションメッセージ: 失敗時のデバッグ効率化
-#    - 理論的根拠の明示: コードレビューとメンテナンス性向上
-#
-# 4. ベストプラクティス:
-#    - サンプル値の出力: 失敗時の原因特定を容易化
-#    - 境界値テスト: 実装の正確性を包括的に検証
-# ===============================================================================

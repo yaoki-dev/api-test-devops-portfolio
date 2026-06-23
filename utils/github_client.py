@@ -1,10 +1,4 @@
-"""GitHub API非同期クライアント
-
-学習目標:
-- GitHub REST API v3の実務的活用（Rate Limit管理、Conditional Requests）
-- 非同期HTTP通信の最適化（ETag活用）
-- API制約への対応戦略（認証なし60 req/h → 認証あり5000 req/h拡張可能設計）
-"""
+"""GitHub API非同期クライアント"""
 
 import asyncio
 import hashlib
