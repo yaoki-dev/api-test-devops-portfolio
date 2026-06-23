@@ -659,6 +659,7 @@ class Photo(BaseModel):
     # mode 未指定（デフォルト after）: Pydantic が str 型強制後にバリデーション実行
     # validate_website_scheme は mode="before" だが、Photo URL は外部API由来のため
     # str 型が保証されており mode="after" で十分
+    # validate_by_name/alias=True で alias 経由入力も自動的に同一バリデータを通過
     @field_validator("url", "thumbnail_url")
     @classmethod
     def validate_url_scheme(cls, v: str) -> str:
