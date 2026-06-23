@@ -377,7 +377,7 @@ class TestConfig(BaseModel):
     """テスト関連の設定"""
 
     slow_test_threshold: float = Field(
-        default=5.0,
+        default=3.0,
         ge=0.1,
         description="スローテストの判定閾値（秒）",
     )

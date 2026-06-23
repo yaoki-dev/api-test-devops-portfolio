@@ -1323,7 +1323,7 @@ class TestTestConfigBoundaryValues:
         [
             pytest.param(0.09, False, id="slow_test_threshold_below_min"),
             pytest.param(0.1, True, id="slow_test_threshold_at_min"),
-            pytest.param(5.0, True, id="slow_test_threshold_default"),
+            pytest.param(3.0, True, id="slow_test_threshold_default"),
         ],
     )
     def test_slow_test_threshold_boundary(self, value: float, expected_valid: bool) -> None:
