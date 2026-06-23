@@ -14,7 +14,6 @@ from typing import Any, Final, TypedDict
 from urllib.parse import urlparse
 
 import pytest
-from _pytest.mark.structures import ParameterSet
 from pydantic import BaseModel, ValidationError
 
 import models.responses as responses_module
@@ -1812,7 +1811,7 @@ class TestPhotoModel:
             Photo(album_id=1, id=1, title="Test", url=url, thumbnail_url=thumbnail_url)
 
     # Photo URL危険ペイロード共通定数（両フィールド同一バリデータ共有のため再利用）
-    _PHOTO_DANGEROUS_URLS: Final[list[ParameterSet]] = [
+    _PHOTO_DANGEROUS_URLS: Final = [
         pytest.param("\u200bjavascript:alert(1)", id="zwsp_prefix"),
         pytest.param("java\u200bscript:alert(1)", id="zwsp_mid_scheme"),
         pytest.param("\u202ejavascript:alert(1)", id="bidi_override"),
@@ -1882,7 +1881,7 @@ class TestPhotoModel:
             )
 
     # 不可視文字を1クラス1文字で列挙（escape表記で可視化）。各クラスの除去感度検証に使用。
-    _PHOTO_INVISIBLE_CHARS: Final[list[ParameterSet]] = [
+    _PHOTO_INVISIBLE_CHARS: Final = [
         pytest.param("\u200b", id="zwsp"),
         pytest.param("\u202e", id="bidi_override"),
         pytest.param("\u2028", id="line_separator"),
