@@ -18,7 +18,7 @@ from httpx import Response
 from structlog.testing import capture_logs
 
 # プロジェクト内モジュール
-from models.responses import Album, Photo, Post, Todo, User, UserDataResponse
+from models.responses import Album, Photo, Post, Todo, User
 
 # テストヘルパー
 from tests.constants import BASE_URL, INVALID_BASE_URLS
@@ -1406,25 +1406,28 @@ async def test_get_user_data_parallel_requests():
         result = await client.get_user_data(user_id)
 
     # データ構造検証
-    assert isinstance(result, UserDataResponse)
+    assert isinstance(result["user"], User)
 
     # ユーザー情報検証
-    assert result.user.id == 1
-    assert result.user.name == "Leanne Graham"
+    assert result["user"].id == 1
+    assert result["user"].name == "Leanne Graham"
 
     # postsフィルタリング検証（userId=1のみが含まれる）
-    assert len(result.posts) == 2
-    assert all(post.user_id == 1 for post in result.posts)
-    assert result.posts[0].id == 1
-    assert result.posts[1].id == 3
+    assert len(result["posts"]) == 2
+    assert all(isinstance(post, Post) for post in result["posts"])
+    assert all(post.user_id == 1 for post in result["posts"])
+    assert result["posts"][0].id == 1
+    assert result["posts"][1].id == 3
 
     # todos検証
-    assert len(result.todos) == 2
-    assert all(todo.user_id == 1 for todo in result.todos)
+    assert len(result["todos"]) == 2
+    assert all(isinstance(todo, Todo) for todo in result["todos"])
+    assert all(todo.user_id == 1 for todo in result["todos"])
 
     # albums検証
-    assert len(result.albums) == 2
-    assert all(album.user_id == 1 for album in result.albums)
+    assert len(result["albums"]) == 2
+    assert all(isinstance(album, Album) for album in result["albums"])
+    assert all(album.user_id == 1 for album in result["albums"])
 
     # 4つのAPIが各1回ずつ呼ばれたことを確認（asyncio.gatherによる並行実行の証明）
     assert route_user.call_count == 1
@@ -1487,9 +1490,12 @@ async def test_get_user_data_with_empty_posts():
         result = await client.get_user_data(user_id)
 
     # posts が空リストでも正常動作
-    assert result.posts == []
-    assert len(result.todos) == 1
-    assert len(result.albums) == 1
+    assert result["posts"] == []
+    assert len(result["todos"]) == 1
+    assert len(result["albums"]) == 1
+    assert isinstance(result["user"], User)
+    assert all(isinstance(todo, Todo) for todo in result["todos"])
+    assert all(isinstance(album, Album) for album in result["albums"])
 
     # 4つのAPIが各1回ずつ呼ばれたことを確認（asyncio.gatherによる並行実行の証明）
     assert route_user.call_count == 1
