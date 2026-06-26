@@ -163,9 +163,19 @@ graphify-out/
 # Understand Anything - knowledge graph artifacts (auto-generated, reproducible)
 .understand-anything/
 
-# opencode
-opencode-studio
-
 .gitnexus
 .history
 .atl
+
+**/MEMORY.md
+
+# opencode
+.opencode/**
+.omo/**
+
+
+*.md-*.svg
+
+# antigarvity 
+.agents/**
+.agents/rules/antigravity-rtk-rules.md

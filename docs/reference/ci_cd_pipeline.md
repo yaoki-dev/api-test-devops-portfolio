@@ -4,37 +4,77 @@
 
 ## 🚀 CI/CDパイプライン概要
 
-### CI/CD 多段階パイプライン構成
+### CI/CD 多段階パイプライン構成 (exact DAG)
 
 ```mermaid
 graph TB
-    PR[Pull Request] --> PV[pr-validation]
-    PR --> PS[pr-trivy-scan]
-    PR --> PMQ[pr-md-quality-check]
-    PV --> Merge{Merge to develop/main?}
-    PS --> Merge
-    PMQ --> Merge
-    Merge -->|Yes| PoV[post-validation]
-    Merge -->|Yes| PoS[post-trivy-scan]
-    Weekly[Weekly Schedule] --> WC[weekly-extended-test]
-    Weekly --> WL[weekly-link-check]
-    PV --> SR[status-report]
-    PS --> SR
-    PMQ --> SR
-    PoV --> SR
-    PoS --> SR
-    WC --> SR
-    WL --> SR
+    subgraph "Pull Request (並列実行)"
+        PR[Pull Request] -.-> PV[pr-validation]
+        PR -.-> PS[pr-trivy-scan]
+        PR -.-> PMQ[pr-md-quality-check]
+    end
+
+    subgraph "Main/Develop Push (独立並列起動)"
+        CTEST[compose-test<br/>pytest + coverage]
+        PVAL[post-validation<br/>mypy + Smoke]
+        PTRIVY[post-trivy-scan<br/>Trivy FS + Image]
+    end
+
+    subgraph "Container Health"
+        CHEALTH[compose-healthcheck<br/>needs: compose-test]
+    end
+
+    subgraph "Publish & Verify (実装済み: Continuous Delivery, main push)"
+        DP[deploy-pages<br/>GitHub Pages: coverage<br/>needs: compose-test]
+        PI[publish-image<br/>GHCR: runtime image<br/>needs: compose-test +<br/>compose-healthcheck + post-trivy-scan]
+        VI[verify-published-image<br/>pull & run verify<br/>needs: publish-image]
+    end
+
+    subgraph "Weekly Schedule"
+        WS[Weekly Schedule] -.-> WC[weekly-extended-test]
+        WS -.-> WL[weekly-link-check]
+    end
+
+    subgraph "Status Report"
+        SR[status-report<br/>needs: 全12ジョブ]
+    end
+
+    CTEST --> CHEALTH
+    CTEST --> DP
+    CTEST --> PI
+    CHEALTH --> PI
+    PTRIVY --> PI
+    PI --> VI
+
+    PV -.-> SR
+    PS -.-> SR
+    PMQ -.-> SR
+    PVAL -.-> SR
+    PTRIVY -.-> SR
+    WC -.-> SR
+    WL -.-> SR
+    CTEST -.-> SR
+    CHEALTH -.-> SR
+    DP -.-> SR
+    PI -.-> SR
+    VI -.-> SR
 
     style PV fill:#1e90ff,color:#fff
     style PS fill:#ff6b6b,color:#fff
     style PMQ fill:#9b59b6,color:#fff
-    style PoV fill:#2ed573,color:#fff
-    style PoS fill:#e84393,color:#fff
+    style CTEST fill:#4caf50,color:#fff
+    style CHEALTH fill:#8bc34a,color:#fff
+    style PVAL fill:#2ed573,color:#fff
+    style PTRIVY fill:#ff9800,color:#fff
+    style DP fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style PI fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style VI fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
     style WC fill:#ffa502,color:#fff
     style WL fill:#f39c12,color:#fff
     style SR fill:#34495e,color:#fff
 ```
+
+**凡例**: 実線 = 明示的 `needs` 依存、破線 = 並列起動 / `status-report` 集約依存。緑背景 = CD 実装済みジョブ。
 
 | Stage | トリガー | 実行内容 | Timeout | 並列実行 |
 |-------|---------|---------|---------|---------|
@@ -146,11 +186,20 @@ uv run pytest -n auto -m "(unit or integration) and not external" \
 | mypy | 0 errors | ✅ | `mypy utils/ config/ models/` |
 | セキュリティ | 0 Critical/High | ✅ | Trivy SARIF |
 
-### CD（実装予定）
+### CD（実装済み）
 
-初回のみ、GHCR package visibility と repository association を事前に設定します。
-以降は main push時に、 Trivy scan を通過した runtime image のみを GHCR に publish し、
-GHCRから `sha-<commit>` tag を `docker pull` / `docker run` して公開・実行可能性を自動検証します。
+main push時に以下3ジョブが実行され、Continuous Delivery（成果物の配信・検証）を完結します：
+
+| ジョブ | 概要 | needs 依存関係 |
+|--------|------|----------------|
+| `deploy-pages` | GitHub Pages へカバレッジレポート公開 | `compose-test` |
+| `publish-image` | GHCR へランタイムイメージ publish (`push: true`) | `compose-test` + `compose-healthcheck` + `post-trivy-scan` |
+| `verify-published-image` | 公開済みイメージを `docker pull` / `docker run` で検証 | `publish-image` |
+
+**補足**:
+- `compose-healthcheck` は `compose-test` のみに依存
+- `post-trivy-scan` は main/develop push で並列実行（CD ジョブの依存には含まれないが、`publish-image` は `post-trivy-scan` 完了を待つ）
+- 稼働環境への実デプロイ（Continuous Deployment: Cloud Run / ECS / K8s 等）は未実装
 
 ---
 
