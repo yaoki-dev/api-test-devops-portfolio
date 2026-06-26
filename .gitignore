@@ -176,6 +176,6 @@ graphify-out/
 
 *.md-*.svg
 
-# antigarvity 
+# antigravity 
 .agents/**
 .agents/rules/antigravity-rtk-rules.md
