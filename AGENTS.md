@@ -323,9 +323,6 @@ git checkout -b feature/<次のタスク> origin/develop
 | `commit`, `push-pr` | Skill | コミット/Push・PR作成時 | 品質チェック付きコミット+日本語PR |
 | `code-review:review-pr` | Skill | 重要PR時 | セキュリティ・バグ・API契約レビュー |
 | `test-coverage`, `generate-tests` | Command | テスト関連時 | (環境にある場合) カバレッジ分析・テスト生成 |
-| GSD | Workflow | フェーズ実行/検証 | (環境にある場合) execute/verify を実行 |
-
-> ※ GSD: execute/verify は「利用可能な環境で GSD を採用した場合」に適用。その他の GSD コマンドは初期設定・中断時のみ（Mediumセクション参照）
 
 ### Medium（必要時）
 
@@ -335,7 +332,6 @@ git checkout -b feature/<次のタスク> origin/develop
 | `decision-helper` | Skill | 2+選択肢の比較評価時 | Pros/Cons・Decision Matrix・ICEフレームワーク |
 | `fact-checker` | Skill | 主張・データの事実確認時 | 証拠ベースのファクトチェック・情報信頼性評価 |
 | `prompt-lookup`, `skill-lookup` | Skill | 検索時 | プロンプト/スキル発見 |
-| GSD | Workflow | 大規模機能開始/計画/中断 | (環境にある場合) discuss/plan/pause/resume を利用 |
 
 <!-- preserve-on-compact: Development Workflow -->
 ## 🔄 開発ワークフロー（標準コマンド実行順序）
@@ -347,7 +343,6 @@ git checkout -b feature/<次のタスク> origin/develop
 0. 大規模タスク（複数セッション）: `claudedocs/plans/` に計画書を作成し、タスクを分割して進める
 1. ブランチ作成: Git Flow（`feature/*`, `hotfix/*`）に従う。固定worktree運用がある場合はその運用を優先する
    → 必要に応じて計画書: `claudedocs/plans/` に作成（補助資料がある場合は `.claude/rules/workflow/` を参照）
-   → GSDを使う場合: 事前に「GSDを使う」旨をユーザーに明示してから実行する（環境に存在する場合のみ）
 
 【実装フェーズ】
 2. コード変更 → security-guidance (hookがある場合)
@@ -356,7 +351,7 @@ git checkout -b feature/<次のタスク> origin/develop
    → If it feels hacky, ask: "Given what I know now, what's the most elegant approach?"
    → Skip for obvious single-line fixes
 4. 作業完了確認 → `verification-before-completion` を実行
-   → GSD未使用時、または上記GSD使用フロー外で未完了作業あり: 修正 → 3. 品質ゲートに戻る（最大3回まで。4回連続失敗時はユーザーに報告して停止）
+   → 上記フロー外で未完了作業あり: 修正 → 3. 品質ゲートに戻る（最大3回まで。4回連続失敗時はユーザーに報告して停止）
 5. reflect(タスクごとに実施) → `reflexion:reflect` を実行（信頼度90%未満なら改善して再実行、最大3回）
    引数: deep reflect if less than 90% confidence. 日本語で簡潔に回答
    自動ループ:

@@ -1,47 +1,45 @@
 # Python
-__pycache__/
+__pycache__/**
 *.py[cod]
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
+build/**
+develop-eggs/**
+dist/**
+downloads/**
+eggs/**
+.eggs/**
+lib/**
+lib64/**
+parts/**
+sdist/**
+var/**
+wheels/**
+*.egg-info/**
 .installed.cfg
 *.egg
 MANIFEST
 
 # Virtual Environment
-.venv/
-venv/
-ENV/
-env/
+.venv/**
+venv/**
+ENV/**
+env/**
 
 # Testing
-.pytest_cache/
+.pytest_cache/**
 .coverage
 .coverage.*
-htmlcov/
-.tox/
-.nox/
+htmlcov/**
 coverage.xml
 *.cover
 coverage.json
-.pre-commit-cache/
+.pre-commit-cache/**
 
 # IDEs
-.vscode/
-.idea/
+.vscode/**
+.idea/**
 *.swp
 *.swo
 *~
@@ -54,8 +52,8 @@ coverage.json
 
 # Logs and Databases
 *.log
-logs/
-data/
+logs/**
+data/**
 *.db
 *.db-wal
 *.db-shm
@@ -65,31 +63,31 @@ yarn-error.log*
 dev-debug.log
 
 # Monitoring and Temporary Files
-monitoring/__pycache__/
+monitoring/__pycache__/**
 monitoring/scheduler.log
-scripts/__pycache__/
-reports/
+scripts/__pycache__/**
+reports/**
 
 # Claude Code
 .claude/settings.local.json
 
+# VS Code workspace settings (per-directory exceptions)
+!models/.vscode/settings.json
+!.context/compound-engineering/ce-review/**/.vscode/settings.json
+
 # MCP and AI Tools
 .mcp.json
-.serena/*
-!.serena/memories/
-.memory_mcp/
-.hive-mind/
-memory/
-.taskmaster/
-.spec-workflow/templates/
-.claude/skill-report/
-.swarm/
+.serena/**
+!.serena/memories/**
+.memory_mcp/**
+memory/**
+.claude/skill-report/**
 
 # Obsidian Vault (contains personal notes and potentially sensitive data)
-obsidian-vault-local/
+obsidian-vault-local/**
 
 # Node.js (if any JS tooling)
-node_modules/
+node_modules/**
 
 # Generated Documentation
 docs/search_index.json
@@ -98,9 +96,6 @@ docs/search_index.json
 *.backup
 *.bak
 *.bk
-
-# Internal Project Management
-docs/text.md
 
 # Environment variables
 # .env*: per-environment files (.env.development/.env.testing/.env.staging/.env.production/.env.local 等) を一括で ignore
@@ -124,26 +119,21 @@ coverage.json
 *.py,cover
 
 # Claude Code working documents (local only)
-claudedocs/
-docs/brainstorms/
-docs/plans/
-docs/agent-teams/
-docs/ai_collaboration/
-docs/analysis/
-docs/main/interview
-docs/main/interview_docs/
+claudedocs/**
+docs/**
+!docs/agents/**
 
 # GSD - local planning artifacts
-.planning/
-gsd-local-patches/
+.planning/**
+gsd-local-patches/**
 
 # gemini-cli settings
-.gemini/
+.gemini/**
 
 # OMS (oh-my-claudecode)
-.oms/
-.omc/state/
-.omc/sessions/
+.oms/**
+.omc/state/**
+.omc/sessions/**
 .omc/project-memory.json
 
 # CGC (CodeGraphContext)
@@ -151,21 +141,30 @@ cgc_mcp_wrapper.sh
 cgc_watch_safe.sh
 
 # Added by code-review-graph
-.code-review-graph/
+.code-review-graph/**
 
 # commit graph outputs, ignore the extraction cache
-graphify-out/
+graphify-out/**
 
 # Compound Engineering local config
 .compound-engineering/*.local.yaml
-.context/compound-engineering/ce-code-review/
+.context/compound-engineering/ce-code-review/**
 
 # Understand Anything - knowledge graph artifacts (auto-generated, reproducible)
-.understand-anything/
+.understand-anything/**
+
+.gitnexus/**
+.history/**
+.atl/**
+
+**/MEMORY.md
 
 # opencode
-opencode-studio
+.opencode/**
+.omo/**
 
-.gitnexus
-.history
-.atl
+*.md-*.svg
+
+# antigravity
+.agents/**
+.agents/rules/antigravity-rtk-rules.md

@@ -127,16 +127,84 @@ graph TB
     end
 ```
 
+### 運用・デプロイフロー
+
+```mermaid
+graph TB
+    subgraph "Pull Request (並列実行, PR触発)"
+        PV[pr-validation<br/>ruff / mypy / pytest<br/>+ smoke]
+        PTS[pr-trivy-scan<br/>Trivy FS + Image]
+        PMQ[pr-md-quality-check<br/>markdownlint / textlint]
+    end
+
+    subgraph "Push to main/develop (独立並列起動)"
+        CTEST[compose-test<br/>pytest + coverage<br/>runs on PR & push]
+        PVAL[post-validation<br/>mypy + Smoke]
+        PTRIVY[post-trivy-scan<br/>Trivy FS + Image]
+        WEEKLY[weekly jobs<br/>schedule 触発]
+    end
+
+    subgraph "Container Health"
+        CHEALTH["compose-healthcheck<br/>container health gate"]
+    end
+
+    subgraph "Publish & Verify (実装済み: Continuous Delivery, main push)"
+        DPAGES["deploy-pages<br/>GitHub Pages: coverage"]
+        PUBIMG["publish-image<br/>GHCR: runtime image"]
+        VERIFY["verify-published-image<br/>pull & run verify"]
+    end
+
+    subgraph "Status Aggregation"
+        SR["status-report<br/>全ジョブ結果を集約<br/>if: !cancelled()"]
+    end
+
+    CTEST --> CHEALTH
+    CTEST --> DPAGES
+    CTEST --> PUBIMG
+    CHEALTH --> PUBIMG
+    PTRIVY --> PUBIMG
+    PUBIMG --> VERIFY
+
+    PV -.-> SR
+    PTS -.-> SR
+    PMQ -.-> SR
+    PVAL -.-> SR
+    PTRIVY -.-> SR
+    WEEKLY -.-> SR
+    CTEST -.-> SR
+    CHEALTH -.-> SR
+    DPAGES -.-> SR
+    PUBIMG -.-> SR
+    VERIFY -.-> SR
+
+    classDef cd fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+    class DPAGES,PUBIMG,VERIFY cd;
+    classDef parallel fill:#fff3e0,stroke:#ef6c00,stroke-width:1px,stroke-dasharray: 5 5;
+    class PV,PTS,PMQ,CTEST,PVAL,PTRIVY parallel;
+    classDef trigger fill:#e8eaf6,stroke:#3f51b5,stroke-width:1px;
+    class SR trigger;
+```
+
+> **注記**: 現在は GitHub Pages (coverage) + GHCR (runtime image) までの **Continuous Delivery** が実装済みです。Cloud Run / ECS / K8s 等の本番ホスティングへの実デプロイ (Continuous Deployment) は未実装です。
+>
+> **正確なジョブ依存グラフ (`needs`)** は [docs/reference/ci_cd_pipeline.md](docs/reference/ci_cd_pipeline.md) を参照してください。CI 設定の唯一の真実源は [`.github/workflows/ci.yml`](.github/workflows/ci.yml) です（上図は論理フローの俯瞰で、依存は矢印で表現しています）。
+
 ### 設計判断（Design Decisions）
 
-API特性駆動でクライアントごとに実装範囲を最適化しています。
+主要な技術選定とクライアント設計の決定根拠を文書化します（面接官向け可視化）。API特性駆動でクライアントごとに実装範囲を最適化しています。
 
-| 判断 | 選択 | 技術的根拠 |
-|------|------|----------|
-| **`SyncJSONPlaceholderClient: Sync/Async両実装`** | 適材適所で使い分け | 認証なし・Rate Limit無のシンプルAPI。単体CRUDは **Sync**（直線的・テスト簡潔）を基本とし、**Async は並行I/Oが本質的に効く操作に限定**（`get_multiple_users` = `asyncio.Semaphore` で並行数制御、`get_user_data` = `asyncio.gather` で複数リソース同時取得）。レイテンシ支配のため sequential 処理では Sync/Async 差は無視可能で、Async は並行時のみ採用 = 過剰設計を避けた選択。共通設定解決ロジックは `_resolve_client_config` / `_classify_error` で重複削減 |
-| **`GitHubClient: Async特化`** | 非同期のみ | 認証 + Rate Limit (5000/h) + ETag対応のAPI特性により、並行fetch (`asyncio.gather`) と条件付きリクエスト (304 Not Modified) の恩恵が大きい。Sync caller は `asyncio.run()` で代替可 |
-| **`SyncJSONPlaceholderClient → SyncAPIClient 継承`** | クラス継承 | LSP遵守 (HTTP動詞契約維持) + boilerplate削減。汎用HTTP層とドメインメソッドの責務分離 (SRP) |
-| **`GitHubClient: 独立実装`** | 継承せず | 戻り値型契約差異 (`httpx.Response` vs parsed JSON) と ETag/RateLimit/PII redaction の固有要件により、継承すると LSP違反。共通化は例外階層 (`GitHubAPIError(APIClientError)`) と utility 関数レベルに限定 |
+| 決定 | 選択／背景 | 根拠・トレードオフ |
+|------|----------|------------------|
+| **pytest 採用** | 標準的・豊富なプラグイン・並列実行対応。unittest 互換で移行コスト低。 | 機能過多で学習曲線あり。fixture 設計に慣れが必要。 |
+| **respx でモック** | httpx ネイティブ対応・非同期対応・ルーティングベースで宣言的。requests-mock より型安全。 | httpx 依存。標準 library 非依存を優先する場合は不向き。 |
+| **Sync / Async 使い分け** | 単体CRUDは Sync 基本、並行I/Oが本質的に効く操作のみ Async（適材適所） | 認証なし・Rate Limit無のシンプルAPI（JSONPlaceholder）では単体CRUDを **Sync**（直線的・テスト簡潔）とし、**Async は並行I/Oに限定**（`get_multiple_users` = `asyncio.Semaphore` で並行数制御、`get_user_data` = `asyncio.gather` で同時取得）。GitHub API (Rate Limit + ETag) の並行 fetch でも効果大。レイテンシ支配の sequential 処理では Sync/Async 差は無視可能 = 過剰設計を避けた選択的採用。同期呼び出し側は `asyncio.run()` が必要。共通設定解決ロジックは `_resolve_client_config` / `_classify_error` で重複削減。 |
+| **Multi-stage Docker** | base/deps/runtime/test 4段階。本番 <200MB・非root・ビルドキャッシュ最適化。 | Dockerfile 複雑化。単一 stage よりビルド時間微増。 |
+| **多段階CIゲート** | PR validation → Compose test/healthcheck → CD (Pages/GHCR/Verify) → Post validation + Trivy。 | パイプライン長大化。並列化で実行時間最小化 (PR ~10分 / main push ~20分)。 |
+| **Trivy 3層検証** | PR: fs scan (develop/main)。main PR: + image scan。push: fs + image (post-trivy-scan)。 | 重複スキャンあり。キャッシュ戦略で実行時間抑制。SARIF で Security tab 統合。 |
+| **GHCR + Pages 公開** | GHCR: 匿名 pull 検証可能・OIDC 不要。Pages: カバレッジ HTML 公開・バッジ自動生成。 | GHCR は public repository 前提。Private repo は追加設定必要。 |
+| **`GitHubClient: Async特化`** | 非同期のみ | 認証 + Rate Limit (5000/h) + ETag対応のAPI特性により、並行fetch (`asyncio.gather`) と条件付きリクエスト (304 Not Modified) の恩恵が大きい。Sync caller は `asyncio.run()` で代替可。 |
+| **`SyncJSONPlaceholderClient → SyncAPIClient 継承`** | クラス継承 | LSP遵守 (HTTP動詞契約維持) + boilerplate削減。汎用HTTP層とドメインメソッドの責務分離 (SRP)。 |
+| **`GitHubClient: 独立実装`** | 継承せず | 戻り値型契約差異 (`httpx.Response` vs parsed JSON) と ETag/RateLimit/PII redaction の固有要件により、継承すると LSP違反。共通化は例外階層 (`GitHubAPIError(APIClientError)`) と utility 関数レベルに限定。 |
 
 詳細な決定背景・トレードオフ分析は ADR (Architecture Decision Records) 参照: `claudedocs/adr/`（ローカル保管・バージョン管理外）
 
