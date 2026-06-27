@@ -121,13 +121,6 @@ coverage.json
 # Claude Code working documents (local only)
 claudedocs/**
 docs/**
-docs/brainstorms/**
-docs/plans/**
-docs/agent-teams/**
-docs/ai_collaboration/**
-docs/analysis/**
-docs/main/interview/**
-docs/main/interview_docs/**
 !docs/agents/**
 
 # GSD - local planning artifacts
