@@ -4,6 +4,8 @@
 
 ## 🚀 CI/CDパイプライン概要
 
+> **Source of truth**: CI 設定の正確な依存は [.github/workflows/ci.yml](../../.github/workflows/ci.yml) が唯一の真実源。本書の図・表は派生表現であり、ci.yml 変更時に追従すること。
+
 ### CI/CD 多段階パイプライン構成 (exact DAG)
 
 ```mermaid
@@ -21,13 +23,13 @@ graph TB
     end
 
     subgraph "Container Health"
-        CHEALTH[compose-healthcheck<br/>needs: compose-test]
+        CHEALTH[compose-healthcheck]
     end
 
     subgraph "Publish & Verify (実装済み: Continuous Delivery, main push)"
-        DP[deploy-pages<br/>GitHub Pages: coverage<br/>needs: compose-test]
-        PI[publish-image<br/>GHCR: runtime image<br/>needs: compose-test +<br/>compose-healthcheck + post-trivy-scan]
-        VI[verify-published-image<br/>pull & run verify<br/>needs: publish-image]
+        DP[deploy-pages<br/>GitHub Pages: coverage]
+        PI[publish-image<br/>GHCR: runtime image]
+        VI[verify-published-image<br/>pull & run verify]
     end
 
     subgraph "Weekly Schedule"
@@ -36,7 +38,7 @@ graph TB
     end
 
     subgraph "Status Report"
-        SR[status-report<br/>needs: 全12ジョブ]
+        SR[status-report<br/>全ジョブ結果を集約]
     end
 
     CTEST --> CHEALTH
@@ -189,6 +191,8 @@ uv run pytest -n auto -m "(unit or integration) and not external" \
 ### CD（実装済み）
 
 main push時に以下3ジョブが実行され、Continuous Delivery（成果物の配信・検証）を完結します：
+
+> **precise needs の参照先**: この CD 3ジョブの正確な `needs` 依存はこの表に集約（mermaid 図は同じ依存を矢印で可視化）。`status-report` / `compose-healthcheck` を含む全ジョブの依存は真実源 [ci.yml](../../.github/workflows/ci.yml) を参照。本表はその派生。
 
 | ジョブ | 概要 | needs 依存関係 |
 |--------|------|----------------|
