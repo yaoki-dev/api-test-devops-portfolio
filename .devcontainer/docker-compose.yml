@@ -34,7 +34,7 @@ services:
     image: ${IMAGE_TAG:-api-test-devops:devcontainer}
     volumes:
       - devcontainer-venv:/app/.venv
-    command: ["/bin/sh","-c","python -c \"from config.settings import settings; print('[devcontainer] config loaded:', settings.environment, settings.project_name, flush=True)\" && exec sleep infinity"]
+    command: ["sleep", "infinity"]
 
 volumes:
   devcontainer-venv:
