@@ -58,7 +58,7 @@ ENVIRONMENT=staging docker compose up -d
 # 本番ビルド
 docker build --target runtime -t app:prod .
 
-#　本番実行
+# 本番実行
 ENVIRONMENT=production docker compose up -d
 
 ```
