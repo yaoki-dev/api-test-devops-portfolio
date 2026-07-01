@@ -1,0 +1,34 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/docker-existing-docker-compose
+{
+	"name": "API Test DevOps Portfolio",
+	// 1. ルート docker-compose.yml を base、.devcontainer/docker-compose.yml を override
+	//    として読み込む（後者が app サービスにマージされ、build.target=test と
+	//    /app/.venv の named volume マスクを適用する）。順序が重要。
+	"dockerComposeFile": [
+		"${localWorkspaceFolder}/docker-compose.yml",
+		"${localWorkspaceFolder}/.devcontainer/docker-compose.yml"
+	],
+	// 2. 対象とするサービスを指定
+	"service": "app",
+	// 3. 【最重要】Antigravity や VS Code のデフォルトを上書きし、
+	//    ローカルコードがマウントされている正しいパス（例: /app）を強制指定
+	"workspaceFolder": "/app",
+	// 5. ローカルの全ソースを /app にバインドマウント（編集をコンテナへ即時同期）。
+	//    /app/.venv は override compose の named volume が上書きでマスクするため、
+	//    macOS 製 host .venv は混入しない。
+	"mounts": [
+		"source=${localWorkspaceFolder},target=/app,type=bind"
+	],
+	// 6. named volume の venv を uv.lock と整合させる。初回は test イメージの
+	//    baked .venv がコピー済みのためほぼ no-op。uv.lock 変更後の rebuild 時に差分同期。
+	//    Dockerfile と同じ --no-install-project でローカルパッケージビルドを回避。
+	"postCreateCommand": "uv sync --frozen --no-install-project",
+	"customizations": {
+		"vscode": {
+			"settings": {
+				"python.defaultInterpreterPath": "/app/.venv/bin/python"
+			}
+		}
+	}
+}
