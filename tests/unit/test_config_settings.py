@@ -78,8 +78,8 @@ class TestAPIConfigBaseUrlDependencyInjection:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """注入された許可リスト外のドメインは拒否される。"""
-        # 外部DNSに依存させず公開IPへ解決させ、is_private_ip()先行チェックを通過させて
-        # allowlist分岐へ確実に到達させる（CIのDNS状態に左右されない決定的テスト）。
+        # このテストは DNS/private-IP 判定経路を使わず、
+        # allowlist 分岐だけを決定的に検証する。
         monkeypatch.setattr(socket, "gethostbyname", lambda _: "1.2.3.4")
         with pytest.raises(ValueError, match="Domain not in allowlist"):
             _validate_base_url_with_allowed_domains(
@@ -95,32 +95,14 @@ class TestAPIConfigBaseUrlDependencyInjection:
                 frozenset({"example.com"}),
             )
 
-    def test_validate_base_url_private_ip_log_includes_operator_guidance(
-        self,
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        """DNS fail-closed時の切り分けに必要な運用者向け案内をログへ残す。"""
-        with caplog.at_level(logging.WARNING, logger="config.settings"):
-            with pytest.raises(ValueError, match="Private/loopback IP addresses are not allowed"):
-                _validate_base_url_with_allowed_domains(
-                    "http://192.168.1.1",
-                    frozenset({"192.168.1.1"}),
-                )
-
-        assert any(
-            "check DNS resolution and ALLOWED_DOMAINS setting" in record.getMessage()
-            and record.levelno == logging.WARNING
-            for record in caplog.records
-        )
-
     def test_validate_base_url_allowlist_log_includes_operator_guidance(
         self,
         caplog: pytest.LogCaptureFixture,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """許可ドメイン不一致時はALLOWED_DOMAINS確認をログへ残す。"""
-        # 外部DNSに依存させず公開IPへ解決させ、is_private_ip()先行チェックを通過させて
-        # allowlist分岐へ確実に到達させる（CIのDNS状態に左右されない決定的テスト）。
+        # このテストは DNS/private-IP 判定経路を使わず、
+        # allowlist 分岐だけを決定的に検証する。
         monkeypatch.setattr(socket, "gethostbyname", lambda _: "1.2.3.4")
         with caplog.at_level(logging.WARNING, logger="config.settings"):
             with pytest.raises(ValueError, match="Domain not in allowlist"):
@@ -131,45 +113,6 @@ class TestAPIConfigBaseUrlDependencyInjection:
 
         assert any(
             "Check ALLOWED_DOMAINS setting" in record.getMessage()
-            and record.levelno == logging.WARNING
-            for record in caplog.records
-        )
-
-    def test_validate_base_url_blocks_private_ip_regardless_of_allowlist(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """プライベートIPは許可リストに含まれていてもブロックされる。
-
-        SSRF Prevention: DIパスの契約テスト。
-        許可リストにプライベートIPが含まれていても、
-        is_private_ip()による先行チェックでブロックされることを検証する。
-        """
-        with caplog.at_level(logging.WARNING, logger="config.settings"):
-            with pytest.raises(ValueError, match="Private/loopback IP addresses are not allowed"):
-                _validate_base_url_with_allowed_domains(
-                    "http://192.168.1.1",
-                    frozenset({"192.168.1.1"}),  # 許可リストに入れても無効
-                )
-
-        assert any(
-            "SSRF Prevention: private or loopback IP blocked" in record.getMessage()
-            and record.levelno == logging.WARNING
-            for record in caplog.records
-        )
-
-    def test_validate_base_url_blocks_private_ip_before_allowlist(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """プライベートIPは許可リスト外でも攻撃ベクターとして記録される。"""
-        with caplog.at_level(logging.WARNING, logger="config.settings"):
-            with pytest.raises(ValueError, match="Private/loopback IP addresses are not allowed"):
-                _validate_base_url_with_allowed_domains(
-                    "http://192.168.1.1",
-                    frozenset({"example.com"}),
-                )
-
-        assert any(
-            "SSRF Prevention: private or loopback IP blocked" in record.getMessage()
             and record.levelno == logging.WARNING
             for record in caplog.records
         )
@@ -924,17 +867,16 @@ class TestSSRFPrevention(DNSCacheClearMixin):
             任意のURLへのアクセスを防止。
 
         Note:
-            .local ドメインなどDNS解決に失敗するドメインは、
-            Fail-Closed動作により「Private/loopback IP」エラーとなる。
-            どちらのエラーでもSSRF攻撃は防止される。
+            設定バリデータは allowlist-only で判定し、DNS 解決や
+            private-IP 判定は行わない。
+            許可リスト外のホストは
+            「SSRF Prevention: Domain not in allowlist」でブロックされる。
         """
         with pytest.raises(ValidationError) as exc_info:
             APIConfig(base_url=unauthorized_url)
 
         error_message = str(exc_info.value)
-        # SSRFは以下いずれかのエラーでブロック:
-        # 1. Domain not in allowlist (resolvable but unauthorized)
-        # 2. Private/loopback IP (DNS failure → fail-closed)
+        # allowlist 外のホストは "SSRF Prevention: Domain not in allowlist" でブロックされる
         assert "Domain not in allowlist" in error_message or "SSRF Prevention" in error_message, (
             f"Expected SSRF Prevention error for {domain}"
         )
@@ -1025,11 +967,8 @@ class TestSSRFPrevention(DNSCacheClearMixin):
         Note:
             これらはテスト用・デモ用に許可されたドメイン。
             本番環境では環境変数ALLOWED_DOMAINSで制限可能。
-
-            example.com系ドメインはRFC 2606で予約済みだが、
-            DNS解決に失敗するためFail-Closed動作でブロックされる。
-            設定ファイル内でexample.comを許可していても、
-            実際のリクエスト時はDNS解決できないためブロックされる。
+            設定バリデータは allowlist-only で判定し、
+            DNS 解決や private-IP 判定は行わない（純粋関数）。
         """
         config = APIConfig(base_url=allowed_domain)
         assert config.base_url == allowed_domain.rstrip("/")
