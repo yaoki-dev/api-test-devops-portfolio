@@ -133,16 +133,16 @@ graph TB
 flowchart TD
     A["<h3>Code Change</h3><u>Pull Request / Push</u>
     <br/>"] --> B["<h3>Quality & Security Checks</h3><u>ruff / mypy / pytest / <br/>Trivy / markdownlint</u>
-    </br>"]
+    <br/>"]
 
     A --> C["<h3>Compose Test</h3><u>pytest + coverage</u>
-    </br>"]
+    <br/>"]
 
     C --> D["<h3>Coverage Pages</h3><u>GitHub Pages</u>
-    </br>"]
-    C --> E["<br/><h3>Container Healthcheck</h3></br>"]
+    <br/>"]
+    C --> E["<br/><h3>Container Healthcheck</h3><br/>"]
 
-    E --> F["<br/><h3>GHCR Runtime Image<br/>Publish</h3></br>"]
+    E --> F["<br/><h3>GHCR Runtime Image<br/>Publish</h3><br/>"]
     F --> G["<br/><h3>Anonymous pull &<br/> smoke-run</h3><br/>"]
     G --> H["<br/><h3>Status Summary</h3><br/>"]
 
@@ -214,7 +214,7 @@ flowchart TD
     B --> T["<h3>test</h3><u>branches from base<br/>COPY --from=dependencies .venv<br/>cache reuse<br/>pytest / coverage</u>
     <br/>"]
 
-    R --> C1["<h3>docker compose</h3><u>app service<br/>target: runtime<u>
+    R --> C1["<h3>docker compose</h3><u>app service<br/>target: runtime</u>
     <br/>"]
 
     T --> C2["<h3>docker compose</h3><u>test service<br/>target: test<br/>profiles</u>
