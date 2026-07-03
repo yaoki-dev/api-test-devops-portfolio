@@ -14,14 +14,14 @@ SSRFやPII漏洩、不安定なリトライといった連携特有のアンチ�
 [![GHCR](https://img.shields.io/static/v1?label=ghcr.io&message=api-test-devops-portfolio&color=blue&logo=docker)](https://github.com/yaoki-dev/api-test-devops-portfolio/pkgs/container/api-test-devops-portfolio)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
- **CI/CD / Python / Docker** を統合したAPIテスト自動化ポートフォリオ。
- **1,372**件のテスト（CI品質ゲート: **1,358件/96.16%**）
+ <!-- **CI/CD / Python / Docker** を統合したAPIテスト自動化ポートフォリオ。
+ **1,372**件のテスト（CI品質ゲート: **1,358件/96.16%**） -->
 
 ## Demo
 
 3つのGIFで主要機能を視覚的に確認できます（合計35秒）
 
-### 1. CI/CD自動化
+<!-- ### 1. CI/CD自動化
 
 ![CI/CD Demo - git pushでGitHub Actions自動起動、多段階パイプラインで品質保証。CI/CDスキルを実証](assets/demo-cicd.gif)
 
@@ -74,7 +74,7 @@ uv run pytest tests/unit/test_api_client.py --cov=utils --cov=config --cov=model
 - 非rootユーザーでのセキュアな実行
 - 本番イメージサイズ最適化（< 200MB目標）
 
-ー see details:  [Docker Multi-Stage Runtime Strategy](docs/reference/docker.md)
+ー see details:  [Docker Multi-Stage Runtime Strategy](docs/reference/docker.md) -->
 
 ## 概要
 
@@ -130,64 +130,106 @@ graph TB
 ### 運用・デプロイフロー
 
 ```mermaid
-graph TB
-    subgraph "Pull Request (並列実行, PR触発)"
-        PV[pr-validation<br/>ruff / mypy / pytest<br/>+ smoke]
-        PTS[pr-trivy-scan<br/>Trivy FS + Image]
-        PMQ[pr-md-quality-check<br/>markdownlint / textlint]
-    end
+flowchart TD
+    A["<h3>Code Change</h3><u>Pull Request / Push</u>
+    <br/>"] --> B["<h3>Quality & Security Checks</h3><u>ruff / mypy / pytest / <br/>Trivy / markdownlint</u>
+    <br/>"]
 
-    subgraph "Push to main/develop (独立並列起動)"
-        CTEST[compose-test<br/>pytest + coverage<br/>runs on PR & push]
-        PVAL[post-validation<br/>mypy + Smoke]
-        PTRIVY[post-trivy-scan<br/>Trivy FS + Image]
-        WEEKLY[weekly jobs<br/>schedule 触発]
-    end
+    A --> C["<h3>Compose Test</h3><u>pytest + coverage</u>
+    <br/>"]
 
-    subgraph "Container Health"
-        CHEALTH["compose-healthcheck<br/>container health gate"]
-    end
+    C --> D["<h3>Coverage Pages</h3><u>GitHub Pages</u>
+    <br/>"]
+    C --> E["<br/><h3>Container Healthcheck</h3><br/>"]
 
-    subgraph "Publish & Verify (実装済み: Continuous Delivery, main push)"
-        DPAGES["deploy-pages<br/>GitHub Pages: coverage"]
-        PUBIMG["publish-image<br/>GHCR: runtime image"]
-        VERIFY["verify-published-image<br/>pull & run verify"]
-    end
+    E --> F["<br/><h3>GHCR Runtime Image<br/>Publish</h3><br/>"]
+    F --> G["<br/><h3>Anonymous pull &<br/> smoke-run</h3><br/>"]
+    G --> H["<br/><h3>Status Summary</h3><br/>"]
 
-    subgraph "Status Aggregation"
-        SR["status-report<br/>全ジョブ結果を集約<br/>if: !cancelled()"]
-    end
+    D --> H
 
-    CTEST --> CHEALTH
-    CTEST --> DPAGES
-    CTEST --> PUBIMG
-    CHEALTH --> PUBIMG
-    PTRIVY --> PUBIMG
-    PUBIMG --> VERIFY
+    classDef default fill:#F7F3EA,stroke:#111,stroke-width:1.5px,color:#111;
+    classDef key fill:#FFFDF7,stroke:#111,stroke-width:2px,color:#111;
 
-    PV -.-> SR
-    PTS -.-> SR
-    PMQ -.-> SR
-    PVAL -.-> SR
-    PTRIVY -.-> SR
-    WEEKLY -.-> SR
-    CTEST -.-> SR
-    CHEALTH -.-> SR
-    DPAGES -.-> SR
-    PUBIMG -.-> SR
-    VERIFY -.-> SR
-
-    classDef cd fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
-    class DPAGES,PUBIMG,VERIFY cd;
-    classDef parallel fill:#fff3e0,stroke:#ef6c00,stroke-width:1px,stroke-dasharray: 5 5;
-    class PV,PTS,PMQ,CTEST,PVAL,PTRIVY parallel;
-    classDef trigger fill:#e8eaf6,stroke:#3f51b5,stroke-width:1px;
-    class SR trigger;
+    class A,B,C,D,E,F,G,H key;
 ```
+<br/>
 
 > **注記**: 現在は GitHub Pages (coverage) + GHCR (runtime image) までの **Continuous Delivery** が実装済みです。Cloud Run / ECS / K8s 等の本番ホスティングへの実デプロイ (Continuous Deployment) は未実装です。
 >
 > **正確なジョブ依存グラフ (`needs`)** は [docs/reference/ci_cd_pipeline.md](docs/reference/ci_cd_pipeline.md) を参照してください。CI 設定の唯一の真実源は [`.github/workflows/ci.yml`](.github/workflows/ci.yml) です（上図は論理フローの俯瞰で、依存は矢印で表現しています）。
+
+### テスト戦略
+
+```mermaid
+flowchart TD
+    B["<h3>Unit Tests</h3><u>Isolated & Fast (Deterministic)<br/>{{UNIT_TESTS_COUNT}} tests<u>
+    <br/>"]
+    C["<h3>Integration Tests</h3><u>Actual API integration<br/>{{INTEGRATION_TESTS_COUNT}} tests</u>
+    <br/>"]
+    H["<h3>Smoke Tests</h3><u>Pull Request / Post merge</u>
+    <br/>"]
+
+    B --> D["<h3>CI Quality Gate</h3><u>unit + integration + smoke<br/>external excluded</u>
+    <br/>"]
+    C --> D
+    H --> D
+
+    E["<h3>External Tests</h3><u>Weekly / GitHub API<br/>rate-limit aware</u>
+    <br/>"]
+    G["<h3>Performance Tests</h3><u>Weekly</u>
+    <br/>"]
+
+    E --> F["<h3>Scheduled / Manual Checks</h3><u>non-blocking external validation</u>
+    <br/>"]
+    G --> F
+
+    D --> I["<h3>Coverage</h3><u>{{COVERAGE_PERCENT}}<br/>target 85%+</u>
+    <br/>"]
+    F --> I
+
+    classDef default fill:#F7F3EA,stroke:#111,stroke-width:1.5px,color:#111;
+    classDef key fill:#FFFDF7,stroke:#111,stroke-width:2px,color:#111;
+    classDef support fill:#EEF4FF,stroke:#111,stroke-width:1.5px,color:#111;
+    classDef metric fill:#EAF7EA,stroke:#111,stroke-width:2px,color:#111;
+
+    class B,C,D,H key;
+    class E,F,G support;
+    class I metric;
+```
+
+### Docker multi-stage
+
+```mermaid
+flowchart TD
+    B["<h3>base</h3><u>python:3.14-slim<br/>digest pinned</u>
+    <br/>"]
+
+    B --> D["<h3>dependencies</h3><u>uv layer<br/>dependency install</u>
+    <br/>"]
+
+    D --> R["<h3>runtime</h3><u>Production image<br/>COPY --from=dependencies /app/.venv<br/>non-root appuser<br/>HEALTHCHECK<br/>&lt;200MB target</u>
+    <br/>"]
+
+    B --> T["<h3>test</h3><u>branches from base<br/>COPY --from=dependencies .venv<br/>cache reuse<br/>pytest / coverage</u>
+    <br/>"]
+
+    R --> C1["<h3>docker compose</h3><u>app service<br/>target: runtime</u>
+    <br/>"]
+
+    T --> C2["<h3>docker compose</h3><u>test service<br/>target: test<br/>profiles</u>
+    <br/>"]
+
+    classDef default fill:#F7F3EA,stroke:#111,stroke-width:1.5px,color:#111;
+    classDef key fill:#FFFDF7,stroke:#111,stroke-width:2px,color:#111;
+    classDef runtime fill:#EAF7EA,stroke:#111,stroke-width:2px,color:#111;
+    classDef support fill:#EEF4FF,stroke:#111,stroke-width:1.5px,color:#111;
+
+    class B,D key;
+    class R runtime;
+    class T,C1,C2 support;
+```
+<br/>
 
 ### 設計判断（Design Decisions）
 
@@ -273,20 +315,33 @@ uv run pytest -m "manual or external"  # GitHub API統合テスト（週1回推�
 **主な機能**:
 
 - 🛡️ **機密データ保護**: 44種類の機密キーを自動スクラブ（password, token, api_key等）
+
 - 🔄 **structlog連携**: ERROR/CRITICAL/EXCEPTIONレベルを自動送信
 - ⚡ **サイレント失敗**: Sentry障害時もアプリケーション継続
 - 🔐 **SecretStr保護**: DSNの平文出力防止
 
-**環境変数設定**:
+**設定方法**:
+
+Sentry連携は既定で無効（`SENTRY__ENABLED=false`）です。デモ・CI はネットワーク非依存で自己完結します。有効化する場合のみ、以下を設定してください。
 
 ```bash
-# Sentry設定（.envファイル）
-SENTRY__ENABLED=true
-SENTRY__DSN=https://xxx@xxx.ingest.us.sentry.io/xxx
-SENTRY__ENVIRONMENT=production
-SENTRY__TRACES_SAMPLE_RATE=0.1
-SENTRY__SEND_DEFAULT_PII=false
+# DSN は機密のため .env に書かず、OS 環境変数で注入する
+#   （DSN は write-only の ingest キー。コミット対象ファイルには置かない）
+export SENTRY__DSN=<your-dsn>   # 例: https://xxx@oNNN.ingest.us.sentry.io/NNN
+
+# 有効化してローカル実行（uv run は OS 環境変数を読み込む。
+#   pydantic-settings の優先順位: OS env > .env のため、.env の false を上書きできる）
+# init_sentry() は成功時も内部ログを出さない設計のため、戻り値を明示的に表示する
+SENTRY__ENABLED=true uv run python -c "from utils.sentry_init import init_sentry; print('Sentry initialized:', init_sentry())"
 ```
+
+**補足**:
+
+- 実 DSN はコミット対象ファイルに書かない（`.env.example` はプレースホルダのみ）。
+- Docker コンテナはホストの `SENTRY__DSN` を継承しない。コンテナで有効化する場合は
+  `docker-compose.yml` の該当サービスに `environment: SENTRY__DSN: ${SENTRY__DSN:-}` を明示する。
+- 任意の調整項目: `SENTRY__ENVIRONMENT`（未設定時は `settings.environment` を使用）、
+  `SENTRY__TRACES_SAMPLE_RATE=0.1`、`SENTRY__SEND_DEFAULT_PII=false`（PII 送信は既定で無効）。
 
 **初期化（アプリケーション起動時）**:
 
@@ -296,10 +351,20 @@ from utils.sentry_init import init_sentry
 if init_sentry():
     logger.info("Sentry monitoring enabled")
 ```
- **エラー監視** : Sentry SDK統合済み
-（ERROR以上自動送信、44種機密キー自動スクラブ、structlog連携、capturing transportでテスト時ネットワーク非依存）
 
- **テスト方針**: Sentry連携は `tests/unit/test_sentry_init.py` の boot-up 検証と、`tests/integration/test_sentry_logging_integration.py` の結合検証でカバーする。実 Sentry DSN への送信は外部依存・ダッシュボードノイズを招くため、capturing transport でネットワーク非依存に保つ。
+**コードで見る（実装）**:
+
+| 機能 | 実装 |
+|------|------|
+| 機密キー定義（44種） | [`SENSITIVE_KEYS`](utils/sentry_init.py#L247) |
+| PIIスクラブフック | [`_before_send()`](utils/sentry_init.py#L935) |
+| 再帰スクラブ処理 | [`_scrub_sensitive_data()`](utils/sentry_init.py#L478) |
+| 起動エントリ | [`init_sentry()`](utils/sentry_init.py#L1060) |
+| 設定モデル（PII送信 既定無効） | [`SentryConfig`](config/settings.py#L425) |
+
+> 行番号はコード変更でズレます。ポートフォリオ提出時はコミットSHA固定のpermalink化を推奨。
+
+**テスト方針**: Sentry連携は `tests/unit/test_sentry_init.py` の boot-up 検証と、`tests/integration/test_sentry_logging_integration.py` の結合検証でカバーする。実 Sentry DSN への送信は外部依存・ダッシュボードノイズを招くため、capturing transport でネットワーク非依存に保つ。
 
  📚 詳細は `.serena/memories/sentry_integration.md` を参照
 

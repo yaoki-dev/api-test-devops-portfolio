@@ -1,5 +1,6 @@
 """utils/logger.py のユニットテスト"""
 
+import logging
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -106,19 +107,31 @@ class TestLogOutput:
         assert captured[0]["action"] == "login"
 
     def test_log_levels_filtering(self) -> None:
-        """ログレベルフィルタリングが機能することを確認"""
-        with capture_logs() as captured:
-            logger = structlog.get_logger()
-            logger.debug("debug_message")
-            logger.info("info_message")
-            logger.warning("warning_message")
-            logger.error("error_message")
+        """ログレベルフィルタリングが機能することを確認
 
-        events = [log["event"] for log in captured]
-        assert "info_message" in events
-        assert "warning_message" in events
-        assert "error_message" in events
-        assert "debug_message" not in events
+        capture_logs() はプロセッサ連鎖をバイパスするが、レベルフィルタは
+        wrapper_class（make_filtering_bound_logger）側で適用されるため維持される。
+        よってフィルタ結果は現行グローバル設定の最小レベルに依存する。
+        ここでは INFO を明示設定して、環境変数 LOG__LEVEL に依存しない
+        決定的なテストにする（設定は finally で復元）。
+        """
+        original_config = structlog.get_config()
+        structlog.configure(wrapper_class=structlog.make_filtering_bound_logger(logging.INFO))
+        try:
+            with capture_logs() as captured:
+                logger = structlog.get_logger()
+                logger.debug("debug_message")
+                logger.info("info_message")
+                logger.warning("warning_message")
+                logger.error("error_message")
+
+            events = [log["event"] for log in captured]
+            assert "info_message" in events
+            assert "warning_message" in events
+            assert "error_message" in events
+            assert "debug_message" not in events
+        finally:
+            structlog.configure(**original_config)
 
 
 class TestLogFormat:
