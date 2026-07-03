@@ -194,7 +194,7 @@ flowchart TD
     classDef metric fill:#EAF7EA,stroke:#111,stroke-width:2px,color:#111;
 
     class B,C,D,H key;
-    class E,F,G,J support;
+    class E,F,G support;
     class I metric;
 ```
 
