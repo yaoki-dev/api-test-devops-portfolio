@@ -14,8 +14,15 @@ SSRFやPII漏洩、不安定なリトライといった連携特有のアンチ�
 [![GHCR](https://img.shields.io/static/v1?label=ghcr.io&message=api-test-devops-portfolio&color=blue&logo=docker)](https://github.com/yaoki-dev/api-test-devops-portfolio/pkgs/container/api-test-devops-portfolio)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
- <!-- **CI/CD / Python / Docker** を統合したAPIテスト自動化ポートフォリオ。
- **1,372**件のテスト（CI品質ゲート: **1,358件/96.16%**） -->
+## 作成背景
+
+前職では、他メンバーが実装した機能をステージング環境で手動操作し、結合・システム・業務シナリオ観点で確認していました。
+その中で、実行手順の属人化、確認漏れ、リリース前の再実行コストといった課題を経験しました。
+
+このリポジトリでは、その課題を API / 結合層の品質保証に絞って設計しています。
+外部API連携で起こりやすい SSRF、PII漏洩、不安定なリトライ、Rate Limit 対応漏れなどを題材に、pytest による自動テスト、GitHub Actions の品質ゲート、Docker による再現可能な実行環境として実装しました。
+
+目的は、手動確認に依存しやすい品質保証を、再現可能・継続実行可能・レビュー可能な仕組みに置き換えることです。
 
 ## Demo
 
@@ -72,7 +79,7 @@ uv run pytest tests/unit/test_api_client.py --cov=utils --cov=config --cov=model
 
 - Docker Multi-stage builds（4段階: base/dependencies/runtime/test）
 - 非rootユーザーでのセキュアな実行
-- 本番イメージサイズ最適化（< 200MB目標）
+- 本番イメージサイズ最適化（runtime ~46 MiB pull / ~146 MiB 展開後・linux/amd64）
 
 ー see details:  [Docker Multi-Stage Runtime Strategy](docs/reference/docker.md) -->
 
@@ -105,7 +112,6 @@ uv run pytest tests/unit/test_api_client.py --cov=utils --cov=config --cov=model
 
 ### システム構成図
 
-
 ```mermaid
 graph TB
     subgraph "APIクライアント設計"
@@ -131,20 +137,24 @@ graph TB
 
 ```mermaid
 flowchart TD
-    A["<h3>Code Change</h3><u>Pull Request / Push</u>
-    <br/>"] --> B["<h3>Quality & Security Checks</h3><u>ruff / mypy / pytest / <br/>Trivy / markdownlint</u>
+    A["<h3>Code Change</h3><u>on: Pull Request / Push</u>
+    <br/>"] --> B["<h3>Quality & Security Checks</h3><u>ruff / mypy / pytest / <br/>Trivy / markdownlint / textlint</u><br/><br/>jobs:<br/> pr-validation /<br/> pr-trivy-scan /<br/> pr-md-quality-check
     <br/>"]
 
-    A --> C["<h3>Compose Test</h3><u>pytest + coverage</u>
+    A --> C["<h3>Compose Test</h3><u>pytest (unit + integration)<br/>inside test-stage image<br/>+ coverage report</u><br/><br/>job: compose-test
     <br/>"]
 
-    C --> D["<h3>Coverage Pages</h3><u>GitHub Pages</u>
+    C --> D["<h3>Deploy GitHub Pages</h3><u>coverage HTML report</u><br/><br/>job: deploy-pages
     <br/>"]
-    C --> E["<br/><h3>Container Healthcheck</h3><br/>"]
+    C --> E["<h3>Container Healthcheck</h3><u>docker compose up --wait<br/>HEALTHCHECK: config load OK<br/>→ Health.Status = healthy</u><br/><br/>job: compose-healthcheck
+    <br/>"]
 
-    E --> F["<br/><h3>GHCR Runtime Image<br/>Publish</h3><br/>"]
-    F --> G["<br/><h3>Anonymous pull &<br/> smoke-run</h3><br/>"]
-    G --> H["<br/><h3>Status Summary</h3><br/>"]
+    E --> F["<h3>GHCR Runtime Image<br/>Publish</h3><u>push runtime image<br/>tags: latest + sha</u><br/><br/>job: publish-image
+    <br/>"]
+    F --> G["<h3>Anonymous pull image &<br/>run verify</h3><u>no-auth public pull<br/>docker run → SMOKE_OK<br/>(published-image exec check)</u><br/><br/>job: verify-published-image
+    <br/>"]
+    G --> H["<h3>Status Summary</h3><u>aggregate all job results</u><br/><br/>job: status-report
+    <br/>"]
 
     D --> H
 
@@ -157,45 +167,50 @@ flowchart TD
 
 > **注記**: 現在は GitHub Pages (coverage) + GHCR (runtime image) までの **Continuous Delivery** が実装済みです。Cloud Run / ECS / K8s 等の本番ホスティングへの実デプロイ (Continuous Deployment) は未実装です。
 >
-> **正確なジョブ依存グラフ (`needs`)** は [docs/reference/ci_cd_pipeline.md](docs/reference/ci_cd_pipeline.md) を参照してください。CI 設定の唯一の真実源は [`.github/workflows/ci.yml`](.github/workflows/ci.yml) です（上図は論理フローの俯瞰で、依存は矢印で表現しています）。
+> **公開ゲート**: GHCR への publish は、runtime コンテナが healthy になり Trivy の CVE スキャン (CRITICAL/HIGH) がグリーンの場合のみ実行します。
+> 公開後は認証なしの匿名 pull でイメージを取得・起動し、利用者と同じ経路で実行可能性を smoke 検証します。
+>
+> **正確なジョブ依存グラフ (`needs`)** は [docs/reference/ci_cd_pipeline.md](docs/reference/ci_cd_pipeline.md) を参照してください。
+> CI 設定の唯一の真実源は [`.github/workflows/ci.yml`](.github/workflows/ci.yml) です（上図は論理フローの俯瞰で、主要な依存を矢印で表現しています。
+> 冗長な推移依存は省略しており、完全な依存は上記の ci.yml が真実源です）。
 
 ### テスト戦略
 
 ```mermaid
 flowchart TD
-    B["<h3>Unit Tests</h3><u>Isolated & Fast (Deterministic)<br/>{{UNIT_TESTS_COUNT}} tests<u>
+    A["<h3>Unit Tests</h3><u>Isolated & Fast (Deterministic)<br/>{{UNIT_TESTS_COUNT}} tests</u>
     <br/>"]
-    C["<h3>Integration Tests</h3><u>Actual API integration<br/>{{INTEGRATION_TESTS_COUNT}} tests</u>
+    B["<h3>Integration Tests</h3><u>Actual API integration<br/>{{INTEGRATION_TESTS_COUNT}} tests</u>
     <br/>"]
-    H["<h3>Smoke Tests</h3><u>Pull Request / Post merge</u>
-    <br/>"]
-
-    B --> D["<h3>CI Quality Gate</h3><u>unit + integration + smoke<br/>external excluded</u>
-    <br/>"]
-    C --> D
-    H --> D
-
-    E["<h3>External Tests</h3><u>Weekly / GitHub API<br/>rate-limit aware</u>
-    <br/>"]
-    G["<h3>Performance Tests</h3><u>Weekly</u>
+    G["<h3>Smoke Tests</h3><u>Pull Request / Post merge</u>
     <br/>"]
 
-    E --> F["<h3>Scheduled / Manual Checks</h3><u>non-blocking external validation</u>
+    A --> C["<h3>CI Quality Gate</h3><u>unit + integration + smoke<br/>external excluded</u>
     <br/>"]
-    G --> F
+    B --> C
+    G --> C
 
-    D --> I["<h3>Coverage</h3><u>{{COVERAGE_PERCENT}}<br/>target 85%+</u>
+    D["<h3>External Tests</h3><u>Weekly<br/>GitHub API : rate-limit aware</u>
     <br/>"]
-    F --> I
+    F["<h3>Performance Tests</h3><u>Weekly</u>
+    <br/>"]
+
+    D --> E["<h3>Scheduled Checks (Weekly)</h3><u>non-blocking external validation</u>
+    <br/>"]
+    F --> E
+
+    C --> H["<h3>Coverage</h3><u>{{COVERAGE_PERCENT}}<br/>target 85%+</u>
+    <br/>"]
+    E --> H
 
     classDef default fill:#F7F3EA,stroke:#111,stroke-width:1.5px,color:#111;
     classDef key fill:#FFFDF7,stroke:#111,stroke-width:2px,color:#111;
     classDef support fill:#EEF4FF,stroke:#111,stroke-width:1.5px,color:#111;
     classDef metric fill:#EAF7EA,stroke:#111,stroke-width:2px,color:#111;
 
-    class B,C,D,H key;
-    class E,F,G support;
-    class I metric;
+    class A,B,C,G key;
+    class D,E,F support;
+    class H metric;
 ```
 
 ### Docker multi-stage
@@ -205,19 +220,19 @@ flowchart TD
     B["<h3>base</h3><u>python:3.14-slim<br/>digest pinned</u>
     <br/>"]
 
-    B --> D["<h3>dependencies</h3><u>uv layer<br/>dependency install</u>
+    B --> D["<h3>dependencies</h3><u>base + prod deps only</u>
     <br/>"]
 
-    D --> R["<h3>runtime</h3><u>Production image<br/>COPY --from=dependencies /app/.venv<br/>non-root appuser<br/>HEALTHCHECK<br/>&lt;200MB target</u>
+    D --> R["<h3>runtime</h3><u>base + dependencies .venv<br/>non-root appuser<br/>HEALTHCHECK</u>
     <br/>"]
 
-    B --> T["<h3>test</h3><u>branches from base<br/>COPY --from=dependencies .venv<br/>cache reuse<br/>pytest / coverage</u>
+    D --> T["<h3>test</h3><u>base + dependencies .venv + dev deps<br/>pytest + coverage</u>
     <br/>"]
 
     R --> C1["<h3>docker compose</h3><u>app service<br/>target: runtime</u>
     <br/>"]
 
-    T --> C2["<h3>docker compose</h3><u>test service<br/>target: test<br/>profiles</u>
+    T --> C2["<h3>docker compose</h3><u>test service<br/>target: test profiles</u>
     <br/>"]
 
     classDef default fill:#F7F3EA,stroke:#111,stroke-width:1.5px,color:#111;
@@ -235,20 +250,20 @@ flowchart TD
 
 主要な技術選定とクライアント設計の決定根拠を文書化します（面接官向け可視化）。API特性駆動でクライアントごとに実装範囲を最適化しています。
 
-| 決定 | 選択／背景 | 根拠・トレードオフ |
+| 判断 | 採用方針 | 根拠・トレードオフ |
 |------|----------|------------------|
-| **pytest 採用** | 標準的・豊富なプラグイン・並列実行対応。unittest 互換で移行コスト低。 | 機能過多で学習曲線あり。fixture 設計に慣れが必要。 |
-| **respx でモック** | httpx ネイティブ対応・非同期対応・ルーティングベースで宣言的。requests-mock より型安全。 | httpx 依存。標準 library 非依存を優先する場合は不向き。 |
-| **Sync / Async 使い分け** | 単体CRUDは Sync 基本、並行I/Oが本質的に効く操作のみ Async（適材適所） | 認証なし・Rate Limit無のシンプルAPI（JSONPlaceholder）では単体CRUDを **Sync**（直線的・テスト簡潔）とし、**Async は並行I/Oに限定**（`get_multiple_users` = `asyncio.Semaphore` で並行数制御、`get_user_data` = `asyncio.gather` で同時取得）。GitHub API (Rate Limit + ETag) の並行 fetch でも効果大。レイテンシ支配の sequential 処理では Sync/Async 差は無視可能 = 過剰設計を避けた選択的採用。同期呼び出し側は `asyncio.run()` が必要。共通設定解決ロジックは `_resolve_client_config` / `_classify_error` で重複削減。 |
-| **Multi-stage Docker** | base/deps/runtime/test 4段階。本番 <200MB・非root・ビルドキャッシュ最適化。 | Dockerfile 複雑化。単一 stage よりビルド時間微増。 |
-| **多段階CIゲート** | PR validation → Compose test/healthcheck → CD (Pages/GHCR/Verify) → Post validation + Trivy。 | パイプライン長大化。並列化で実行時間最小化 (PR ~10分 / main push ~20分)。 |
-| **Trivy 3層検証** | PR: fs scan (develop/main)。main PR: + image scan。push: fs + image (post-trivy-scan)。 | 重複スキャンあり。キャッシュ戦略で実行時間抑制。SARIF で Security tab 統合。 |
-| **GHCR + Pages 公開** | GHCR: 匿名 pull 検証可能・OIDC 不要。Pages: カバレッジ HTML 公開・バッジ自動生成。 | GHCR は public repository 前提。Private repo は追加設定必要。 |
-| **`GitHubClient: Async特化`** | 非同期のみ | 認証 + Rate Limit (5000/h) + ETag対応のAPI特性により、並行fetch (`asyncio.gather`) と条件付きリクエスト (304 Not Modified) の恩恵が大きい。Sync caller は `asyncio.run()` で代替可。 |
-| **`SyncJSONPlaceholderClient → SyncAPIClient 継承`** | クラス継承 | LSP遵守 (HTTP動詞契約維持) + boilerplate削減。汎用HTTP層とドメインメソッドの責務分離 (SRP)。 |
-| **`GitHubClient: 独立実装`** | 継承せず | 戻り値型契約差異 (`httpx.Response` vs parsed JSON) と ETag/RateLimit/PII redaction の固有要件により、継承すると LSP違反。共通化は例外階層 (`GitHubAPIError(APIClientError)`) と utility 関数レベルに限定。 |
+| **`pytest 採用`** | 標準的・豊富なプラグイン・並列実行対応。unittest 互換で移行コスト低。 | 機能過多で学習曲線あり。fixture 設計に慣れが必要。 |
+| **`HTTPXモック: respx採用`** | httpx ネイティブ対応・非同期対応・ルーティングベースで宣言的。requests-mock より型安全。 | httpx 依存。標準 library 非依存を優先する場合は不向き。 |
+| **`Sync / Async 使い分け`** | JSONPlaceholder の単体CRUDは Sync、並行I/Oが効く処理と GitHub API は Async。（適材適所） | シンプルAPIでは Sync の方が直線的でテスト容易。GitHub は Rate Limit / ETag / 並行取得の恩恵が大きいため Async 特化。Async 導入により呼び出し側は asyncio.run() 等の境界管理が必要。 |
+| **`JSONPlaceholder: Sync基盤継承`** | JSONPlaceholder の Sync クライアントは共通 SyncAPIClient を継承し、HTTP基盤とドメイン操作を分離。 | LSP遵守 (HTTP動詞契約維持) + boilerplate削減。汎用HTTP層とドメインメソッドの責務分離 (SRP)。 |
+| **`GitHubClient: 独立実装`** | 継承せず | 戻り値型契約差異 (httpx.Response vs parsed JSON) と ETag/RateLimit/PII redaction の固有要件により、継承すると LSP違反。共通化は例外階層 (GitHubAPIError(APIClientError)) と utility 関数レベルに限定。 |
+| **`GitHubClient: Async特化`** | GitHub API は Async 専用クライアントとして実装し、Sync 版は持たない。 | 認証・Rate Limit・ETag・複数リソース取得により並行I/Oの恩恵が大きい。Sync版を持たないことで保守対象を増やさず、同期利用は呼び出し境界で明示的に扱う。 |
+| **`サニタイズの適用範囲`** | JSONPlaceholder モデルのユーザー生成テキストに防御的サニタイズ (html.escape) を実装。GitHub 側は原文保持を優先し横展開しない。 | XSS対策の基本は出力時の context-aware encoding。モデル層サニタイズは補助防御だが、html.escape は値を変換するためデータ忠実性と衝突する。GitHub は原文保持を優先。 |
+| **`Multi-stage Docker`** | base/deps/runtime/test 4段階。本番 runtime 48.4 MB（pull size）・非root・ビルドキャッシュ最適化。 | 依存解決・runtime・testを分離し、最終イメージから不要なビルド/テスト依存を除外。代償として Dockerfile は複雑化し、単一 stage より理解コストが上がる。 |
+| **`多段階CIゲート`** | PR validation → Compose test/healthcheck → CD (Pages/GHCR/Verify) → Post validation + Trivy。 | PR時は品質確認、main反映後は公開物の検証まで分離し、失敗箇所を切り分けやすくする。代償としてパイプラインは長くなるため、並列化とキャッシュで実行時間を抑制。 |
+| **`Trivy 3層検証`** | PR: fs scan (develop/main)。main PR: + image scan。push: fs + image (post-trivy-scan)。 | 重複スキャンあり。キャッシュ戦略で実行時間抑制。SARIF で Security tab 統合。 |
+| **`GHCR + Pages 公開`** | GHCR: 匿名 pull 検証可能・OIDC 不要。Pages: カバレッジ HTML 公開・バッジ自動生成。 | GHCR は public repository 前提。Private repo は追加設定必要。 |
 
-詳細な決定背景・トレードオフ分析は ADR (Architecture Decision Records) 参照: `claudedocs/adr/`（ローカル保管・バージョン管理外）
 
 ## クイックスタート
 
@@ -277,33 +292,49 @@ pip install uv
 
 </details>
 
-### セットアップ
-
-**Note**: 並列実行には **`pytest-xdist`** が必要です。非並列で実行する場合は **`-n auto`** を外してください。
+### ローカル環境セットアップ
 
 ```bash
 # 1. リポジトリクローン
 git clone https://github.com/yaoki-dev/api-test-devops-portfolio.git
 cd api-test-devops-portfolio
 
-# 2. 依存関係インストール（uv使用、約10秒）
-uv sync
+# 2. 環境変数の設定（テンプレートから作成）
+cp .env.example .env
 
-# 3. テスト実行（並列）
+# 3. 依存関係インストール（uv使用、約10秒）
+uv sync
+```
+
+### ローカルでのテスト実行
+
+```bash
+# 1. テスト実行（並列）
 uv run pytest -n auto
 
-# 4. カバレッジ付きテスト（並列）
+# 2. カバレッジ付きテスト（並列）
 uv run pytest -n auto --cov=utils --cov=config --cov=models --cov-report=term
 
-# 5. 特定マーカーのテスト実行
+# 3. 特定マーカーのテスト実行
 uv run pytest -n auto -m unit        # 単体テストのみ
 uv run pytest -n auto -m integration # 統合テストのみ
 
-# 6. 高速実行（並列、manual/external除外）
+# 4. 高速実行（並列、manual/external除外）
 uv run pytest -n auto -m "not external and not manual"  # CI/CD相当の自動実行可能テストのみ
 
-# 7. 週次手動実行（Rate Limit管理）
+# 5. 週次手動実行（Rate Limit管理）
 uv run pytest -m "manual or external"  # GitHub API統合テスト（週1回推奨、60 req/h制約）
+```
+
+### Dockerでの実行（コンテナ環境）
+不変ランタイム（`runtime` ステージ）のポータビリティと、環境変数による挙動切り替え（Twelve-Factor App準拠）をローカルで検証します。
+
+```bash
+# テスト専用プロファイルでテスト実行（testコンテナで品質検証）
+docker compose --profile test run --rm test
+
+# 共通runtime用のコンテナを起動
+docker compose up -d
 ```
 
 ## エラー監視・可観測性
@@ -367,6 +398,8 @@ if init_sentry():
 **テスト方針**: Sentry連携は `tests/unit/test_sentry_init.py` の boot-up 検証と、`tests/integration/test_sentry_logging_integration.py` の結合検証でカバーする。実 Sentry DSN への送信は外部依存・ダッシュボードノイズを招くため、capturing transport でネットワーク非依存に保つ。
 
  📚 詳細は `.serena/memories/sentry_integration.md` を参照
+
+## ドキュメント
 
 ## ライセンス
 

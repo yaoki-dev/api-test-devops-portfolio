@@ -1,6 +1,6 @@
 # Dockerfile - 4-stage Multi-stage builds
-# 最終更新: 2026年03月08日
-# 品質基準: イメージサイズ < 200MB, ビルド時間 < 3分
+# 最終更新: 2026年07月05日
+# Runtime image on GHCR: 48.4 MB compressed
 
 # ============================================================
 # Stage 1: Base - 共通ベースイメージ

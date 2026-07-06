@@ -519,6 +519,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up QEMU (multi-arch emulation)
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
@@ -545,6 +548,9 @@ jobs:
         with:
           context: .
           target: runtime
+          # マルチアーキ publish: amd64(ネイティブ) + arm64(QEMUエミュレーション)。
+          # Apple Silicon 等 arm64 ホストでもネイティブ pull/run 可能にする。
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -567,16 +573,50 @@ jobs:
       # 匿名 public pull で検証するため packages: read / login は不要。
       # GITHUB_TOKEN を使わず利用者と同じ匿名取得経路で「公開されている」ことを証明する。
     steps:
-      - name: Pull and run published image (smoke, anonymous)
+      # arm64 変種をエミュレーション実行するため QEMU binfmt を登録する。
+      - name: Set up QEMU (arm64 emulated smoke)
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+
+      # publish が「マルチアーキ manifest list」として両プラットフォームを含むことを構造検証。
+      # (単一の green バッジが部分ビルドを隠す anti-pattern を防ぐ)
+      - name: Verify multi-arch manifest (amd64 + arm64 present)
         env:
           IMAGE_REPOSITORY: ghcr.io/${{ github.repository }}
           IMAGE_TAG: sha-${{ github.sha }}
         run: |
           set -euo pipefail
           IMAGE="${IMAGE_REPOSITORY}:${IMAGE_TAG}"
-          docker pull "$IMAGE"
-          docker run --rm "$IMAGE" \
-            python -c "from config.settings import settings; assert settings.environment; print('SMOKE_OK')"
+          docker buildx imagetools inspect "$IMAGE" --raw > manifest.json
+          for arch in amd64 arm64; do
+            # .manifests[]? の "?" で単一arch(manifest list でない)時も
+            # iterate-null エラーにせず、意図した ::error:: で fail-loud させる
+            jq -e --arg a "$arch" \
+              '.manifests[]? | select(.platform.os == "linux" and .platform.architecture == $a)' \
+              manifest.json > /dev/null \
+              || { echo "::error::multi-arch manifest missing linux/$arch"; exit 1; }
+          done
+          echo "manifest list contains linux/amd64 + linux/arm64"
+
+      - name: Pull and run published image (amd64 smoke, anonymous)
+        env:
+          IMAGE_REPOSITORY: ghcr.io/${{ github.repository }}
+          IMAGE_TAG: sha-${{ github.sha }}
+        run: |
+          set -euo pipefail
+          IMAGE="${IMAGE_REPOSITORY}:${IMAGE_TAG}"
+          docker run --rm --platform linux/amd64 "$IMAGE" \
+            python -c "from config.settings import settings; assert settings.environment; print('AMD64_SMOKE_OK')"
+
+      # arm64 変種を実際に起動して「公開したが未検証」を排除する (emulation 経由)。
+      - name: Pull and run published image (arm64 emulated smoke, anonymous)
+        env:
+          IMAGE_REPOSITORY: ghcr.io/${{ github.repository }}
+          IMAGE_TAG: sha-${{ github.sha }}
+        run: |
+          set -euo pipefail
+          IMAGE="${IMAGE_REPOSITORY}:${IMAGE_TAG}"
+          docker run --rm --platform linux/arm64 "$IMAGE" \
+            python -c "import platform; from config.settings import settings; assert settings.environment; assert platform.machine() == 'aarch64'; print('ARM64_SMOKE_OK')"
 
   compose-healthcheck:
     needs: [compose-test]
@@ -716,10 +756,10 @@ jobs:
       # mypyをvalidationジョブ内ステップとして統合
       # 設計決定: runner起動コスト~60秒削減 > 並列フィードバック喪失
       # 根拠: mypy失敗頻度低
-      - name: Run mypy check (Post Validation)
+      - name: Run mypy check
         run: uv run mypy utils/ config/ models/
 
-      - name: Run smoke tests (Post Validation)
+      - name: Run smoke tests
         id: smoke-tests
         run: |
           uv run pytest -m "smoke and not external" -v --tb=short --no-cov
@@ -754,13 +794,13 @@ jobs:
       security-events: write
 
     steps:
-      - name: Checkout code (Post Trivy Scan)
+      - name: Checkout code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
       # ===== Stage 1: Filesystem Scan (dependencies) =====
-      - name: Trivy filesystem scan (dependencies) (Post Trivy Scan)
+      - name: Trivy filesystem scan (dependencies)
         id: fs-scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         env:
@@ -777,7 +817,7 @@ jobs:
           cache: ${{ github.event_name != 'schedule' }}
         continue-on-error: true
 
-      - name: Verify filesystem scan execution (Post Trivy Scan)
+      - name: Verify filesystem scan execution
         id: verify-fs-scan
         if: always()
         uses: ./.github/actions/trivy-sarif-verify
@@ -785,14 +825,14 @@ jobs:
           sarif-file: "trivy-post-fs-scan.sarif"
           scan-type: "filesystem"
 
-      - name: Upload filesystem scan results to Security tab (Post Trivy Scan)
+      - name: Upload filesystem scan results to Security tab
         uses: github/codeql-action/upload-sarif@54f647b7e1bb85c95cddabcd46b0c578ec92bc1a # v4.36.3
         if: always() && steps.verify-fs-scan.outcome == 'success' && steps.fs-scan.outcome != 'cancelled' && steps.fs-scan.outcome != 'skipped'
         with:
           sarif_file: "trivy-post-fs-scan.sarif"
           category: "trivy-post-fs-scan"
 
-      - name: Fail job if fs vulnerabilities found or verification failed (Post Trivy Scan)
+      - name: Fail job if fs vulnerabilities found or verification failed
         if: |
           !cancelled() && (
             steps.fs-scan.outcome == 'failure' ||
@@ -817,7 +857,7 @@ jobs:
           exit 1
 
       # ===== Stage 2: Docker Image Build =====
-      - name: Set up Docker Build (Post Trivy Scan)
+      - name: Set up Docker Build
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Set image tag
@@ -849,7 +889,7 @@ jobs:
           exit 1
 
       # ===== Stage 3: Docker Image Scan =====
-      - name: Trivy image scan (CRITICAL + HIGH) (Post Trivy Scan)
+      - name: Trivy image scan (CRITICAL + HIGH)
         id: image-scan
         if: steps.docker-build.outcome == 'success'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
@@ -866,7 +906,7 @@ jobs:
           cache: ${{ github.event_name != 'schedule' }}
         continue-on-error: true
 
-      - name: Verify image scan execution (Post Trivy Scan)
+      - name: Verify image scan execution
         id: verify-image-scan
         if: always() && steps.image-scan.outcome != 'skipped'
         uses: ./.github/actions/trivy-sarif-verify
@@ -874,7 +914,7 @@ jobs:
           sarif-file: "trivy-post-image-scan.sarif"
           scan-type: "image"
 
-      - name: Upload image scan results to Security tab (Post Trivy Scan)
+      - name: Upload image scan results to Security tab
         uses: github/codeql-action/upload-sarif@54f647b7e1bb85c95cddabcd46b0c578ec92bc1a # v4.36.3
         if: always() && steps.verify-image-scan.outcome == 'success' && steps.image-scan.outcome != 'cancelled' && steps.image-scan.outcome != 'skipped'
         with:
@@ -883,7 +923,7 @@ jobs:
 
       # 'skipped'チェックは Docker build security gate (上記) が先に exit する shielding により
       # 通常重複だが、将来の条件分岐変更時の防御的セーフネット（pr-trivy-scan fs-scan L464と対称）
-      - name: Fail job if image vulnerabilities found or verification failed (Post Trivy Scan)
+      - name: Fail job if image vulnerabilities found or verification failed
         if: |
           !cancelled() && (
             steps.image-scan.outcome == 'failure' ||
@@ -904,7 +944,7 @@ jobs:
           exit 1
 
       # ===== Cleanup =====
-      - name: Clean up Docker image (Post Trivy Scan)
+      - name: Clean up Docker image
         if: always() && steps.docker-build.outcome != 'skipped'
         run: docker rmi ${{ steps.image-tag.outputs.tag }} || true
 
@@ -1006,21 +1046,21 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Checkout code (Weekly Link Check)
+      - name: Checkout code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
-      - name: Setup Node.js (Weekly Link Check)
+      - name: Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: "20"
           cache: "npm"
 
-      - name: Install dependencies (Weekly Link Check)
+      - name: Install dependencies
         run: npm ci
 
-      - name: Find Markdown files (Weekly Link Check)
+      - name: Find Markdown files
         id: find-md
         run: |
           # Find MD files, excluding ignored directories (sync with .textlintignore)
@@ -1043,7 +1083,7 @@ jobs:
           tr '\n' '\0' < md_files.txt > md_files.nul
           echo "Found $(wc -l < md_files.txt) Markdown files"
 
-      - name: Run markdown-link-check (Weekly Link Check)
+      - name: Run markdown-link-check
         run: |
           # Security: Use -print0/xargs -0 to safely handle filenames with special characters
           # Performance note: Sequential execution chosen for weekly job (batch mode would fail-fast on first error)
@@ -1062,7 +1102,7 @@ jobs:
           xargs -0 -I {} bash -c 'check_file "$@"' _ {} < md_files.nul
         continue-on-error: true
 
-      - name: Upload link check results (Weekly Link Check)
+      - name: Upload link check results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

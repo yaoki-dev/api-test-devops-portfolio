@@ -1,6 +1,6 @@
 # Docker
 
-*最終更新: 2026年06月11日*
+*最終更新: 2026年07月06日*
 
 ## 🐳 Docker環境概要
 
@@ -33,33 +33,48 @@ ENVIRONMENT と環境別 env ファイルで設定と検証ポリシーを環境
 
 ## 📦 イメージ最適化
 
+### イメージサイズ（実測 2026-07-04）
+
+| イメージ | local image size | compressed pull size |
+|---|---:|---:|
+| runtime（GHCR公開） | 202 MB（GHCR pull 後） | 48.4 MB |
+| test（CI内部） | 577 MB | 非公開 |
+
+- `local image size` は docker images の DISK USAGE / SIZE を採用。
+- `compressed pull size` は GHCR の manifest layer size 合計を採用。
+- `runtime image` は公開・pull対象のため compressed size を主指標として併記。
+- `test image` はローカルテストおよび CI で利用する検証用イメージであり、GHCR へ公開していないため compressed pull size は掲載していません。
+
 ### 実装済み最適化
 
-- Multi-stage build によるサイズ削減
-- .dockerignore による不要ファイル除外
-- レイヤーキャッシュ最適化
-- セキュリティスキャン統合
-- SHA256固定
-- HEALTHCHECK
-- uv syncキャッシュ利用
+- **python:3.14-slim** ベースを `@sha256` digest で固定（サプライチェーン対策）
+- **Multi-stage build**（base / dependencies / runtime / test）で本番 runtime へ dev 依存・テストコードを持ち込まない
+- **.dockerignore** で build context から不要物を除外（`**/__pycache__/`・`**/.mypy_cache/` など nested キャッシュを含む。`**/` を付けないと nested ディレクトリを除外できない点に注意）
+- **レイヤーキャッシュ + uv sync キャッシュ**でコードのみ変更時のビルドを高速化
+- **非 root（appuser）実行**と **HEALTHCHECK**（起動時に config ロードを検証）
+- **Trivy** の CVE スキャン統合（CRITICAL/HIGH グリーン時のみ GHCR publish）
+- **マルチアーキ publish**（linux/amd64 + linux/arm64）で GHCR runtime を manifest list として公開し、Apple Silicon 等 arm64 ホストでもエミュレーションなしにネイティブ pull/run できる。publish 後に両 arch の manifest 存在と arm64 実行を CI で検証する
 
 ## 🚀 実行方法
 
+本プロジェクトは「**Build Once, Run Anywhere**」の原則に基づき、コードを内包した1つの不変な共通ランタイム（`runtime` ステージ）を、環境変数（`ENVIRONMENT`）で制御する設計を採用しています。
+
 ```bash
-# 開発環境起動
-docker compose up -d
 
 # テスト実行
 docker compose --profile test run --rm test
 
-# ステージング実行
-ENVIRONMENT=staging docker compose up -d
+# 共通runtimeコンテナ起動
+docker compose up -d
 
-# 本番ビルド
-docker build --target runtime -t app:prod .
+# 共通runtimeコンテナ起動（Dockerfile・依存関係を変更した場合）
+docker compose up -d --build
 
-# 本番実行
-ENVIRONMENT=production docker compose up -d
+# ステージング環境で起動
+ENVIRONMENT=staging docker compose up -d --build
+
+# 本番環境で起動
+ENVIRONMENT=production docker compose up -d --build
 
 ```
 

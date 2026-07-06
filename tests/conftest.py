@@ -111,6 +111,48 @@ def disable_sentry_for_tests(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SENTRY__ENABLED", "false")
 
 
+@pytest.fixture(scope="session", autouse=True)
+def isolate_proxy_env() -> Iterator[None]:
+    """
+    テストセッション全体でプロキシ系環境変数を除去し、テストを環境非依存にする。
+
+    Purpose:
+        開発環境の HTTP(S)_PROXY / NO_PROXY / ALL_PROXY を剥離し、
+        httpx クライアント生成をアンビエントなプロキシ設定から隔離する。
+        ローカルインターセプタ (例: llmtrim) が NO_PROXY に IPv6 CIDR
+        (fd00::/8 等) を注入すると httpx が InvalidURL を送出し
+        (encode/httpx#3221)、全 httpx.Client/AsyncClient 生成が失敗する。
+        本 fixture でテストが実行環境のプロキシ設定に依存しないことを保証する。
+
+    Scope:
+        session スコープにすることで、class / module スコープのクライアント
+        fixture（例: tests/test_smoke.py の class スコープ api_client）が生成
+        される前に env を剥離する。function スコープでは高スコープ fixture の
+        後に実行され間に合わない（pytest は高スコープ fixture を先に生成する）。
+
+    Note:
+        - autouse=True により全テストに自動適用
+        - 本番挙動は不変（本番クライアントは trust_env=True のまま）
+        - httpx は小文字系も参照するため大文字/小文字の両方を除去
+        - monkeypatch fixture は function スコープ専用のため、公式 API の
+          pytest.MonkeyPatch() を直接使用し teardown で undo する
+    """
+    mp = pytest.MonkeyPatch()
+    for var in (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "no_proxy",
+    ):
+        mp.delenv(var, raising=False)
+    yield
+    mp.undo()
+
+
 # =============================================================================
 # 基本フィクスチャ
 # =============================================================================
