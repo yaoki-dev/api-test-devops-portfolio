@@ -18,6 +18,8 @@ import pytest
 import respx
 from structlog.testing import capture_logs
 
+from utils.api_client import APIClientError as ShimAPIClientError
+from utils.exceptions import APIClientError
 from utils.github_client import (
     AsyncGitHubClient,
     GitHubAPIError,
@@ -36,6 +38,13 @@ pytestmark = pytest.mark.unit
 
 GITHUB_API_BASE_URL = "https://api.github.com"
 MAX_RETRIES = 3
+
+
+def test_github_api_error_uses_shared_api_client_error() -> None:
+    """GitHub例外は分割後も共有API例外階層に属する。"""
+    assert ShimAPIClientError is APIClientError
+    assert issubclass(GitHubAPIError, APIClientError)
+
 
 # =============================================================================
 # 基本機能テスト（正常系）
