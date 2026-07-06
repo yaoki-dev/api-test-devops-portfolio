@@ -137,23 +137,28 @@ graph TB
 
 ```mermaid
 flowchart TD
-    A["<h3>Code Change</h3><u>on: Pull Request / Push</u>
-    <br/>"] --> B["<h3>Quality & Security Checks</h3><u>ruff / mypy / pytest / <br/>Trivy / markdownlint / textlint</u><br/><br/>jobs:<br/> pr-validation /<br/> pr-trivy-scan /<br/> pr-md-quality-check
+    A["<h4>Code Change</h4><u>Pull Request / Push</u>
     <br/>"]
 
-    A --> C["<h3>Compose Test</h3><u>pytest (unit + integration)<br/>inside test-stage image<br/>+ coverage report</u><br/><br/>job: compose-test
+    A --> B["<h4>Quality & Security Checks</h4><u>lint / type check / tests / security scan</u>
     <br/>"]
 
-    C --> D["<h3>Deploy GitHub Pages</h3><u>coverage HTML report</u><br/><br/>job: deploy-pages
-    <br/>"]
-    C --> E["<h3>Container Healthcheck</h3><u>docker compose up --wait<br/>HEALTHCHECK: config load OK<br/>→ Health.Status = healthy</u><br/><br/>job: compose-healthcheck
+    A --> C["<h4>Compose Test</h4><u>pytest + coverage</u>
     <br/>"]
 
-    E --> F["<h3>GHCR Runtime Image<br/>Publish</h3><u>push runtime image<br/>tags: latest + sha</u><br/><br/>job: publish-image
+    C --> D["<h4>Coverage Pages</h4><u>GitHub Pages</u>
     <br/>"]
-    F --> G["<h3>Anonymous pull image &<br/>run verify</h3><u>no-auth public pull<br/>docker run → SMOKE_OK<br/>(published-image exec check)</u><br/><br/>job: verify-published-image
+
+    C --> E["<h4>Container Healthcheck</h4><u>runtime container validation</u>
     <br/>"]
-    G --> H["<h3>Status Summary</h3><u>aggregate all job results</u><br/><br/>job: status-report
+
+    E --> F["<h4>GHCR Runtime Image</h4><u>publish image</u>
+    <br/>"]
+
+    F --> G["<h4>Pull & Run Verify</h4><u>public image smoke run</u>
+    <br/>"]
+
+    G --> H["<h4>Status Summary</h4><u>all job results</u>
     <br/>"]
 
     D --> H
@@ -170,36 +175,34 @@ flowchart TD
 > **公開ゲート**: GHCR への publish は、runtime コンテナが healthy になり Trivy の CVE スキャン (CRITICAL/HIGH) がグリーンの場合のみ実行します。
 > 公開後は認証なしの匿名 pull でイメージを取得・起動し、利用者と同じ経路で実行可能性を smoke 検証します。
 >
-> **正確なジョブ依存グラフ (`needs`)** は [docs/reference/ci_cd_pipeline.md](docs/reference/ci_cd_pipeline.md) を参照してください。
-> CI 設定の唯一の真実源は [`.github/workflows/ci.yml`](.github/workflows/ci.yml) です（上図は論理フローの俯瞰で、主要な依存を矢印で表現しています。
-> 冗長な推移依存は省略しており、完全な依存は上記の ci.yml が真実源です）。
+> この図は論理概要です。正確な job 名、trigger、`needs` 依存、multi-arch検証、Trivy/SARIF詳細は [CI/CD Pipeline](docs/reference/ci_cd_pipeline.md) に記載しています。
 
 ### テスト戦略
 
 ```mermaid
 flowchart TD
-    A["<h3>Unit Tests</h3><u>Isolated & Fast (Deterministic)<br/>{{UNIT_TESTS_COUNT}} tests</u>
+    A["<h4>Unit Tests</h4><u>Isolated & Fast (Deterministic)<br/>{{UNIT_TESTS_COUNT}} tests</u>
     <br/>"]
-    B["<h3>Integration Tests</h3><u>Actual API integration<br/>{{INTEGRATION_TESTS_COUNT}} tests</u>
+    B["<h4>Integration Tests</h4><u>Actual API integration<br/>{{INTEGRATION_TESTS_COUNT}} tests</u>
     <br/>"]
-    G["<h3>Smoke Tests</h3><u>Pull Request / Post merge</u>
+    G["<h4>Smoke Tests</h4><u>Pull Request / Post merge</u>
     <br/>"]
 
-    A --> C["<h3>CI Quality Gate</h3><u>unit + integration + smoke<br/>external excluded</u>
+    A --> C["<h4>CI Quality Gate</h4><u>unit + integration + smoke<br/>external excluded</u>
     <br/>"]
     B --> C
     G --> C
 
-    D["<h3>External Tests</h3><u>Weekly<br/>GitHub API : rate-limit aware</u>
+    D["<h4>External Tests</h4><u>Weekly<br/>GitHub API : rate-limit aware</u>
     <br/>"]
-    F["<h3>Performance Tests</h3><u>Weekly</u>
+    F["<h4>Performance Tests</h4><u>Weekly</u>
     <br/>"]
 
-    D --> E["<h3>Scheduled Checks (Weekly)</h3><u>non-blocking external validation</u>
+    D --> E["<h4>Scheduled Checks (Weekly)</h4><u>non-blocking external validation</u>
     <br/>"]
     F --> E
 
-    C --> H["<h3>Coverage</h3><u>{{COVERAGE_PERCENT}}<br/>target 85%+</u>
+    C --> H["<h4>Coverage</h4><u>{{COVERAGE_PERCENT}}<br/>target 85%+</u>
     <br/>"]
     E --> H
 
@@ -217,22 +220,22 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    B["<h3>base</h3><u>python:3.14-slim<br/>digest pinned</u>
+    B["<h4>base</h4><u>python:3.14-slim<br/>digest pinned</u>
     <br/>"]
 
-    B --> D["<h3>dependencies</h3><u>base + prod deps only</u>
+    B --> D["<h4>dependencies</h4><u>base + prod deps only</u>
     <br/>"]
 
-    D --> R["<h3>runtime</h3><u>base + dependencies .venv<br/>non-root appuser<br/>HEALTHCHECK</u>
+    D --> R["<h4>runtime</h4><u>base + dependencies .venv<br/>non-root appuser<br/>HEALTHCHECK</u>
     <br/>"]
 
-    D --> T["<h3>test</h3><u>base + dependencies .venv + dev deps<br/>pytest + coverage</u>
+    D --> T["<h4>test</h4><u>base + dependencies .venv + dev deps<br/>pytest + coverage</u>
     <br/>"]
 
-    R --> C1["<h3>docker compose</h3><u>app service<br/>target: runtime</u>
+    R --> C1["<h4>docker compose</h4><u>app service<br/>target: runtime</u>
     <br/>"]
 
-    T --> C2["<h3>docker compose</h3><u>test service<br/>target: test profiles</u>
+    T --> C2["<h4>docker compose</h4><u>test service<br/>target: test profiles</u>
     <br/>"]
 
     classDef default fill:#F7F3EA,stroke:#111,stroke-width:1.5px,color:#111;
@@ -244,6 +247,9 @@ flowchart TD
     class R runtime;
     class T,C1,C2 support;
 ```
+<br/>
+> この図は4段階マルチステージビルドの論理構成です。イメージサイズ最適化、マルチアーキ（amd64/arm64）publish・検証、非root実行・HEALTHCHECK、ベースイメージのdigest固定（サプライチェーン対策）は [Docker Multi-Stage Runtime Strategy](docs/reference/docker.md) に記載しています。
+
 <br/>
 
 ### 設計判断（Design Decisions）

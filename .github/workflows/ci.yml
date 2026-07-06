@@ -586,7 +586,27 @@ jobs:
         run: |
           set -euo pipefail
           IMAGE="${IMAGE_REPOSITORY}:${IMAGE_TAG}"
-          docker buildx imagetools inspect "$IMAGE" --raw > manifest.json
+          # publish 直後の GHCR は伝播遅延で一過性の 404/429/5xx を返し得る。
+          # 最初のレジストリ参照のみ指数 backoff + jitter で再試行し、伝播遅延と実体不具合を分離する。
+          # ここが通れば image は伝播済みのため、後続の amd64/arm64 pull & run は再試行不要。
+          retry_registry() {
+            local attempt=1 max_attempts=5 delay=3
+            until "$@"; do
+              if [ "$attempt" -ge "$max_attempts" ]; then
+                echo "::error::registry operation failed after ${max_attempts} attempts"
+                return 1
+              fi
+              echo "::warning::registry operation failed; retrying (${attempt}/${max_attempts})"
+              sleep $((delay + RANDOM % 3))
+              attempt=$((attempt + 1))
+              delay=$((delay * 2))
+            done
+          }
+          # リダイレクトを関数内に閉じ込め、再試行時の警告出力が manifest.json を汚染しないようにする
+          inspect_manifest() {
+            docker buildx imagetools inspect "$IMAGE" --raw > manifest.json
+          }
+          retry_registry inspect_manifest
           for arch in amd64 arm64; do
             # .manifests[]? の "?" で単一arch(manifest list でない)時も
             # iterate-null エラーにせず、意図した ::error:: で fail-loud させる
@@ -1044,6 +1064,10 @@ jobs:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # checkout + artifact upload のみ。継承既定に依存せず最小権限を明示
+    # (upload-artifact は追加権限不要。他ジョブと同じ per-job 最小権限方針で統一)
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout code

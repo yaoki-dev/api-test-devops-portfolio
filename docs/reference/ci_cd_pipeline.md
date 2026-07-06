@@ -205,6 +205,20 @@ main push時に以下3ジョブが実行され、Continuous Delivery（成果物
 - `post-trivy-scan` は main/develop push で並列実行（CD ジョブの依存には含まれないが、`publish-image` は `post-trivy-scan` 完了を待つ）
 - 稼働環境への実デプロイ（Continuous Deployment: Cloud Run / ECS / K8s 等）は未実装
 
+#### multi-arch 検証（`verify-published-image`）
+
+`publish-image` は runtime を **linux/amd64 + linux/arm64** の manifest list として GHCR に公開します。`verify-published-image` は「公開したが未検証」を排除するため、`GITHUB_TOKEN` を使わない匿名 public pull（利用者と同じ取得経路）で以下を検証します：
+
+| 検証 | 手段 | 目的 |
+|------|------|------|
+| manifest list 構造 | `docker buildx imagetools inspect --raw` + `jq` で `linux/amd64` `linux/arm64` 両方の存在を確認 | 単一の緑バッジが部分ビルドを隠す anti-pattern を防止（片 arch 欠落は fail-loud） |
+| amd64 実行 | `docker run --platform linux/amd64` で config ロードを smoke 実行 | 公開イメージが実際に起動可能かを検証 |
+| arm64 実行 | QEMU エミュレーションで `docker run --platform linux/arm64` し `platform.machine() == aarch64` を assert | manifest が arm64 を主張しつつ中身が amd64 という「嘘の manifest」を排除 |
+
+publish 直後の GHCR 伝播遅延（一過性の 404/429/5xx）に対し、最初の manifest 参照のみ指数 backoff + jitter で再試行し、伝播遅延と実体不具合を分離します。
+
+> multi-arch を **なぜ** publish するか（Apple Silicon 等 arm64 ホストでのネイティブ pull/run）等の配布観点は [Docker Multi-Stage Runtime Strategy](docker.md) を参照。
+
 ---
 
 ## 📋 ブランチ戦略（Git Flow）
