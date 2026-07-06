@@ -38,6 +38,7 @@ coverage.xml
 *.cover
 coverage.json
 .pre-commit-cache/**
+**/.mypy_cache/
 
 # IDEs
 .vscode/**

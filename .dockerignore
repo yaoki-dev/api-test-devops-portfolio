@@ -9,6 +9,7 @@
 
 # Python関連（50MB削減）
 **/__pycache__/
+**/.mypy_cache/
 *.py[cod]
 *$py.class
 *.so
