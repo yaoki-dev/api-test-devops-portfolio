@@ -13,11 +13,10 @@ from urllib.parse import quote, urlencode
 import httpx
 
 from utils.api_client import (
-    ASYNC_FATAL_EXCEPTIONS,
-    APIClientError,
     _log_error_with_stderr_fallback,
     exponential_backoff_with_jitter,
 )
+from utils.exceptions import ASYNC_FATAL_EXCEPTIONS, APIClientError
 from utils.logger import get_logger
 
 # モジュールレベル logger: ``@staticmethod`` (例: ``_cache_key``) など
@@ -319,7 +318,7 @@ class AsyncGitHubClient:
             # （has_body_exception=True 時）捕捉されサイレント隠蔽される。KeyboardInterrupt/
             # SystemExit/CancelledError は BaseException 直系で except Exception の境界外（素通り）
             # だが、_client=None 設定の一貫性のため本句で先取りする。
-            # NOTE: 本クラスは _request パス（utils.api_client の ASYNC_FATAL_EXCEPTIONS 方針）と
+            # NOTE: 本クラスは _request パス（utils.exceptions の ASYNC_FATAL_EXCEPTIONS 方針）と
             # 同一の定数を close 経路でも使用する。一方 AsyncAPIClient._close_async_client は
             # close 文脈で (MemoryError, RecursionError) のみを使う別方針（CancelledError 等は
             # BaseException 直系として素通りさせる設計）であり、両クラスの close ヘルパーは
