@@ -12,7 +12,6 @@ from pydantic import BaseModel, ValidationError
 
 import models.responses as responses_module
 from models.responses import (
-    _WEBSITE_NORMALIZED_MAX_LENGTH,  # noqa: PLC2701 - private helper length invariantを直接検証するため
     Address,
     Album,
     Comment,
@@ -22,10 +21,13 @@ from models.responses import (
     Post,
     Todo,
     User,
-    _normalize_url,  # noqa: PLC2701 - private helper length invariantを直接検証するため
-    _strip_invisible_chars,  # noqa: PLC2701 - private sanitizerの挙動を直接検証するため
-    _validate_scheme_less_url,  # noqa: PLC2701 - private validatorのバイパス防止を直接検証するため
+)
+from models.sanitization import (
+    WEBSITE_NORMALIZED_MAX_LENGTH,
+    normalize_url,
     sanitize_user_content,
+    strip_invisible_chars,
+    validate_scheme_less_url,
 )
 from tests.types import (
     _UserData,  # noqa: PLC2701 - test-internal helper naming preserved
@@ -237,21 +239,21 @@ def test_strip_invisible_chars_preserves_ascii_space() -> None:
     """
     # ASCII スペースは保持される
     assert (
-        _strip_invisible_chars("https://example.com/path?a=1 b=2")
+        strip_invisible_chars("https://example.com/path?a=1 b=2")
         == "https://example.com/path?a=1 b=2"
     )
     # NBSP (U+00A0: Zs) はNFKC前に除去される（NFKC変換前にZsフィルタが適用されるため）
-    assert _strip_invisible_chars("https://\u00a0example.com") == "https://example.com"
+    assert strip_invisible_chars("https://\u00a0example.com") == "https://example.com"
     # 全角スペース (U+3000: Zs) はNFKC前に除去される
-    assert _strip_invisible_chars("https://\u3000example.com") == "https://example.com"
+    assert strip_invisible_chars("https://\u3000example.com") == "https://example.com"
     # Variation Selector-1 (U+FE00) は除去される
-    assert _strip_invisible_chars("java\ufe00script:alert(1)") == "javascript:alert(1)"
+    assert strip_invisible_chars("java\ufe00script:alert(1)") == "javascript:alert(1)"
     # Variation Selector Supplement (U+E0100) も除去される
-    assert _strip_invisible_chars("java\U000e0100script:alert(1)") == "javascript:alert(1)"
+    assert strip_invisible_chars("java\U000e0100script:alert(1)") == "javascript:alert(1)"
     # Line Separator (U+2028: Zl) は除去される
-    assert _strip_invisible_chars("java\u2028script:alert(1)") == "javascript:alert(1)"
+    assert strip_invisible_chars("java\u2028script:alert(1)") == "javascript:alert(1)"
     # Paragraph Separator (U+2029: Zp) は除去される
-    assert _strip_invisible_chars("java\u2029script:alert(1)") == "javascript:alert(1)"
+    assert strip_invisible_chars("java\u2029script:alert(1)") == "javascript:alert(1)"
 
 
 def test_strip_invisible_chars_removes_surrogate_codepoint() -> None:
@@ -261,39 +263,39 @@ def test_strip_invisible_chars_removes_surrogate_codepoint() -> None:
     送出するため、事前除去が必要。
     """
     # 孤立サロゲートが除去され、残りの文字列が返される
-    assert _strip_invisible_chars("https://\ud800example.com") == "https://example.com"
+    assert strip_invisible_chars("https://\ud800example.com") == "https://example.com"
     # サロゲートのみの入力は空文字列になる
-    assert _strip_invisible_chars("\ud800\udbff\udfff") == ""
+    assert strip_invisible_chars("\ud800\udbff\udfff") == ""
     # サロゲートが混在しても正常な文字は保持される
-    assert _strip_invisible_chars("abc\ud800def") == "abcdef"
+    assert strip_invisible_chars("abc\ud800def") == "abcdef"
 
 
 def test_strip_invisible_chars_returns_empty_for_empty_input() -> None:
     """_strip_invisible_chars に空文字列を渡すと空文字列が返ること。"""
-    assert _strip_invisible_chars("") == ""
+    assert strip_invisible_chars("") == ""
 
 
 def test_strip_invisible_chars_strips_zero_width_space() -> None:
     """ゼロ幅スペース(U+200B, Cf)を除去すること"""
-    result = _strip_invisible_chars("exam\u200bple.com")
+    result = strip_invisible_chars("exam\u200bple.com")
     assert result == "example.com"
 
 
 def test_strip_invisible_chars_strips_bidi_override() -> None:
     """Bidi制御文字(U+202E, Cf)を除去すること"""
-    result = _strip_invisible_chars("exam\u202eple.com")
+    result = strip_invisible_chars("exam\u202eple.com")
     assert result == "example.com"
 
 
 def test_strip_invisible_chars_preserves_regular_space() -> None:
     """通常スペース(U+0020)は保持すること"""
-    result = _strip_invisible_chars("hello world")
+    result = strip_invisible_chars("hello world")
     assert result == "hello world"
 
 
 def test_strip_invisible_chars_preserves_combining_mark() -> None:
     """結合文字は保持され、NFD由来のホスト名をサイレントに改変しないこと。"""
-    result = _strip_invisible_chars("cafe\u0301.com")
+    result = strip_invisible_chars("cafe\u0301.com")
     assert result == "café.com"
 
 
@@ -669,8 +671,8 @@ class TestUserModel:
         )
 
     def test_user_website_max_length_boundary(self, valid_user_data: _UserData) -> None:
-        """website の正規化後URL長 _WEBSITE_NORMALIZED_MAX_LENGTH(2048) 境界値テスト."""
-        max_len = _WEBSITE_NORMALIZED_MAX_LENGTH  # 2048
+        """website の正規化後URL長 WEBSITE_NORMALIZED_MAX_LENGTH(2048) 境界値テスト."""
+        max_len = WEBSITE_NORMALIZED_MAX_LENGTH  # 2048
         base = "https://example.com/"
         # ちょうど max_len 文字: 正常
         path = "a" * (max_len - len(base))
@@ -1894,7 +1896,7 @@ class TestPhotoModel:
         難読化スキーム拒否テストは「http以外」の catch-all で弾くため、不可視文字が実際に
         除去されたかを判別できない（除去が壊れても非httpとして拒否され緑のまま）。本テストは
         正規httpURLに不可視文字を埋め込み、除去後に等価な正規URLへ正規化されることを表明し、
-        _strip_invisible_chars の各カテゴリ除去ロジックの回帰を直接検出する。
+        strip_invisible_chars の各カテゴリ除去ロジックの回帰を直接検出する。
         """
         photo = Photo(
             album_id=1,
@@ -1910,7 +1912,7 @@ class TestPhotoModel:
 
         Note:
             Pydanticはfield_validator呼び出し前にstring_unicodeエラーで拒否する。
-            _strip_invisible_charsのサロゲート除去は直接文字列呼び出し時に機能する。
+            strip_invisible_charsのサロゲート除去は直接文字列呼び出し時に機能する。
         """
         with pytest.raises(ValidationError, match=re.escape("string_unicode")):
             Photo(
@@ -1924,7 +1926,7 @@ class TestPhotoModel:
     def test_photo_url_rejects_empty_string(self) -> None:
         """Photo.url に空文字列を渡すと ValidationError が発生すること。
 
-        min_length 制約がないため、空文字列は _strip_invisible_chars → .strip() を通過後
+        min_length 制約がないため、空文字列は strip_invisible_chars → .strip() を通過後
         validate_url_scheme のガード節（if not sanitized）に到達する。
         """
         with pytest.raises(ValidationError, match=re.escape("URLが空になりました")):
@@ -1998,7 +2000,7 @@ class TestPhotoModel:
         }
         with pytest.raises(
             ValidationError,
-            match=rf"URL補完後の長さが上限{_WEBSITE_NORMALIZED_MAX_LENGTH}文字を超過しています",
+            match=rf"URL補完後の長さが上限{WEBSITE_NORMALIZED_MAX_LENGTH}文字を超過しています",
         ):
             Photo.model_validate(photo_data)
 
@@ -2033,33 +2035,33 @@ class TestNormalizeUrl:
 
     def test_basic_normalization(self) -> None:
         """スキームとホストの小文字正規化"""
-        result = _normalize_url(urlparse("HTTPS://EXAMPLE.COM/Path"))
+        result = normalize_url(urlparse("HTTPS://EXAMPLE.COM/Path"))
         assert result == "https://example.com/Path"
 
     def test_ipv6_bracket_preservation(self) -> None:
         """IPv6アドレスのブラケット復元"""
-        result = _normalize_url(urlparse("https://[::1]:8080/path"))
+        result = normalize_url(urlparse("https://[::1]:8080/path"))
         assert result == "https://[::1]:8080/path"
 
     def test_safe_params_encoding(self) -> None:
         """RFC 3986 §3.3 パラメータ部のエンコード"""
-        result = _normalize_url(urlparse("https://example.com/path;type=pdf"))
+        result = normalize_url(urlparse("https://example.com/path;type=pdf"))
         assert ";type=pdf" in result
 
     def test_fragment_preserves_unreserved(self) -> None:
         """フラグメントのunreserved文字（._~）が過剰エンコードされないこと"""
-        result = _normalize_url(urlparse("https://example.com/page#section_1.2~draft"))
+        result = normalize_url(urlparse("https://example.com/page#section_1.2~draft"))
         assert result.endswith("#section_1.2~draft")
 
     def test_existing_percent_encoding_preserved(self) -> None:
         """既存の%エンコードが二重エンコードされないこと"""
-        result = _normalize_url(urlparse("https://example.com/path%20name"))
+        result = normalize_url(urlparse("https://example.com/path%20name"))
         assert "%20" in result
         assert "%2520" not in result  # 二重エンコード防止
 
     def test_single_quote_encoded_to_percent27(self) -> None:
         """シングルクォートがXSS防止のため%27にエンコードされること（RFC 3986 safe除外）"""
-        result = _normalize_url(urlparse("https://example.com/path/file'.jpg"))
+        result = normalize_url(urlparse("https://example.com/path/file'.jpg"))
         assert "%27" in result
         assert "'" not in result.split("//", 1)[1]  # ホスト以降にシングルクォートなし
 
@@ -2068,7 +2070,7 @@ class TestNormalizeUrl:
         parsed = urlparse("https://:8080/path")
         assert parsed.hostname is None, "前提条件: hostname が None であること"
         with pytest.raises(ValueError, match=re.escape("ホスト名の解決に失敗しました")):
-            _normalize_url(parsed)
+            normalize_url(parsed)
 
 
 class TestValidateSchemeLessUrl:
@@ -2079,26 +2081,26 @@ class TestValidateSchemeLessUrl:
     def test_rejects_incomplete_percent_encoding(self) -> None:
         """不完全なパーセントエンコード（%GG等）を拒否すること"""
         with pytest.raises(ValueError, match=re.escape("不完全なパーセントエンコード")):
-            _validate_scheme_less_url("example%GG.com")
+            validate_scheme_less_url("example%GG.com")
 
     def test_rejects_path_separator(self) -> None:
         """パス区切り（/）を含むURLを拒否すること"""
         with pytest.raises(ValueError, match=re.escape("パス")):
-            _validate_scheme_less_url("example.com/path")
+            validate_scheme_less_url("example.com/path")
 
     def test_rejects_fragment(self) -> None:
         """フラグメント（#）を含むURLを拒否すること"""
         with pytest.raises(ValueError, match=re.escape("フラグメント")):
-            _validate_scheme_less_url("example.com#section")
+            validate_scheme_less_url("example.com#section")
 
     def test_rejects_query(self) -> None:
         """クエリ（?）を含むURLを拒否すること"""
         with pytest.raises(ValueError, match=re.escape("クエリ")):
-            _validate_scheme_less_url("example.com?key=val")
+            validate_scheme_less_url("example.com?key=val")
 
     def test_accepts_valid_domain(self) -> None:
         """有効なドメイン名はエラーなしで通過すること"""
-        _validate_scheme_less_url("example.com")  # 例外なし = 成功
+        validate_scheme_less_url("example.com")  # 例外なし = 成功
 
 
 class TestExtraFieldsForbidden:
