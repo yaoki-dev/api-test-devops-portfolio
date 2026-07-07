@@ -191,7 +191,7 @@ def normalize_url(parsed: ParseResult) -> str:
 
 
 def _ensure_website_max_length(url: str) -> str:
-    """正規化後URL長の上限チェック（WEBSITE_NORMALIZED_MAX_LENGTH文字）."""
+    """正規化後URL長の上限チェック（WEBSITE_NORMALIZED_MAX_LENGTH文字）"""
     if len(url) > WEBSITE_NORMALIZED_MAX_LENGTH:
         raise ValueError(
             f"URL補完後の長さが上限{WEBSITE_NORMALIZED_MAX_LENGTH}文字を超過しています（{len(url)}文字）"
