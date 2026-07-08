@@ -37,6 +37,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 
         Raises:
             ValueError: limit < 0 または user_id < 1 の場合
+
         """
         validate_optional_int(limit, "limit", 0)
         validate_optional_int(user_id, "user_id", 1)
@@ -71,6 +72,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             は欠落）、必須フィールド ``user_id`` ＋ ``extra="forbid"`` を持つ Post
             モデルでは検証が失敗する。``update_todo`` (PATCH) と同様、部分的な
             レスポンスを検証モデルに固定せず生の dict で返すのは意図的な設計。
+
         """
         data = {"title": title, "body": body}
         response = await self.put(f"/posts/{post_id}", json=data)
@@ -105,6 +107,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 
         Raises:
             ValueError: limit < 0 または user_id < 1 の場合
+
         """
         validate_optional_int(limit, "limit", 0)
         validate_optional_int(user_id, "user_id", 1)
@@ -144,6 +147,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             部分オブジェクトになりうる。検証モデル（Todo）に固定せず生の dict を
             返すのは意図的な設計（必須フィールド欠落で ``extra="forbid"`` の
             検証が失敗するのを避けるため）。
+
         """
         response = await self.patch(f"/todos/{todo_id}", json=kwargs)
         return cast("dict[str, Any]", safe_parse_json(response))
@@ -172,6 +176,8 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             KeyboardInterrupt: 割り込みシグナルを受けた場合
             SystemExit: ``sys.exit()`` が呼ばれた場合
             MemoryError: メモリ不足が発生した場合
+            RecursionError: 再帰上限に達した場合
+
         """
         tasks = [self.create_user(user_data) for user_data in users_data]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -207,7 +213,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
                                 if isinstance(result, APIHTTPError)
                                 else {}
                             ),
-                        }
+                        },
                     )
             self.logger.warning(
                 "bulk_create_partial_failure",
@@ -227,6 +233,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 
         Raises:
             ValueError: post_id < 1 の場合
+
         """
         validate_optional_int(post_id, "post_id", 1)
 
@@ -244,6 +251,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 
         Raises:
             ValueError: user_id < 1 の場合
+
         """
         validate_optional_int(user_id, "user_id", 1)
 
@@ -262,6 +270,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 
         Raises:
             ValueError: album_id < 1 の場合
+
         """
         validate_optional_int(album_id, "album_id", 1)
 
@@ -308,6 +317,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             >>> async with AsyncJSONPlaceholderClient() as client:
             ...     if await client.health_check():
             ...         print("API is healthy")
+
         """
         try:
             response = await self.get("/users", params={"_limit": 1})
@@ -339,10 +349,18 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         Returns:
             取得成功したユーザー情報リスト（失敗した ID はスキップし warning ログ出力）。
 
+        Raises:
+            asyncio.CancelledError: タスクがキャンセルされた場合（graceful shutdown 等）
+            KeyboardInterrupt: 割り込みシグナルを受けた場合
+            SystemExit: ``sys.exit()`` が呼ばれた場合
+            MemoryError: メモリ不足が発生した場合
+            RecursionError: 再帰上限に達した場合
+
         Example:
             >>> async with AsyncJSONPlaceholderClient() as client:
             ...     users = await client.get_multiple_users([1, 2, 3], max_concurrent=2)
             ...     print(f"Fetched {len(users)} users")
+
         """
         semaphore = asyncio.Semaphore(max_concurrent)
 

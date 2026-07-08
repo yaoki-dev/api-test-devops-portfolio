@@ -3,20 +3,13 @@
 from typing import Any
 
 from models.responses import Album, Comment, Photo, Post, Todo, User
-from utils.exceptions import APIClientError
+from utils.exceptions import SYNC_FATAL_EXCEPTIONS, APIClientError
 from utils.http_helpers import validate_optional_int
 from utils.jsonplaceholder_base_sync import SyncAPIClient
 from utils.response_parsing import (
     parse_response_model,
     parse_response_model_list,
     safe_parse_json,
-)
-
-SYNC_FATAL_EXCEPTIONS: tuple[type[BaseException], ...] = (
-    KeyboardInterrupt,
-    SystemExit,
-    MemoryError,
-    RecursionError,
 )
 
 
@@ -32,6 +25,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
 
         Raises:
             ValueError: limit < 0 または user_id < 1 の場合
+
         """
         validate_optional_int(limit, "limit", 0)
         validate_optional_int(user_id, "user_id", 1)
@@ -81,6 +75,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
 
         Raises:
             ValueError: limit < 0 または user_id < 1 の場合
+
         """
         validate_optional_int(limit, "limit", 0)
         validate_optional_int(user_id, "user_id", 1)
@@ -115,6 +110,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
             部分オブジェクトになりうる。検証モデル（Todo）に固定せず生の dict を
             返すのは意図的な設計（必須フィールド欠落で ``extra="forbid"`` の
             検証が失敗するのを避けるため）。
+
         """
         response = self.patch(f"/todos/{todo_id}", json=kwargs)
         parsed: dict[str, Any] = safe_parse_json(response)
@@ -128,6 +124,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
 
         Raises:
             ValueError: post_id < 1 の場合
+
         """
         validate_optional_int(post_id, "post_id", 1)
 
@@ -145,6 +142,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
 
         Raises:
             ValueError: user_id < 1 の場合
+
         """
         validate_optional_int(user_id, "user_id", 1)
 
@@ -163,6 +161,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
 
         Raises:
             ValueError: album_id < 1 の場合
+
         """
         validate_optional_int(album_id, "album_id", 1)
 
@@ -190,6 +189,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
             >>> with SyncJSONPlaceholderClient() as client:
             ...     if client.health_check():
             ...         print("API is healthy")
+
         """
         try:
             response = self.get("/users", params={"_limit": 1})

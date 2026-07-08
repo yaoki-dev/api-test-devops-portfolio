@@ -5,7 +5,8 @@ This shim stays until W3 import cutover removes legacy ``utils.api_client`` impo
 """
 
 from config.settings import settings as settings
-from utils.exceptions import ASYNC_FATAL_EXCEPTIONS
+from utils.exceptions import ASYNC_FATAL_EXCEPTIONS as ASYNC_FATAL_EXCEPTIONS
+from utils.exceptions import SYNC_FATAL_EXCEPTIONS as SYNC_FATAL_EXCEPTIONS
 from utils.exceptions import APIClientError as APIClientError
 from utils.exceptions import APIConnectionError as APIConnectionError
 from utils.exceptions import APIHTTPError as APIHTTPError
@@ -34,13 +35,6 @@ from utils.response_parsing import (
 )
 from utils.retry import exponential_backoff_with_jitter as exponential_backoff_with_jitter
 
-SYNC_FATAL_EXCEPTIONS: tuple[type[BaseException], ...] = (
-    KeyboardInterrupt,
-    SystemExit,
-    MemoryError,
-    RecursionError,
-)
-
 # Backward-compatible aliases retained until W3 import cutover.
 _MAX_LOGGED_FAILURE_DETAILS = MAX_LOGGED_FAILURE_DETAILS
 _validate_optional_int = validate_optional_int
@@ -53,32 +47,32 @@ _classify_error = classify_error
 _log_error_with_stderr_fallback = log_error_with_stderr_fallback
 
 __all__ = [
+    "ASYNC_FATAL_EXCEPTIONS",
+    "MAX_LOGGED_FAILURE_DETAILS",
+    "SYNC_FATAL_EXCEPTIONS",
+    "_MAX_LOGGED_FAILURE_DETAILS",
     "APIClientError",
     "APIConnectionError",
-    "APITimeoutError",
     "APIHTTPError",
-    "APIRetryError",
     "APIJSONDecodeError",
-    "ASYNC_FATAL_EXCEPTIONS",
-    "SYNC_FATAL_EXCEPTIONS",
-    "SyncAPIClient",
+    "APIRetryError",
+    "APITimeoutError",
     "AsyncAPIClient",
-    "SyncJSONPlaceholderClient",
     "AsyncJSONPlaceholderClient",
+    "SyncAPIClient",
+    "SyncJSONPlaceholderClient",
     "UserDataDict",
-    "MAX_LOGGED_FAILURE_DETAILS",
-    "_MAX_LOGGED_FAILURE_DETAILS",
+    "classify_error",
     "create_client",
-    "validate_optional_int",
-    "safe_parse_json",
+    "exponential_backoff_with_jitter",
+    "log_error_with_stderr_fallback",
+    "main",
+    "map_request_error",
     "parse_response_model",
     "parse_response_model_list",
-    "map_request_error",
     "resolve_client_config",
-    "classify_error",
-    "log_error_with_stderr_fallback",
-    "exponential_backoff_with_jitter",
-    "main",
+    "safe_parse_json",
+    "validate_optional_int",
 ]
 
 
