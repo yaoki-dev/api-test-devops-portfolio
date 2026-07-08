@@ -4,14 +4,20 @@ import asyncio
 
 import httpx
 
-# httpx 例外（NetworkError, RemoteProtocolError 等）をここに追加してはならない。
-# github_client.py の _request では except 句の順序で先行キャッチしており、
-# この定数に httpx 例外を追加すると NetworkError のリトライが壊れる。
-ASYNC_FATAL_EXCEPTIONS: tuple[type[BaseException], ...] = (
+# 同期文脈の fatal 例外。asyncio のタスクキャンセルを持たないため CancelledError を含まない。
+SYNC_FATAL_EXCEPTIONS: tuple[type[BaseException], ...] = (
     KeyboardInterrupt,
     SystemExit,
     MemoryError,
     RecursionError,
+)
+
+# 非同期文脈の fatal 例外。SYNC に graceful-shutdown シグナルの CancelledError を加えたもの。
+# httpx 例外（NetworkError, RemoteProtocolError 等）をここに追加してはならない。
+# github_client.py の _request では except 句の順序で先行キャッチしており、
+# この定数に httpx 例外を追加すると NetworkError のリトライが壊れる。
+ASYNC_FATAL_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    *SYNC_FATAL_EXCEPTIONS,
     asyncio.CancelledError,
 )
 
