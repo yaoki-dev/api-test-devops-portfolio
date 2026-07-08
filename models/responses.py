@@ -285,25 +285,25 @@ class User(BaseModel):
 
         """
         if not isinstance(v, str):
-            raise ValueError(f"文字列が必要です（受け取った型: {type(v).__name__}）")
+            raise ValueError(f"String required (received type: {type(v).__name__})")
 
         sanitized = strip_invisible_chars(v).strip()
         # min_length=1 は真の空文字列を、ここでは制御文字のみの文字列を捕捉（2段階チェック）
         if not sanitized:
-            raise ValueError("websiteが空になりました（制御文字除去後）")
+            raise ValueError("Website became empty after control character removal")
         # CRLF injection防止: パーセントエンコードされた制御文字を拒否（%00-%1f全範囲）
         # strip_invisible_chars は実際の制御文字を除去するが、
         # %0d%0a 等のエンコード形式はバイパスする
         sanitized_lower = sanitized.lower()
         if _sanitization._PERCENT_CTRL_RE.search(sanitized_lower):
-            raise ValueError("URLにパーセントエンコードされた制御文字が含まれています")
+            raise ValueError("URL contains percent-encoded control characters")
         # 不完全な%シーケンス検出（全ブランチ共通 — http/httpsおよびスキームなし両対応）
         # validate_scheme_less_url でも同様にチェックするが多層防御として二重確認
         if _sanitization._INCOMPLETE_PCT_RE.search(sanitized):
-            raise ValueError("URLに不完全なパーセントエンコードが含まれています")
+            raise ValueError("URL contains incomplete percent-encoding")
         # プロトコル相対URLを明示的に拒否（攻撃面削減）
         if sanitized_lower.startswith("//"):
-            raise ValueError("プロトコル相対URLは許可されていません")
+            raise ValueError("Protocol-relative URLs are not allowed")
         # urlparseは各分岐で1回のみ呼び出す
         # （http/httpsブランチと補完ブランチで入力が異なるため共通化不可）
         if sanitized_lower.startswith(("http://", "https://")):
@@ -317,7 +317,7 @@ class User(BaseModel):
         # is_domain_portロジックを削除: domain:portはスキームなし扱いのため
         # http(s)://を明示しない限り拒否（例: example.com:8080 → ValueError）
         if _sanitization._SCHEME_RE.match(sanitized_lower):
-            raise ValueError("危険なURLスキームが検出されました")
+            raise ValueError("Dangerous URL scheme detected")
         # スキームなし → https:// を補完して検証
         # _validate_netloc / normalize_url の ValueError はそのまま伝播
         # 設計意図: スキームなしURLはドメインのみ許可（パス付きURLは拒否）
@@ -331,7 +331,7 @@ class User(BaseModel):
         #  「危険なURLスキーム」として上流で拒否されるため、このチェックに到達しない）
         if parsed.port is not None:
             raise ValueError(
-                "スキームなしURLにポートは指定できません（http(s)://を明示してください）"
+                "Scheme-less URL cannot contain a port (explicitly use http:// or https://)"
             )
         return _sanitization._ensure_website_max_length(normalize_url(parsed))
 
@@ -474,16 +474,16 @@ class Photo(BaseModel):
         """
         sanitized = strip_invisible_chars(v).strip()
         if not sanitized:
-            raise ValueError("URLが空になりました（制御文字除去後）")
+            raise ValueError("URL became empty after control character removal")
         # CRLF injection防止: パーセントエンコードされた制御文字を拒否（%00-%1f全範囲）
         sanitized_lower = sanitized.lower()
         if _sanitization._PERCENT_CTRL_RE.search(sanitized_lower):
-            raise ValueError("URLにパーセントエンコードされた制御文字が含まれています")
+            raise ValueError("URL contains percent-encoded control characters")
         # 不完全な%シーケンス（%、%G、%GGなど）はunquoteがリテラル扱いするため個別チェック
         if _sanitization._INCOMPLETE_PCT_RE.search(sanitized):
-            raise ValueError("URLに不完全なパーセントエンコードが含まれています")
+            raise ValueError("URL contains incomplete percent-encoding")
         if not sanitized_lower.startswith(("http://", "https://")):
-            raise ValueError("URLはhttp://またはhttps://で始まる必要があります")
+            raise ValueError("URL must start with http:// or https://")
         # _validate_netloc / normalize_url の ValueError はそのまま伝播
         parsed = urlparse(sanitized)
         _sanitization._validate_netloc(parsed)

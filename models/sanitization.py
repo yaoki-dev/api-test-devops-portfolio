@@ -39,28 +39,34 @@ def _is_strippable_char(c: str, categories: frozenset[str]) -> bool:
 
 
 def strip_invisible_chars(v: str) -> str:
-    """不可視文字・制御文字・Unicode空白をURL文字列から除去（NFKC正規化含む2パス処理）
+    """不可視文字・制御文字・Unicode空白をURL文字列から除去する（NFKC正規化を含む2パス処理）。
 
-    URLスキームバイパス防止のため、_STRIP_CATEGORIES（= _INVISIBLE_CATEGORIES | {"Cs"}）
-    に属するUnicodeカテゴリを2パスの内包表記で除去する
-    （パス1: NFKC正規化前・Cs含む全カテゴリ、パス2: NFKC正規化後・Cs除外）:
+    URLスキームバイパス防止のため、``_STRIP_CATEGORIES``（= ``_INVISIBLE_CATEGORIES | {"Cs"}``）
+    に属するUnicodeカテゴリを2パスの内包表記で除去する。パス1はNFKC正規化前にCsを含む全カテゴリを、
+    パス2はNFKC正規化後にCsを除いたカテゴリを除去する。Python に同梱の Unicode バージョン内の
+    新規文字に自動対応する（Unicode バージョン自体の更新には Python バージョンアップが必要）。
 
-    - Cs: Surrogate（孤立サロゲート U+D800-U+DFFF）— 有効なUnicode文字列に
-          含まれるべきでないためnormalize()前に除去（データ整合性）
-    - Cf: Format文字（Bidi制御, ゼロ幅文字, Word Joiner等）
-    - Cc: 制御文字（C0/C1制御文字, DEL等）
-    - Mn: 非スペーシングマーク（Variation Selectors U+FE00-U+FE0F と
-          Variation Selectors Supplement U+E0100-U+E01EF は個別除去。
-          結合文字 U+0300等は保持し、NFD由来のホスト名改変を避ける）
-    - Zs: Unicode空白（NBSP, Ogham Space, 全角空白等。U+0020通常スペースは
-          Zsカテゴリに属するが、c == " " の特例条件で保持）
-          ※ NFKC正規化前にも除去（U+3000等はNFKC後にU+0020へ変換される副作用を防止。
-          U+1680等はNFKC変換対象外だが一括除去でスキームバイパスを防止）
-    - Zl: 行区切り（U+2028 Line Separator）
-    - Zp: 段落区切り（U+2029 Paragraph Separator）
+    除去対象カテゴリ:
+        - Cs: Surrogate（孤立サロゲート U+D800-U+DFFF）。有効なUnicode文字列に含まれるべきで
+          ないため ``normalize()`` 前に除去する（データ整合性）。
+        - Cf: Format文字（Bidi制御, ゼロ幅文字, Word Joiner等）。
+        - Cc: 制御文字（C0/C1制御文字, DEL等）。
+        - Mn: 非スペーシングマーク。Variation Selectors U+FE00-U+FE0F と Variation Selectors
+          Supplement U+E0100-U+E01EF は個別除去し、結合文字 U+0300 等は保持して NFD 由来の
+          ホスト名改変を避ける。
+        - Zs: Unicode空白（NBSP, Ogham Space, 全角空白等）。U+0020 通常スペースは Zs に属するが
+          ``c == " "`` の特例条件で保持する。NFKC正規化前にも除去する（U+3000 等が NFKC 後に
+          U+0020 へ変換される副作用を防止。U+1680 等は NFKC 変換対象外だが一括除去でスキーム
+          バイパスを防止）。
+        - Zl: 行区切り（U+2028 Line Separator）。
+        - Zp: 段落区切り（U+2029 Paragraph Separator）。
 
-    Python に同梱の Unicode バージョン内の新規文字に自動対応する。
-    （Unicode バージョン自体の更新には Python バージョンアップが必要）
+    Args:
+        v: サニタイズ対象の文字列。
+
+    Returns:
+        不可視文字・制御文字・Unicode空白を除去し NFKC 正規化した文字列。
+        U+0020 通常スペースは保持される。
     """
     # パス1: Cs（孤立サロゲート）と不可視文字を一括除去
     # _STRIP_CATEGORIES = _INVISIBLE_CATEGORIES | {"Cs"} で Cs の個別除去を統合
@@ -99,7 +105,7 @@ def sanitize_user_content(value: str) -> str:
 
     """
     if not isinstance(value, str):
-        raise ValueError(f"文字列が必要です（受け取った型: {type(value).__name__}）")
+        raise ValueError(f"String required (received type: {type(value).__name__})")
     # quote=True: シングルクォート、ダブルクォートもエスケープ
     return html.escape(value, quote=True)
 
@@ -111,40 +117,40 @@ def _validate_netloc(parsed: ParseResult) -> None:
     HTMLメタ文字拒否・hostname解決チェックを行う。
     """
     if not parsed.netloc:
-        raise ValueError("有効なホスト名が含まれていません")
+        raise ValueError("Valid hostname not found")
     # 不正ポート文字列バイパス対策: parsed.port は整数でない場合 ValueError を送出する
     # （例: https://example.com:abc/path は netloc チェックをパスするが port アクセスで検出）
     try:
         _ = parsed.port
     except ValueError as e:
-        raise ValueError("ポートが無効です（整数値でなければなりません）") from e
+        raise ValueError("Invalid port (must be an integer)") from e
     # 多層防御: parsed.username/password に加え netloc の "@" リテラルも検査
     # （urlparse が特定のエンコード済み入力で username=None を返すエッジケース対策）
     try:
         decoded_netloc = unquote(parsed.netloc, errors="strict")
     except UnicodeDecodeError as e:
-        raise ValueError(f"URLに不正なパーセントエンコードが含まれています: {e}") from e
+        raise ValueError("URL contains invalid percent-encoding") from e
     # raw と decoded 両方をチェック（%エンコードバイパス対策: https://example.com%20evil.com 等）
     if _ASCII_WHITESPACE_RE.search(parsed.netloc) or _ASCII_WHITESPACE_RE.search(decoded_netloc):
-        raise ValueError("ホスト名に空白文字が含まれています")
+        raise ValueError("Hostname contains whitespace")
     has_at = "@" in parsed.netloc or "@" in decoded_netloc
     if has_at:
-        raise ValueError("URLにuserinfo（ユーザー名/パスワード）は指定できません")
+        raise ValueError("URL cannot contain userinfo (username/password)")
     # @が含まれない場合のみ username/password を確認（urlparseのエッジケース補完）
     # （urlparse が特定のエンコード済み入力で username=None を返すエッジケース対策）
     try:
         has_userinfo = parsed.username is not None or parsed.password is not None
     except (ValueError, OverflowError) as e:  # fmt: skip
         # parsed.username/password は内部で独自にunquoteするため、L135-137のチェックとは独立
-        raise ValueError(f"URLのuserinfoパースに失敗しました（netloc={parsed.netloc!r}）") from e
+        raise ValueError("Failed to parse userinfo from URL") from e
     if has_userinfo:
-        raise ValueError("URLにuserinfo（ユーザー名/パスワード）は指定できません")
+        raise ValueError("URL cannot contain userinfo (username/password)")
     # ホスト部にHTMLメタ文字（<, >, ", ', &）が含まれる場合は拒否
     if _HTML_META_RE.search(parsed.netloc) or _HTML_META_RE.search(decoded_netloc):
-        raise ValueError("ホスト名に不正な文字が含まれています")
+        raise ValueError("Hostname contains invalid characters")
     # hostname が None になるケース（例: 不正な IPv6 形式）を normalize_url に渡す前に排除
     if not parsed.hostname:
-        raise ValueError("有効なホスト名が含まれていません")
+        raise ValueError("Valid hostname not found")
 
 
 def normalize_url(parsed: ParseResult) -> str:
@@ -153,6 +159,16 @@ def normalize_url(parsed: ParseResult) -> str:
     パス・パラメータ・クエリ・フラグメントは RFC 3986 §3.3–§3.5 の構文定義に従い
     URLエンコードする。§6.2.2.2 の既存 %xx シーケンスのヘックス大文字化は未実施
     （新規エンコード分は quote() が UPPERCASE で出力する）。
+
+    Args:
+        parsed: バリデーション済みの urlparse 結果（通常は ``_validate_netloc`` 通過後を渡す）。
+
+    Returns:
+        スキーム・ホスト部を小文字化し、パス以降を URL エンコードした正規化 URL 文字列。
+
+    Raises:
+        ValueError: hostname が解決できない場合（直接呼び出し時のセーフガード。
+            通常パスでは ``_validate_netloc`` が事前に排除する）。
     """
     # ParseResultはnamedtupleだが、tuple直接指定でコードの意図を明示する
     # パス・クエリ・フラグメントのXSS文字をURLエンコード（%を安全文字に含め二重エンコード防止）
@@ -174,7 +190,7 @@ def normalize_url(parsed: ParseResult) -> str:
     if not hostname:
         # _validate_netloc の `not parsed.hostname` で空文字列・None ケースは排除済み
         # ここは直接呼び出し時のセーフガード（通常パスでは到達しない）
-        raise ValueError(f"ホスト名の解決に失敗しました（netloc={parsed.netloc!r}）")
+        raise ValueError("Failed to resolve hostname")
     if ":" in hostname:
         hostname = f"[{hostname}]"
     netloc = f"{hostname}:{parsed.port}" if parsed.port is not None else hostname
@@ -194,7 +210,8 @@ def _ensure_website_max_length(url: str) -> str:
     """正規化後URL長の上限チェック（WEBSITE_NORMALIZED_MAX_LENGTH文字）"""
     if len(url) > WEBSITE_NORMALIZED_MAX_LENGTH:
         raise ValueError(
-            f"URL補完後の長さが上限{WEBSITE_NORMALIZED_MAX_LENGTH}文字を超過しています（{len(url)}文字）"
+            f"URL length after normalization exceeds limit of "
+            f"{WEBSITE_NORMALIZED_MAX_LENGTH} characters ({len(url)} characters)"
         )
     return url
 
@@ -212,14 +229,14 @@ def validate_scheme_less_url(sanitized: str) -> None:
     try:
         decoded = unquote(sanitized, errors="strict")
     except UnicodeDecodeError as e:
-        raise ValueError(f"URLに不正なパーセントエンコードが含まれています: {e}") from e
+        raise ValueError("URL contains invalid percent-encoding") from e
     # 不完全な%シーケンス（例: %、%GG）はunquoteがリテラル扱いするため個別チェック
     if _INCOMPLETE_PCT_RE.search(sanitized):
-        raise ValueError("URLに不完全なパーセントエンコードが含まれています")
+        raise ValueError("URL contains incomplete percent-encoding")
     if "/" in sanitized or "/" in decoded:
-        raise ValueError("スキームなしURLにパスは指定できません")
+        raise ValueError("Scheme-less URL cannot contain a path")
     # %23（#）と %3F（?）のバイパス検出: decoded に含まれる#/?も検出
     if "#" in sanitized or "#" in decoded:
-        raise ValueError("スキームなしURLにフラグメントは指定できません")
+        raise ValueError("Scheme-less URL cannot contain a fragment")
     if "?" in sanitized or "?" in decoded:
-        raise ValueError("スキームなしURLにクエリは指定できません")
+        raise ValueError("Scheme-less URL cannot contain a query")
