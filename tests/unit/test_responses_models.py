@@ -12,7 +12,6 @@ from pydantic import BaseModel, ValidationError
 
 import models.responses as responses_module
 from models.responses import (
-    _WEBSITE_NORMALIZED_MAX_LENGTH,  # noqa: PLC2701 - private helper length invariantを直接検証するため
     Address,
     Album,
     Comment,
@@ -22,10 +21,13 @@ from models.responses import (
     Post,
     Todo,
     User,
-    _normalize_url,  # noqa: PLC2701 - private helper length invariantを直接検証するため
-    _strip_invisible_chars,  # noqa: PLC2701 - private sanitizerの挙動を直接検証するため
-    _validate_scheme_less_url,  # noqa: PLC2701 - private validatorのバイパス防止を直接検証するため
+)
+from models.sanitization import (
+    WEBSITE_NORMALIZED_MAX_LENGTH,
+    normalize_url,
     sanitize_user_content,
+    strip_invisible_chars,
+    validate_scheme_less_url,
 )
 from tests.types import (
     _UserData,  # noqa: PLC2701 - test-internal helper naming preserved
@@ -225,7 +227,7 @@ class TestSanitizeUserContent:
             Pydantic field_validator は ValueError/AssertionError のみ
             ValidationError に変換するため、明示的に ValueError を raise する。
         """
-        with pytest.raises(ValueError, match=re.escape("文字列が必要です")):
+        with pytest.raises(ValueError, match=re.escape("String required")):
             sanitize_user_content(None)  # type: ignore[arg-type]
 
 
@@ -237,21 +239,21 @@ def test_strip_invisible_chars_preserves_ascii_space() -> None:
     """
     # ASCII スペースは保持される
     assert (
-        _strip_invisible_chars("https://example.com/path?a=1 b=2")
+        strip_invisible_chars("https://example.com/path?a=1 b=2")
         == "https://example.com/path?a=1 b=2"
     )
     # NBSP (U+00A0: Zs) はNFKC前に除去される（NFKC変換前にZsフィルタが適用されるため）
-    assert _strip_invisible_chars("https://\u00a0example.com") == "https://example.com"
+    assert strip_invisible_chars("https://\u00a0example.com") == "https://example.com"
     # 全角スペース (U+3000: Zs) はNFKC前に除去される
-    assert _strip_invisible_chars("https://\u3000example.com") == "https://example.com"
+    assert strip_invisible_chars("https://\u3000example.com") == "https://example.com"
     # Variation Selector-1 (U+FE00) は除去される
-    assert _strip_invisible_chars("java\ufe00script:alert(1)") == "javascript:alert(1)"
+    assert strip_invisible_chars("java\ufe00script:alert(1)") == "javascript:alert(1)"
     # Variation Selector Supplement (U+E0100) も除去される
-    assert _strip_invisible_chars("java\U000e0100script:alert(1)") == "javascript:alert(1)"
+    assert strip_invisible_chars("java\U000e0100script:alert(1)") == "javascript:alert(1)"
     # Line Separator (U+2028: Zl) は除去される
-    assert _strip_invisible_chars("java\u2028script:alert(1)") == "javascript:alert(1)"
+    assert strip_invisible_chars("java\u2028script:alert(1)") == "javascript:alert(1)"
     # Paragraph Separator (U+2029: Zp) は除去される
-    assert _strip_invisible_chars("java\u2029script:alert(1)") == "javascript:alert(1)"
+    assert strip_invisible_chars("java\u2029script:alert(1)") == "javascript:alert(1)"
 
 
 def test_strip_invisible_chars_removes_surrogate_codepoint() -> None:
@@ -261,39 +263,39 @@ def test_strip_invisible_chars_removes_surrogate_codepoint() -> None:
     送出するため、事前除去が必要。
     """
     # 孤立サロゲートが除去され、残りの文字列が返される
-    assert _strip_invisible_chars("https://\ud800example.com") == "https://example.com"
+    assert strip_invisible_chars("https://\ud800example.com") == "https://example.com"
     # サロゲートのみの入力は空文字列になる
-    assert _strip_invisible_chars("\ud800\udbff\udfff") == ""
+    assert strip_invisible_chars("\ud800\udbff\udfff") == ""
     # サロゲートが混在しても正常な文字は保持される
-    assert _strip_invisible_chars("abc\ud800def") == "abcdef"
+    assert strip_invisible_chars("abc\ud800def") == "abcdef"
 
 
 def test_strip_invisible_chars_returns_empty_for_empty_input() -> None:
     """_strip_invisible_chars に空文字列を渡すと空文字列が返ること。"""
-    assert _strip_invisible_chars("") == ""
+    assert strip_invisible_chars("") == ""
 
 
 def test_strip_invisible_chars_strips_zero_width_space() -> None:
     """ゼロ幅スペース(U+200B, Cf)を除去すること"""
-    result = _strip_invisible_chars("exam\u200bple.com")
+    result = strip_invisible_chars("exam\u200bple.com")
     assert result == "example.com"
 
 
 def test_strip_invisible_chars_strips_bidi_override() -> None:
     """Bidi制御文字(U+202E, Cf)を除去すること"""
-    result = _strip_invisible_chars("exam\u202eple.com")
+    result = strip_invisible_chars("exam\u202eple.com")
     assert result == "example.com"
 
 
 def test_strip_invisible_chars_preserves_regular_space() -> None:
     """通常スペース(U+0020)は保持すること"""
-    result = _strip_invisible_chars("hello world")
+    result = strip_invisible_chars("hello world")
     assert result == "hello world"
 
 
 def test_strip_invisible_chars_preserves_combining_mark() -> None:
     """結合文字は保持され、NFD由来のホスト名をサイレントに改変しないこと。"""
-    result = _strip_invisible_chars("cafe\u0301.com")
+    result = strip_invisible_chars("cafe\u0301.com")
     assert result == "café.com"
 
 
@@ -669,8 +671,8 @@ class TestUserModel:
         )
 
     def test_user_website_max_length_boundary(self, valid_user_data: _UserData) -> None:
-        """website の正規化後URL長 _WEBSITE_NORMALIZED_MAX_LENGTH(2048) 境界値テスト."""
-        max_len = _WEBSITE_NORMALIZED_MAX_LENGTH  # 2048
+        """website の正規化後URL長 WEBSITE_NORMALIZED_MAX_LENGTH(2048) 境界値テスト."""
+        max_len = WEBSITE_NORMALIZED_MAX_LENGTH  # 2048
         base = "https://example.com/"
         # ちょうど max_len 文字: 正常
         path = "a" * (max_len - len(base))
@@ -685,13 +687,13 @@ class TestUserModel:
         valid_user_data["website"] = schemeless
         with pytest.raises(
             ValidationError,
-            match=rf"URL補完後の長さが上限{max_len}文字を超過しています",
+            match=r"URL length after normalization exceeds limit",
         ):
             User(**valid_user_data)
 
         # max_len + 1 文字: ValidationError
         valid_user_data["website"] = base + "a" * (max_len + 1 - len(base))
-        with pytest.raises(ValidationError, match=r"URL補完後の長さが上限"):
+        with pytest.raises(ValidationError, match=r"URL length after normalization exceeds limit"):
             User(**valid_user_data)
 
     def test_user_website_is_not_html_escaped(self, valid_user_data: _UserData) -> None:
@@ -704,146 +706,142 @@ class TestUserModel:
     @pytest.mark.parametrize(
         ("dangerous_url", "expected_match"),
         [
-            pytest.param("javascript:alert(1)", "危険なURLスキームが検出されました", id="js_basic"),
-            pytest.param(
-                "JAVASCRIPT:alert(1)", "危険なURLスキームが検出されました", id="js_uppercase"
-            ),
-            pytest.param("javascript:void(0)", "危険なURLスキームが検出されました", id="js_void"),
+            pytest.param("javascript:alert(1)", "Dangerous URL scheme detected", id="js_basic"),
+            pytest.param("JAVASCRIPT:alert(1)", "Dangerous URL scheme detected", id="js_uppercase"),
+            pytest.param("javascript:void(0)", "Dangerous URL scheme detected", id="js_void"),
             pytest.param(
                 "data:text/html,<script>alert(1)</script>",
-                "危険なURLスキームが検出されました",
+                "Dangerous URL scheme detected",
                 id="data_html",
             ),
             pytest.param(
-                "Data:image/png;base64,abc", "危険なURLスキームが検出されました", id="data_image"
+                "Data:image/png;base64,abc", "Dangerous URL scheme detected", id="data_image"
             ),
-            pytest.param("vbscript:msgbox(1)", "危険なURLスキームが検出されました", id="vbscript"),
+            pytest.param("vbscript:msgbox(1)", "Dangerous URL scheme detected", id="vbscript"),
             pytest.param(
-                " javascript:alert(1)", "危険なURLスキームが検出されました", id="js_leading_space"
+                " javascript:alert(1)", "Dangerous URL scheme detected", id="js_leading_space"
             ),
             pytest.param(
-                "\tjavascript:void(0)", "危険なURLスキームが検出されました", id="js_leading_tab"
+                "\tjavascript:void(0)", "Dangerous URL scheme detected", id="js_leading_tab"
             ),
             pytest.param(
                 "\u200bjavascript:alert(1)",
-                "危険なURLスキームが検出されました",
+                "Dangerous URL scheme detected",
                 id="js_zwsp_prefix",
             ),
             pytest.param(
                 "java\u200bscript:alert(1)",
-                "危険なURLスキームが検出されました",
+                "Dangerous URL scheme detected",
                 id="js_zwsp_mid_scheme",
             ),
             pytest.param(
                 "\u202ejavascript:alert(1)",
-                "危険なURLスキームが検出されました",
+                "Dangerous URL scheme detected",
                 id="js_bidi_override",
             ),
             pytest.param(
                 "j\u00a0avascript:alert(1)",
-                "危険なURLスキームが検出されました",
+                "Dangerous URL scheme detected",
                 id="js_nbsp_mid_scheme",
             ),
             pytest.param(
                 "\u2060javascript:alert(1)",
-                "危険なURLスキームが検出されました",
+                "Dangerous URL scheme detected",
                 id="js_word_joiner_prefix",
             ),
             pytest.param(
-                "\u2066javascript:alert(1)", "危険なURLスキームが検出されました", id="js_lri_prefix"
+                "\u2066javascript:alert(1)", "Dangerous URL scheme detected", id="js_lri_prefix"
             ),
             pytest.param(
-                "\u2069javascript:alert(1)", "危険なURLスキームが検出されました", id="js_pdi_prefix"
+                "\u2069javascript:alert(1)", "Dangerous URL scheme detected", id="js_pdi_prefix"
             ),
             pytest.param(
                 "vbs\u200bcript:msgbox(1)",
-                "危険なURLスキームが検出されました",
+                "Dangerous URL scheme detected",
                 id="vbscript_zwsp_mid",
             ),
             pytest.param(
-                "da\u200bta:text/html,x", "危険なURLスキームが検出されました", id="data_zwsp_mid"
+                "da\u200bta:text/html,x", "Dangerous URL scheme detected", id="data_zwsp_mid"
             ),
             pytest.param(
                 "vbscript\u202e:msgbox(1)",
-                "危険なURLスキームが検出されました",
+                "Dangerous URL scheme detected",
                 id="vbscript_bidi_override",
             ),
             pytest.param(
                 "da\u200bta:image/png;base64,abc",
-                "危険なURLスキームが検出されました",
+                "Dangerous URL scheme detected",
                 id="data_zwsp_mid_image",
             ),
             pytest.param(
                 "java\u2028script:alert(1)",
-                "危険なURLスキームが検出されました",
+                "Dangerous URL scheme detected",
                 id="js_line_separator_mid",
             ),
             pytest.param(
                 "java\u2029script:alert(1)",
-                "危険なURLスキームが検出されました",
+                "Dangerous URL scheme detected",
                 id="js_paragraph_separator_mid",
             ),
-            pytest.param("ftp://evil.com", "危険なURLスキームが検出されました", id="ftp_scheme"),
+            pytest.param("ftp://evil.com", "Dangerous URL scheme detected", id="ftp_scheme"),
+            pytest.param("file:///etc/passwd", "Dangerous URL scheme detected", id="file_scheme"),
             pytest.param(
-                "file:///etc/passwd", "危険なURLスキームが検出されました", id="file_scheme"
+                "blob:https://evil.com/uuid", "Dangerous URL scheme detected", id="blob_scheme"
             ),
             pytest.param(
-                "blob:https://evil.com/uuid", "危険なURLスキームが検出されました", id="blob_scheme"
-            ),
-            pytest.param(
-                "javascript:0", "危険なURLスキームが検出されました", id="js_digit_after_colon"
+                "javascript:0", "Dangerous URL scheme detected", id="js_digit_after_colon"
             ),
             pytest.param(
                 "javascript:1+1",
-                "危険なURLスキームが検出されました",
+                "Dangerous URL scheme detected",
                 id="js_expression_after_colon",
             ),
             pytest.param(
-                "malicious.js:xyz", "危険なURLスキームが検出されました", id="dotted_scheme_non_port"
+                "malicious.js:xyz", "Dangerous URL scheme detected", id="dotted_scheme_non_port"
             ),
             pytest.param(
                 "a.b:evil",
-                "危険なURLスキームが検出されました",
+                "Dangerous URL scheme detected",
                 id="dotted_scheme_alpha_after_colon",
             ),
             # domain:portはRFC 3986スキーム正規表現(_SCHEME_RE)にマッチするため
             # 「危険なスキーム」パスに到達する（IPアドレスの場合はマッチしない）
             pytest.param(
-                "example.com:8080", "危険なURLスキームが検出されました", id="domain_port_no_scheme"
+                "example.com:8080", "Dangerous URL scheme detected", id="domain_port_no_scheme"
             ),
             pytest.param(
                 "sub.domain.com:443/path",
-                "危険なURLスキームが検出されました",
+                "Dangerous URL scheme detected",
                 id="subdomain_port_path_no_scheme",
             ),
             pytest.param(
                 "example.com:8080/path?query=1",
-                "危険なURLスキームが検出されました",
+                "Dangerous URL scheme detected",
                 id="domain_port_path_query_no_scheme",
             ),
             pytest.param(
                 "192.168.1.1:8080",
-                "スキームなしURLにポートは指定できません",
+                "Scheme-less URL cannot contain a port",
                 id="ip_port_no_scheme",
             ),
             pytest.param(
                 "10.0.0.1:3000/api",
-                "スキームなしURLにパスは指定できません",
+                "Scheme-less URL cannot contain a path",
                 id="ip_port_path_no_scheme",
             ),
             pytest.param(
                 "/path/only",
-                "スキームなしURLにパスは指定できません",
+                "Scheme-less URL cannot contain a path",
                 id="path_only_no_host",
             ),
             pytest.param(
                 "java\ufe00script:alert(1)",
-                "危険なURLスキームが検出されました",
+                "Dangerous URL scheme detected",
                 id="js_variation_selector_mn_bypass",
             ),
             pytest.param(
                 "java\U000e0100script:alert(1)",
-                "危険なURLスキームが検出されました",
+                "Dangerous URL scheme detected",
                 id="js_variation_selector_supplement_mn_bypass",
             ),
         ],
@@ -860,7 +858,7 @@ class TestUserModel:
         """User.website がプロトコル相対URLを明示的なエラーで拒否すること"""
         valid_user_data["website"] = "//cdn.example.com/image.jpg"
         with pytest.raises(
-            ValidationError, match=re.escape("プロトコル相対URLは許可されていません")
+            ValidationError, match=re.escape("Protocol-relative URLs are not allowed")
         ):
             User(**valid_user_data)
 
@@ -869,7 +867,7 @@ class TestUserModel:
     ) -> None:
         """全角文字によるスキームバイパスがNFKC正規化で検出されること"""
         valid_user_data["website"] = "ｊａｖａｓｃｒｉｐｔ:alert(1)"
-        with pytest.raises(ValidationError, match=re.escape("危険なURLスキームが検出されました")):
+        with pytest.raises(ValidationError, match=re.escape("Dangerous URL scheme detected")):
             User(**valid_user_data)
 
     @pytest.mark.parametrize(
@@ -884,7 +882,7 @@ class TestUserModel:
     ) -> None:
         """User.website が空のnetlocを拒否すること"""
         valid_user_data["website"] = empty_netloc_url
-        with pytest.raises(ValidationError, match=re.escape("有効なホスト名が含まれていません")):
+        with pytest.raises(ValidationError, match=re.escape("Valid hostname not found")):
             User(**valid_user_data)
 
     @pytest.mark.parametrize(
@@ -899,7 +897,7 @@ class TestUserModel:
     ) -> None:
         """User.website がホスト部のASCII空白を拒否すること."""
         valid_user_data["website"] = invalid_host_url
-        with pytest.raises(ValidationError, match=re.escape("ホスト名に空白文字が含まれています")):
+        with pytest.raises(ValidationError, match=re.escape("Hostname contains whitespace")):
             User(**valid_user_data)
 
     def test_user_website_wraps_overflowerror_in_validationerror(
@@ -937,7 +935,7 @@ class TestUserModel:
         monkeypatch.setattr(responses_module, "urlparse", fake_urlparse)
         valid_user_data["website"] = "https://example.com"
 
-        with pytest.raises(ValidationError, match=re.escape("URLのuserinfoパースに失敗しました")):
+        with pytest.raises(ValidationError, match=re.escape("Failed to parse userinfo from URL")):
             User(**valid_user_data)
 
     @pytest.mark.parametrize(
@@ -945,57 +943,57 @@ class TestUserModel:
         [
             pytest.param(
                 "https://example.com:abc/",
-                "ポートが無効",
+                "Invalid port",
                 id="invalid_port_string",
             ),
             pytest.param(
                 "%0d%0aevil.com",
-                "パーセントエンコードされた制御文字",
+                "percent-encoded control characters",
                 id="percent_encoded_crlf_injection",
             ),
             pytest.param(
                 "%0d%0a//evil.com",
-                "パーセントエンコードされた制御文字",
+                "percent-encoded control characters",
                 id="percent_encoded_crlf_slash_bypass",
             ),
             pytest.param(
                 "%7f",
-                "パーセントエンコードされた制御文字",
+                "percent-encoded control characters",
                 id="percent_encoded_del_character",
             ),
             pytest.param(
                 "%2f%2fevil.com",
-                "スキームなしURLにパスは指定できません",
+                "Scheme-less URL cannot contain a path",
                 id="percent_encoded_slash_bypass",
             ),
             pytest.param(
                 "example.com/path",
-                "スキームなしURLにパスは指定できません",
+                "Scheme-less URL cannot contain a path",
                 id="schemeless_with_path",
             ),
             pytest.param(
                 "example.com%2Fpath",
-                "スキームなしURLにパスは指定できません",
+                "Scheme-less URL cannot contain a path",
                 id="schemeless_with_encoded_path",
             ),
             pytest.param(
                 "https://evil<script>xss</script>.example.com/path",
-                "ホスト名に不正な文字が含まれています",
+                "Hostname contains invalid characters",
                 id="xss_metachar_in_netloc",
             ),
             pytest.param(
                 "Example.COM/path",
-                "スキームなしURLにパスは指定できません",
+                "Scheme-less URL cannot contain a path",
                 id="schemeless_uppercase_host_with_path",
             ),
             pytest.param(
                 "https://example.com%80",
-                "不正なパーセントエンコード",
+                "invalid percent-encoding",
                 id="invalid_utf8_percent_encoding_https",
             ),
             pytest.param(
                 "example.com%80",
-                "不正なパーセントエンコード",
+                "invalid percent-encoding",
                 id="invalid_utf8_percent_encoding",
             ),
         ],
@@ -1021,7 +1019,7 @@ class TestUserModel:
     ) -> None:
         """User.website が非文字列入力を拒否すること"""
         valid_user_data["website"] = non_str_input  # type: ignore[typeddict-item]
-        with pytest.raises(ValidationError, match=re.escape("文字列が必要です")):
+        with pytest.raises(ValidationError, match=re.escape("String required")):
             User(**valid_user_data)
 
     @pytest.mark.parametrize(
@@ -1114,7 +1112,7 @@ class TestUserModel:
     ) -> None:
         """制御文字のみのwebsiteはサニタイズ後に空文字列となりValidationErrorになること"""
         valid_user_data["website"] = control_only
-        with pytest.raises(ValidationError, match=re.escape("websiteが空になりました")):
+        with pytest.raises(ValidationError, match=re.escape("Website became empty")):
             User(**valid_user_data)
 
     @pytest.mark.parametrize(
@@ -1139,7 +1137,7 @@ class TestUserModel:
     ) -> None:
         """User.website がuserinfo付きURLを拒否すること（RFC 3986 userinfoバイパス防止）"""
         valid_user_data["website"] = userinfo_url
-        with pytest.raises(ValidationError, match=re.escape("URLにuserinfo")):
+        with pytest.raises(ValidationError, match=re.escape("URL cannot contain userinfo")):
             User(**valid_user_data)
 
     @pytest.mark.parametrize(
@@ -1199,7 +1197,26 @@ class TestUserModel:
         URLにuserinfoが含まれると判定しValidationErrorを発生させる。
         """
         valid_user_data["website"] = "https://user%40evil.com@host.example.com"
-        with pytest.raises(ValidationError, match=re.escape("URLにuserinfo")):
+        with pytest.raises(ValidationError, match=re.escape("URL cannot contain userinfo")):
+            User(**valid_user_data)
+
+    @pytest.mark.parametrize(
+        "bad_url",
+        [
+            pytest.param("http://example.com/%GG", id="incomplete_pct_gg"),
+            pytest.param("http://example.com/path%", id="incomplete_pct_bare"),
+        ],
+    )
+    def test_user_website_rejects_incomplete_percent_encoding(
+        self, valid_user_data: _UserData, bad_url: str
+    ) -> None:
+        """不完全なパーセントエンコード（%GG・末尾%等）を含むURLを拒否すること.
+
+        %GG・末尾の裸%はいずれも_PERCENT_CTRL_RE（制御文字検出）にはマッチしないが、
+        _INCOMPLETE_PCT_RE（不完全%シーケンス検出）にマッチしValidationErrorを送出する。
+        """
+        valid_user_data["website"] = bad_url
+        with pytest.raises(ValidationError, match=re.escape("incomplete percent-encoding")):
             User(**valid_user_data)
 
 
@@ -1582,7 +1599,7 @@ class TestPhotoModel:
                 thumbnail_url="https://example.com/thumb.jpg",
             )
 
-        assert "URLはhttp://またはhttps://で始まる必要があります" in str(exc_info.value)
+        assert "URL must start with http:// or https://" in str(exc_info.value)
 
     def test_photo_rejects_data_url(self) -> None:
         """Photo モデルが data: スキームを拒否することを確認"""
@@ -1595,12 +1612,12 @@ class TestPhotoModel:
                 thumbnail_url="data:image/png;base64,iVBORw0KGgo=",
             )
 
-        assert "URLはhttp://またはhttps://で始まる必要があります" in str(exc_info.value)
+        assert "URL must start with http:// or https://" in str(exc_info.value)
 
     def test_photo_rejects_schemeless_url(self) -> None:
         """Photo.url がスキームなしURLを拒否すること"""
         with pytest.raises(
-            ValidationError, match=re.escape("URLはhttp://またはhttps://で始まる必要があります")
+            ValidationError, match=re.escape("URL must start with http:// or https://")
         ):
             Photo(
                 album_id=1,
@@ -1613,7 +1630,7 @@ class TestPhotoModel:
     def test_photo_rejects_schemeless_thumbnail_url(self) -> None:
         """Photo.thumbnail_url がスキームなしURLを拒否すること"""
         with pytest.raises(
-            ValidationError, match=re.escape("URLはhttp://またはhttps://で始まる必要があります")
+            ValidationError, match=re.escape("URL must start with http:// or https://")
         ):
             Photo(
                 album_id=1,
@@ -1629,19 +1646,19 @@ class TestPhotoModel:
             pytest.param(
                 "https://evil.com%0d%0aInjected",
                 "https://example.com/thumb.jpg",
-                "パーセントエンコードされた制御文字",
+                "percent-encoded control characters",
                 id="crlf_in_url",
             ),
             pytest.param(
                 "https://example.com/photo.jpg",
                 "https://evil.com%0aInjected",
-                "パーセントエンコードされた制御文字",
+                "percent-encoded control characters",
                 id="lf_in_thumbnail",
             ),
             pytest.param(
                 "https://example.com%0D%0A/photo.jpg",
                 "https://example.com/thumb.jpg",
-                "パーセントエンコードされた制御文字",
+                "percent-encoded control characters",
                 id="uppercase_crlf_in_url",
             ),
         ],
@@ -1667,7 +1684,7 @@ class TestPhotoModel:
     )
     def test_photo_rejects_incomplete_percent_encoding(self, field_key: str, bad_url: str) -> None:
         """Photo url/thumbnail_url が不完全なパーセントエンコードを拒否すること."""
-        with pytest.raises(ValidationError, match=re.escape("不完全なパーセントエンコード")):
+        with pytest.raises(ValidationError, match=re.escape("incomplete percent-encoding")):
             Photo.model_validate({**_PHOTO_BASE, field_key: bad_url})
 
     @pytest.mark.parametrize(
@@ -1687,7 +1704,7 @@ class TestPhotoModel:
     )
     def test_photo_rejects_control_char_only_url_fields(self, url: str, thumbnail_url: str) -> None:
         """制御文字のみのPhoto url/thumbnail_urlが空文字エラーで拒否されること"""
-        with pytest.raises(ValidationError, match=re.escape("URLが空になりました")):
+        with pytest.raises(ValidationError, match=re.escape("URL became empty")):
             Photo(album_id=1, id=1, title="Test", url=url, thumbnail_url=thumbnail_url)
 
     @pytest.mark.parametrize(
@@ -1700,7 +1717,7 @@ class TestPhotoModel:
     )
     def test_photo_url_rejects_empty_netloc(self, url: str) -> None:
         """Photo.url に netloc 空の URL が渡されたとき ValidationError を発生させること"""
-        with pytest.raises(ValidationError, match=re.escape("有効なホスト名が含まれていません")):
+        with pytest.raises(ValidationError, match=re.escape("Valid hostname not found")):
             Photo(
                 album_id=1,
                 id=1,
@@ -1718,7 +1735,7 @@ class TestPhotoModel:
     )
     def test_photo_thumbnail_url_rejects_empty_netloc(self, thumbnail_url: str) -> None:
         """Photo.thumbnail_url に netloc 空の URL が渡されたとき ValidationError を発生させること"""
-        with pytest.raises(ValidationError, match=re.escape("有効なホスト名が含まれていません")):
+        with pytest.raises(ValidationError, match=re.escape("Valid hostname not found")):
             Photo(
                 album_id=1,
                 id=1,
@@ -1731,7 +1748,7 @@ class TestPhotoModel:
     def test_photo_rejects_ascii_whitespace_in_host(self, field_name: str) -> None:
         """Photo の URL フィールドがホスト部のASCII空白を拒否すること."""
         key = "url" if field_name == "url" else "thumbnailUrl"
-        with pytest.raises(ValidationError, match=re.escape("ホスト名に空白文字が含まれています")):
+        with pytest.raises(ValidationError, match=re.escape("Hostname contains whitespace")):
             Photo.model_validate({**_PHOTO_BASE, key: "https://example .com/photo.jpg"})
 
     @pytest.mark.parametrize(
@@ -1747,7 +1764,7 @@ class TestPhotoModel:
     )
     def test_photo_url_rejects_userinfo(self, url: str) -> None:
         """Photo.url にuserinfo付きURLが渡されたとき ValidationError を発生させること"""
-        with pytest.raises(ValidationError, match=re.escape("URLにuserinfo")):
+        with pytest.raises(ValidationError, match=re.escape("URL cannot contain userinfo")):
             Photo(
                 album_id=1,
                 id=1,
@@ -1775,7 +1792,7 @@ class TestPhotoModel:
     )
     def test_photo_thumbnail_url_rejects_userinfo(self, thumbnail_url: str) -> None:
         """Photo.thumbnail_urlがuserinfo付きURLを拒否すること（RFC 3986バイパス防止）"""
-        with pytest.raises(ValidationError, match=re.escape("URLにuserinfo")):
+        with pytest.raises(ValidationError, match=re.escape("URL cannot contain userinfo")):
             Photo(
                 album_id=1,
                 id=1,
@@ -1801,7 +1818,7 @@ class TestPhotoModel:
     )
     def test_photo_rejects_invalid_port(self, url: str, thumbnail_url: str) -> None:
         """Photo url/thumbnail_url が無効なポート文字列を拒否すること"""
-        with pytest.raises(ValidationError, match=re.escape("ポートが無効")):
+        with pytest.raises(ValidationError, match=re.escape("Invalid port")):
             Photo(album_id=1, id=1, title="Test", url=url, thumbnail_url=thumbnail_url)
 
     # Photo URL危険ペイロード共通定数（両フィールド同一バリデータ共有のため再利用）
@@ -1835,7 +1852,7 @@ class TestPhotoModel:
         thumbnail_url 側は alias バインド確認のみ別テストで実施（保守性・二重メンテ防止）。
         """
         with pytest.raises(
-            ValidationError, match=re.escape("URLはhttp://またはhttps://で始まる必要があります")
+            ValidationError, match=re.escape("URL must start with http:// or https://")
         ):
             Photo(
                 album_id=1,
@@ -1861,7 +1878,7 @@ class TestPhotoModel:
         バリデータロジック検証は test_photo_url_rejects_invisible_char_dangerous_scheme に委譲。
         """
         with pytest.raises(
-            ValidationError, match=re.escape("URLはhttp://またはhttps://で始まる必要があります")
+            ValidationError, match=re.escape("URL must start with http:// or https://")
         ):
             # model_validate で外部入力（alias 名を含む辞書）をシミュレート
             Photo.model_validate(
@@ -1894,7 +1911,7 @@ class TestPhotoModel:
         難読化スキーム拒否テストは「http以外」の catch-all で弾くため、不可視文字が実際に
         除去されたかを判別できない（除去が壊れても非httpとして拒否され緑のまま）。本テストは
         正規httpURLに不可視文字を埋め込み、除去後に等価な正規URLへ正規化されることを表明し、
-        _strip_invisible_chars の各カテゴリ除去ロジックの回帰を直接検出する。
+        strip_invisible_chars の各カテゴリ除去ロジックの回帰を直接検出する。
         """
         photo = Photo(
             album_id=1,
@@ -1910,7 +1927,7 @@ class TestPhotoModel:
 
         Note:
             Pydanticはfield_validator呼び出し前にstring_unicodeエラーで拒否する。
-            _strip_invisible_charsのサロゲート除去は直接文字列呼び出し時に機能する。
+            strip_invisible_charsのサロゲート除去は直接文字列呼び出し時に機能する。
         """
         with pytest.raises(ValidationError, match=re.escape("string_unicode")):
             Photo(
@@ -1924,10 +1941,10 @@ class TestPhotoModel:
     def test_photo_url_rejects_empty_string(self) -> None:
         """Photo.url に空文字列を渡すと ValidationError が発生すること。
 
-        min_length 制約がないため、空文字列は _strip_invisible_chars → .strip() を通過後
+        min_length 制約がないため、空文字列は strip_invisible_chars → .strip() を通過後
         validate_url_scheme のガード節（if not sanitized）に到達する。
         """
-        with pytest.raises(ValidationError, match=re.escape("URLが空になりました")):
+        with pytest.raises(ValidationError, match=re.escape("URL became empty")):
             Photo(
                 album_id=1,
                 id=1,
@@ -1946,7 +1963,7 @@ class TestPhotoModel:
 
     def test_photo_thumbnail_url_rejects_empty_string(self) -> None:
         """Photo.thumbnail_url に空文字列を渡すと ValidationError が発生すること。"""
-        with pytest.raises(ValidationError, match=re.escape("URLが空になりました")):
+        with pytest.raises(ValidationError, match=re.escape("URL became empty")):
             Photo(
                 album_id=1,
                 id=1,
@@ -1998,7 +2015,7 @@ class TestPhotoModel:
         }
         with pytest.raises(
             ValidationError,
-            match=rf"URL補完後の長さが上限{_WEBSITE_NORMALIZED_MAX_LENGTH}文字を超過しています",
+            match=r"URL length after normalization exceeds limit",
         ):
             Photo.model_validate(photo_data)
 
@@ -2008,7 +2025,7 @@ class TestPhotoModel:
         urlparse は "user%40evil.com@host.example.com" をuserinfoとして解析するため、
         URLにuserinfoが含まれると判定しValidationErrorを発生させる。
         """
-        with pytest.raises(ValidationError, match=re.escape("URLにuserinfo")):
+        with pytest.raises(ValidationError, match=re.escape("URL cannot contain userinfo")):
             Photo(**{**_PHOTO_BASE, "url": "https://user%40evil.com@host.example.com/path.jpg"})
 
     def test_photo_url_rejects_percent_encoded_at_in_host(self) -> None:
@@ -2022,7 +2039,7 @@ class TestPhotoModel:
 
     def test_photo_url_rejects_invalid_percent_encoding(self) -> None:
         """不正なパーセントエンコード（UTF-8として無効）をネットロック部に含むURLを拒否すること"""
-        with pytest.raises(ValidationError, match=re.escape("パーセントエンコード")):
+        with pytest.raises(ValidationError, match=re.escape("percent-encod")):
             Photo(**{**_PHOTO_BASE, "url": "https://exam%80ple.com/path.jpg"})
 
 
@@ -2033,33 +2050,33 @@ class TestNormalizeUrl:
 
     def test_basic_normalization(self) -> None:
         """スキームとホストの小文字正規化"""
-        result = _normalize_url(urlparse("HTTPS://EXAMPLE.COM/Path"))
+        result = normalize_url(urlparse("HTTPS://EXAMPLE.COM/Path"))
         assert result == "https://example.com/Path"
 
     def test_ipv6_bracket_preservation(self) -> None:
         """IPv6アドレスのブラケット復元"""
-        result = _normalize_url(urlparse("https://[::1]:8080/path"))
+        result = normalize_url(urlparse("https://[::1]:8080/path"))
         assert result == "https://[::1]:8080/path"
 
     def test_safe_params_encoding(self) -> None:
         """RFC 3986 §3.3 パラメータ部のエンコード"""
-        result = _normalize_url(urlparse("https://example.com/path;type=pdf"))
+        result = normalize_url(urlparse("https://example.com/path;type=pdf"))
         assert ";type=pdf" in result
 
     def test_fragment_preserves_unreserved(self) -> None:
         """フラグメントのunreserved文字（._~）が過剰エンコードされないこと"""
-        result = _normalize_url(urlparse("https://example.com/page#section_1.2~draft"))
+        result = normalize_url(urlparse("https://example.com/page#section_1.2~draft"))
         assert result.endswith("#section_1.2~draft")
 
     def test_existing_percent_encoding_preserved(self) -> None:
         """既存の%エンコードが二重エンコードされないこと"""
-        result = _normalize_url(urlparse("https://example.com/path%20name"))
+        result = normalize_url(urlparse("https://example.com/path%20name"))
         assert "%20" in result
         assert "%2520" not in result  # 二重エンコード防止
 
     def test_single_quote_encoded_to_percent27(self) -> None:
         """シングルクォートがXSS防止のため%27にエンコードされること（RFC 3986 safe除外）"""
-        result = _normalize_url(urlparse("https://example.com/path/file'.jpg"))
+        result = normalize_url(urlparse("https://example.com/path/file'.jpg"))
         assert "%27" in result
         assert "'" not in result.split("//", 1)[1]  # ホスト以降にシングルクォートなし
 
@@ -2067,8 +2084,8 @@ class TestNormalizeUrl:
         """hostname=None（netloc=':8080'）で ValueError が発生すること"""
         parsed = urlparse("https://:8080/path")
         assert parsed.hostname is None, "前提条件: hostname が None であること"
-        with pytest.raises(ValueError, match=re.escape("ホスト名の解決に失敗しました")):
-            _normalize_url(parsed)
+        with pytest.raises(ValueError, match=re.escape("Failed to resolve hostname")):
+            normalize_url(parsed)
 
 
 class TestValidateSchemeLessUrl:
@@ -2078,27 +2095,27 @@ class TestValidateSchemeLessUrl:
 
     def test_rejects_incomplete_percent_encoding(self) -> None:
         """不完全なパーセントエンコード（%GG等）を拒否すること"""
-        with pytest.raises(ValueError, match=re.escape("不完全なパーセントエンコード")):
-            _validate_scheme_less_url("example%GG.com")
+        with pytest.raises(ValueError, match=re.escape("incomplete percent-encoding")):
+            validate_scheme_less_url("example%GG.com")
 
     def test_rejects_path_separator(self) -> None:
         """パス区切り（/）を含むURLを拒否すること"""
-        with pytest.raises(ValueError, match=re.escape("パス")):
-            _validate_scheme_less_url("example.com/path")
+        with pytest.raises(ValueError, match=re.escape("cannot contain a path")):
+            validate_scheme_less_url("example.com/path")
 
     def test_rejects_fragment(self) -> None:
         """フラグメント（#）を含むURLを拒否すること"""
-        with pytest.raises(ValueError, match=re.escape("フラグメント")):
-            _validate_scheme_less_url("example.com#section")
+        with pytest.raises(ValueError, match=re.escape("cannot contain a fragment")):
+            validate_scheme_less_url("example.com#section")
 
     def test_rejects_query(self) -> None:
         """クエリ（?）を含むURLを拒否すること"""
-        with pytest.raises(ValueError, match=re.escape("クエリ")):
-            _validate_scheme_less_url("example.com?key=val")
+        with pytest.raises(ValueError, match=re.escape("cannot contain a query")):
+            validate_scheme_less_url("example.com?key=val")
 
     def test_accepts_valid_domain(self) -> None:
         """有効なドメイン名はエラーなしで通過すること"""
-        _validate_scheme_less_url("example.com")  # 例外なし = 成功
+        validate_scheme_less_url("example.com")  # 例外なし = 成功
 
 
 class TestExtraFieldsForbidden:
