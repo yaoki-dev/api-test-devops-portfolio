@@ -1,5 +1,5 @@
 # ===============================================================================
-# test_retry_logic.py - Statistical Distribution Tests for Retry Jitter
+# test_retry.py - Statistical Distribution Tests for Retry Jitter
 # ===============================================================================
 
 # utils/api_client.pyのexponential_backoff_with_jitter()の統計的検証を行う

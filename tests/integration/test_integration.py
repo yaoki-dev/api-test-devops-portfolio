@@ -1,20 +1,4 @@
-# ===============================================================================
-# test_async_crud.py - 非同期CRUD操作の統合テスト（実API使用）
-# ===============================================================================
-#
-# このファイルは AsyncJSONPlaceholderClient の実API統合テスト
-#
-# 注意事項：
-# - このテストは外部APIに依存します
-# - CI/CD環境では TEST_EXTERNAL_API_ENABLED=false で無効化できます
-# - レートリミット・ネットワーク遅延を考慮してください
-#
-# 実行方法：
-#   pytest tests/integration/test_async_crud.py -v
-#   pytest tests/integration/test_async_crud.py::test_real_async_create_post -v
-#   TEST_EXTERNAL_API_ENABLED=false pytest tests/integration/  # スキップ
-#
-# ===============================================================================
+"""Integration tests for JSONPlaceholder clients."""
 
 import asyncio
 
@@ -22,17 +6,48 @@ import pytest
 
 from config.settings import settings
 from models.responses import Post
-from utils.exceptions import APIClientError
+from utils.exceptions import (
+    APIClientError,
+    APIConnectionError,
+    APIHTTPError,
+    APIRetryError,
+    APITimeoutError,
+)
+from utils.jsonplaceholder_base_sync import SyncAPIClient
 from utils.jsonplaceholder_client_async import AsyncJSONPlaceholderClient
 
-# Pydantic Settings経由で統合テスト実行を制御（.envのTEST__EXTERNAL_API_ENABLEDを参照）
 SKIP_INTEGRATION = not settings.test.external_api_enabled
 SKIP_REASON = "settings.test.external_api_enabled is False - skipping external API tests"
 
+pytestmark = pytest.mark.unit
 
-# ===============================================================================
-# Test 1: 実API - 非同期投稿作成テスト（Create）
-# ===============================================================================
+
+def test_api_404_raises_http_error() -> None:
+    """存在しないリソースでAPIHTTPErrorが発生する（二相分離: 到達性確認→契約検証）
+
+    二相構成:
+      Phase 1 (到達性確認): 既存リソース /posts/1 へ疎通し、接続障害は skip
+      Phase 2 (契約検証):   /posts/999999 で APIHTTPError(status_code=404) を検証。
+                            APIRetryError 含む全例外がテスト失敗として CI に報告される。
+
+    設計意図: Phase 1/2 を分離することで、pytest.raises(APIHTTPError) が APIRetryError
+    を捕捉せず外側の except に伝播する問題（skip に化けて CI がバグを見逃す）を防止する。
+    """
+    # Phase 1: 到達性確認 — 接続障害時は skip（404 契約バグではない）
+    try:
+        with SyncAPIClient() as client:
+            client.get("/posts/1")
+    except (APIConnectionError, APITimeoutError, APIRetryError) as exc:
+        pytest.skip(
+            "JSONPlaceholder への接続に失敗したため 404 契約検証を skip します"
+            f"（ネットワーク障害が原因であり 404 契約バグではありません）: {exc}"
+        )
+
+    # Phase 2: 契約検証 — APIRetryError 含む全例外がテスト失敗として CI に報告される
+    with SyncAPIClient() as client:
+        with pytest.raises(APIHTTPError) as exc_info:
+            client.get("/posts/999999")
+        assert exc_info.value.status_code == 404
 
 
 @pytest.mark.integration
@@ -65,11 +80,6 @@ async def test_real_async_create_post():
         assert post.id == 101
 
 
-# ===============================================================================
-# Test 2: 実API - 非同期投稿更新テスト（Update）
-# ===============================================================================
-
-
 @pytest.mark.integration
 @pytest.mark.skipif(SKIP_INTEGRATION, reason=SKIP_REASON)
 async def test_real_async_update_post():
@@ -96,11 +106,6 @@ async def test_real_async_update_post():
         assert updated["body"] == "Updated body content"
 
 
-# ===============================================================================
-# Test 3: 実API - 非同期投稿削除テスト（Delete）
-# ===============================================================================
-
-
 @pytest.mark.integration
 @pytest.mark.skipif(SKIP_INTEGRATION, reason=SKIP_REASON)
 async def test_real_async_delete_post():
@@ -116,11 +121,6 @@ async def test_real_async_delete_post():
     async with AsyncJSONPlaceholderClient() as client:
         # delete_post() returns None, so just verify no exception raised
         await client.delete_post(post_id=1)
-
-
-# ===============================================================================
-# Test 4: 実API - CRUD統合フローテスト
-# ===============================================================================
 
 
 @pytest.mark.integration
@@ -172,11 +172,6 @@ async def test_real_async_crud_integration():
         await client.delete_post(post_id=1)
 
 
-# ===============================================================================
-# Test 5: 実API - エラーハンドリング（404 Not Found）
-# ===============================================================================
-
-
 @pytest.mark.integration
 @pytest.mark.skipif(SKIP_INTEGRATION, reason=SKIP_REASON)
 async def test_real_async_404_error():
@@ -193,11 +188,6 @@ async def test_real_async_404_error():
         # 存在しないIDへのアクセス
         with pytest.raises(APIClientError):
             await client.update_post(post_id=999999, title="Test", body="Test")
-
-
-# ===============================================================================
-# Test 6: 実API - 並行CRUD操作テスト（パフォーマンス）
-# ===============================================================================
 
 
 @pytest.mark.integration
@@ -227,11 +217,6 @@ async def test_real_async_concurrent_crud():
             assert post.title == f"Concurrent Post {i}"
             assert post.user_id == 1
             assert post.id == 101  # JSONPlaceholder の仕様: 常に101
-
-
-# ===============================================================================
-# Test 7: 実API - タイムアウト設定テスト
-# ===============================================================================
 
 
 @pytest.mark.integration
