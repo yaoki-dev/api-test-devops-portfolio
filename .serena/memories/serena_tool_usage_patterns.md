@@ -28,7 +28,7 @@
 
 | ファイル | 従来 | 最適化後 | 削減率 |
 |---------|------|---------|--------|
-| utils/api_client.py (762行) | 762行読込 | 101行読込 | 87% |
+| utils/jsonplaceholder_base_sync.py (350行) | 350行読込 | 50行読込 | 86% |
 | 一般的なファイル | 全行読込 | 必要部分のみ | 50-90% |
 
 ### 1.3 ツール詳細
@@ -103,7 +103,7 @@
 
 ```python
 # Step 1: 構造把握
-serena get_symbols_overview relative_path="utils/api_client.py" depth=1
+serena get_symbols_overview relative_path="utils/jsonplaceholder_base_sync.py" depth=1
 # → Classes: AsyncAPIClient, SyncAPIClient, ...
 # → Functions: create_client, main, ...
 

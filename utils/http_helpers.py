@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 from structlog.typing import FilteringBoundLogger
 
+from config.settings import settings
 from utils.exceptions import APIClientError, APIConnectionError, APITimeoutError
 
 
@@ -112,9 +113,7 @@ def resolve_client_config(
             （str.strip() で除去される文字）のみの文字列の場合
 
     """
-    from utils import api_client
-
-    active_settings = api_client.settings
+    active_settings = settings
     base_url = base_url if base_url is not None else active_settings.api.base_url
     if not base_url.strip():
         raise ValueError("base_url が空です。引数または API__BASE_URL 環境変数を確認してください。")

@@ -14,7 +14,7 @@ from collections.abc import Generator
 import pytest
 
 from config.settings import Settings, get_settings
-from utils.api_client import SyncAPIClient
+from utils.jsonplaceholder_base_sync import SyncAPIClient
 
 
 @pytest.fixture(scope="class")

@@ -23,12 +23,12 @@ from models.responses import Album, Photo, Post, Todo, User
 # テストヘルパー
 from tests.constants import BASE_URL, INVALID_BASE_URLS
 from tests.unit.helpers import assert_warning_log_count, make_canonical_user
-from utils.api_client import (
+from utils.exceptions import (
     APIHTTPError,
     APIRetryError,
-    AsyncAPIClient,
-    AsyncJSONPlaceholderClient,
 )
+from utils.jsonplaceholder_base_async import AsyncAPIClient
+from utils.jsonplaceholder_client_async import AsyncJSONPlaceholderClient
 
 # Module-level marker: All tests in this file are unit tests
 pytestmark = pytest.mark.unit
@@ -366,7 +366,7 @@ async def test_all_requests_fail_returns_empty_list():
 
 
 @respx.mock
-@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
+@patch("utils.jsonplaceholder_base_async.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_timeout_retry_then_success(mock_backoff: Mock) -> None:
     """
     タイムアウトエラー後のリトライで最終的に成功するテスト
@@ -868,7 +868,7 @@ async def test_async_bulk_create_users_fatal_exception_propagates(
 
 
 @respx.mock
-@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
+@patch("utils.jsonplaceholder_base_async.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_performance_and_timeout(mock_backoff: Mock) -> None:
     """
     非同期処理のパフォーマンス・タイムアウト・リソース管理テスト
@@ -1366,7 +1366,7 @@ async def test_get_user_data_parallel_requests():
 
     検証項目：
     - 4つのAPI（user/posts/todos/albums）が並行実行される
-    - asyncio.gatherによる効率的な並行処理
+    - asyncio.TaskGroupによる効率的な並行処理
     - postsのuserIdフィルタリングが正しく機能する
     - 返却データ構造が{user, posts, todos, albums}である
     - 各フィールドに期待されるデータ型が含まれる
@@ -1429,7 +1429,7 @@ async def test_get_user_data_parallel_requests():
     assert all(isinstance(album, Album) for album in result["albums"])
     assert all(album.user_id == 1 for album in result["albums"])
 
-    # 4つのAPIが各1回ずつ呼ばれたことを確認（asyncio.gatherによる並行実行の証明）
+    # 4つのAPIが各1回ずつ呼ばれたことを確認（TaskGroupによる並行実行の証明）
     assert route_user.call_count == 1
     assert route_posts.call_count == 1
     assert route_todos.call_count == 1
@@ -1497,7 +1497,7 @@ async def test_get_user_data_with_empty_posts():
     assert all(isinstance(todo, Todo) for todo in result["todos"])
     assert all(isinstance(album, Album) for album in result["albums"])
 
-    # 4つのAPIが各1回ずつ呼ばれたことを確認（asyncio.gatherによる並行実行の証明）
+    # 4つのAPIが各1回ずつ呼ばれたことを確認（TaskGroupによる並行実行の証明）
     assert route_user.call_count == 1
     assert route_posts.call_count == 1
     assert route_todos.call_count == 1
@@ -1512,7 +1512,8 @@ async def test_get_user_data_user_not_found():
     検証項目：
     - /users/999 が404を返す場合、APIHTTPErrorが発生する
     - status_code == 404 が正しく設定される
-    - asyncio.gather（return_exceptions=False）により例外がそのまま伝播する
+    - TaskGroup が送出する ExceptionGroup から個別 APIHTTPError へ unwrap され、
+      呼び出し元は従来どおり APIHTTPError で捕捉できる（契約維持）
     """
     user_id = 999
 
@@ -1520,8 +1521,8 @@ async def test_get_user_data_user_not_found():
     route_user = respx.get(f"{BASE_URL}/users/{user_id}").respond(status_code=404)
 
     # posts/todos/albums は正常応答（userId フィルタ付き）
-    # asyncio.gather はデフォルト（return_exceptions=False）で全タスクを並列実行してから例外伝播する
-    # user が 404 でも posts/todos/albums は全て1回呼ばれる
+    # TaskGroup は 1 タスク失敗時に残りを自動キャンセルするため、兄弟タスクは
+    # キャンセルのタイミング次第で呼ばれない場合がある（call_count <= 1）。
     route_posts = respx.get(f"{BASE_URL}/posts", params={"userId": user_id}).respond(json=[])
     route_todos = respx.get(f"{BASE_URL}/todos", params={"userId": user_id}).respond(json=[])
     route_albums = respx.get(f"{BASE_URL}/albums", params={"userId": user_id}).respond(json=[])
@@ -1533,12 +1534,12 @@ async def test_get_user_data_user_not_found():
 
     assert exc_info.value.status_code == 404
 
-    # asyncio.gather（return_exceptions=False）は全タスクを並列起動してから例外を伝播する
-    # そのため全エンドポイントが各1回呼ばれることを確認
+    # 失敗タスク（user）は必ず1回呼ばれる。兄弟タスクは TaskGroup のキャンセルに
+    # より呼ばれないことがあるため <= 1 を検証する。
     assert route_user.call_count == 1
-    assert route_posts.call_count == 1
-    assert route_todos.call_count == 1
-    assert route_albums.call_count == 1
+    assert route_posts.call_count <= 1
+    assert route_todos.call_count <= 1
+    assert route_albums.call_count <= 1
 
 
 @respx.mock
@@ -1549,7 +1550,8 @@ async def test_get_user_data_posts_server_error():
     検証項目：
     - /posts が500を返す場合、APIRetryErrorが発生する
     - retry_count=0 の場合はリトライせず即時失敗する
-    - asyncio.gather（return_exceptions=False）により例外がそのまま伝播する
+    - TaskGroup が送出する ExceptionGroup から個別 APIRetryError へ unwrap され、
+      呼び出し元は従来どおり APIRetryError で捕捉できる（契約維持）
     """
     user_id = 1
 
@@ -1591,12 +1593,13 @@ async def test_get_user_data_posts_server_error():
         with pytest.raises(APIRetryError):
             await client.get_user_data(user_id)
 
-    # asyncio.gather（return_exceptions=False）は全タスクを並列起動してから例外を伝播する
-    # retry_count=0 のため posts は1回のみ呼ばれる（リトライなし）
-    assert route_user.call_count == 1
+    # 失敗タスク（posts）は必ず1回呼ばれる（retry_count=0 のためリトライなし）。
+    # 兄弟タスク（user/todos/albums）は TaskGroup のキャンセルにより呼ばれない
+    # ことがあるため <= 1 を検証する。
     assert route_posts.call_count == 1
-    assert route_todos.call_count == 1
-    assert route_albums.call_count == 1
+    assert route_user.call_count <= 1
+    assert route_todos.call_count <= 1
+    assert route_albums.call_count <= 1
 
 
 # ===============================================================================

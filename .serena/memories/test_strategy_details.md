@@ -90,11 +90,16 @@ async def async_client(test_config) -> AsyncGenerator[AsyncAPIClient, None]:
 
 ### 3.1 優先モジュール
 
-1. **utils/api_client.py** (1,653行 wc -l / 435 stmts)
-   - リトライロジック (lines 117-247)
-   - 非同期並行処理 (lines 509-582)
-   - エラーハンドリング (lines 324-395)
-   - **カバレッジ: 92.22%**（残未カバー: 437, 636-637, 827-828, 1307-1308, 1317-1319, 1518, 1562, 1595, 1612-1637, 1641-1646）
+1. **utils/ フラットモジュール群**（旧 api_client.py を責任単位で分割）
+   - `utils/jsonplaceholder_base_sync.py`: SyncAPIClient (同期ベースクライアント)
+   - `utils/jsonplaceholder_base_async.py`: AsyncAPIClient (非同期ベースクライアント)
+   - `utils/jsonplaceholder_client_sync.py`: SyncJSONPlaceholderClient (同期JSONPlaceholder)
+   - `utils/jsonplaceholder_client_async.py`: AsyncJSONPlaceholderClient (非同期JSONPlaceholder)
+   - `utils/retry.py`: 指数バックオフ + ジッター (リトライロジック)
+   - `utils/exceptions.py`: API例外階層 (APIClientError 以下)
+   - `utils/http_helpers.py`: エラーハンドリング、設定解決、バリデーション
+   - `utils/response_parsing.py`: JSONパース + Pydanticモデル変換
+   - **カバレッジ: 97.34%** (1381 tests passed)
 
 2. **models/responses.py** (~350行)
    - Pydanticモデル

@@ -5,11 +5,13 @@ import pytest
 from structlog.testing import capture_logs
 
 from tests.constants import BASE_URL
-from utils.api_client import (
-    _MAX_LOGGED_FAILURE_DETAILS,
-    AsyncAPIClient,
+from utils.jsonplaceholder_base_async import AsyncAPIClient
+from utils.jsonplaceholder_base_sync import SyncAPIClient
+from utils.jsonplaceholder_client_async import (
+    MAX_LOGGED_FAILURE_DETAILS as _MAX_LOGGED_FAILURE_DETAILS,
+)
+from utils.jsonplaceholder_client_async import (
     AsyncJSONPlaceholderClient,
-    SyncAPIClient,
 )
 
 # Module-level marker: All tests in this file are unit tests
@@ -42,7 +44,16 @@ mock_settings_instance = MockSettings()
 
 @pytest.fixture(autouse=True)
 def mock_settings():
-    with patch("config.settings.settings", new=mock_settings_instance):
+    # NOTE: 各クライアントモジュールは `from config.settings import settings` により
+    # 自前の `settings` バインディングを import 時に確定する。そのため
+    # `config.settings.settings` を patch しても、それらのバインディングには届かず
+    # テスト分離が成立しない（"patch where it is looked up" の原則）。実際に参照
+    # される各モジュールの `settings` 名を patch する。
+    with (
+        patch("utils.http_helpers.settings", new=mock_settings_instance),
+        patch("utils.jsonplaceholder_base_sync.settings", new=mock_settings_instance),
+        patch("utils.jsonplaceholder_base_async.settings", new=mock_settings_instance),
+    ):
         yield
 
 
@@ -70,6 +81,17 @@ def test_base_client_uses_default_settings_if_not_provided():
     assert client.base_url == BASE_URL
     assert client.timeout == 30.0
     assert client.retry_count == 3
+
+
+def test_mock_settings_fixture_is_effective():
+    """mock_settings fixture が実際に有効であることを保証する回帰テスト。
+
+    retry_delay は mock 値 0.1 と実 .env 既定値 1.0 が異なるため、パッチ標的が
+    誤っている（import 済みバインディングに届かない）場合は実値 1.0 が返り、この
+    アサーションが失敗する。テスト分離が実効的であることを保証する。
+    """
+    client = SyncAPIClient()  # 引数なし → mock_settings_instance を参照するはず
+    assert client.retry_delay == 0.1  # mock 固有値（実 .env 既定は 1.0）
 
 
 def test_base_client_headers_are_set_correctly():

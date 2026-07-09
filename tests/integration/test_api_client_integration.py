@@ -4,13 +4,13 @@ JSONPlaceholder の実APIに対し、SyncAPIClient の公開例外契約の検�
 
 import pytest
 
-from utils.api_client import (
+from utils.exceptions import (
     APIConnectionError,
     APIHTTPError,
     APIRetryError,
     APITimeoutError,
-    SyncAPIClient,
 )
+from utils.jsonplaceholder_base_sync import SyncAPIClient
 
 # Module-level marker: 全テストを統合テストとして毎 PR CI で実行する。
 # external は付与しない（JSONPlaceholder は基準 API で、既存 integration 群と整合させるため。

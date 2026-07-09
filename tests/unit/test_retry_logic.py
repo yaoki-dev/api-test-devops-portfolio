@@ -8,7 +8,7 @@ import random
 
 import pytest
 
-from utils.api_client import exponential_backoff_with_jitter
+from utils.retry import exponential_backoff_with_jitter
 
 pytestmark = pytest.mark.unit
 
