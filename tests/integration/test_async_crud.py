@@ -22,7 +22,8 @@ import pytest
 
 from config.settings import settings
 from models.responses import Post
-from utils.api_client import APIClientError, AsyncJSONPlaceholderClient
+from utils.exceptions import APIClientError
+from utils.jsonplaceholder_client_async import AsyncJSONPlaceholderClient
 
 # Pydantic Settings経由で統合テスト実行を制御（.envのTEST__EXTERNAL_API_ENABLEDを参照）
 SKIP_INTEGRATION = not settings.test.external_api_enabled

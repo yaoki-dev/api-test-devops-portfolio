@@ -14,7 +14,7 @@ import pytest_asyncio
 from config.settings import _resolve_hostname_cached, reload_settings
 from tests.constants import BASE_URL
 from tests.types import _IntegrationTestData, _PostData, _TodoData, _UserData
-from utils.api_client import AsyncAPIClient
+from utils.jsonplaceholder_base_async import AsyncAPIClient
 
 
 class PerformanceTimer:

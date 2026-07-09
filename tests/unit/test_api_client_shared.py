@@ -17,22 +17,36 @@ import pytest
 from pydantic import BaseModel, Field
 
 from tests.constants import INVALID_BASE_URLS
-from utils.api_client import (
+from utils.exceptions import (
     APIClientError,
     APIConnectionError,
     APIHTTPError,
     APIJSONDecodeError,
     APIRetryError,
     APITimeoutError,
-    AsyncAPIClient,
-    SyncAPIClient,
-    _classify_error,
-    _log_error_with_stderr_fallback,
-    _map_request_error,
-    _parse_response_model,
-    _parse_response_model_list,
-    _resolve_client_config,
-    _safe_parse_json,
+)
+from utils.http_helpers import (
+    classify_error as _classify_error,
+)
+from utils.http_helpers import (
+    log_error_with_stderr_fallback as _log_error_with_stderr_fallback,
+)
+from utils.http_helpers import (
+    map_request_error as _map_request_error,
+)
+from utils.http_helpers import (
+    resolve_client_config as _resolve_client_config,
+)
+from utils.jsonplaceholder_base_async import AsyncAPIClient
+from utils.jsonplaceholder_base_sync import SyncAPIClient
+from utils.response_parsing import (
+    parse_response_model as _parse_response_model,
+)
+from utils.response_parsing import (
+    parse_response_model_list as _parse_response_model_list,
+)
+from utils.response_parsing import (
+    safe_parse_json as _safe_parse_json,
 )
 
 # Module-level marker: All tests in this file are unit tests
@@ -407,7 +421,7 @@ def mock_settings() -> MockSettings:
 
 def test_resolve_client_config_base_url_none_uses_settings(mock_settings: MockSettings) -> None:
     """base_url=None の場合 settings.api.base_url が使われる"""
-    with patch("utils.api_client.settings", mock_settings):
+    with patch("utils.http_helpers.settings", mock_settings):
         base_url, _, _, _, _ = _resolve_client_config(None, None, None, None, None)
     assert base_url == "https://settings.example.com"
 
@@ -418,21 +432,21 @@ def test_resolve_client_config_invalid_base_url_raises(
     invalid_base_url: str,
 ) -> None:
     """空白のみの base_url で ValueError が発生"""
-    with patch("utils.api_client.settings", mock_settings):
+    with patch("utils.http_helpers.settings", mock_settings):
         with pytest.raises(ValueError, match="base_url が空です"):
             _resolve_client_config(invalid_base_url, None, None, None, None)
 
 
 def test_resolve_client_config_none_timeout_uses_settings(mock_settings: MockSettings) -> None:
     """timeout=None の場合 settings.api.timeout が使われる"""
-    with patch("utils.api_client.settings", mock_settings):
+    with patch("utils.http_helpers.settings", mock_settings):
         _, timeout, _, _, _ = _resolve_client_config("https://example.com", None, None, None, None)
     assert timeout == 30.0
 
 
 def test_resolve_client_config_none_retry_count_uses_settings(mock_settings: MockSettings) -> None:
     """retry_count=None の場合 settings.api.retry_count が使われる"""
-    with patch("utils.api_client.settings", mock_settings):
+    with patch("utils.http_helpers.settings", mock_settings):
         _, _, retry_count, _, _ = _resolve_client_config(
             "https://example.com", 10.0, None, 2.0, None
         )
@@ -441,7 +455,7 @@ def test_resolve_client_config_none_retry_count_uses_settings(mock_settings: Moc
 
 def test_resolve_client_config_none_retry_delay_uses_settings(mock_settings: MockSettings) -> None:
     """retry_delay=None の場合 settings.api.retry_delay が使われる"""
-    with patch("utils.api_client.settings", mock_settings):
+    with patch("utils.http_helpers.settings", mock_settings):
         _, _, _, retry_delay, _ = _resolve_client_config("https://example.com", 10.0, 5, None, None)
     assert retry_delay == 1.0
 
@@ -450,7 +464,7 @@ def test_resolve_client_config_headers_none_returns_defaults_only(
     mock_settings: MockSettings,
 ) -> None:
     """headers=None の場合デフォルトヘッダーのみ返される"""
-    with patch("utils.api_client.settings", mock_settings):
+    with patch("utils.http_helpers.settings", mock_settings):
         _, _, _, _, headers = _resolve_client_config("https://example.com", None, None, None, None)
     assert set(headers.keys()) == {"User-Agent", "Accept", "Content-Type"}
 
@@ -463,14 +477,14 @@ def test_resolve_client_config_headers_empty_dict_triggers_update(
     `if headers is not None:` の明示的Noneチェックにより、
     空dictはNoneと異なる扱いになることを検証する。
     """
-    with patch("utils.api_client.settings", mock_settings):
+    with patch("utils.http_helpers.settings", mock_settings):
         _, _, _, _, headers = _resolve_client_config("https://example.com", None, None, None, {})
     assert set(headers.keys()) == {"User-Agent", "Accept", "Content-Type"}
 
 
 def test_resolve_client_config_headers_merged_with_defaults(mock_settings: MockSettings) -> None:
     """カスタムヘッダーがデフォルトヘッダーとマージされる"""
-    with patch("utils.api_client.settings", mock_settings):
+    with patch("utils.http_helpers.settings", mock_settings):
         _, _, _, _, headers = _resolve_client_config(
             "https://example.com", None, None, None, {"X-Custom": "value"}
         )
@@ -482,7 +496,7 @@ def test_resolve_client_config_custom_headers_override_defaults(
     mock_settings: MockSettings,
 ) -> None:
     """カスタムヘッダーがデフォルトヘッダーを上書きできる"""
-    with patch("utils.api_client.settings", mock_settings):
+    with patch("utils.http_helpers.settings", mock_settings):
         _, _, _, _, headers = _resolve_client_config(
             "https://example.com", None, None, None, {"User-Agent": "custom-agent"}
         )
@@ -495,7 +509,7 @@ def test_resolve_client_config_zero_timeout_not_overridden(mock_settings: MockSe
     `if timeout:` に誤変更された場合、0.0 が falsy のため settings.api.timeout(30.0)
     で上書きされてしまうバグを検出する。
     """
-    with patch("utils.api_client.settings", mock_settings):
+    with patch("utils.http_helpers.settings", mock_settings):
         _, timeout, _, _, _ = _resolve_client_config("https://example.com", 0.0, None, None, None)
     assert timeout == 0.0
 
@@ -506,7 +520,7 @@ def test_resolve_client_config_zero_retry_count_not_overridden(mock_settings: Mo
     `if retry_count:` に誤変更された場合、0 が falsy のため settings.api.retry_count(3)
     で上書きされてしまうバグを検出する。
     """
-    with patch("utils.api_client.settings", mock_settings):
+    with patch("utils.http_helpers.settings", mock_settings):
         _, _, retry_count, _, _ = _resolve_client_config("https://example.com", None, 0, None, None)
     assert retry_count == 0
 
@@ -517,7 +531,7 @@ def test_resolve_client_config_zero_retry_delay_not_overridden(mock_settings: Mo
     `if retry_delay:` に誤変更された場合、0.0 が falsy のため settings.api.retry_delay(1.0)
     で上書きされてしまうバグを検出する。
     """
-    with patch("utils.api_client.settings", mock_settings):
+    with patch("utils.http_helpers.settings", mock_settings):
         _, _, _, retry_delay, _ = _resolve_client_config(
             "https://example.com", None, None, 0.0, None
         )

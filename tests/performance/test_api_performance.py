@@ -10,7 +10,8 @@ from typing import TypedDict
 import psutil
 import pytest
 
-from utils.api_client import APIClientError, AsyncAPIClient
+from utils.exceptions import APIClientError
+from utils.jsonplaceholder_base_async import AsyncAPIClient
 from utils.logger import get_logger
 
 

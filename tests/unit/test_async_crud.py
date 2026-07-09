@@ -12,7 +12,11 @@ import pytest
 import respx
 
 from tests.constants import BASE_URL
-from utils.api_client import APIHTTPError, APIRetryError, AsyncJSONPlaceholderClient
+from utils.exceptions import (
+    APIHTTPError,
+    APIRetryError,
+)
+from utils.jsonplaceholder_client_async import AsyncJSONPlaceholderClient
 
 pytestmark = pytest.mark.unit
 
@@ -287,7 +291,7 @@ async def test_async_update_post_404_error() -> None:
 
 
 @respx.mock
-@patch("utils.api_client.exponential_backoff_with_jitter", return_value=0.0)
+@patch("utils.jsonplaceholder_base_async.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_delete_post_500_error(mock_backoff: Mock) -> None:
     """
     500 Internal Server Error 時の挙動テスト

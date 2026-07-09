@@ -281,24 +281,38 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         return parse_response_model_list(response, Photo)
 
     async def get_user_data(self, user_id: int) -> UserDataDict:
-        """ユーザーに関連するデータを並行取得"""
-        user_task = self.get_user(user_id)
-        posts_task = self.get_posts(user_id=user_id)
-        todos_task = self.get_todos(user_id=user_id)
-        albums_task = self.get_albums(user_id=user_id)
+        """ユーザーに関連するデータを並行取得
 
-        user, posts, todos, albums = await asyncio.gather(
-            user_task,
-            posts_task,
-            todos_task,
-            albums_task,
-        )
+        user/posts/todos/albums の 4 取得は、集約結果 ``UserDataDict`` が全要素を
+        必須とする高結合（一蓮托生）の関係にある。そのため ``asyncio.TaskGroup``
+        を用い、いずれか 1 つが失敗した時点で残りを自動キャンセルして孤立タスク
+        （未 await のゾンビ）を防ぐ。独立した結果回収で部分成功を許容する
+        ``bulk_create_users`` の ``gather(return_exceptions=True)`` とは対照的な
+        使い分けである（coding-standards.md §6）。
+
+        Raises:
+            APIClientError: いずれかの取得が失敗した場合。``TaskGroup`` が送出する
+                ``ExceptionGroup`` から最初の ``APIClientError`` を取り出して送出し、
+                従来どおり個別例外型（例: ``APIHTTPError`` / ``APIRetryError``）で
+                呼び出し元が捕捉できる契約を維持する。
+
+        """
+        try:
+            async with asyncio.TaskGroup() as tg:
+                user_task = tg.create_task(self.get_user(user_id))
+                posts_task = tg.create_task(self.get_posts(user_id=user_id))
+                todos_task = tg.create_task(self.get_todos(user_id=user_id))
+                albums_task = tg.create_task(self.get_albums(user_id=user_id))
+        except* APIClientError as eg:
+            # 契約維持: ExceptionGroup ではなく最初の個別 APIClientError を送出。
+            # （ASYNC_FATAL_EXCEPTIONS はここで捕捉されず ExceptionGroup として伝播）
+            raise eg.exceptions[0] from None
 
         return {
-            "user": user,
-            "posts": posts,
-            "todos": todos,
-            "albums": albums,
+            "user": user_task.result(),
+            "posts": posts_task.result(),
+            "todos": todos_task.result(),
+            "albums": albums_task.result(),
         }
 
     async def health_check(self) -> bool:

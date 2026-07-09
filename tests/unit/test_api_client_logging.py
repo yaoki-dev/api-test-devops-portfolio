@@ -10,7 +10,7 @@ import structlog
 
 from tests.constants import BASE_URL
 from tests.unit.helpers import mock_get_route
-from utils.api_client import SyncAPIClient
+from utils.jsonplaceholder_base_sync import SyncAPIClient
 
 pytestmark = pytest.mark.unit
 

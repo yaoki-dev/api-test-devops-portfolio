@@ -10,17 +10,7 @@ from config.settings import settings
 from utils.exceptions import APIClientError, APIHTTPError, APIRetryError
 from utils.http_helpers import classify_error, log_error_with_stderr_fallback, resolve_client_config
 from utils.logger import get_logger
-
-
-def _legacy_backoff(*, attempt: int, base_delay: float, jitter_percent: float) -> float:
-    """Route through api_client shim so W2a keeps legacy monkeypatch contracts."""
-    from utils import api_client
-
-    return api_client.exponential_backoff_with_jitter(
-        attempt=attempt,
-        base_delay=base_delay,
-        jitter_percent=jitter_percent,
-    )
+from utils.retry import exponential_backoff_with_jitter
 
 
 class AsyncAPIClient:
@@ -240,6 +230,15 @@ class AsyncAPIClient:
             APIRetryError ではなく APIClientError として呼び出し元に届く。
             呼び出し元は APIClientError で捕捉すること。
 
+        Note:
+            リトライは HTTP メソッドを問わず 5xx / ネットワークエラーで発生する。
+            POST/PATCH 等の非冪等な書き込みでは、サーバー側で処理が確定した後に
+            レスポンスが失われた場合（例: 送信後の ReadTimeout）、同一リクエストの
+            再送により実バックエンドでは重複リソースが生成されうる。対象 API
+            （JSONPlaceholder）は書き込みを永続化しないため実害はないが、実運用の
+            stateful backend に向ける場合は冪等キー付与またはメソッド別のリトライ
+            制御を検討すること。
+
         """
         # close 後の use-after-close を明示エラー化（github_client.py L878 と同一パターン）。
         # 型注釈 _client: AsyncClient | None に対する None 絞り込みも兼ねる。
@@ -316,7 +315,7 @@ class AsyncAPIClient:
 
             # 最後の試行でなければ指数バックオフ + 30%ジッターで待機
             if attempt < self.retry_count:
-                delay = _legacy_backoff(
+                delay = exponential_backoff_with_jitter(
                     attempt=attempt,
                     base_delay=self.retry_delay,
                     jitter_percent=0.3,
