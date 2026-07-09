@@ -614,8 +614,6 @@ class TestPhotoModel:
 class TestNormalizeUrl:
     """_normalize_url の直接ユニットテスト"""
 
-    pytestmark = pytest.mark.unit
-
     def test_basic_normalization(self) -> None:
         """スキームとホストの小文字正規化"""
         result = normalize_url(urlparse("HTTPS://EXAMPLE.COM/Path"))
@@ -658,8 +656,6 @@ class TestNormalizeUrl:
 
 class TestValidateSchemeLessUrl:
     """_validate_scheme_less_url の直接ユニットテスト"""
-
-    pytestmark = pytest.mark.unit
 
     def test_rejects_incomplete_percent_encoding(self) -> None:
         """不完全なパーセントエンコード（%GG等）を拒否すること"""
