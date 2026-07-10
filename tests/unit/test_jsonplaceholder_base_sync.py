@@ -25,7 +25,7 @@ pytestmark = pytest.mark.unit
 
 
 class MockAPISettings:
-    def __init__(self):
+    def __init__(self) -> None:
         self.base_url = BASE_URL
         self.timeout = 30.0
         self.retry_count = 3
@@ -35,7 +35,7 @@ class MockAPISettings:
 
 
 class MockSettings:
-    def __init__(self):
+    def __init__(self) -> None:
         self.api = MockAPISettings()
 
 
