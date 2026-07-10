@@ -1,11 +1,4 @@
-"""
-GitHub API非同期クライアントのUnit Tests
-
-テスト戦略:
-- respxを使用してGitHub APIの依存を排除（HTTPレイヤーモック）
-- 正常系・異常系・エッジケースを網羅
-- カバレッジ目標: 80%以上
-"""
+"""GitHub API非同期クライアントのUnit Tests"""
 
 import asyncio
 import json
