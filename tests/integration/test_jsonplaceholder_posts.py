@@ -56,7 +56,7 @@ def test_sync_get_nonexistent_post_raises_404() -> None:
         assert exc_info.value.status_code == 404
 
 
-async def test_async_create_post() -> None:
+async def test_async_create_post_response_parses_into_post_model() -> None:
     """create_post() のレスポンスが Post モデルへ正しく解釈される
 
     実 API のレスポンス形状が変わり Post モデルの検証が通らなくなった場合に落ちる。
@@ -80,7 +80,7 @@ async def test_async_create_post() -> None:
         assert post.id == 101
 
 
-async def test_async_update_post() -> None:
+async def test_async_update_post_returns_sent_fields_as_dict() -> None:
     """update_post() が送信内容を反映したレスポンスをそのまま返す
 
     Post モデルではなく生の dict を検証する理由: JSONPlaceholder の PUT は
@@ -101,7 +101,7 @@ async def test_async_update_post() -> None:
         assert updated["body"] == "Updated body content"
 
 
-async def test_async_delete_post() -> None:
+async def test_async_delete_post_completes_without_exception() -> None:
     """delete_post() が実 API に対して例外なく完了する
 
     削除結果を検証しない理由: JSONPlaceholder は DELETE を永続化せず、応答本文も
@@ -112,7 +112,7 @@ async def test_async_delete_post() -> None:
         await client.delete_post(post_id=1)
 
 
-async def test_async_post_crud() -> None:
+async def test_async_post_crud_sequence_reuses_one_client() -> None:
     """Create → Read → Update → Delete を単一クライアントで通し、各段が例外なく完了する
 
     守っている契約は「1つの ``AsyncClient`` インスタンスで4メソッドを連続実行しても
