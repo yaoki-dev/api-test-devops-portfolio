@@ -1,154 +1,17 @@
-"""
-SyncAPIClient 基本機能テスト
-
-Note:
-    test_async_client.py と対称構造で設計。
-    責務: 基本CRUD操作 + Edge Cases + DevOps
-"""
+"""Sync JSONPlaceholder client tests for utils.jsonplaceholder_client_sync."""
 
 import json
-import sys
 from unittest.mock import patch
 
 import httpx
 import pytest
 import respx
 
-from tests.constants import BASE_URL, INVALID_BASE_URLS
+from tests.constants import BASE_URL
 from tests.unit.helpers import make_mock_user, mock_get_route
-from utils.jsonplaceholder_base_sync import SyncAPIClient
 from utils.jsonplaceholder_client_sync import SyncJSONPlaceholderClient
 
 pytestmark = pytest.mark.unit
-
-
-# =============================================================================
-# Basic Operations (4件)
-# =============================================================================
-
-
-@respx.mock
-def test_sync_get_user() -> None:
-    """GETリクエスト検証"""
-    route = respx.get(f"{BASE_URL}/users/1").respond(json={"id": 1, "name": "Test User"})
-
-    with SyncAPIClient() as client:
-        response = client.get("/users/1")
-
-    assert response.status_code == 200
-    assert response.json()["id"] == 1
-    assert route.call_count == 1  # HTTPリクエストが1回実際に発行されたことを確認
-
-
-@respx.mock
-def test_sync_post_create_user() -> None:
-    """POSTリクエスト検証"""
-    route = respx.post(f"{BASE_URL}/users").respond(
-        status_code=201,
-        json={"id": 101, "name": "New User", "email": "new@example.com"},
-    )
-
-    with SyncAPIClient() as client:
-        response = client.post("/users", json={"name": "New User", "email": "new@example.com"})
-
-    assert response.status_code == 201
-    assert response.json()["id"] == 101
-    assert route.call_count == 1  # HTTPリクエストが1回実際に発行されたことを確認
-
-
-@respx.mock
-def test_sync_put_update_user() -> None:
-    """PUTリクエスト検証"""
-    route = respx.put(f"{BASE_URL}/users/1").respond(json={"id": 1, "name": "Updated"})
-
-    with SyncAPIClient() as client:
-        response = client.put("/users/1", json={"name": "Updated"})
-
-    assert response.status_code == 200
-    assert response.json()["name"] == "Updated"
-    assert route.call_count == 1  # HTTPリクエストが1回実際に発行されたことを確認
-
-
-@respx.mock
-def test_sync_delete_user() -> None:
-    """DELETEリクエスト検証（httpx.Response返却を検証）"""
-    route = respx.delete(f"{BASE_URL}/users/1").respond(status_code=204, content=b"")
-
-    with SyncAPIClient() as client:
-        response = client.delete("/users/1")
-
-    assert response.status_code == 204
-    assert route.call_count == 1  # HTTPリクエストが1回実際に発行されたことを確認
-
-
-# =============================================================================
-# Edge Cases (4件)
-# Note: 例外クラス階層テストは test_sync_client_error_handling.py に集約（SRP準拠）
-# =============================================================================
-
-
-def test_sync_context_manager_cleanup() -> None:
-    """with文コンテキストマネージャーのクリーンアップ検証
-
-    Note:
-        SyncAPIClient.__exit__でself._client.close()が呼ばれることを検証。
-        patch.objectでhttpx.Clientのcloseメソッドをスパイし、
-        コンテキストマネージャー終了時に呼ばれることを確認する。
-    """
-    client_instance = SyncAPIClient()
-    with patch.object(client_instance._client, "close") as mock_close:
-        with client_instance:
-            # コンテキスト内でクライアントが使用可能
-            assert client_instance._client is not None
-
-    # with文を抜けた後、SyncAPIClient.close()→httpx.Client.close()が呼ばれる
-    mock_close.assert_called_once()
-
-
-@respx.mock
-def test_sync_empty_response_handling() -> None:
-    """空レスポンス（{}）の安全処理検証"""
-    route = respx.get(f"{BASE_URL}/empty").respond(json={})
-
-    with SyncAPIClient() as client:
-        response = client.get("/empty")
-
-    assert response.json() == {}
-    assert route.call_count == 1  # HTTPリクエストが1回実際に発行されたことを確認
-
-
-@respx.mock
-def test_sync_malformed_json_handling() -> None:
-    """不正JSON時の例外処理検証"""
-    route = respx.get(f"{BASE_URL}/malformed").respond(
-        content=b"invalid json",
-        headers={"content-type": "application/json"},
-    )
-
-    with SyncAPIClient() as client:
-        response = client.get("/malformed")
-
-    with pytest.raises(ValueError):
-        response.json()
-    assert route.call_count == 1  # HTTPリクエストが1回実際に発行されたことを確認
-
-
-@pytest.mark.parametrize("user_id", [0, -1, sys.maxsize], ids=["zero", "negative", "max_int"])
-@respx.mock
-def test_sync_boundary_user_id(user_id: int) -> None:
-    """境界値テスト: user_id=0, -1, MAX_INT（parametrize化）"""
-    route = respx.get(f"{BASE_URL}/users/{user_id}").respond(json={"id": user_id})
-
-    with SyncAPIClient() as client:
-        response = client.get(f"/users/{user_id}")
-
-    assert response.json()["id"] == user_id
-    assert route.call_count == 1  # HTTPリクエストが1回実際に発行されたことを確認
-
-
-# =============================================================================
-# DevOps (1件)
-# =============================================================================
 
 
 @respx.mock
@@ -224,24 +87,6 @@ def test_sync_health_check_log_structure() -> None:
     )
     assert all_retries_call is not None, "all_retries_failed ログが出力されていること"
     assert "error" not in all_retries_call[1]
-
-
-def test_sync_client_timeout_zero_not_overridden() -> None:
-    """timeout=0.0がデフォルト設定値に上書きされないことを確認（r2850768833回帰テスト）
-
-    httpxでは timeout=0.0 は即座にタイムアウト（TimeoutException発生）する設定値。
-    falsyな値として `or` パターンで設定値に上書きされてはならない。
-    """
-    client = SyncAPIClient(timeout=0.0)
-    assert client.timeout == 0.0, (
-        "timeout=0.0 はhttpxで有効な設定値（即座にタイムアウト）のため"
-        "デフォルト設定値に上書きされてはならない"
-    )
-
-
-# =============================================================================
-# SyncJSONPlaceholderClient: Posts API Tests
-# =============================================================================
 
 
 @pytest.mark.parametrize(
@@ -428,11 +273,6 @@ def test_sync_create_post() -> None:
     assert result.body == body
 
 
-# =============================================================================
-# SyncJSONPlaceholderClient: Todos API Tests
-# =============================================================================
-
-
 @pytest.mark.parametrize(
     "user_id,completed,limit,expected_count",
     [
@@ -499,11 +339,6 @@ def test_sync_get_todos(
         )
 
 
-# =============================================================================
-# get_todos() 入力値バリデーション
-# =============================================================================
-
-
 @pytest.mark.parametrize(
     "limit,user_id,expected_error",
     [
@@ -534,11 +369,6 @@ def test_sync_get_todos_validation_error(
     with SyncJSONPlaceholderClient() as client:
         with pytest.raises(ValueError, match=expected_error):
             client.get_todos(limit=limit, user_id=user_id)
-
-
-# =============================================================================
-# Albums API テスト
-# =============================================================================
 
 
 @pytest.mark.parametrize(
@@ -583,11 +413,6 @@ def test_sync_get_albums(user_id: int | None, expected_count: int) -> None:
     assert route.call_count == 1  # GETリクエストが1回のみ発行されたことを確認
 
 
-# =============================================================================
-# get_albums() 入力値バリデーション
-# =============================================================================
-
-
 @pytest.mark.parametrize(
     "user_id,expected_error",
     [
@@ -606,11 +431,6 @@ def test_sync_get_albums_validation_error(user_id: int, expected_error: str) -> 
     with SyncJSONPlaceholderClient() as client:
         with pytest.raises(ValueError, match=expected_error):
             client.get_albums(user_id=user_id)
-
-
-# =============================================================================
-# Photos API テスト追加
-# =============================================================================
 
 
 @pytest.mark.parametrize(
@@ -690,11 +510,6 @@ def test_sync_get_photos(album_id: int | None, expected_count: int) -> None:
     assert route.call_count == 1
 
 
-# =============================================================================
-# Comments API テスト
-# =============================================================================
-
-
 @respx.mock
 def test_sync_get_comments_with_post_id() -> None:
     """
@@ -740,11 +555,6 @@ def test_sync_get_comments_without_post_id() -> None:
     assert [comment.model_dump(by_alias=True) for comment in result] == mock_comments
 
 
-# =============================================================================
-# get_comments / get_photos 入力バリデーションテスト
-# =============================================================================
-
-
 @pytest.mark.parametrize(
     "post_id",
     [0, -1, -100],
@@ -783,61 +593,6 @@ def test_sync_get_photos_invalid_album_id(album_id: int) -> None:
             client.get_photos(album_id=album_id)
 
 
-# =============================================================================
-# Client初期化バリデーション
-# =============================================================================
-
-
-@pytest.mark.parametrize("base_url", INVALID_BASE_URLS, ids=["empty", "spaces", "tab", "newline"])
-def test_sync_client_base_url_validation_raises_value_error(base_url: str) -> None:
-    """base_url が空・空白・タブ・改行の場合、初期化時に ValueError が発生する
-
-    Security Rationale:
-        空文字列: httpx.Client に渡ると実行時に InvalidURL が発生し原因特定が困難。
-        初期化時の早期検証で設定ミスを即座に検出する。
-
-        空白バイパス: bool("   ") == True のため `if not self.base_url` を通過する。
-        str.strip() による追加検証が必要。
-
-        タブ・改行: URL設定時の見えない制御文字バイパスを防ぐ。
-    """
-    with pytest.raises(ValueError, match="base_url が空です"):
-        SyncAPIClient(base_url=base_url)
-
-
-def test_sync_client_falsy_values_not_overridden() -> None:
-    """falsy値(0, 0.0)がデフォルト設定値に上書きされないことを検証
-
-    退行防止（r2850768833回帰テスト）:
-    修正前の `x or default` パターンでは retry_count=0 や
-    timeout=0.0 がFalsyと判定され設定値で上書きされていた。
-    `x if x is not None else default` への修正が正しく動作することを保証する。
-    """
-    with SyncAPIClient(
-        base_url=BASE_URL,
-        retry_count=0,
-        timeout=0.0,
-        retry_delay=0.0,
-    ) as client:
-        assert client.retry_count == 0, (
-            "retry_count=0 should NOT be overridden by settings. "
-            "Regression guard against `x or default` pattern."
-        )
-        assert client.timeout == 0.0, (
-            "timeout=0.0 should NOT be overridden by settings. "
-            "Regression guard against `x or default` pattern."
-        )
-        assert client.retry_delay == 0.0, (
-            "retry_delay=0.0 should NOT be overridden by settings. "
-            "Regression guard against `x or default` pattern."
-        )
-
-
-# =============================================================================
-# SyncAPIClient基底クラス: HTTP PATCHメソッド
-# =============================================================================
-
-
 @respx.mock
 def test_sync_patch_method() -> None:
     """SyncAPIClient.patch() HTTP PATCHメソッドの動作確認
@@ -868,11 +623,6 @@ def test_sync_patch_method() -> None:
     # リクエストボディ検証
     request_body = json.loads(route.calls[0].request.content)
     assert request_body == patch_data
-
-
-# =============================================================================
-# SyncJSONPlaceholderClient: 未テストメソッド
-# =============================================================================
 
 
 @respx.mock
@@ -973,14 +723,6 @@ def test_sync_create_todo() -> None:
     assert request_body["title"] == "Buy groceries"
     assert request_body["userId"] == 1
     assert request_body["completed"] is False
-
-
-# =============================================================================
-# システム例外伝播テスト
-# =============================================================================
-# AsyncAPIClient (test_async_client.py) との対称性維持。
-# KeyboardInterruptはpytest自体がSIGINTハンドラとして処理するためunitテストでの検証は省略。
-# CancelledErrorはasyncio専用のため同期クライアントでは不要。
 
 
 @pytest.mark.parametrize(

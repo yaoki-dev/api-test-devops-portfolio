@@ -3,49 +3,12 @@ pytest共通設定とフィクスチャ定義
 """
 
 import logging
-import time
-from collections.abc import AsyncGenerator, Callable, Iterator
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
 
 import pytest
-import pytest_asyncio
 
 from config.settings import _resolve_hostname_cached, reload_settings
-from tests.constants import BASE_URL
-from tests.types import _IntegrationTestData, _PostData, _TodoData, _UserData
-from utils.jsonplaceholder_base_async import AsyncAPIClient
-
-
-class PerformanceTimer:
-    """PerformanceTimer fixture 用計測ヘルパー.
-
-    fixture スコープ外に抽出して `-> PerformanceTimer` 戻り型注釈を可能にする
-    （内部クラスのままだと return 型注釈で参照不可のため）.
-    """
-
-    def __init__(self) -> None:
-        self.start_time: float | None = None
-        self.end_time: float | None = None
-
-    def start(self) -> None:
-        self.start_time = time.perf_counter()
-
-    def stop(self) -> None:
-        self.end_time = time.perf_counter()
-
-    @property
-    def elapsed(self) -> float:
-        if self.start_time is None or self.end_time is None:
-            raise ValueError("Timer not properly started/stopped")
-        return self.end_time - self.start_time
-
-    def assert_faster_than(self, threshold: float, message: str = "") -> None:
-        if self.elapsed > threshold:
-            pytest.fail(
-                f"Performance test failed: {self.elapsed:.3f}s > {threshold:.3f}s. {message}",
-            )
-
 
 # =============================================================================
 # Pytest設定
@@ -158,24 +121,6 @@ def isolate_proxy_env() -> Iterator[None]:
 # =============================================================================
 
 
-@pytest.fixture(scope="session")
-def test_config() -> dict[str, Any]:
-    """テスト用設定データ"""
-    return {
-        "api": {
-            "base_url": BASE_URL,
-            "timeout": 10,
-            "retry_count": 1,
-            "retry_delay": 0.5,
-        },
-        "log": {"level": "DEBUG", "format": "console"},
-        "test": {
-            "slow_test_threshold": 3.0,  # 3秒以上で"slow"マーク推奨
-            "max_concurrent_requests": 5,
-        },
-    }
-
-
 @pytest.fixture
 def logger() -> logging.Logger:
     """テスト用ロガー"""
@@ -187,140 +132,10 @@ def logger() -> logging.Logger:
 # =============================================================================
 
 
-@pytest_asyncio.fixture
-async def async_client(
-    test_config: dict[str, Any],
-) -> AsyncGenerator[AsyncAPIClient]:
-    """非同期HTTPクライアント（テスト用）- Phase 1統合"""
-    async with AsyncAPIClient(
-        base_url=test_config["api"]["base_url"],
-        timeout=test_config["api"]["timeout"],
-        headers={"User-Agent": "api-test-devops-portfolio/0.1.0"},
-    ) as client:
-        yield client
-
-
 @pytest.fixture
 def mock_base_url() -> str:
     """unit テスト用ダミーURL（外部通信なし）"""
     return "https://test.local"
-
-
-@pytest.fixture
-def sample_api_response() -> dict[str, Any]:
-    """JSONPlaceholder APIのサンプルレスポンス"""
-    return {"userId": 1, "id": 1, "title": "delectus aut autem", "completed": False}
-
-
-# =============================================================================
-# テストデータフィクスチャ
-# =============================================================================
-
-
-@pytest.fixture
-def todo_data_factory() -> Callable[..., _TodoData]:
-    """TODOテストデータファクトリー"""
-
-    def create_todo(
-        user_id: int = 1,
-        todo_id: int = 1,
-        title: str = "Test TODO",
-        completed: bool = False,
-    ) -> _TodoData:
-        return {
-            "userId": user_id,
-            "id": todo_id,
-            "title": title,
-            "completed": completed,
-        }
-
-    return create_todo
-
-
-@pytest.fixture
-def user_data_factory() -> Callable[..., _UserData]:
-    """ユーザーテストデータファクトリー"""
-
-    def create_user(
-        user_id: int = 1,
-        name: str = "Test User",
-        username: str = "testuser",
-        email: str = "test@example.com",
-    ) -> _UserData:
-        return {
-            "id": user_id,
-            "name": name,
-            "username": username,
-            "email": email,
-            "address": {
-                "street": "Test Street",
-                "suite": "Apt. 1",
-                "city": "Test City",
-                "zipcode": "12345-6789",
-                "geo": {"lat": "0.0000", "lng": "0.0000"},
-            },
-            "phone": "1-770-736-8031 x56442",
-            "website": "testuser.org",
-            "company": {
-                "name": "Test Company",
-                "catchPhrase": "Test catchphrase",
-                "bs": "test business",
-            },
-        }
-
-    return create_user
-
-
-@pytest.fixture
-def post_data_factory() -> Callable[..., _PostData]:
-    """投稿テストデータファクトリー"""
-
-    def create_post(
-        user_id: int = 1,
-        post_id: int = 1,
-        title: str = "Test Post",
-        body: str = "Test post body content",
-    ) -> _PostData:
-        return {"userId": user_id, "id": post_id, "title": title, "body": body}
-
-    return create_post
-
-
-# =============================================================================
-# パフォーマンステスト用フィクスチャ
-# =============================================================================
-
-
-@pytest.fixture
-def performance_timer() -> PerformanceTimer:
-    """パフォーマンス計測用タイマー"""
-    return PerformanceTimer()
-
-
-# =============================================================================
-# 統合テスト用フィクスチャ
-# =============================================================================
-
-
-@pytest.fixture
-def integration_test_data() -> _IntegrationTestData:
-    """統合テスト用の大量データセット"""
-    return {
-        "todos": [
-            {"userId": i, "id": j, "title": f"TODO {j}", "completed": j % 2 == 0}
-            for i in range(1, 4)
-            for j in range(1, 6)
-        ],
-        "users": [
-            {
-                "id": i,
-                "name": f"User {i}",
-                "username": f"user{i}",
-                "email": f"user{i}@example.com",
-            }
-            for i in range(1, 4)
-        ],
-    }
 
 
 # =============================================================================

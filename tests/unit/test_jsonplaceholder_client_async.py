@@ -1,14 +1,8 @@
-# ===============================================================================
-# test_async_client.py - 非同期APIクライアントの単体テスト
-# ===============================================================================
-#
-# このファイルは utils.api_client.AsyncAPIClient の包括的なテストを実装
-#
-# ===============================================================================
+"""Async JSONPlaceholder client tests for utils.jsonplaceholder_client_async."""
 
 import asyncio
 import json
-from typing import Any
+from typing import Any, TypedDict
 from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
@@ -17,25 +11,39 @@ import respx
 from httpx import Response
 from structlog.testing import capture_logs
 
-# プロジェクト内モジュール
 from models.responses import Album, Photo, Post, Todo, User
-
-# テストヘルパー
-from tests.constants import BASE_URL, INVALID_BASE_URLS
+from tests.constants import BASE_URL
 from tests.unit.helpers import assert_warning_log_count, make_canonical_user
 from utils.exceptions import (
     APIHTTPError,
     APIRetryError,
 )
-from utils.jsonplaceholder_base_async import AsyncAPIClient
-from utils.jsonplaceholder_client_async import AsyncJSONPlaceholderClient
+from utils.jsonplaceholder_client_async import (
+    MAX_LOGGED_FAILURE_DETAILS,
+    AsyncJSONPlaceholderClient,
+)
 
-# Module-level marker: All tests in this file are unit tests
 pytestmark = pytest.mark.unit
 
-# ===============================================================================
-# テスト用フィクスチャ・設定
-# ===============================================================================
+
+class PostData(TypedDict):
+    """投稿データの型定義（Dict構造を明確化）"""
+
+    id: int
+    title: str
+    body: str
+    userId: int
+
+
+@pytest.fixture
+def sample_post_data() -> PostData:
+    """テスト用投稿データ"""
+    return {
+        "id": 101,
+        "title": "Test Title",
+        "body": "Test Body",
+        "userId": 1,
+    }
 
 
 @pytest.fixture
@@ -130,9 +138,241 @@ def sample_users_list():
     ]
 
 
-# ===============================================================================
-# Test 1: 基本的な非同期GET リクエストテスト
-# ===============================================================================
+@respx.mock
+async def test_async_create_post(sample_post_data: PostData) -> None:
+    """
+    非同期投稿作成（POST /posts）のテスト
+
+    検証項目：
+    - async with コンテキストマネージャーの動作
+    - create_post() メソッドの正常実行
+    - リクエストボディの正確性（title, body, userId）
+    - レスポンスJSONの正常パーシング
+    """
+    route = respx.post(f"{BASE_URL}/posts").respond(
+        status_code=201,
+        json=dict(sample_post_data),
+    )
+
+    async with AsyncJSONPlaceholderClient() as client:
+        post = await client.create_post("Test Title", "Test Body", 1)
+
+    # リクエストボディ検証: create_post()が正しいフィールドを送信しているか確認
+    assert route.call_count == 1
+    request_body = json.loads(route.calls[0].request.content)
+    assert request_body["title"] == "Test Title"
+    assert request_body["body"] == "Test Body"
+    assert request_body["userId"] == 1
+
+    # レスポンス検証
+    assert post.title == "Test Title"
+    assert post.body == "Test Body"
+    assert post.user_id == 1
+    assert post.id == 101
+
+
+@respx.mock
+async def test_async_update_post() -> None:
+    """
+    非同期投稿更新（PUT /posts/{id}）のテスト
+
+    検証項目：
+    - update_post() メソッドの正常実行
+    - post_id パラメータの正確性
+    - リクエストボディの更新データ（title, body）
+    - レスポンスに更新データが反映されているか確認
+    """
+    updated_data = {
+        "id": 1,
+        "title": "Updated Title",
+        "body": "Updated Body",
+        "userId": 1,
+    }
+    route = respx.put(f"{BASE_URL}/posts/1").respond(
+        status_code=200,
+        json=updated_data,
+    )
+
+    async with AsyncJSONPlaceholderClient() as client:
+        post = await client.update_post(1, "Updated Title", "Updated Body")
+
+    # リクエストボディ検証: update_post()が正しいフィールドを送信しているか確認
+    # update_post は title と body のみ送信（create_post の userId とは異なり含まない）
+    assert route.call_count == 1
+    request_body = json.loads(route.calls[0].request.content)
+    assert request_body["title"] == "Updated Title"
+    assert request_body["body"] == "Updated Body"
+    assert "userId" not in request_body  # PUT は部分更新: userId は送信しない
+
+    # レスポンス検証
+    assert post["id"] == 1
+    assert post["title"] == "Updated Title"
+    assert post["body"] == "Updated Body"
+
+
+@respx.mock
+async def test_async_delete_post() -> None:
+    """
+    非同期投稿削除（DELETE /posts/{id}）のテスト
+
+    検証項目：
+    - delete_post() メソッドの正常実行
+    - post_id パラメータの正確性
+    - 例外が発生しないことの確認
+    - 200 ステータスの処理
+    """
+    route = respx.delete(f"{BASE_URL}/posts/1").respond(status_code=200)
+
+    async with AsyncJSONPlaceholderClient() as client:
+        # delete_post() は None を返す: 型宣言はランタイム動作を保証しないため
+        # 実際の戻り値を明示的に検証する（204 No Content → None 変換の保証）
+        result = await client.delete_post(1)  # type: ignore[func-returns-value]
+
+    assert route.call_count == 1  # DELETEリクエストが1回発行されたことを確認
+    assert result is None
+
+
+@respx.mock
+async def test_async_crud(sample_post_data: PostData) -> None:
+    """
+    CRUD 4操作を連結したとき、各メソッドが正しい HTTP 動詞で呼ばれ post_id が伝播する
+
+    検証項目：
+    - Create → Read → Update → Delete の一連フロー
+    - 各操作の正常実行と適切なレスポンス処理
+    - post_id の一貫性（Create で生成 → 以降の操作で使用）
+    - 各HTTPメソッドの正確な呼び出し
+    """
+    # Create: 新規投稿作成（POST /posts）
+    post_route = respx.post(f"{BASE_URL}/posts").respond(
+        status_code=201,
+        json=dict(sample_post_data),
+    )
+
+    # Read: 投稿一覧取得（GET /posts）
+    get_route = respx.get(f"{BASE_URL}/posts").respond(
+        status_code=200,
+        json=[dict(sample_post_data)],
+    )
+
+    # Update: 投稿更新（PUT /posts/101）
+    updated_data = {
+        "id": 101,
+        "title": "Updated",
+        "body": "Updated Body",
+        "userId": 1,
+    }
+    put_route = respx.put(f"{BASE_URL}/posts/101").respond(
+        status_code=200,
+        json=updated_data,
+    )
+
+    # Delete: 投稿削除（DELETE /posts/101）
+    delete_route = respx.delete(f"{BASE_URL}/posts/101").respond(status_code=200)
+
+    async with AsyncJSONPlaceholderClient() as client:
+        # Create: 新規投稿作成
+        post = await client.create_post("Test Title", "Test Body", 1)
+        post_id = post.id
+        assert post_id == 101
+        assert post.title == "Test Title"
+
+        # Read: 投稿一覧取得（user_id=1）
+        retrieved_posts = await client.get_posts(limit=None)
+        assert len(retrieved_posts) > 0
+        assert retrieved_posts[0].id == post_id
+
+        # Update: 投稿更新
+        updated = await client.update_post(post_id, "Updated", "Updated Body")
+        assert updated["id"] == post_id
+        assert updated["title"] == "Updated"
+
+        # Delete: 投稿削除（型ヒントだけでなく実際の戻り値も検証）
+        delete_result = await client.delete_post(post_id)  # type: ignore[func-returns-value]
+        assert delete_result is None
+
+    # 各HTTPメソッドが1回ずつ発行されたことをトランスポート層で確認
+    assert post_route.call_count == 1
+    assert get_route.call_count == 1
+    assert put_route.call_count == 1
+    assert delete_route.call_count == 1
+
+
+@respx.mock
+async def test_async_create_post_400_error() -> None:
+    """
+    400 Bad Request エラー時の挙動テスト
+
+    検証項目：
+    - 不正なリクエストボディ送信時の400エラー
+    - APIHTTPError 例外の発生（status_code=400）
+    - エラーレスポンスの適切な処理
+    - リトライが実行されないこと（4xxはクライアントエラー）
+    """
+    route = respx.post(f"{BASE_URL}/posts").respond(
+        status_code=400,
+        json={"error": "Invalid request body"},
+    )
+
+    async with AsyncJSONPlaceholderClient() as client:
+        # 400エラーが発生することを確認
+        with pytest.raises(APIHTTPError) as exc_info:
+            await client.create_post("", "", 0)  # 不正なデータ
+        assert exc_info.value.status_code == 400
+
+    assert route.call_count == 1  # 4xxはリトライなし
+
+
+@respx.mock
+async def test_async_update_post_404_error() -> None:
+    """
+    404 Not Found エラー時の挙動テスト
+
+    検証項目：
+    - 存在しない post_id への更新リクエスト
+    - 404エラーの適切な検出
+    - APIHTTPError 例外の発生（status_code=404）
+    - リトライが実行されないこと
+    """
+    route = respx.put(f"{BASE_URL}/posts/99999").respond(
+        status_code=404,
+        json={"error": "Post not found"},
+    )
+
+    async with AsyncJSONPlaceholderClient() as client:
+        # 404エラーが発生することを確認
+        with pytest.raises(APIHTTPError) as exc_info:
+            await client.update_post(99999, "Title", "Body")  # 存在しないID
+        assert exc_info.value.status_code == 404
+
+    assert route.call_count == 1  # 4xxはリトライなし
+
+
+@respx.mock
+@patch("utils.jsonplaceholder_base_async.exponential_backoff_with_jitter", return_value=0.0)
+async def test_async_delete_post_500_error(mock_backoff: Mock) -> None:
+    """
+    500 Internal Server Error 時の挙動テスト
+
+    検証項目：
+    - サーバーエラー時の500エラー
+    - APIRetryError 例外の発生（リトライ上限到達）
+    - リトライロジックの動作（5xxはサーバーエラー → リトライ対象）
+    - リトライ回数の正確性（デフォルトretry_count=3 → 計4回）
+    - エラーレスポンスの適切な処理
+    """
+    route = respx.delete(f"{BASE_URL}/posts/1").respond(
+        status_code=500,
+        json={"error": "Internal server error"},
+    )
+
+    async with AsyncJSONPlaceholderClient() as client:
+        # 500エラーが発生することを確認（5xxはリトライ上限後にAPIRetryError）
+        with pytest.raises(APIRetryError):
+            await client.delete_post(1)
+
+    # リトライ回数検証: 初回 + リトライ3回 = 計4回（デフォルトretry_count=3）
+    assert route.call_count == 4
 
 
 @respx.mock
@@ -161,11 +401,6 @@ async def test_async_get_user(sample_user_data):
 
     # リクエストが1回発行されたことを確認（ルート固有）
     assert route.call_count == 1
-
-
-# ===============================================================================
-# Test 2: 並行リクエスト・コンカレンシーテスト
-# ===============================================================================
 
 
 @respx.mock
@@ -358,59 +593,6 @@ async def test_all_requests_fail_returns_empty_list():
         if log.get("event") == "get_user_failed":
             assert "error" not in log  # _classify_error と同方針で省略
             assert "error_type" in log
-
-
-# ===============================================================================
-# Test 3: エラーハンドリング・リトライ機能テスト
-# ===============================================================================
-
-
-@respx.mock
-@patch("utils.jsonplaceholder_base_async.exponential_backoff_with_jitter", return_value=0.0)
-async def test_async_timeout_retry_then_success(mock_backoff: Mock) -> None:
-    """
-    タイムアウトエラー後のリトライで最終的に成功するテスト
-
-    検証項目：
-    - タイムアウトエラー発生時にリトライが行われること（2回連続タイムアウト）
-    - リトライ回数が設定値（retry_count=3）に基づくこと
-      （初回+最大3回リトライ=最大4回実行、本テストは3回目で成功）
-    - リトライ後に成功した場合のレスポンスが正しく返却されること
-
-    Note: test_async_client_error_handling.py の test_async_timeout_then_success（1回タイムアウト）
-          と対をなすテスト。こちらは「2回連続タイムアウト → 3回目で成功」を検証する。
-          @patch(exponential_backoff_with_jitter)でリトライ待機を0秒化しCI時間短縮。
-          respxトランスポートモックにより実際のhttpxコードパスを通じて検証する。
-    """
-    # respxルート: 最初の2回はタイムアウト、3回目で成功
-    # retry_count=3 の場合: 初回(1) + 最大リトライ(3) = 最大4リクエスト。
-    # 本テストは3回目で成功するためリスト要素は3個（TimeoutException 2個 + Response 1個）。
-    # 注意: side_effect 要素数はリクエスト総数（初回+リトライ数）と一致させること。
-    # 不一致はStopIteration→RuntimeErrorになる。
-    route = respx.get(f"{BASE_URL}/users/1")
-    route.side_effect = [
-        httpx.TimeoutException("Timeout 1"),
-        httpx.TimeoutException("Timeout 2"),
-        httpx.Response(200, json={"id": 1, "name": "Test User"}),
-    ]
-
-    async with AsyncAPIClient(retry_count=3) as client:
-        result = await client.get("/users/1")
-
-    # リトライ動作検証: 3回目で成功（call_countで決定論的に検証）
-    assert route.call_count == 3
-    assert mock_backoff.call_count == 2  # 3回試行 = 2回待機（初回は待機なし）
-
-    # レスポンス検証: get()はhttpx.Responseを返す
-    assert result.status_code == 200
-    json_data = result.json()
-    assert json_data["id"] == 1
-    assert json_data["name"] == "Test User"
-
-
-# ===============================================================================
-# Test 4: 非同期POST・データ送信テスト
-# ===============================================================================
 
 
 @respx.mock
@@ -862,389 +1044,6 @@ async def test_async_bulk_create_users_fatal_exception_propagates(
                 await client.bulk_create_users([{"name": "A"}])
 
 
-# ===============================================================================
-# Test 5: パフォーマンス・タイムアウト・リソース管理テスト
-# ===============================================================================
-
-
-@respx.mock
-@patch("utils.jsonplaceholder_base_async.exponential_backoff_with_jitter", return_value=0.0)
-async def test_async_performance_and_timeout(mock_backoff: Mock) -> None:
-    """
-    非同期処理のパフォーマンス・タイムアウト・リソース管理テスト
-
-    検証項目：
-    - リクエストタイムアウト時のリトライ動作
-    - 全リトライ失敗後のAPIRetryError発生
-    - リトライ回数がretry_countに基づくこと（route.call_countで決定論的に検証）
-
-    Note: タイムアウト時、実装はリトライ後にAPIRetryErrorを発生させる。
-          TimeoutExceptionは内部でキャッチされる。
-          @patch(exponential_backoff_with_jitter)でリトライ待機を0秒化しCI時間短縮。
-          respxトランスポートモックにより実際のhttpxコードパスを通じて検証する。
-    """
-    retry_count = 1  # retry_count=1: 初回 + 1回リトライ = 2回のリクエスト
-
-    # respxルート: 全リクエストでタイムアウト（retry_count+1 回）
-    route = respx.get(f"{BASE_URL}/users/1")
-    route.side_effect = [httpx.TimeoutException("Request timeout") for _ in range(retry_count + 1)]
-
-    # タイムアウト動作テスト（全リトライ後にAPIRetryError）
-    async with AsyncAPIClient(timeout=1.0, retry_count=retry_count) as client:
-        with pytest.raises(APIRetryError) as exc_info:
-            await client.get("/users/1")
-
-    # エラーメッセージ検証
-    assert "failed after" in str(exc_info.value).lower()
-
-    # リトライ動作確認: route.call_count で決定論的に検証（respxトランスポートモック使用）
-    assert route.call_count == retry_count + 1  # 初回 + retry_count回リトライ
-    assert mock_backoff.call_count == retry_count  # リトライ1回 = バックオフ1回
-
-
-async def test_async_context_manager_cleanup_on_success():
-    """
-    正常終了時のコンテキストマネージャーリソースクリーンアップテスト
-
-    検証項目：
-    - async with ブロック正常終了時に aclose() が呼び出されること
-
-    Note: aclose()呼び出し検証はhttpxクライアントの内部動作に依存するためpatchを使用。
-    """
-    with patch("httpx.AsyncClient") as mock_client_class:
-        mock_client_instance = AsyncMock()
-        mock_client_class.return_value = mock_client_instance
-
-        async with AsyncJSONPlaceholderClient():
-            pass  # 何もしない
-
-        # aclose() が呼び出されることを確認
-        mock_client_instance.aclose.assert_called_once()
-
-
-async def test_async_context_manager_cleanup_on_exception():
-    """
-    例外発生時でもコンテキストマネージャーがクリーンアップするテスト
-
-    検証項目：
-    - 例外発生時でも aclose() が呼び出されること（リソースリークなし）
-
-    Note: aclose()呼び出し検証はhttpxクライアントの内部動作に依存するためpatchを使用。
-          RuntimeError は httpx.RequestError のサブクラスではないため、リトライを通らず
-          そのまま伝播する。基底クラス Exception より具体的な型を使用することで
-          テストバグの誤検知を防ぐ。
-    """
-    with patch("httpx.AsyncClient") as mock_client_class:
-        mock_client_instance = AsyncMock()
-        mock_client_class.return_value = mock_client_instance
-
-        test_error = RuntimeError("Test error")
-        mock_client_instance.request.side_effect = test_error
-
-        with pytest.raises(RuntimeError) as exc_info:
-            async with AsyncJSONPlaceholderClient() as client:
-                await client.get("/users/1")
-
-        assert str(exc_info.value) == "Test error"
-        # 例外発生時でもaclose()が呼び出されることを確認（クリーンアップ保証）
-        mock_client_instance.aclose.assert_called_once()
-
-
-@pytest.mark.parametrize(
-    "close_exc,expected_type,expected_module",
-    [
-        (httpx.CloseError("close-failed"), "CloseError", "httpx"),
-        (OSError("connection reset"), "OSError", "builtins"),
-    ],
-)
-async def test_async_api_client_aexit_aclose_exception_is_suppressed_with_warning(
-    close_exc: httpx.CloseError | OSError,
-    expected_type: str,
-    expected_module: str,
-) -> None:
-    """__aexit__ で aclose() が例外を投げても警告ログのみ出力する"""
-    client = AsyncAPIClient()
-
-    with (
-        patch.object(client._client, "aclose", new=AsyncMock(side_effect=close_exc)),
-        capture_logs() as log_output,
-    ):
-        await client.__aexit__(None, None, None)
-
-    warning_logs = [
-        log for log in log_output if log.get("event") == "async_api_client_aclose_failed"
-    ]
-    assert len(warning_logs) == 1
-    assert warning_logs[0]["error_type"] == expected_type
-    assert warning_logs[0]["error_module"] == expected_module
-    assert client._client is None
-
-
-async def test_async_api_client_aexit_body_exception_not_overridden_by_close_exception() -> None:
-    """__aexit__ で本体例外発生中に aclose() も例外を出すケース。
-
-    body 例外 (exc_val) が close 例外で上書きされないこと
-    (warning log only, no re-raise) を end-to-end で検証する。設計意図:
-    ``async with`` body 例外 + aclose 例外の両発生時、原因情報 (body 例外) を
-    優先伝播させて debuggability を維持する (CWE-755 例外マスク回避)。
-    """
-    client = AsyncAPIClient()
-
-    with (
-        patch.object(
-            client._client,
-            "aclose",
-            new=AsyncMock(side_effect=httpx.CloseError("close-failed")),
-        ),
-        pytest.raises(ValueError, match="body-error"),
-        capture_logs() as log_output,
-    ):
-        async with client:
-            raise ValueError("body-error")
-
-    # close 例外は warning log のみ。body 例外は ValueError として外側に伝播。
-    warning_logs = [
-        log for log in log_output if log.get("event") == "async_api_client_aclose_failed"
-    ]
-    assert len(warning_logs) == 1
-    assert warning_logs[0]["error_type"] == "CloseError"
-    assert warning_logs[0]["error_module"] == "httpx"
-
-
-async def test_aexit_unexpected_exception_reraises_when_no_body_exception() -> None:
-    """__aexit__ で body 例外なし + 予期しない close 例外 → close_exc を re-raise する。
-
-    github_client.py L698 のテストを api_client 用に移植
-
-    body 例外がない状態（exc_type is None）では、aclose() の予期しない例外は
-    実装バグとして呼び出し元に伝播させる。
-    error ログ（has_body_exception=False, exc_info=True）が記録されてから re-raise。
-    """
-    client = AsyncAPIClient()
-
-    with (
-        patch.object(
-            client._client,
-            "aclose",
-            new=AsyncMock(side_effect=RuntimeError("close-failed")),
-        ),
-        pytest.raises(RuntimeError, match="close-failed"),
-        capture_logs() as log_output,
-    ):
-        await client.__aexit__(None, None, None)
-
-    unexpected_event = "async_api_client_aclose_unexpected_error"
-    error_logs = [log for log in log_output if log.get("event") == unexpected_event]
-    assert len(error_logs) == 1
-    assert error_logs[0]["error_type"] == "RuntimeError"
-    assert error_logs[0]["error_module"] == "builtins"
-    assert error_logs[0]["has_body_exception"] is False
-    # exc_info=True によりスタックトレースが記録される
-    assert error_logs[0].get("exc_info") is True
-    # 予期しない例外では warning ログは出ない
-    failed_event = "async_api_client_aclose_failed"
-    warning_logs = [log for log in log_output if log.get("event") == failed_event]
-    assert len(warning_logs) == 0
-
-
-async def test_aexit_unexpected_exception_suppressed_when_body_exception() -> None:
-    """__aexit__ で body 例外あり + 予期しない close 例外 → re-raise しない（body 例外優先）。
-
-    github_client.py L728 のテストを api_client 用に移植
-
-    body 例外がある状態（exc_type is not None）では close_exc を re-raise せず、
-    body 例外を優先伝播させて debuggability を維持する（CWE-755 例外マスク回避）。
-    RuntimeError は予期しない例外ブランチ → error ログ + has_body_exception=True。
-    """
-    client = AsyncAPIClient()
-
-    with (
-        patch.object(
-            client._client,
-            "aclose",
-            new=AsyncMock(side_effect=RuntimeError("close-failed")),
-        ),
-        pytest.raises(ValueError, match="body-error"),
-        capture_logs() as log_output,
-    ):
-        async with client:
-            raise ValueError("body-error")
-
-    # close 例外は re-raise しない。body 例外は ValueError として外側に伝播。
-    unexpected_event = "async_api_client_aclose_unexpected_error"
-    error_logs = [log for log in log_output if log.get("event") == unexpected_event]
-    assert len(error_logs) == 1
-    assert error_logs[0]["error_type"] == "RuntimeError"
-    assert error_logs[0]["error_module"] == "builtins"
-    assert error_logs[0]["has_body_exception"] is True
-    # exc_info=True によりスタックトレースが記録される
-    assert error_logs[0].get("exc_info") is True
-    # warning ログは出ない
-    failed_event = "async_api_client_aclose_failed"
-    warning_logs = [log for log in log_output if log.get("event") == failed_event]
-    assert len(warning_logs) == 0
-
-
-async def test_aclose_logger_info_failure_propagates_without_misclassification() -> None:
-    """aclose() 単独呼び出し: logger.info 失敗が close 失敗として誤分類されないことを検証。
-
-    close 処理は __aexit__ と共通化されるが、logger 例外はそのまま caller に
-    propagate し、aclose_unexpected_error には記録されない (Codex Q-1 recommendation: both paths)。
-    """
-    client = AsyncAPIClient()
-
-    with (
-        patch.object(client._client, "aclose", new=AsyncMock()),
-        patch.object(client.logger, "info", side_effect=RuntimeError("logger-failed")),
-        patch.object(client.logger, "error") as mock_error,
-        pytest.raises(RuntimeError, match="logger-failed"),
-    ):
-        await client.aclose()
-
-    mock_error.assert_not_called()
-
-
-@pytest.mark.parametrize(
-    ("close_exc", "expected_type", "expected_module"),
-    [
-        (httpx.CloseError("close-failed"), "CloseError", "httpx"),
-        (OSError("close-failed"), "OSError", "builtins"),
-    ],
-)
-async def test_aclose_exception_is_suppressed_with_warning(
-    close_exc: httpx.CloseError | OSError,
-    expected_type: str,
-    expected_module: str,
-) -> None:
-    """aclose() 単独呼び出しでも close 例外は warning のみで抑止する。"""
-    client = AsyncAPIClient()
-
-    with (
-        patch.object(client._client, "aclose", new=AsyncMock(side_effect=close_exc)),
-        capture_logs() as log_output,
-    ):
-        await client.aclose()
-
-    warning_logs = [
-        log for log in log_output if log.get("event") == "async_api_client_aclose_failed"
-    ]
-    assert len(warning_logs) == 1
-    assert warning_logs[0]["error_type"] == expected_type
-    assert warning_logs[0]["error_module"] == expected_module
-    closed_logs = [log for log in log_output if log.get("event") == "async_api_client_closed"]
-    assert len(closed_logs) == 0
-
-
-async def test_aclose_normal_close_logs_info() -> None:
-    """aclose() 単独呼び出し時に async_api_client_closed の info ログが1回出力される。"""
-    client = AsyncAPIClient()
-
-    with (
-        patch.object(client._client, "aclose", new=AsyncMock()),
-        capture_logs() as log_output,
-    ):
-        await client.aclose()
-
-    closed_logs = [log for log in log_output if log.get("event") == "async_api_client_closed"]
-    assert len(closed_logs) == 1
-    assert closed_logs[0]["log_level"] == "info"
-
-
-async def test_aclose_unexpected_exception_suppressed_with_warning() -> None:
-    """aclose() 単独呼び出しで予期しない例外 (RuntimeError) は warning ログのみで抑止される。
-
-    既存の ``test_aclose_exception_is_suppressed_with_warning`` は CloseError/OSError で
-    第1 except 分岐 (async_api_client_aclose_failed) をヒットするのに対し、本テストは
-    ``except Exception`` 第2分岐 (suppress_unexpected=True パス /
-    async_api_client_aclose_unexpected_error_suppressed) を明示的にカバーする回帰防止テスト。
-    aclose() は finally ブロック等での安全な呼び出しを保証するため、実装バグ起因の
-    予期しない例外も re-raise せず握りつぶす設計。
-    """
-    client = AsyncAPIClient()
-
-    with (
-        patch.object(
-            client._client,
-            "aclose",
-            new=AsyncMock(side_effect=RuntimeError("unexpected-boom")),
-        ),
-        capture_logs() as log_output,
-    ):
-        await client.aclose()  # 例外が伝播しないこと（伝播すればこのテストは失敗する）
-
-    suppressed_logs = [
-        log
-        for log in log_output
-        if log.get("event") == "async_api_client_aclose_unexpected_error_suppressed"
-    ]
-    assert len(suppressed_logs) == 1
-    assert suppressed_logs[0]["error_type"] == "RuntimeError"
-    assert suppressed_logs[0]["error_module"] == "builtins"
-    # aclose 失敗のため else 節 (closed ログ) は未到達
-    closed_logs = [log for log in log_output if log.get("event") == "async_api_client_closed"]
-    assert len(closed_logs) == 0
-    # suppress 経路でも状態一貫性のため _client が None になること（壊れたクライアント再利用防止）
-    assert client._client is None
-
-
-@pytest.mark.parametrize(
-    "fatal_exc",
-    [MemoryError("OOM"), RecursionError("maximum recursion depth exceeded")],
-)
-async def test_aclose_fatal_exception_propagates_not_suppressed(
-    fatal_exc: MemoryError | RecursionError,
-) -> None:
-    """aclose() 単独呼出 (suppress_unexpected=True 経路) でも MemoryError /
-    RecursionError は握りつぶさず fail-fast で伝播する。
-
-    両者は ``Exception`` 派生 (MemoryError は ``Exception`` 直系、RecursionError は
-    ``RuntimeError`` 派生) のため ``except Exception`` に捕捉されうるが、専用 except 句で
-    先取りし即時 re-raise する設計 (github_client / sentry_init と同一方針)。
-    ``test_aclose_unexpected_exception_suppressed_with_warning`` (RuntimeError は
-    suppress) と対になり、「fatal のみ選択的に伝播」する不変条件を固定する回帰防止テスト。
-    """
-    client = AsyncAPIClient()
-
-    with (
-        patch.object(client._client, "aclose", new=AsyncMock(side_effect=fatal_exc)),
-        pytest.raises(type(fatal_exc)),
-        capture_logs() as log_output,
-    ):
-        await client.aclose()  # 専用 except 句で即時 re-raise されること
-
-    # 専用句が except Exception より先に re-raise するため suppress ログは出ない
-    suppressed_logs = [
-        log
-        for log in log_output
-        if log.get("event") == "async_api_client_aclose_unexpected_error_suppressed"
-    ]
-    assert len(suppressed_logs) == 0
-    # aclose 失敗のため closed ログも未到達
-    closed_logs = [log for log in log_output if log.get("event") == "async_api_client_closed"]
-    assert len(closed_logs) == 0
-
-
-async def test_aexit_logger_info_failure_not_misclassified_as_close_failure() -> None:
-    """__aexit__: _client.aclose() 成功後に logger.info が例外を投げても
-    aclose_unexpected_error として誤分類されないことを検証 (Codex Q-1 regression)。
-
-    else 節に logger.info を分離したため、logger 例外は try-except 外から propagate し、
-    close 失敗 (aclose_unexpected_error) として記録されない。
-    """
-    client = AsyncAPIClient()
-
-    with (
-        patch.object(client._client, "aclose", new=AsyncMock()),
-        patch.object(client.logger, "info", side_effect=RuntimeError("logger-failed")),
-        patch.object(client.logger, "error") as mock_error,
-        pytest.raises(RuntimeError, match="logger-failed"),
-    ):
-        await client.__aexit__(None, None, None)
-
-    # close 失敗として誤分類されていない = error ログ（unexpected_error）未呼び出し
-    mock_error.assert_not_called()
-
-
 @respx.mock
 async def test_async_health_check_success():
     """
@@ -1318,45 +1117,6 @@ async def test_async_health_check_log_structure() -> None:
     )
     assert all_retries_call is not None, "async_all_retries_failed ログが出力されていること"
     assert "error" not in all_retries_call[1]
-
-
-# ===============================================================================
-# パフォーマンステスト（オプション：時間のかかるテスト）
-# ===============================================================================
-
-
-@pytest.mark.slow  # slowマーカー（通常実行では除外可能）
-@respx.mock
-async def test_async_performance_benchmark():
-    """
-    非同期APIクライアントの並行処理パターン検証（100並行リクエスト）
-
-    NOTE: respxはネットワークI/Oをバイパスするため、実行時間の計測は意味がない。
-    このテストは100並行リクエストが正しく処理されることを検証する。
-
-    注意：このテストは時間がかかるため、slowマーカーを付与
-    実行時は pytest -m slow で個別実行を推奨
-    """
-    # 各ユーザーエンドポイントをrespxでモック化（1〜100）
-    routes = [
-        respx.get(f"{BASE_URL}/users/{i}").respond(json={"id": i, "name": "Test"})
-        for i in range(1, 101)
-    ]
-
-    async with AsyncJSONPlaceholderClient() as client:
-        # 100回の並行リクエスト実行
-        tasks = [client.get(f"/users/{i}") for i in range(1, 101)]
-        results = await asyncio.gather(*tasks)
-
-    # 全100リクエストが成功したことを検証
-    assert len(results) == 100
-    # 全ルートが各1回ずつ呼ばれたことを確認（並行実行の証明）
-    assert all(r.call_count == 1 for r in routes)
-
-
-# ===============================================================================
-# Test Critical Priority: get_user_data() - 並行処理データ整合性検証
-# ===============================================================================
 
 
 @respx.mock
@@ -1602,11 +1362,6 @@ async def test_get_user_data_posts_server_error():
     assert route_albums.call_count <= 1
 
 
-# ===============================================================================
-# Test High Priority: get_posts() - 投稿一覧取得（parametrize）
-# ===============================================================================
-
-
 @pytest.mark.parametrize(
     "limit,expected_count,test_description",
     [
@@ -1718,11 +1473,6 @@ async def test_async_get_posts_user_filter(user_id, expected_count, test_descrip
         assert all(post.user_id == user_id for post in result)
 
 
-# ===============================================================================
-# Test: get_posts() - 入力値バリデーション
-# ===============================================================================
-
-
 @pytest.mark.parametrize(
     "limit,user_id,expected_error",
     [
@@ -1752,11 +1502,6 @@ async def test_async_get_posts_validation_error(limit, user_id, expected_error):
     async with AsyncJSONPlaceholderClient() as client:
         with pytest.raises(ValueError, match=expected_error):
             await client.get_posts(limit=limit, user_id=user_id)
-
-
-# ===============================================================================
-# Test High Priority: get_post() - 個別投稿取得
-# ===============================================================================
 
 
 @respx.mock
@@ -1809,11 +1554,6 @@ async def test_get_post_not_found():
 
         # エラー詳細検証
         assert exc_info.value.status_code == 404
-
-
-# ===============================================================================
-# Test High Priority: create_post() - 投稿作成
-# ===============================================================================
 
 
 @respx.mock
@@ -1892,11 +1632,6 @@ async def test_create_post_with_empty_body():
     assert request_body["userId"] == user_id
 
 
-# ===============================================================================
-# Test Medium Priority: get_todos() - TODO一覧取得（parametrize）
-# ===============================================================================
-
-
 @pytest.mark.parametrize(
     "user_id,completed,limit,expected_params,expected_count,test_description",
     [
@@ -1967,11 +1702,6 @@ async def test_get_todos_with_filters(
         assert all(t.completed == completed for t in result)
 
 
-# ===============================================================================
-# Test: get_todos() - 入力値バリデーション
-# ===============================================================================
-
-
 @pytest.mark.parametrize(
     "limit,user_id,expected_error",
     [
@@ -2001,126 +1731,6 @@ async def test_async_get_todos_validation_error(limit, user_id, expected_error):
     async with AsyncJSONPlaceholderClient() as client:
         with pytest.raises(ValueError, match=expected_error):
             await client.get_todos(limit=limit, user_id=user_id)
-
-
-# ===============================================================================
-# Test Medium Priority: put/delete/patch - HTTPメソッド基本動作
-# ===============================================================================
-
-
-@respx.mock
-async def test_http_put_method():
-    """
-    AsyncAPIClient.put()メソッドの基本動作検証
-
-    検証項目：
-    - PUTリクエストが正しく送信される
-    - JSONデータが正確に送信される
-    - レスポンスが正常に返却される
-    - HTTPメソッドが"PUT"である
-    """
-    endpoint = "/posts/1"
-    update_data = {"id": 1, "title": "Updated Title", "body": "Updated Content", "userId": 1}
-
-    # PUTレスポンスをモック化
-    respx.put(f"{BASE_URL}{endpoint}").respond(status_code=200, json=update_data)
-
-    # テスト実行
-    async with AsyncJSONPlaceholderClient() as client:
-        response = await client.put(endpoint, json=update_data)
-
-    # 結果検証
-    assert response.status_code == 200
-    json_data = response.json()
-    assert json_data == update_data
-    assert json_data["title"] == "Updated Title"
-
-
-@respx.mock
-async def test_http_delete_method():
-    """
-    AsyncAPIClient.delete()メソッドの基本動作検証
-
-    検証項目：
-    - DELETEリクエストが正しく送信される
-    - 204 No Content または 200 OK が返却される
-    - エンドポイントが正確に構築される
-    """
-    endpoint = "/posts/1"
-
-    # DELETEレスポンスをモック化（204 No Content）
-    respx.delete(f"{BASE_URL}{endpoint}").respond(status_code=204)
-
-    # テスト実行
-    async with AsyncJSONPlaceholderClient() as client:
-        response = await client.delete(endpoint)
-
-    # 結果検証
-    assert response.status_code == 204
-
-
-@respx.mock
-async def test_http_patch_method():
-    """
-    AsyncAPIClient.patch()メソッドの基本動作検証
-
-    検証項目：
-    - PATCHリクエストが正しく送信される
-    - 部分更新データが正確に送信される
-    - レスポンスが正常に返却される
-    - HTTPメソッドが"PATCH"である
-    """
-    endpoint = "/posts/1"
-    partial_data = {"title": "Partially Updated Title"}
-    full_response = {
-        "id": 1,
-        "title": "Partially Updated Title",
-        "body": "Original Content",
-        "userId": 1,
-    }
-
-    # PATCHレスポンスをモック化
-    respx.patch(f"{BASE_URL}{endpoint}").respond(status_code=200, json=full_response)
-
-    # テスト実行
-    async with AsyncJSONPlaceholderClient() as client:
-        response = await client.patch(endpoint, json=partial_data)
-
-    # 結果検証
-    assert response.status_code == 200
-    json_data = response.json()
-    assert json_data["title"] == "Partially Updated Title"
-    assert json_data["body"] == "Original Content"  # 未更新フィールドは保持
-
-
-@respx.mock
-async def test_http_put_with_error():
-    """
-    AsyncAPIClient.put()の404エラーケーステスト
-
-    検証項目：
-    - 存在しないリソースへのPUTで404エラー
-    - APIHTTPErrorが正しく発生する
-    - エラーステータスコードが404である
-    """
-    endpoint = "/posts/999999"
-    update_data = {"title": "Non-existent Post"}
-
-    # 404レスポンスをモック化
-    respx.put(f"{BASE_URL}{endpoint}").respond(status_code=404)
-
-    # テスト実行
-    async with AsyncJSONPlaceholderClient() as client:
-        with pytest.raises(APIHTTPError) as exc_info:
-            await client.put(endpoint, json=update_data)
-
-        # エラー詳細検証
-        assert exc_info.value.status_code == 404
-
-
-# ===============================================================================
-# Albums API Tests
-# ===============================================================================
 
 
 @pytest.mark.parametrize(
@@ -2177,11 +1787,6 @@ async def test_get_albums_with_filters(user_id, expected_count, test_description
         assert all(a.user_id == user_id for a in result)
 
 
-# ===============================================================================
-# Test: get_albums() - 入力値バリデーション
-# ===============================================================================
-
-
 @pytest.mark.parametrize(
     "user_id,expected_error",
     [
@@ -2200,11 +1805,6 @@ async def test_async_get_albums_validation_error(user_id, expected_error):
     async with AsyncJSONPlaceholderClient() as client:
         with pytest.raises(ValueError, match=expected_error):
             await client.get_albums(user_id=user_id)
-
-
-# ===============================================================================
-# Photos API Tests
-# ===============================================================================
 
 
 @pytest.mark.parametrize(
@@ -2299,11 +1899,6 @@ async def test_get_photos_with_filters(album_id, expected_count, test_descriptio
         assert all(p.album_id == album_id for p in result)
 
 
-# ===============================================================================
-# Comments API テスト
-# ===============================================================================
-
-
 @respx.mock
 async def test_async_get_comments_with_post_id() -> None:
     """
@@ -2349,11 +1944,6 @@ async def test_async_get_comments_without_post_id() -> None:
     assert [comment.model_dump(by_alias=True) for comment in result] == mock_comments
 
 
-# ===============================================================================
-# get_comments / get_photos 入力バリデーションテスト
-# ===============================================================================
-
-
 @pytest.mark.parametrize(
     "post_id",
     [0, -1, -100],
@@ -2396,27 +1986,6 @@ async def test_async_get_photos_invalid_album_id(album_id: int) -> None:
             await client.get_photos(album_id=album_id)
 
 
-async def test_async_client_timeout_zero_not_overridden() -> None:
-    """timeout=0.0がデフォルト設定値に上書きされないことを確認（r2850768833回帰テスト）
-
-    httpxでは timeout=0.0 は即座にタイムアウト（TimeoutException発生）する設定値。
-    falsyな値として `or` パターンで設定値に上書きされてはならない。
-
-    AsyncAPIClientは非同期コンテキストマネージャーのため async with で使用するが、
-    timeout属性は __init__ で設定されるため、エントリー直後に検証可能。
-    """
-    async with AsyncAPIClient(timeout=0.0) as client:
-        assert client.timeout == 0.0, (
-            "timeout=0.0 はhttpxで有効な設定値（即座にタイムアウト）のため"
-            "デフォルト設定値に上書きされてはならない"
-        )
-
-
-# ===============================================================================
-# Test: AsyncJSONPlaceholderClient.get_users() - ユーザー一覧取得
-# ===============================================================================
-
-
 @respx.mock
 async def test_async_get_users(sample_users_list: list[dict[str, Any]]) -> None:
     """AsyncJSONPlaceholderClient.get_users() ユーザー一覧取得の動作確認
@@ -2452,11 +2021,6 @@ async def test_async_get_users_returns_empty_list() -> None:
 
     assert result == []
     assert route.call_count == 1
-
-
-# ===============================================================================
-# Test: AsyncJSONPlaceholderClient.update_todo() - TODO部分更新
-# ===============================================================================
 
 
 @respx.mock
@@ -2520,55 +2084,41 @@ async def test_async_update_todo_multiple_fields() -> None:
     assert request_body == {"title": "Updated Title", "completed": True}
 
 
-# ===============================================================================
-# Client初期化バリデーション
-# ===============================================================================
+async def test_bulk_create_users_details_truncated_false_at_max() -> None:
+    """失敗が上限件数ちょうど（MAX_LOGGED_FAILURE_DETAILS）では details_truncated=False。"""
+    client = AsyncJSONPlaceholderClient(base_url="https://test.com")
+    with patch.object(client, "create_user", new=AsyncMock(side_effect=RuntimeError("fail"))):
+        with capture_logs() as logs:
+            result = await client.bulk_create_users(
+                [{"name": f"u{i}"} for i in range(MAX_LOGGED_FAILURE_DETAILS)]
+            )
+    assert result == []
+    warn = next((lg for lg in logs if lg.get("event") == "bulk_create_partial_failure"), None)
+    assert warn is not None
+    assert warn["failed_count"] == MAX_LOGGED_FAILURE_DETAILS
+    assert warn["success_count"] == 0
+    assert warn["details_truncated"] is False
+    assert len(warn["failed_details"]) == MAX_LOGGED_FAILURE_DETAILS
+    detail = warn["failed_details"][0]
+    assert "index" in detail
+    assert "error_type" in detail
 
 
-@pytest.mark.parametrize(
-    "base_url",
-    INVALID_BASE_URLS,
-    ids=["empty", "whitespace", "tab", "newline"],
-)
-def test_async_client_base_url_validation_raises_value_error(base_url: str) -> None:
-    """base_url が空・空白・タブ・改行の場合、初期化時に ValueError が発生する
-
-    Security Rationale:
-        空文字列: httpx.AsyncClient に渡ると実行時に InvalidURL が発生し原因特定が困難。
-        初期化時の早期検証で設定ミスを即座に検出する。
-
-        空白バイパス: bool("   ") == True のため `if not self.base_url` を通過する。
-        str.strip() による追加検証が必要。
-
-        タブ・改行: URL設定時の見えない制御文字バイパスを防ぐ。
-    """
-    with pytest.raises(ValueError, match="base_url が空です"):
-        AsyncAPIClient(base_url=base_url)
-
-
-async def test_async_client_falsy_values_not_overridden() -> None:
-    """falsy値(0, 0.0)がデフォルト設定値に上書きされないことを検証
-
-    退行防止（r2850768833回帰テスト）:
-    修正前の `x or default` パターンでは retry_count=0 や
-    timeout=0.0 がFalsyと判定され設定値で上書きされていた。
-    `x if x is not None else default` への修正が正しく動作することを保証する。
-    """
-    async with AsyncAPIClient(
-        base_url=BASE_URL,
-        retry_count=0,
-        timeout=0.0,
-        retry_delay=0.0,
-    ) as client:
-        assert client.retry_count == 0, (
-            "retry_count=0 should NOT be overridden by settings. "
-            "Regression guard against `x or default` pattern."
-        )
-        assert client.timeout == 0.0, (
-            "timeout=0.0 should NOT be overridden by settings. "
-            "Regression guard against `x or default` pattern."
-        )
-        assert client.retry_delay == 0.0, (
-            "retry_delay=0.0 should NOT be overridden by settings. "
-            "Regression guard against `x or default` pattern."
-        )
+async def test_bulk_create_users_details_truncated_true_above_max() -> None:
+    """失敗件数が MAX_LOGGED_FAILURE_DETAILS+1 のとき details_truncated=True になる境界を検証。"""
+    client = AsyncJSONPlaceholderClient(base_url="https://test.com")
+    with patch.object(client, "create_user", new=AsyncMock(side_effect=RuntimeError("fail"))):
+        with capture_logs() as logs:
+            result = await client.bulk_create_users(
+                [{"name": f"u{i}"} for i in range(MAX_LOGGED_FAILURE_DETAILS + 1)]
+            )
+    assert result == []
+    warn = next((lg for lg in logs if lg.get("event") == "bulk_create_partial_failure"), None)
+    assert warn is not None
+    assert warn["failed_count"] == MAX_LOGGED_FAILURE_DETAILS + 1
+    assert warn["success_count"] == 0
+    assert warn["details_truncated"] is True
+    assert len(warn["failed_details"]) == MAX_LOGGED_FAILURE_DETAILS
+    detail = warn["failed_details"][0]
+    assert "index" in detail
+    assert "error_type" in detail

@@ -119,17 +119,17 @@ api-test-devops-portfolio/
 ```
 tests/
 ├── unit/
-│   ├── test_api_client.py
-│   └── test_settings.py
+│   ├── test_jsonplaceholder_client_sync.py
+│   └── test_config_settings.py
 ├── integration/
-│   └── test_api_integration.py
+│   └── test_jsonplaceholder_posts.py
 ```
 
 ❌ **Bad**:
 ```
 utils/
-├── api_client.py
-├── test_api_client.py  # ソースファイル横に配置（非推奨）
+├── jsonplaceholder_client_sync.py
+├── test_jsonplaceholder_client_sync.py  # ソースファイル横に配置（非推奨）
 ```
 
 **理由**:
@@ -262,11 +262,11 @@ models/response.py          # 単数形（複数モデルを含む場合は複�
 ```python
 # ✅ Good
 tests/unit/test_jsonplaceholder_base_sync.py  # test_プレフィックス必須
-tests/integration/test_api_integration.py
+tests/integration/test_jsonplaceholder_posts.py
 
 # ❌ Bad
-tests/unit/api_client_test.py       # サフィックスは非推奨
-tests/unit/test_APIClient.py        # PascalCase（snake_case推奨）
+tests/unit/jsonplaceholder_client_sync_test.py  # サフィックスは非推奨
+tests/unit/test_JSONPlaceholderClient.py        # PascalCase（snake_case推奨）
 ```
 
 ### ドキュメントファイル
@@ -432,12 +432,14 @@ APIClientError              # 基底例外クラス
 ### pytest共通設定・フィクスチャ（`tests/conftest.py`）
 
 ```
-tests/conftest.py            # pytest共通設定・フィクスチャ
-├── async_client             # 非同期クライアントフィクスチャ（async/await対応）
-├── mock_httpx_client        # モック化HTTPXクライアント（単体テスト用）
-├── todo_data_factory        # テストデータファクトリー（Todoモデル）
-├── user_data_factory        # ユーザーデータファクトリー（Userモデル）
-└── performance_timer        # パフォーマンス計測タイマー
+tests/conftest.py             # pytest共通設定・フィクスチャ
+├── logger                    # テスト用ロガー
+├── mock_base_url              # unitテスト用ダミーURL（外部通信なし）
+├── disable_sentry_for_tests   # Sentry送信無効化（autouse）
+├── isolate_proxy_env          # プロキシ系環境変数の隔離（session, autouse）
+├── cleanup_test_files         # テンポラリファイル削除（autouse）
+├── reset_settings             # 設定リロード（テスト独立性保証・autouse）
+└── reset_sentry_warning_state # Sentry warning throttle状態リセット（autouse）
 ```
 
 **詳細**: CLAUDE.md「テスト構成」参照
