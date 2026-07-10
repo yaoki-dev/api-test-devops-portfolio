@@ -100,31 +100,3 @@ async def test_not_found_error():
             await client.get_user("nonexistent-user-12345")
 
         assert "Resource not found" in str(exc_info.value)
-
-
-# =============================================================================
-# 統合確認チェックリスト（手動実行用）
-# =============================================================================
-
-
-async def test_integration_checklist():
-    """統合確認チェックリスト自動化
-
-    確認項目:
-    1. 実API呼び出し成功
-    2. 404エラーハンドリング
-    3. Rate Limit警告ログ出力（手動確認: Remaining < 10の場合）
-
-    Note: @pytest.mark.externalで週次CI自動実行
-    """
-    async with AsyncGitHubClient() as client:
-        # ✅ 実API呼び出し成功
-        user = await client.get_user("octocat")
-        assert user["login"] == "octocat"
-
-        # ✅ 404エラー確認
-        with pytest.raises(NotFoundError):
-            await client.get_user("nonexistent-user-12345")
-
-        # Note: Rate Limit警告ログは手動確認（60 req/h制約のため）
-        # 実行後にログ出力を確認: "rate_limit_low" メッセージ

@@ -112,7 +112,7 @@ async def test_async_delete_post() -> None:
         await client.delete_post(post_id=1)
 
 
-async def test_async_crud_integration() -> None:
+async def test_async_post_crud() -> None:
     """Create → Read → Update → Delete を単一クライアントで通し、各段が例外なく完了する
 
     守っている契約は「1つの ``AsyncClient`` インスタンスで4メソッドを連続実行しても

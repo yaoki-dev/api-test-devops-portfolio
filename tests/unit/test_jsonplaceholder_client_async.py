@@ -233,9 +233,9 @@ async def test_async_delete_post() -> None:
 
 
 @respx.mock
-async def test_async_crud_integration(sample_post_data: PostData) -> None:
+async def test_async_crud(sample_post_data: PostData) -> None:
     """
-    CRUD操作の統合フローテスト（respxモック使用）
+    CRUD 4操作を連結したとき、各メソッドが正しい HTTP 動詞で呼ばれ post_id が伝播する
 
     検証項目：
     - Create → Read → Update → Delete の一連フロー

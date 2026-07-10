@@ -19,35 +19,38 @@
 
 ### 1.2 テスト層実装例
 
-#### Unit Test (モック中心)
+#### Unit Test (respx によるトランスポート層モック)
 ```python
-@pytest.mark.unit
-# @pytest.mark.asyncio: asyncio_mode = "auto" (pyproject.toml) のため、@pytest.mark.asyncio は不要
+# ファイル冒頭で pytestmark = pytest.mark.unit（モジュール単位でマーカー付与）
+# @pytest.mark.asyncio: asyncio_mode = "auto" (pyproject.toml) のため不要
 # pytest-asyncio が async テストを自動検出する
-async def test_async_get_user_with_mock(mock_httpx_client, sample_user_data):
-    """モックを使った非同期ユーザー取得テスト"""
-    mock_httpx_client.get.return_value = mock_response(
-        status_code=200, json_data=sample_user_data
-    )
-    async with AsyncAPIClient() as client:
-        client._client = mock_httpx_client
-        user = await client.get("/users/1")
-    assert user["id"] == 1
-    mock_httpx_client.get.assert_called_once()
+@respx.mock
+async def test_async_get_user_parses_into_model() -> None:
+    """respx で HTTP トランスポートを差し替え、実通信なしで検証する"""
+    respx.get(f"{BASE_URL}/users/1").respond(json=make_canonical_user(1))
+
+    async with AsyncJSONPlaceholderClient() as client:
+        user = await client.get_user(user_id=1)
+
+    assert user.id == 1
+    assert user.address.city == "Gwenborough"
 ```
+
+`make_canonical_user()` は `tests/unit/helpers.py` のテストデータ生成ヘルパー。
+JSONPlaceholder 実 API に近い完全な User ペイロードを返す。
+クライアント内部の `_client` を差し替えるのではなく、respx がトランスポート層で
+リクエストを捕捉するため、テストは実装の内部構造に依存しない。
 
 #### Integration Test (実API)
 ```python
-@pytest.mark.integration
-@pytest.mark.external
-# @pytest.mark.asyncio: asyncio_mode = "auto" (pyproject.toml) のため、@pytest.mark.asyncio は不要
-# pytest-asyncio が async テストを自動検出する
-async def test_real_api_user_workflow():
+# ファイル冒頭で pytestmark = [pytest.mark.integration, ...]
+# @pytest.mark.asyncio: asyncio_mode = "auto" (pyproject.toml) のため不要
+async def test_real_api_user_workflow() -> None:
     """実API使用: ユーザーデータ取得ワークフロー"""
     async with AsyncJSONPlaceholderClient() as client:
         user = await client.get_user(user_id=1)
-        assert user["id"] == 1
-        posts = await client.get_user_posts(user_id=1)
+        assert user.id == 1
+        posts = await client.get_posts(user_id=1)
         assert len(posts) > 0
 ```
 
@@ -55,32 +58,31 @@ async def test_real_api_user_workflow():
 
 ## 2. フィクスチャ設計パターン
 
-### 2.1 Factory Pattern
+### 2.1 respx によるトランスポート層モック
 ```python
-@pytest.fixture
-def todo_data_factory():
-    """TODOテストデータファクトリー"""
-    def create_todo(user_id: int = 1, todo_id: int = 1,
-                    title: str = "Test TODO", completed: bool = False):
-        return {"userId": user_id, "id": todo_id,
-                "title": title, "completed": completed}
-    return create_todo
+import respx
+
+@respx.mock
+async def test_api_method(mock_base_url):
+    """mock_base_url をベースURLに使い外部通信を発生させない"""
+    respx.get(f"{mock_base_url}/todos/1").respond(json={"id": 1, "completed": False})
+    # client = AsyncAPIClient(base_url=mock_base_url) ...
 ```
 
-### 2.2 Async Fixture
+### 2.2 統合テストでのクライアント構築
+専用の async クライアントフィクスチャは持たず、統合テストごとに
+`async with AsyncJSONPlaceholderClient() as client:` でインラインに構築する
+（テスト間の独立性を優先する設計）。
 ```python
-@pytest_asyncio.fixture
-async def async_client(test_config) -> AsyncGenerator[AsyncAPIClient, None]:
-    """非同期HTTPクライアント（テスト用）"""
-    async with AsyncAPIClient(
-        base_url=test_config["api"]["base_url"],
-        timeout=test_config["api"]["timeout"],
-    ) as client:
-        yield client
+# マーカーはファイル冒頭の pytestmark で付与済み（1.2 参照）
+async def test_real_api_user_workflow() -> None:
+    async with AsyncJSONPlaceholderClient() as client:
+        user = await client.get_user(user_id=1)
+        assert user.id == 1
 ```
 
 ### 2.3 スコープ選択基準
-- `session`: 重い初期化（test_config）
+- `session`: プロセス全体で1回だけ実行すべき処理（例: `isolate_proxy_env` によるプロキシ環境変数の隔離）
 - `module`: 共有可能データ
 - `function`: テスト独立性優先（デフォルト）
 
@@ -201,43 +203,32 @@ asyncio_mode = "auto"  # 非同期テスト自動検出
 ```python
 # @pytest.mark.asyncio: asyncio_mode = "auto" (pyproject.toml) のため、@pytest.mark.asyncio は不要
 # pytest-asyncio が async テストを自動検出する
-async def test_concurrent_requests(async_client):
-    users = await asyncio.gather(
-        async_client.get("/users/1"),
-        async_client.get("/users/2"),
-        async_client.get("/users/3"),
-    )
+async def test_concurrent_requests() -> None:
+    async with AsyncJSONPlaceholderClient() as client:
+        users = await asyncio.gather(
+            client.get_user(user_id=1),
+            client.get_user(user_id=2),
+            client.get_user(user_id=3),
+        )
     assert len(users) == 3
 ```
 
 ### 6.3 セマフォ制限
+
+本番コードの `AsyncJSONPlaceholderClient.get_multiple_users()`
+（`utils/jsonplaceholder_client_async.py`）が `asyncio.Semaphore` による
+同時実行数制御の実装例。
+
 ```python
-semaphore = asyncio.Semaphore(3)  # 同時3リクエストまで
-async def fetch_user(user_id: int):
-    async with semaphore:
-        return await async_client.get(f"/users/{user_id}")
+async with AsyncJSONPlaceholderClient() as client:
+    users = await client.get_multiple_users([1, 2, 3], max_concurrent=2)
 ```
 
 ---
 
 ## 7. パフォーマンステスト
 
-### 7.1 performance_timer Fixture
-```python
-@pytest.fixture
-def performance_timer():
-    class Timer:
-        def start(self): self.start_time = time.perf_counter()
-        def stop(self): self.end_time = time.perf_counter()
-        @property
-        def elapsed(self): return self.end_time - self.start_time
-        def assert_faster_than(self, threshold, message=""):
-            if self.elapsed > threshold:
-                pytest.fail(f"{self.elapsed:.3f}s > {threshold:.3f}s. {message}")
-    return Timer()
-```
-
-### 7.2 メトリクス
+### 7.1 メトリクス
 - P50, P95, P99 応答時間
 - スループット (req/sec)
 - メモリ使用量
