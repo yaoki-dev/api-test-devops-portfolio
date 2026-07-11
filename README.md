@@ -63,7 +63,7 @@ SSRFやPII漏洩、不安定なリトライといった連携特有のアンチ�
 uv run pytest --cov=utils --cov=config --cov=models --cov-report=term -q --color=yes
 
 # クイック実行（unit tests）
-uv run pytest tests/unit/test_api_client.py --cov=utils --cov=config --cov=models --cov-report=term -q --color=yes
+uv run pytest tests/unit/test_jsonplaceholder_client_sync.py --cov=utils --cov=config --cov=models --cov-report=term -q --color=yes
 ```
 
 </details>

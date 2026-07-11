@@ -31,7 +31,8 @@ The current `CONTEXT.md` is minimal — only contains:
 It does **not** yet contain the full domain glossary. The richer domain context lives in:
 - `.claude/CLAUDE.md` — project overview, tech stack, workflow rules
 - `models/responses.py` — domain entities (Album, Comment, Photo, Post, Todo, User)
-- `utils/api_client.py` — API contracts (JSONPlaceholder, GitHub API)
+- `utils/jsonplaceholder_client_sync.py` / `utils/jsonplaceholder_client_async.py` — API contracts (JSONPlaceholder)
+- `utils/github_client.py` — API contracts (GitHub API)
 - `config/settings.py` — Pydantic Settings configuration
 
 ### ADR Directory

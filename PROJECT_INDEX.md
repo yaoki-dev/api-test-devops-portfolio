@@ -40,7 +40,7 @@ api-test-devops-portfolio/
 ## 🚀 Entry Points
 
 ### API Clients
-- **Generic API Client**: `utils/api_client.py` - 汎用HTTP API クライアント
+- **JSONPlaceholder API Client**: `utils/jsonplaceholder_client_sync.py` / `utils/jsonplaceholder_client_async.py` - JSONPlaceholder API クライアント（同期/非同期）
 - **GitHub API Client**: `utils/github_client.py` - GitHub API 専用クライアント
 
 ### Tests
@@ -57,10 +57,10 @@ api-test-devops-portfolio/
 - **Exports**: `Settings`, `get_settings()`, `reload_settings()`
 - **Purpose**: Pydantic Settingsによる型安全な環境変数管理。ネスト構造（`__`区切り）対応。
 
-### Module: utils.api_client
-- **Path**: `utils/api_client.py`
-- **Exports**（`utils` パッケージ）: `SyncAPIClient` (同期), `AsyncAPIClient` (非同期), `SyncJSONPlaceholderClient`, `AsyncJSONPlaceholderClient`, `APIClientError`, `APIJSONDecodeError`。個別例外クラス（`APIConnectionError`, `APITimeoutError`, `APIHTTPError`, `APIRetryError`）は `utils.api_client` から直接 import
-- **Purpose**: HTTP API クライアント。リトライロジック・エラーハンドリング・コネクションプール実装。
+### Module: utils.jsonplaceholder_*（旧 api_client.py を責務別に分割）
+- **Path**: `utils/jsonplaceholder_base_sync.py` / `utils/jsonplaceholder_base_async.py` / `utils/jsonplaceholder_client_sync.py` / `utils/jsonplaceholder_client_async.py`
+- **Exports**: `SyncAPIClient` (同期), `AsyncAPIClient` (非同期), `SyncJSONPlaceholderClient`, `AsyncJSONPlaceholderClient`, `create_client()`。例外階層（`APIClientError`, `APIConnectionError`, `APITimeoutError`, `APIHTTPError`, `APIRetryError`, `APIJSONDecodeError`）は `utils.exceptions` から import
+- **Purpose**: HTTP API クライアント。リトライ（`utils/retry.py`）・HTTP配管（`utils/http_helpers.py`）・レスポンス解析（`utils/response_parsing.py`）は共有ヘルパーモジュールへ分離済み。
 
 ### Module: utils.github_client
 - **Path**: `utils/github_client.py`
@@ -114,9 +114,10 @@ api-test-devops-portfolio/
 - **CLAUDE.md**: Claude Code 向けプロジェクト指示書（開発ワークフロー、品質ゲート等）
 
 ### Development Guides
-- **docs/main/6週プラン/**: 6週間学習計画（Week 1-6詳細）
-- **docs/progress/daily_progress.md**: 日次進捗記録
-- **docs/main/interview/**: 面接準備資料
+- **docs/DOCS_INDEX.md**: 公開ドキュメントの索引
+- **docs/reference/ci_cd_pipeline.md**: CI/CD パイプライン リファレンス
+- **docs/reference/docker.md**: Docker リファレンス
+- **docs/agents/**: エージェント運用ドキュメント（issue-tracker, triage-labels, domain）
 
 ### Agent Configuration
 - **.claude/agents/**: カスタムエージェント定義（7 files: silent-failure-hunter, security-code-reviewer等）
@@ -195,10 +196,10 @@ cp .env.example .env
 ```bash
 # APIクライアント使用例（対話モード）
 uv run python
->>> from utils.api_client import SyncAPIClient
->>> client = SyncAPIClient()
->>> response = client.get("/todos/1")
->>> print(response)
+>>> from utils.jsonplaceholder_client_sync import SyncJSONPlaceholderClient
+>>> client = SyncJSONPlaceholderClient()
+>>> todo = client.get_todo(1)
+>>> print(todo)
 ```
 
 ### 3. Test
