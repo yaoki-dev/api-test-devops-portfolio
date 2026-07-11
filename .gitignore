@@ -181,3 +181,6 @@ graphify-out/**
 # antigravity
 .agents/**
 .agents/rules/antigravity-rtk-rules.md
+
+# OpenCode Studio distribution (tool artifacts)
+opencode-studio/
