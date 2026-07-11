@@ -1,7 +1,7 @@
 # Project Index: api-test-devops-portfolio
 
-**Generated:** 2026-03-08 JST
-**Last Commit:** 94d39b9 (2026-03-08)
+**Generated:** 2026-07-11 JST
+**Last Commit:** 00d5db8 (2026-07-11)
 **Version:** 0.1.0
 **Python:** ==3.14.*
 
@@ -19,13 +19,20 @@ api-test-devops-portfolio/
 │   └── responses.py       # APIレスポンスモデル
 ├── utils/                  # コアユーティリティ
 │   ├── __init__.py
-│   ├── api_client.py      # HTTP API クライアント（同期/非同期）
+│   ├── exceptions.py      # 共有例外階層（APIClientError 等）
+│   ├── retry.py           # リトライ遅延計算ヘルパー
+│   ├── http_helpers.py    # HTTP配管ヘルパー（バリデーション/エラーマッピング）
+│   ├── response_parsing.py # レスポンス解析（Pydantic検証）
+│   ├── jsonplaceholder_base_sync.py   # SyncAPIClient（HTTP基盤・同期）
+│   ├── jsonplaceholder_base_async.py  # AsyncAPIClient（HTTP基盤・非同期）
+│   ├── jsonplaceholder_client_sync.py # SyncJSONPlaceholderClient
+│   ├── jsonplaceholder_client_async.py # AsyncJSONPlaceholderClient
 │   ├── github_client.py   # GitHub API 専用クライアント
 │   ├── logger.py          # 構造化ログ（structlog）
 │   └── sentry_init.py     # エラー監視（Sentry SDK）
-├── tests/                  # テストスイート（全23 test files）
+├── tests/                  # テストスイート（全22 test files）
 │   ├── unit/              # ユニットテスト（16 files）
-│   ├── integration/       # 統合テスト（5 files）
+│   ├── integration/       # 統合テスト（4 files）
 │   ├── performance/       # パフォーマンステスト（1 file）
 │   ├── conftest.py        # pytest fixtures
 │   └── test_smoke.py      # スモークテスト（1 file）

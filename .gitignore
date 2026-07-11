@@ -124,7 +124,7 @@ coverage.json
 # Claude Code working documents (local only)
 claudedocs/**
 
-# Local-only documentation folders (kept on disk, not published)
+# Local-only documentation folders (not published)
 # NOTE: enumerate folders explicitly — `docs/**` + `!docs/agents/**` does not
 # work (git never descends into excluded dirs, so the negation is ignored).
 docs/ai_collaboration/**

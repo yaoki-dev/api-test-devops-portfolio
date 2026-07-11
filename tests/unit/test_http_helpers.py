@@ -23,8 +23,58 @@ from utils.http_helpers import (
 from utils.http_helpers import (
     resolve_client_config as _resolve_client_config,
 )
+from utils.http_helpers import (
+    validate_optional_int as _validate_optional_int,
+)
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.mark.parametrize(
+    "value,name,min_value",
+    [
+        (None, "limit", 0),
+        (None, "user_id", 1),
+    ],
+    ids=["limit_none", "user_id_none"],
+)
+def test_validate_optional_int_none_value_skips_validation(
+    value: int | None, name: str, min_value: int
+) -> None:
+    """value=None の場合、min_valueに関わらず例外が発生しないこと（早期スキップ）"""
+    _validate_optional_int(value, name, min_value)
+
+
+@pytest.mark.parametrize(
+    "value,name,min_value",
+    [
+        (0, "limit", 0),
+        (1, "user_id", 1),
+    ],
+    ids=["limit_boundary_zero", "user_id_boundary_one"],
+)
+def test_validate_optional_int_boundary_value_equal_to_min_passes(
+    value: int, name: str, min_value: int
+) -> None:
+    """value == min_value の境界値では例外が発生しないこと（`<` 比較の検証）"""
+    _validate_optional_int(value, name, min_value)
+
+
+@pytest.mark.parametrize(
+    "value,name,min_value",
+    [
+        (-1, "limit", 0),
+        (0, "user_id", 1),
+        (-100, "user_id", 1),
+    ],
+    ids=["limit_negative", "user_id_zero", "user_id_very_negative"],
+)
+def test_validate_optional_int_below_min_raises_value_error(
+    value: int, name: str, min_value: int
+) -> None:
+    """value < min_value の場合、期待メッセージでValueErrorが発生すること"""
+    with pytest.raises(ValueError, match=f"{name} must be >= {min_value}"):
+        _validate_optional_int(value, name, min_value)
 
 
 def test_map_request_error_too_many_redirects() -> None:

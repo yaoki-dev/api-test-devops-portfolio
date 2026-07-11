@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import time
 from typing import Any, TypedDict
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -15,6 +16,7 @@ from models.responses import Album, Photo, Post, Todo, User
 from tests.constants import BASE_URL
 from tests.unit.helpers import assert_warning_log_count, make_canonical_user
 from utils.exceptions import (
+    APIClientError,
     APIHTTPError,
     APIRetryError,
 )
@@ -1360,6 +1362,127 @@ async def test_get_user_data_posts_server_error():
     assert route_user.call_count <= 1
     assert route_todos.call_count <= 1
     assert route_albums.call_count <= 1
+
+
+async def test_get_user_data_multiple_failures_raises_single_api_client_error() -> None:
+    """user と posts が同時に失敗した場合でも、ExceptionGroup ではなく単一の
+    APIClientError系例外が呼び出し元に届くことを確認する（型契約の保持）。
+
+    設計根拠：
+    TaskGroup は複数タスク失敗時に ExceptionGroup を送出するが、get_user_data() の
+    ``except* APIClientError`` は最初の個別例外（``eg.exceptions[0]``）を取り出して
+    再送出するため、呼び出し元は従来どおり単一の APIClientError系例外で捕捉できる
+    （ExceptionGroup が漏れ出さない契約を維持する）。
+
+    Note: 4タスクすべてに ``asyncio.sleep(0)`` の同期バリアを挟み、cancel() が
+    伝播する前に user/posts の両方が失敗しきる可能性を高めているが、アサーションは
+    スケジューリングの内部詳細に依存せず「型契約の保持」のみを検証する
+    （実装が保証しない挙動を要求しないため）。
+    """
+    user_id = 1
+
+    async def failing_user(*_: object, **__: object) -> User:
+        await asyncio.sleep(0)
+        raise APIHTTPError("User not found", status_code=404)
+
+    async def failing_posts(*_: object, **__: object) -> list[Post]:
+        await asyncio.sleep(0)
+        raise APIRetryError("Retry limit exceeded")
+
+    async def succeeding_todos(*_: object, **__: object) -> list[Todo]:
+        await asyncio.sleep(0)
+        return []
+
+    async def succeeding_albums(*_: object, **__: object) -> list[Album]:
+        await asyncio.sleep(0)
+        return []
+
+    async with AsyncJSONPlaceholderClient() as client:
+        with (
+            patch.object(client, "get_user", failing_user),
+            patch.object(client, "get_posts", failing_posts),
+            patch.object(client, "get_todos", succeeding_todos),
+            patch.object(client, "get_albums", succeeding_albums),
+        ):
+            with pytest.raises(APIClientError) as exc_info:
+                await client.get_user_data(user_id)
+
+    # ExceptionGroup が漏れ出していないことを確認（契約維持）
+    assert not isinstance(exc_info.value, BaseExceptionGroup)
+    # 個別例外型（APIHTTPError または APIRetryError）で捕捉できることを確認
+    assert isinstance(exc_info.value, APIHTTPError | APIRetryError)
+
+
+async def test_get_user_data_single_failure_cancels_pending_sibling_task() -> None:
+    """1タスク失敗時、未完了の兄弟タスクが完了を待たずキャンセルされる
+    fail-fast挙動を検証する。
+
+    get_todos に長時間 sleep するモックを設定し、get_user が即時失敗した場合、
+    get_user_data() 呼び出し全体が sleep 時間を待たずに短時間で完了する
+    （TaskGroup が兄弟タスクを即座にキャンセルする）ことを確認する。
+    """
+    user_id = 1
+    todos_started = asyncio.Event()
+
+    async def failing_user(*_: object, **__: object) -> User:
+        raise APIHTTPError("User not found", status_code=404)
+
+    async def slow_todos(*_: object, **__: object) -> list[Todo]:
+        todos_started.set()
+        await asyncio.sleep(5)  # fail-fastでキャンセルされる想定の長時間sleep
+        return []
+
+    async with AsyncJSONPlaceholderClient() as client:
+        with (
+            patch.object(client, "get_user", failing_user),
+            patch.object(client, "get_todos", slow_todos),
+            patch.object(client, "get_posts", AsyncMock(return_value=[])),
+            patch.object(client, "get_albums", AsyncMock(return_value=[])),
+        ):
+            start = time.monotonic()
+            with pytest.raises(APIHTTPError):
+                await asyncio.wait_for(client.get_user_data(user_id), timeout=1.0)
+            elapsed = time.monotonic() - start
+
+    # 兄弟タスク（todos）が開始されたことを確認（未起動でのキャンセルとの区別）
+    assert todos_started.is_set()
+    # fail-fastで即時完了（5秒のsleepを待たずキャンセルされる）
+    assert elapsed < 1.0
+
+
+@pytest.mark.parametrize(
+    "fatal_exc",
+    [MemoryError("OOM"), RecursionError("max depth")],
+)
+async def test_get_user_data_fatal_exception_not_wrapped_as_api_client_error(
+    fatal_exc: BaseException,
+) -> None:
+    """MemoryError/RecursionError（ASYNC_FATAL_EXCEPTIONS）が APIClientError に
+    ラップされずに ExceptionGroup として素通りすることを確認する。
+
+    get_user_data() の ``except* APIClientError`` は APIClientError系例外のみを
+    捕捉して unwrap する。ASYNC_FATAL_EXCEPTIONS はこの分岐に一致しないため、
+    TaskGroup が送出する ExceptionGroup がそのまま呼び出し元に伝播する
+    （APIClientErrorへの誤ラップがないことを保証する設計）。
+    """
+    user_id = 1
+
+    async def failing_user(*_: object, **__: object) -> User:
+        raise fatal_exc
+
+    async with AsyncJSONPlaceholderClient() as client:
+        with (
+            patch.object(client, "get_user", failing_user),
+            patch.object(client, "get_posts", AsyncMock(return_value=[])),
+            patch.object(client, "get_todos", AsyncMock(return_value=[])),
+            patch.object(client, "get_albums", AsyncMock(return_value=[])),
+        ):
+            with pytest.raises(BaseExceptionGroup) as exc_info:
+                await client.get_user_data(user_id)
+
+    # APIClientError にラップされていないことを確認（except* APIClientError 不一致のため素通り）
+    assert not isinstance(exc_info.value, APIClientError)
+    assert any(isinstance(e, type(fatal_exc)) for e in exc_info.value.exceptions)
 
 
 @pytest.mark.parametrize(
