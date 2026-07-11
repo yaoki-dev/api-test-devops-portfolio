@@ -159,6 +159,15 @@ async def test_async_post_crud_sequence_reuses_one_client() -> None:
 
 async def test_async_get_nonexistent_post_raises_404() -> None:
     """存在しない投稿の GET が APIHTTPError(status_code=404) を送出する
+    （二相分離: 到達性確認→契約検証）
+
+    二相構成:
+      Phase 1 (到達性確認): 既存リソース /posts/1 へ疎通し、接続障害は skip
+      Phase 2 (契約検証):   /posts/999999 で APIHTTPError(status_code=404) を検証。
+                            APIRetryError 含む全例外がテスト失敗として CI に報告される。
+
+    設計意図: Phase 1/2 を分離することで、pytest.raises(APIHTTPError) が APIRetryError
+    を捕捉せず外側の except に伝播する問題（skip に化けて CI がバグを見逃す）を防止する。
 
     GET を使う理由: JSONPlaceholder の ``PUT /posts/{id}`` は存在しない id に対して
     500 を返す（実測）。5xx はリトライ対象のため APIRetryError となり、404 契約を
@@ -168,6 +177,17 @@ async def test_async_get_nonexistent_post_raises_404() -> None:
     APIConnectionError / APITimeoutError / APIRetryError も捕捉するため、ネットワーク
     障害でもテストが緑になり、404 契約の破壊を検知できない。
     """
+    # Phase 1: 到達性確認 — 接続障害時は skip（404 契約バグではない）
+    try:
+        async with AsyncJSONPlaceholderClient() as client:
+            await client.get_post(1)
+    except (APIConnectionError, APITimeoutError, APIRetryError) as exc:
+        pytest.skip(
+            "JSONPlaceholder への接続に失敗したため 404 契約検証を skip します"
+            f"（ネットワーク障害が原因であり 404 契約バグではありません）: {exc}"
+        )
+
+    # Phase 2: 契約検証 — APIRetryError 含む全例外がテスト失敗として CI に報告される
     async with AsyncJSONPlaceholderClient() as client:
         with pytest.raises(APIHTTPError) as exc_info:
             await client.get_post(999999)

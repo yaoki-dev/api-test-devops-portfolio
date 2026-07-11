@@ -1485,6 +1485,30 @@ async def test_get_user_data_fatal_exception_not_wrapped_as_api_client_error(
     assert any(isinstance(e, type(fatal_exc)) for e in exc_info.value.exceptions)
 
 
+@pytest.mark.parametrize("invalid_user_id", [0, -1], ids=["zero", "negative"])
+@respx.mock
+async def test_get_user_data_invalid_user_id_raises_bare_value_error(
+    invalid_user_id: int,
+) -> None:
+    """user_id < 1 で ExceptionGroup ではなく素の ValueError が送出される契約を固定する
+
+    ``except* (APIClientError, ValueError) as eg: raise eg.exceptions[0] from None``
+    による unwrap 契約の回帰テスト。
+
+    respx.mock が必要な理由: get_posts/get_todos/get_albums は最初の await 以前に
+    ``validate_optional_int`` で ValueError を送出するが、get_user は user_id を検証せず
+    HTTP リクエストを発行するため、モックがないと実ネットワークへ出る。
+    """
+    respx.get(f"{BASE_URL}/users/{invalid_user_id}").respond(json=make_canonical_user(1))
+
+    async with AsyncJSONPlaceholderClient() as client:
+        with pytest.raises(ValueError, match="user_id must be >= 1") as exc_info:
+            await client.get_user_data(invalid_user_id)
+
+    # ExceptionGroup が漏れ出していないことを確認（契約維持）
+    assert not isinstance(exc_info.value, BaseExceptionGroup)
+
+
 @pytest.mark.parametrize(
     "limit,expected_count,test_description",
     [

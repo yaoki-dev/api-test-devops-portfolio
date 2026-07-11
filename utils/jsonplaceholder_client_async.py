@@ -295,6 +295,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
                 ``ExceptionGroup`` から最初の ``APIClientError`` を取り出して送出し、
                 従来どおり個別例外型（例: ``APIHTTPError`` / ``APIRetryError``）で
                 呼び出し元が捕捉できる契約を維持する。
+            ValueError: user_id < 1 の場合（validate_optional_int による入力検証）。
 
         """
         try:

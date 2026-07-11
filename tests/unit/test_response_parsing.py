@@ -133,3 +133,20 @@ def test_safe_parse_json_invalid_json(
     assert "Failed to parse JSON" in str(exc_info.value)
     assert "Invalid JSON" in str(exc_info.value)  # str(e) の診断情報を保持
     assert exc_info.value.response == mock_response
+
+
+def test_safe_parse_json_unicode_decode_error_converted_to_api_json_decode_error() -> None:
+    """不正なUTF-8ボディでAPIJSONDecodeErrorが発生（UnicodeDecodeError変換契約）
+
+    httpx==0.28.1 では ``httpx.Response.json()`` が不正 UTF-8 ボディに対して
+    ``json.JSONDecodeError`` ではなく ``UnicodeDecodeError`` を送出する（実測確認済み）。
+    safe_parse_json() が ``except (json.JSONDecodeError, UnicodeDecodeError)`` で
+    両方を捕捉し APIJSONDecodeError へ変換すること、および ``from e`` による
+    例外チェーン（``__cause__``）が維持されることを固定する回帰テスト。
+    """
+    response = httpx.Response(200, content=b"\xff")
+
+    with pytest.raises(APIJSONDecodeError) as exc_info:
+        _safe_parse_json(response)
+
+    assert isinstance(exc_info.value.__cause__, UnicodeDecodeError)

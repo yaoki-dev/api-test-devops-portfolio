@@ -204,12 +204,12 @@ asyncio_mode = "auto"  # 非同期テスト自動検出
 # @pytest.mark.asyncio: asyncio_mode = "auto" (pyproject.toml) のため、@pytest.mark.asyncio は不要
 # pytest-asyncio が async テストを自動検出する
 async def test_concurrent_requests() -> None:
+    # 3件全て必須（fail-fast）のため TaskGroup を使用（coding-standards.md §6）。
+    # 部分成功を許容する場合のみ gather(return_exceptions=True) を検討する。
     async with AsyncJSONPlaceholderClient() as client:
-        users = await asyncio.gather(
-            client.get_user(user_id=1),
-            client.get_user(user_id=2),
-            client.get_user(user_id=3),
-        )
+        async with asyncio.TaskGroup() as tg:
+            tasks = [tg.create_task(client.get_user(user_id=i)) for i in (1, 2, 3)]
+    users = [task.result() for task in tasks]
     assert len(users) == 3
 ```
 

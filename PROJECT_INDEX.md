@@ -204,9 +204,9 @@ cp .env.example .env
 # APIクライアント使用例（対話モード）
 uv run python
 >>> from utils.jsonplaceholder_client_sync import SyncJSONPlaceholderClient
->>> client = SyncJSONPlaceholderClient()
->>> todo = client.get_todo(1)
->>> print(todo)
+>>> with SyncJSONPlaceholderClient() as client:
+...     todo = client.get_todo(1)
+...     print(todo)
 ```
 
 ### 3. Test

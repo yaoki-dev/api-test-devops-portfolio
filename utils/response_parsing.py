@@ -34,7 +34,9 @@ def safe_parse_json(response: httpx.Response) -> Any:
     """
     try:
         return cast(Any, response.json())
-    except json.JSONDecodeError as e:
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        # httpx は不正な UTF-8 ボディに対し JSONDecodeError ではなく
+        # UnicodeDecodeError を送出するため、両方を捕捉する。
         raise APIJSONDecodeError(
             f"Failed to parse JSON response: {e}",
             response=response,

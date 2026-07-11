@@ -37,7 +37,9 @@ class APITimeoutError(APIClientError):
 class APIHTTPError(APIClientError):
     """HTTPステータスエラー"""
 
-    def __init__(self, message: str, status_code: int, response: httpx.Response | None = None):
+    def __init__(
+        self, message: str, status_code: int, response: httpx.Response | None = None
+    ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.response = response
@@ -50,6 +52,6 @@ class APIRetryError(APIClientError):
 class APIJSONDecodeError(APIClientError):
     """JSONパース＋スキーマ検証エラー"""
 
-    def __init__(self, message: str, response: httpx.Response | None = None):
+    def __init__(self, message: str, response: httpx.Response | None = None) -> None:
         super().__init__(message)
         self.response = response
