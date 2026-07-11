@@ -123,8 +123,20 @@ coverage.json
 
 # Claude Code working documents (local only)
 claudedocs/**
-docs/**
-!docs/agents/**
+
+# Local-only documentation folders (kept on disk, not published)
+# NOTE: list each folder explicitly instead of `docs/**` + `!docs/agents/**`.
+# A `docs/**` pattern also matches the `docs/agents` directory itself, so git
+# never descends into it and the negation is silently ignored. It also hid
+# docs/reference and .serena from ripgrep/fd, producing false-negative audits.
+docs/ai_collaboration/**
+docs/analysis/**
+docs/brainstorms/**
+docs/draw_images/**
+docs/main/**
+docs/plans/**
+docs/progress/**
+docs/ref/**
 
 # GSD - local planning artifacts
 .planning/**
