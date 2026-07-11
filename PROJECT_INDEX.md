@@ -196,10 +196,10 @@ cp .env.example .env
 ```bash
 # APIクライアント使用例（対話モード）
 uv run python
->>> from utils.jsonplaceholder_base_sync import SyncAPIClient
->>> client = SyncAPIClient()
->>> response = client.get("/todos/1")
->>> print(response)
+>>> from utils.jsonplaceholder_client_sync import SyncJSONPlaceholderClient
+>>> client = SyncJSONPlaceholderClient()
+>>> todo = client.get_todo(1)
+>>> print(todo)
 ```
 
 ### 3. Test
