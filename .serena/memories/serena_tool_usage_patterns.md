@@ -28,7 +28,7 @@
 
 | ファイル | 従来 | 最適化後 | 削減率 |
 |---------|------|---------|--------|
-| utils/api_client.py (762行) | 762行読込 | 101行読込 | 87% |
+| utils/jsonplaceholder_base_sync.py (280行) | 280行読込 | 50行読込 | 82% |
 | 一般的なファイル | 全行読込 | 必要部分のみ | 50-90% |
 
 ### 1.3 ツール詳細
@@ -103,9 +103,9 @@
 
 ```python
 # Step 1: 構造把握
-serena get_symbols_overview relative_path="utils/api_client.py" depth=1
-# → Classes: AsyncAPIClient, SyncAPIClient, ...
-# → Functions: create_client, main, ...
+serena get_symbols_overview relative_path="utils/jsonplaceholder_base_async.py" depth=1
+# → Classes: AsyncAPIClient
+# → Functions: （モジュールレベル関数なし。create_client は jsonplaceholder_client_sync.py）
 
 # Step 2: クラス詳細
 serena find_symbol "AsyncAPIClient" relative_path="utils/" depth=1
@@ -113,7 +113,7 @@ serena find_symbol "AsyncAPIClient" relative_path="utils/" depth=1
 
 # Step 3: 必要メソッドのみ
 serena find_symbol "AsyncAPIClient/_make_request_with_retry" include_body=True
-# → 101行のコード本体を取得
+# → 132行のコード本体を取得
 
 # Step 4: 情報充足確認
 serena think_about_collected_information

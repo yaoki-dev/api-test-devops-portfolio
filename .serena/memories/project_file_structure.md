@@ -67,9 +67,18 @@ api-test-devops-portfolio/
 │   ├── performance/           # パフォーマンステスト
 │   └── test_smoke.py          # スモークテスト
 │
-├── utils/                     # コアモジュール実装
-│   ├── api_client.py          # APIクライアント
-│   ├── logger.py              # structlog統合ロギング
+├── utils/                     # コアモジュール実装（フラット責任分割）
+│   ├── exceptions.py           # API例外階層
+│   ├── github_client.py        # GitHub API統合
+│   ├── http_helpers.py         # エラーハンドリング・設定解決
+│   ├── jsonplaceholder_base_async.py  # 非同期ベースクライアント
+│   ├── jsonplaceholder_base_sync.py   # 同期ベースクライアント
+│   ├── jsonplaceholder_client_async.py # 非同期JSONPlaceholderクライアント
+│   ├── jsonplaceholder_client_sync.py  # 同期JSONPlaceholderクライアント
+│   ├── logger.py               # structlog統合ロギング
+│   ├── response_parsing.py     # JSONパース + Pydanticモデル変換
+│   ├── retry.py                # 指数バックオフ + ジッター
+│   ├── sentry_init.py          # Sentry SDK初期化
 │   └── __init__.py
 │
 ├── config/                    # 設定管理
@@ -86,7 +95,7 @@ api-test-devops-portfolio/
 │   └── ruff-report.txt        # ruffチェック結果
 │
 ├── logs/                      # ログファイル（実行時自動生成）
-│   ├── api_client.log
+│   ├── app.log
 │   └── test_execution.log
 │
 ├── .env                       # 環境変数（Git除外）
@@ -110,17 +119,17 @@ api-test-devops-portfolio/
 ```
 tests/
 ├── unit/
-│   ├── test_api_client.py
-│   └── test_settings.py
+│   ├── test_jsonplaceholder_client_sync.py
+│   └── test_config_settings.py
 ├── integration/
-│   └── test_api_integration.py
+│   └── test_jsonplaceholder_posts.py
 ```
 
 ❌ **Bad**:
 ```
 utils/
-├── api_client.py
-├── test_api_client.py  # ソースファイル横に配置（非推奨）
+├── jsonplaceholder_client_sync.py
+├── test_jsonplaceholder_client_sync.py  # ソースファイル横に配置（非推奨）
 ```
 
 **理由**:
@@ -219,11 +228,11 @@ git add debug.sh temp_analysis.md
 | `docs/` | プロジェクトドキュメント | ✅ | プロジェクト初期 | progress/, learning/ |
 | `scripts/` | 自動化スクリプト | ✅ | 必要時 | setup/, test/, deploy/ |
 | `tests/` | テストファイル | ✅ | Week 1~ | unit/, integration/ |
-| `utils/` | コアモジュール | ✅ | Week 1~ | api_client.py |
+| `utils/` | コアモジュール（12ファイル） | ✅ | Week 1~ | jsonplaceholder_base_sync.py 他 |
 | `config/` | 設定管理 | ✅ | Week 5~ | settings.py |
 | `models/` | データモデル | ✅ | Week 5~ | responses.py |
 | `reports/` | テスト・品質レポート | ❌ | テスト実行時 | htmlcov/, pytest-report.html |
-| `logs/` | ログファイル | ❌ | 実行時 | api_client.log |
+| `logs/` | ログファイル | ❌ | 実行時 | app.log |
 
 **Git管理凡例**:
 - ✅: バージョン管理対象
@@ -238,7 +247,7 @@ git add debug.sh temp_analysis.md
 
 ```python
 # ✅ Good
-utils/api_client.py         # snake_case、機能を表す名前
+utils/jsonplaceholder_base_sync.py  # snake_case、機能を表す名前
 config/settings.py          # snake_case、単数形
 models/responses.py         # snake_case、複数形（モデル集）
 
@@ -252,12 +261,12 @@ models/response.py          # 単数形（複数モデルを含む場合は複�
 
 ```python
 # ✅ Good
-tests/unit/test_api_client.py       # test_プレフィックス必須
-tests/integration/test_api_integration.py
+tests/unit/test_jsonplaceholder_base_sync.py  # test_プレフィックス必須
+tests/integration/test_jsonplaceholder_posts.py
 
 # ❌ Bad
-tests/unit/api_client_test.py       # サフィックスは非推奨
-tests/unit/test_APIClient.py        # PascalCase（snake_case推奨）
+tests/unit/jsonplaceholder_client_sync_test.py  # サフィックスは非推奨
+tests/unit/test_JSONPlaceholderClient.py        # PascalCase（snake_case推奨）
 ```
 
 ### ドキュメントファイル
@@ -348,17 +357,22 @@ find . -name "debug_*" -delete
 
 ## コアモジュール構成
 
-### APIクライアント実装（`utils/api_client.py`）
+### APIクライアント実装（フラットモジュール構造）
 
 ```
-utils/api_client.py          # APIクライアント実装（972行）
-├── BaseAPIClient            # 同期HTTPクライアント（リトライロジック付き）
-├── JSONPlaceholderClient    # JSONPlaceholder API専用クライアント
-├── AsyncAPIClient           # 非同期HTTPクライアント（async/await）
-└── AsyncJSONPlaceholderClient  # 非同期専用クライアント（並行処理対応）
+utils/
+├── jsonplaceholder_base_sync.py      # SyncAPIClient（同期ベース、リトライ付き）
+├── jsonplaceholder_base_async.py     # AsyncAPIClient（非同期ベース、リトライ付き）
+├── jsonplaceholder_client_sync.py    # SyncJSONPlaceholderClient + create_client()
+├── jsonplaceholder_client_async.py   # AsyncJSONPlaceholderClient（並行処理対応）
+├── retry.py                          # exponential_backoff_with_jitter()
+├── exceptions.py                     # API例外階層
+├── http_helpers.py                   # エラーハンドリング・設定解決・バリデーション
+├── response_parsing.py               # safe_parse_json() + parse_response_model()
+└── github_client.py                  # AsyncGitHubClient（GitHub API統合）
 ```
 
-**行数**: 972行（2025-12-26時点）
+**旧構造**: api_client.py（972行モノリス）を責任単位で9モジュールに分割（W1-W3 リファクタリング完了）
 
 ### 設定管理（`config/settings.py`）
 
@@ -380,7 +394,7 @@ config/settings.py           # 設定管理（447行）
 ### エラーハンドリング階層
 
 ```python
-# utils/api_client.py:24-57
+# utils/exceptions.py
 APIClientError              # 基底例外クラス
 ├── APIConnectionError      # 接続エラー（ネットワーク障害等）
 ├── APITimeoutError         # タイムアウトエラー
@@ -391,24 +405,25 @@ APIClientError              # 基底例外クラス
 **設計意図**:
 - 階層的な例外設計により、エラーハンドリングの粒度を調整可能
 - 4xx（クライアントエラー）と5xx（サーバーエラー）を分離してリトライロジックを最適化
+- W1で `api_client.py` から `exceptions.py` に分離
 
 ### リトライロジック
 
-**実装方針**（`utils/api_client.py:132-219`）:
+**実装方針**（`utils/retry.py` + `utils/http_helpers.py`）:
 - **4xxエラー**: 即座に失敗（クライアントエラー、リトライ不要）
 - **5xxエラー**: リトライ対象（サーバーエラー、一時的障害の可能性）
 - **設定可能パラメータ**: リトライ回数・間隔（`config/settings.py`のAPIConfig）
 
-**コード参照**: `utils/api_client.py:132-219`（リトライロジック実装）
+**コード参照**: `utils/retry.py`（指数バックオフ + ジッター実装）, `utils/jsonplaceholder_base_sync.py` / `utils/jsonplaceholder_base_async.py`（リトライループ）
 
 ### 非同期処理パターン
 
 **使用技術**:
-- `AsyncAPIClient`: async/awaitパターン（`utils/api_client.py:399-762`）
+- `AsyncAPIClient`: async/awaitパターン（`utils/jsonplaceholder_base_async.py`）
 - `httpx.AsyncClient`: 非同期HTTPクライアント
-- `asyncio.gather()`: 並行処理（例: `AsyncJSONPlaceholderClient.get_user_data()`で複数API呼び出しを並行実行）
+- `asyncio.gather()`: 並行処理（例: `AsyncJSONPlaceholderClient` で複数API呼び出しを並行実行）
 
-**実装例**: `utils/api_client.py:741-761`（並行処理実装）
+**実装例**: `utils/jsonplaceholder_client_async.py`（並行処理実装）
 
 ---
 
@@ -417,12 +432,14 @@ APIClientError              # 基底例外クラス
 ### pytest共通設定・フィクスチャ（`tests/conftest.py`）
 
 ```
-tests/conftest.py            # pytest共通設定・フィクスチャ
-├── async_client             # 非同期クライアントフィクスチャ（async/await対応）
-├── mock_httpx_client        # モック化HTTPXクライアント（単体テスト用）
-├── todo_data_factory        # テストデータファクトリー（Todoモデル）
-├── user_data_factory        # ユーザーデータファクトリー（Userモデル）
-└── performance_timer        # パフォーマンス計測タイマー
+tests/conftest.py             # pytest共通設定・フィクスチャ
+├── logger                    # テスト用ロガー
+├── mock_base_url              # unitテスト用ダミーURL（外部通信なし）
+├── disable_sentry_for_tests   # Sentry送信無効化（autouse）
+├── isolate_proxy_env          # プロキシ系環境変数の隔離（session, autouse）
+├── cleanup_test_files         # テンポラリファイル削除（autouse）
+├── reset_settings             # 設定リロード（テスト独立性保証・autouse）
+└── reset_sentry_warning_state # Sentry warning throttle状態リセット（autouse）
 ```
 
 **詳細**: CLAUDE.md「テスト構成」参照

@@ -123,8 +123,18 @@ coverage.json
 
 # Claude Code working documents (local only)
 claudedocs/**
-docs/**
-!docs/agents/**
+
+# Local-only documentation folders (not published)
+# NOTE: enumerate folders explicitly — `docs/**` + `!docs/agents/**` does not
+# work (git never descends into excluded dirs, so the negation is ignored).
+docs/ai_collaboration/**
+docs/analysis/**
+docs/brainstorms/**
+docs/draw_images/**
+docs/main/**
+docs/plans/**
+docs/progress/**
+docs/ref/**
 
 # GSD - local planning artifacts
 .planning/**

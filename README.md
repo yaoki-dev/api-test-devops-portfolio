@@ -63,7 +63,7 @@ SSRFやPII漏洩、不安定なリトライといった連携特有のアンチ�
 uv run pytest --cov=utils --cov=config --cov=models --cov-report=term -q --color=yes
 
 # クイック実行（unit tests）
-uv run pytest tests/unit/test_api_client.py --cov=utils --cov=config --cov=models --cov-report=term -q --color=yes
+uv run pytest tests/unit/test_jsonplaceholder_client_sync.py --cov=utils --cov=config --cov=models --cov-report=term -q --color=yes
 ```
 
 </details>
@@ -401,7 +401,7 @@ if init_sentry():
 
 > 行番号はコード変更でズレます。ポートフォリオ提出時はコミットSHA固定のpermalink化を推奨。
 
-**テスト方針**: Sentry連携は `tests/unit/test_sentry_init.py` の boot-up 検証と、`tests/integration/test_sentry_logging_integration.py` の結合検証でカバーする。実 Sentry DSN への送信は外部依存・ダッシュボードノイズを招くため、capturing transport でネットワーク非依存に保つ。
+**テスト方針**: Sentry連携は `tests/unit/test_sentry_init.py` の boot-up 検証と、`tests/integration/test_sentry_logging.py` の結合検証でカバーする。実 Sentry DSN への送信は外部依存・ダッシュボードノイズを招くため、capturing transport でネットワーク非依存に保つ。
 
  📚 詳細は `.serena/memories/sentry_integration.md` を参照
 

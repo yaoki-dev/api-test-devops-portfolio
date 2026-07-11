@@ -1,11 +1,4 @@
-"""
-GitHub API非同期クライアントのUnit Tests
-
-テスト戦略:
-- respxを使用してGitHub APIの依存を排除（HTTPレイヤーモック）
-- 正常系・異常系・エッジケースを網羅
-- カバレッジ目標: 80%以上
-"""
+"""GitHub API非同期クライアントのUnit Tests"""
 
 import asyncio
 import json
@@ -18,6 +11,7 @@ import pytest
 import respx
 from structlog.testing import capture_logs
 
+from utils.exceptions import APIClientError
 from utils.github_client import (
     AsyncGitHubClient,
     GitHubAPIError,
@@ -36,6 +30,12 @@ pytestmark = pytest.mark.unit
 
 GITHUB_API_BASE_URL = "https://api.github.com"
 MAX_RETRIES = 3
+
+
+def test_github_api_error_uses_shared_api_client_error() -> None:
+    """GitHub例外は分割後も共有API例外階層に属する。"""
+    assert issubclass(GitHubAPIError, APIClientError)
+
 
 # =============================================================================
 # 基本機能テスト（正常系）

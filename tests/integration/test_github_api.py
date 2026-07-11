@@ -1,7 +1,7 @@
 """
 GitHub API Integration Tests（実API呼び出し）
 
-注意:
+Note:
 - Rate Limit制約: 認証なし60 req/h
 - @pytest.mark.externalで分離（CI/CD時は除外推奨）
 - 実行コマンド: pytest -m external（手動実行時のみ）
@@ -11,15 +11,15 @@ import pytest
 
 from utils.github_client import AsyncGitHubClient, NotFoundError
 
+pytestmark = [pytest.mark.external, pytest.mark.integration]
+
 # =============================================================================
 # 実API呼び出しテスト
 # =============================================================================
 
 
-@pytest.mark.external
-@pytest.mark.integration
-async def test_get_user_real_api():
-    """実API: ユーザー情報取得
+async def test_get_user():
+    """ユーザー情報取得
 
     検証項目:
     - GitHub API v3の実際のレスポンス形式
@@ -41,10 +41,8 @@ async def test_get_user_real_api():
         assert isinstance(user["public_repos"], int)
 
 
-@pytest.mark.external
-@pytest.mark.integration
-async def test_get_repos_real_api():
-    """実API: リポジトリ一覧取得
+async def test_get_repos():
+    """リポジトリ一覧取得
 
     検証項目:
     - per_pageパラメータの動作確認
@@ -67,10 +65,8 @@ async def test_get_repos_real_api():
             assert isinstance(repo["stargazers_count"], int)
 
 
-@pytest.mark.external
-@pytest.mark.integration
-async def test_get_repo_real_api():
-    """実API: リポジトリ詳細取得
+async def test_get_repo():
+    """リポジトリ詳細取得
 
     検証項目:
     - 特定リポジトリの詳細情報取得
@@ -92,10 +88,8 @@ async def test_get_repo_real_api():
         assert isinstance(repo["forks_count"], int)
 
 
-@pytest.mark.external
-@pytest.mark.integration
-async def test_not_found_error_real_api():
-    """実API: 404エラーハンドリング
+async def test_not_found_error():
+    """404エラーハンドリング
 
     検証項目:
     - 存在しないユーザーでNotFoundError発生
@@ -106,33 +100,3 @@ async def test_not_found_error_real_api():
             await client.get_user("nonexistent-user-12345")
 
         assert "Resource not found" in str(exc_info.value)
-
-
-# =============================================================================
-# 統合確認チェックリスト（手動実行用）
-# =============================================================================
-
-
-@pytest.mark.external
-@pytest.mark.integration
-async def test_integration_checklist():
-    """統合確認チェックリスト自動化
-
-    確認項目:
-    1. 実API呼び出し成功
-    2. 404エラーハンドリング
-    3. Rate Limit警告ログ出力（手動確認: Remaining < 10の場合）
-
-    Note: @pytest.mark.externalで週次CI自動実行
-    """
-    async with AsyncGitHubClient() as client:
-        # ✅ 実API呼び出し成功
-        user = await client.get_user("octocat")
-        assert user["login"] == "octocat"
-
-        # ✅ 404エラー確認
-        with pytest.raises(NotFoundError):
-            await client.get_user("nonexistent-user-12345")
-
-        # Note: Rate Limit警告ログは手動確認（60 req/h制約のため）
-        # 実行後にログ出力を確認: "rate_limit_low" メッセージ

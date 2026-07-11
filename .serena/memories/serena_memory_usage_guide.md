@@ -331,7 +331,7 @@ Docker build失敗: Layer cache無効化エラー
 → @memory:test_strategy_details Section 3（カバレッジ戦略）
   - 現状58.56%分析（utils 19.30%, models 0%）
   - Week別目標60%達成戦略
-  - 優先順位: utils/api_client.py CRUD追加
+  - 優先順位: utils/jsonplaceholder_base_sync.py SyncAPIClient 基本操作
 
 【累積トークン】: 1,000 + 4,000 = 5,000トークン
 【削減効果】: 13,000トークン → 62%削減

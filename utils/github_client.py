@@ -1,4 +1,4 @@
-"""GitHub API非同期クライアント"""
+"""GitHub Async APIクライアント"""
 
 import asyncio
 import hashlib
@@ -12,13 +12,10 @@ from urllib.parse import quote, urlencode
 
 import httpx
 
-from utils.api_client import (
-    ASYNC_FATAL_EXCEPTIONS,
-    APIClientError,
-    _log_error_with_stderr_fallback,
-    exponential_backoff_with_jitter,
-)
+from utils.exceptions import ASYNC_FATAL_EXCEPTIONS, APIClientError
+from utils.http_helpers import log_error_with_stderr_fallback
 from utils.logger import get_logger
+from utils.retry import exponential_backoff_with_jitter
 
 # モジュールレベル logger: ``@staticmethod`` (例: ``_cache_key``) など
 # ``self.logger`` を参照できない経路で構造化ログを出力するために使用する
@@ -319,7 +316,7 @@ class AsyncGitHubClient:
             # （has_body_exception=True 時）捕捉されサイレント隠蔽される。KeyboardInterrupt/
             # SystemExit/CancelledError は BaseException 直系で except Exception の境界外（素通り）
             # だが、_client=None 設定の一貫性のため本句で先取りする。
-            # NOTE: 本クラスは _request パス（utils.api_client の ASYNC_FATAL_EXCEPTIONS 方針）と
+            # NOTE: 本クラスは _request パス（utils.exceptions の ASYNC_FATAL_EXCEPTIONS 方針）と
             # 同一の定数を close 経路でも使用する。一方 AsyncAPIClient._close_async_client は
             # close 文脈で (MemoryError, RecursionError) のみを使う別方針（CancelledError 等は
             # BaseException 直系として素通りさせる設計）であり、両クラスの close ヘルパーは
@@ -333,7 +330,7 @@ class AsyncGitHubClient:
             # RecursionError / MemoryError は上の ASYNC_FATAL_EXCEPTIONS 句で
             # 先取り済み（fail-fast）。
             # logger.error 記録 + 失敗時 stderr フォールバック。ロガー自体の例外が close_exc /
-            # body 例外を隠蔽するのを防ぐ（PR#347 B-3）。api_client と共通の module-level
+            # body 例外を隠蔽するのを防ぐ（PR#347 B-3）。utils.http_helpers と共通の module-level
             # ヘルパーで stderr フォールバックの重複を解消する（PR#347 Q-8 DRY）。
             if suppress_unexpected:
                 # aclose() 直接呼び出し経路: finally ブロック等での安全な呼び出しを保証するため、
@@ -342,7 +339,7 @@ class AsyncGitHubClient:
                 # suppress 経路でも状態一貫性のため _client=None を設定し、aclose 失敗後の
                 # 壊れたクライアント再利用を防止する（成功時 else 節と同一方針）。
                 self._client = None
-                _log_error_with_stderr_fallback(
+                log_error_with_stderr_fallback(
                     self.logger,
                     "github_client",
                     "aclose",
@@ -360,7 +357,7 @@ class AsyncGitHubClient:
                 # close 失敗と body 例外の対応関係を追跡可能にする（PII 非含: __qualname__ は
                 # クラス名のみ）。本経路は _client=None を設定しない（従来 __aexit__ 挙動を保持）。
                 has_body_exception = body_exc_type is not None
-                _log_error_with_stderr_fallback(
+                log_error_with_stderr_fallback(
                     self.logger,
                     "github_client",
                     "aclose",
@@ -1087,8 +1084,8 @@ class AsyncGitHubClient:
                 except Exception as cache_exc:  # noqa: BLE001
                     # logger.error 記録 + 失敗時 stderr フォールバック（PR#347 Q-12）。
                     # cache 更新失敗はレスポンス返却を阻害しないが、ロガー自体の失敗で
-                    # 観測性が完全に失われるのを防ぐ。api_client と共通の DRY ヘルパー使用。
-                    _log_error_with_stderr_fallback(
+                    # 観測性が完全に失われるのを防ぐ。utils.http_helpers と共通の DRY ヘルパー使用。
+                    log_error_with_stderr_fallback(
                         self.logger,
                         "github_client",
                         "etag_cache_update",

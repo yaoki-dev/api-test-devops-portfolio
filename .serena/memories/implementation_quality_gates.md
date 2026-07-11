@@ -123,15 +123,15 @@ git status
 **成功例**（※数値は実行時点の例）:
 ```
 ===== test session starts =====
-collected 401 items
+collected 1362 items
 
-tests/unit/test_api_client.py ...................... [ 15%]
-tests/unit/test_async_client.py .................... [ 30%]
-tests/integration/test_api_integration.py .......... [ 45%]
+tests/unit/test_jsonplaceholder_client_async.py ..... [ 15%]
+tests/unit/test_jsonplaceholder_client_sync.py ...... [ 30%]
+tests/integration/test_jsonplaceholder_posts.py ..... [ 45%]
 ...
-===== 401 passed in 12.34s =====
+===== 1362 passed in 9.81s =====
 
-Coverage: 83% (target: 85%) ✅
+Coverage: 97.34% (target: 85%) ✅
 
 ruff check: 0 errors ✅
 mypy: Success: no issues found ✅
