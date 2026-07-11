@@ -303,8 +303,10 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
                 posts_task = tg.create_task(self.get_posts(user_id=user_id))
                 todos_task = tg.create_task(self.get_todos(user_id=user_id))
                 albums_task = tg.create_task(self.get_albums(user_id=user_id))
-        except* APIClientError as eg:
+        except* (APIClientError, ValueError) as eg:
             # 契約維持: ExceptionGroup ではなく最初の個別 APIClientError を送出。
+            # ValueError は validate_optional_int（user_id < 1）由来 — 兄弟メソッド
+            # get_posts/get_todos/get_albums の素の ValueError 契約と揃える。
             # （ASYNC_FATAL_EXCEPTIONS はここで捕捉されず ExceptionGroup として伝播）
             raise eg.exceptions[0] from None
 
