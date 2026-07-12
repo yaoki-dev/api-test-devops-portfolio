@@ -52,9 +52,9 @@ def test_redact_body_preview_handles_special_chars() -> None:
 
 def test_redact_body_preview_never_returns_original_body() -> None:
     """元のボディ内容が結果に含まれない（PII 漏洩防止）。"""
-    secret = "ghp_secret_token_12345"  # noqa: S105 — test fixture, not a real secret
-    result = redact_body_preview(secret)
-    assert "ghp_secret" not in result
+    external_message = "ghp_external_message_token_12345"  # noqa: S105 — test fixture, not a real external_message
+    result = redact_body_preview(external_message)
+    assert "ghp_external_message" not in result
 
 
 # =============================================================================
@@ -183,12 +183,37 @@ def test_handle_403_raises_github_api_error_when_remaining_positive() -> None:
     assert "Access forbidden" in str(exc_info.value)
 
 
+def test_handle_403_redacts_external_message() -> None:
+    """403 response message is never exposed through exceptions or logs."""
+    external_message = "token=ghp_sensitive private-repo=user/restricted"
+    response = httpx.Response(
+        403,
+        json={"message": external_message},
+        request=httpx.Request("GET", "https://api.github.com/test"),
+    )
+    logger = MagicMock()
+
+    with pytest.raises(GitHubAPIError) as exc_info:
+        _handle_403_response(
+            response=response,
+            rate_remaining=100,
+            logger=logger,
+        )
+
+    assert str(exc_info.value) == "Access forbidden"
+    assert external_message not in str(exc_info.value)
+    logger.warning.assert_called_once_with(
+        "github_403_forbidden",
+        message_preview=redact_body_preview(external_message),
+    )
+    assert external_message not in repr(logger.warning.call_args)
+
+
 # =============================================================================
 # _handle_5xx_response — 5xx リトライ制御（非同期）
 # =============================================================================
 
 
-@pytest.mark.asyncio
 async def test_handle_5xx_sleeps_unless_final_attempt() -> None:
     """最終試行でなければログ出力し sleep する。"""
     response = _make_response(503)
@@ -208,7 +233,6 @@ async def test_handle_5xx_sleeps_unless_final_attempt() -> None:
     mock_sleep.assert_awaited_once()
 
 
-@pytest.mark.asyncio
 async def test_handle_5xx_raises_github_server_error_on_final_attempt() -> None:
     """最終試行では GitHubServerError を送出し sleep しない。"""
     response = _make_response(502)

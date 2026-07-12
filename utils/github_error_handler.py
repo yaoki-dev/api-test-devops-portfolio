@@ -138,9 +138,13 @@ def _handle_403_response(
             error_lineno=parse_err.lineno,
         )
 
-    raise GitHubAPIError(
-        f"Access forbidden: {error_message}" if error_message else "Access forbidden"
-    ) from None
+    if error_message:
+        logger.warning(
+            "github_403_forbidden",
+            message_preview=redact_body_preview(error_message),
+        )
+
+    raise GitHubAPIError("Access forbidden") from None
 
 
 async def _handle_5xx_response(

@@ -1174,11 +1174,11 @@ async def test_httpx_status_error_403_auth_error_with_message() -> None:
     """httpx.HTTPStatusError（403・JSONメッセージ付き）防御的コードパスの検証
 
     防御的パス: Rate Limitヘッダーなし・JSONボディ付き403をhttpx.HTTPStatusErrorとして受信した場合、
-    _handle_403_response() を経由してGitHubAPIError（Access forbidden: {msg}）を発生させる。
+    _handle_403_response() を経由して固定文言のGitHubAPIErrorを発生させる。
 
     検証項目:
     - httpx.HTTPStatusError(403・JSONメッセージ付き)がGitHubAPIErrorに変換されること
-    - "Access forbidden: {message}"形式のメッセージが含まれること
+    - 外部APIのmessageを含まない固定文言であること
     - リクエストが1回のみ実行されること
     """
     request = httpx.Request("GET", f"{GITHUB_API_BASE_URL}/users/octocat")
@@ -1193,8 +1193,10 @@ async def test_httpx_status_error_403_auth_error_with_message() -> None:
     route.side_effect = [error_403]
 
     async with AsyncGitHubClient() as client:
-        with pytest.raises(GitHubAPIError, match="Access forbidden: Resource not accessible"):
+        with pytest.raises(GitHubAPIError, match="^Access forbidden$") as exc_info:
             await client.get_user("octocat")
+
+    assert "Resource not accessible" not in str(exc_info.value)
 
     assert route.call_count == 1
 
@@ -1638,7 +1640,7 @@ def test_repo_validation_invalid(repo: str) -> None:
             "0",
             {"message": "Blocked"},
             GitHubAPIError,
-            "Blocked",
+            "^Access forbidden$",
             id="non_rate_limit_with_message",
         ),
         pytest.param(
@@ -1677,7 +1679,7 @@ def test_handle_403_response(
     """_handle_403_response の5パステスト（D-07）
 
     - rate_limit_exceeded: remaining=0 → RateLimitError
-    - non_rate_limit_with_message: remaining=50 + JSON message → GitHubAPIError(message)
+    - non_rate_limit_with_message: remaining=50 + JSON message → GitHubAPIError（固定文言）
     - non_rate_limit_no_json: remaining=50 + 非JSON → GitHubAPIError
     - invalid_header_fallback: remaining=invalid → フォールバック(-1) → GitHubAPIError
     - non_str_message_field: remaining=50 + JSON message(非str) → GitHubAPIError
@@ -2190,7 +2192,7 @@ def test_handle_403_response_no_json_log() -> None:
 
 
 def test_handle_403_response_truncates_message_to_200_chars() -> None:
-    """403 JSON message は 200 文字で切り詰められる"""
+    """403 JSON message はログ指紋の生成前に 200 文字へ切り詰められる。"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
     long_message = "z" * 201
     response = httpx.Response(
@@ -2203,12 +2205,15 @@ def test_handle_403_response_truncates_message_to_200_chars() -> None:
         content=json.dumps({"message": long_message}).encode(),
     )
 
-    with pytest.raises(GitHubAPIError, match=f"Access forbidden: {'z' * 200}"):
-        client._handle_403_response(response)
+    with patch.object(client, "logger") as mock_logger:
+        with pytest.raises(GitHubAPIError, match="^Access forbidden$"):
+            client._handle_403_response(response)
+
+    assert mock_logger.warning.call_args.kwargs["message_preview"] == redact_body_preview("z" * 200)
 
 
 def test_handle_403_response_no_truncation_at_boundary() -> None:
-    """403 JSON messageが200文字ちょうどの場合は切り詰めない"""
+    """403 JSON messageが200文字ちょうどなら全体からログ指紋を生成する。"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
     exact_message = "z" * 200
     response = httpx.Response(
@@ -2221,8 +2226,13 @@ def test_handle_403_response_no_truncation_at_boundary() -> None:
         content=json.dumps({"message": exact_message}).encode(),
     )
 
-    with pytest.raises(GitHubAPIError, match=f"Access forbidden: {exact_message}"):
-        client._handle_403_response(response)
+    with patch.object(client, "logger") as mock_logger:
+        with pytest.raises(GitHubAPIError, match="^Access forbidden$"):
+            client._handle_403_response(response)
+
+    assert mock_logger.warning.call_args.kwargs["message_preview"] == redact_body_preview(
+        exact_message
+    )
 
 
 def test_parse_json_response_valid_json() -> None:

@@ -214,7 +214,6 @@ def test_check_rate_limit_warning_uses_default_when_reset_header_missing() -> No
 # =============================================================================
 
 
-@pytest.mark.asyncio
 async def test_log_and_sleep_for_retry_sleeps_unless_final_attempt() -> None:
     """最終試行でなければ警告をログ出力し sleep する。"""
     error = httpx.TimeoutException("timeout")
@@ -236,7 +235,6 @@ async def test_log_and_sleep_for_retry_sleeps_unless_final_attempt() -> None:
     mock_sleep.assert_awaited_once()
 
 
-@pytest.mark.asyncio
 async def test_log_and_sleep_for_retry_does_not_sleep_on_final_attempt() -> None:
     """最終試行では sleep せず、error をログ出力する。"""
     error = httpx.NetworkError("connection refused")
@@ -258,23 +256,24 @@ async def test_log_and_sleep_for_retry_does_not_sleep_on_final_attempt() -> None
     mock_sleep.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_log_and_sleep_for_retry_includes_event_and_error_context() -> None:
     """ログ出力に event 名と error_context が含まれる。"""
     error = httpx.RemoteProtocolError("protocol error")
     logger = MagicMock()
 
-    await _log_and_sleep_for_retry(
-        attempt=0,
-        max_retries=3,
-        method="GET",
-        endpoint="/users",
-        error=error,
-        logger=logger,
-        event="github_retry_remote",
-        error_context="remote_protocol_error",
-    )
+    with patch("utils.github_rate_limit.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        await _log_and_sleep_for_retry(
+            attempt=0,
+            max_retries=3,
+            method="GET",
+            endpoint="/users",
+            error=error,
+            logger=logger,
+            event="github_retry_remote",
+            error_context="remote_protocol_error",
+        )
 
+    mock_sleep.assert_awaited_once()
     call_args = logger.warning.call_args
     assert call_args.args[0] == "github_retry_remote"
     assert call_args.kwargs["error_context"] == "remote_protocol_error"
