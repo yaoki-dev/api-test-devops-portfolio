@@ -9,7 +9,8 @@ Note:
 
 import pytest
 
-from utils.github_client import AsyncGitHubClient, NotFoundError
+from utils.github_client import AsyncGitHubClient
+from utils.github_error_handler import NotFoundError
 
 pytestmark = [pytest.mark.external, pytest.mark.integration]
 

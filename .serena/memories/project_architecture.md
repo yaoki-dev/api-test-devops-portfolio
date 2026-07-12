@@ -24,7 +24,9 @@
 | utils/exceptions.py | 50 | API exception hierarchy |
 | utils/http_helpers.py | 340 | Error handling, config, validation |
 | utils/response_parsing.py | 120 | JSON parse + Pydantic model transform |
-| utils/github_client.py | 395 | GitHub API integration + input validation |
+| utils/github_client.py | 913 | GitHub API facade (AsyncGitHubClient) + input validation |
+| utils/github_error_handler.py | 254 | GitHub exception hierarchy + 403/5xx/JSON error handlers (PII-safe) |
+| utils/github_rate_limit.py | 92 | GitHub rate-limit helpers (RATE_LIMIT_WARNING_THRESHOLD) |
 | utils/logger.py | 152 | structlog統合 + Sentry連携 |
 | utils/sentry_init.py | 184 | Sentry SDK初期化 + 機密データスクラブ |
 | config/settings.py | 447 | Type-safe Pydantic Settings |

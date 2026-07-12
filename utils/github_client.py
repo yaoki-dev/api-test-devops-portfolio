@@ -1,21 +1,47 @@
 """GitHub Async APIクライアント"""
 
-import asyncio
-import hashlib
 import itertools
-import json
 import re
-from datetime import UTC, datetime
 from types import TracebackType
-from typing import Any, NoReturn, Self, cast
+from typing import Any, NoReturn, Self
 from urllib.parse import quote, urlencode
 
 import httpx
 
-from utils.exceptions import ASYNC_FATAL_EXCEPTIONS, APIClientError
+from utils.exceptions import ASYNC_FATAL_EXCEPTIONS
+from utils.github_error_handler import (
+    GitHubAPIError,
+    GitHubServerError,
+    NotFoundError,
+    RateLimitError,
+)
+from utils.github_error_handler import (
+    _handle_5xx_response as handle_5xx_response,
+)
+from utils.github_error_handler import (
+    _handle_403_response as handle_403_response,
+)
+from utils.github_error_handler import (
+    _handle_http_status_error as handle_http_status_error,
+)
+from utils.github_error_handler import (
+    _parse_json_response as parse_json_response,
+)
+from utils.github_rate_limit import (
+    _RATE_LIMIT_FALLBACK_REMAINING,
+    _RATE_LIMIT_RESET_FALLBACK,
+)
+from utils.github_rate_limit import (
+    _check_rate_limit_warning as check_rate_limit_warning,
+)
+from utils.github_rate_limit import (
+    _log_and_sleep_for_retry as log_and_sleep_for_retry,
+)
+from utils.github_rate_limit import (
+    _parse_rate_limit_header as parse_rate_limit_header,
+)
 from utils.http_helpers import log_error_with_stderr_fallback
 from utils.logger import get_logger
-from utils.retry import exponential_backoff_with_jitter
 
 # モジュールレベル logger: ``@staticmethod`` (例: ``_cache_key``) など
 # ``self.logger`` を参照できない経路で構造化ログを出力するために使用する
@@ -71,96 +97,8 @@ def validate_github_repo(repo: str) -> None:
         raise ValueError(f"Invalid GitHub repository name: '{repo}'")
 
 
-# =============================================================================
-# Rate Limit定数（フォールバック値・閾値）
-# =============================================================================
-_RATE_LIMIT_FALLBACK_REMAINING = 999  # 監視パス: ヘッダー不正値時、残量十分とみなす
-_RATE_LIMIT_WARNING_THRESHOLD = 10  # 残量10未満で警告ログ出力
-_RATE_LIMIT_FORBIDDEN_FALLBACK = -1  # 403判定パス: 不正値時はRate Limit超過と判定しない
-_RATE_LIMIT_RESET_FALLBACK = 0  # リセット時刻不明時のフォールバック
-_MAX_403_ERROR_MESSAGE_CHARS = 200  # 403 JSON message の上限文字数: ログ肥大・漏洩防止
-# HTTPStatusError body_preview の上限バイト数: ログ肥大・漏洩防止
-_MAX_HTTP_ERROR_BODY_PREVIEW_BYTES = 200
 # cache_invariant_violation logger.error 出力時のキーリスト上限件数 (PII漏洩防止)
 _MAX_CACHE_INVARIANT_LOG_KEYS = 5
-
-
-# =============================================================================
-# 例外クラス
-# =============================================================================
-
-
-def _redact_body_preview(body_preview: str) -> str:
-    """HTTP error response body preview をリダクション
-
-    エラー応答がトークン、API キー、private repository 名を含む場合に
-    stdout/debug logs へ機密情報が漏れるのを防止する。
-    内容を完全にマスクし、ハッシュベースの指紋を保持して debug に利用。
-
-    Args:
-        body_preview: デコード済みの response body
-            （先頭 _MAX_HTTP_ERROR_BODY_PREVIEW_BYTES バイトで切り詰め済み）
-
-    Returns:
-        リダクション済み文字列 (形式: "[redacted:SHA256_16chars]")
-    """
-
-    body_hash = hashlib.sha256(body_preview.encode("utf-8", errors="replace")).hexdigest()[:16]
-    return f"[redacted:{body_hash}]"
-
-
-class GitHubAPIError(APIClientError):
-    """GitHub API基底例外（APIClientErrorを継承し統一的なエラーハンドリングを実現）"""
-
-
-class _SanitizedJSONDecodeError(Exception):
-    """レスポンスbodyを保持しない JSONDecodeError cause。
-
-    ``msg`` は ``json.JSONDecodeError.msg``（"Expecting value" /
-    "Unterminated string starting at" 等のパーサ診断文字列）を保持する。
-    これらは静的なパーサメッセージで PII（レスポンス body 由来データ）を
-    含まないため、破損 JSON の種別識別に利用できる（PR#347 SF-1）。
-    """
-
-    def __init__(self, error_type: str, msg: str, pos: int, lineno: int, colno: int) -> None:
-        self.error_type = error_type
-        self.msg = msg
-        self.pos = pos
-        self.lineno = lineno
-        self.colno = colno
-        super().__init__(f"{error_type}: {msg} pos={pos}, lineno={lineno}, colno={colno}")
-
-    def __reduce__(
-        self,
-    ) -> tuple[type[_SanitizedJSONDecodeError], tuple[str, str, int, int, int]]:
-        # pytest-xdist の worker→controller 例外転送や Sentry SDK のシリアライズで
-        # pickle される。非標準 __init__ シグネチャ（5 引数）は Exception 既定の
-        # __reduce__（args=単一メッセージ文字列で復元）では TypeError になるため、
-        # 全フィールドを渡す __reduce__ を明示する（PR#347 Q-2）。
-        return (self.__class__, (self.error_type, self.msg, self.pos, self.lineno, self.colno))
-
-
-class RateLimitError(GitHubAPIError):
-    """Rate Limit超過エラー（403/429）"""
-
-    def __init__(self, reset_time: int) -> None:
-        self.reset_time = reset_time
-        if reset_time > 0:
-            try:
-                reset_str = datetime.fromtimestamp(reset_time, tz=UTC).isoformat()
-            except (OverflowError, OSError):  # fmt: skip
-                reset_str = f"unix:{reset_time}"
-        else:
-            reset_str = "unknown"
-        super().__init__(f"Rate limit exceeded. Reset at {reset_str}")
-
-
-class NotFoundError(GitHubAPIError):
-    """リソースが見つからない（404 Not Found）"""
-
-
-class GitHubServerError(GitHubAPIError):
-    """GitHub側のサーバーエラー（5xx）"""
 
 
 # =============================================================================
@@ -225,41 +163,16 @@ class AsyncGitHubClient:
         method: str,
         attempt: int,
     ) -> None:
-        """Retry 対象例外をログし、次の試行前に sleep する。
-
-        最終試行（attempt == max_retries - 1）では sleep を行わず error ログを出力して返る。
-        例外の raise は呼び出し元の責務。
-
-        Args:
-            event: structlog に渡すイベント名（例："request_timeout"）
-            error_context: ログの error_context フィールド値（例："timeout"）
-            error: キャッチした例外（TimeoutException、NetworkError、RemoteProtocolError）。
-                   LocalProtocolError はクライアント側 protocol violation のため retry 対象外。
-            endpoint: リクエスト先エンドポイント（ログ用）
-            method: HTTP メソッド（ログ用）
-            attempt: 現在の試行インデックス（0-based）
-        """
-        self.logger.warning(
-            event,
+        """Delegate retry logging and delay handling to the rate-limit module."""
+        await log_and_sleep_for_retry(
+            event=event,
+            error_context=error_context,
+            error=error,
             endpoint=endpoint,
             method=method,
-            error_type=type(error).__qualname__,
-            error_module=type(error).__module__,
-            error_context=error_context,
-        )
-        if attempt < self.max_retries - 1:
-            delay = exponential_backoff_with_jitter(attempt, base_delay=2.0)
-            await asyncio.sleep(delay)
-            return
-        self.logger.error(
-            "github_retry_failed",
-            endpoint=endpoint,
-            method=method,
-            error_type=type(error).__qualname__,
-            error_module=type(error).__module__,
-            error_context=error_context,
+            attempt=attempt,
             max_retries=self.max_retries,
-            status_code=None,  # timeout/network error はステータスコードなし
+            logger=self.logger,
         )
 
     async def __aenter__(self) -> Self:
@@ -509,32 +422,14 @@ class AsyncGitHubClient:
             raise GitHubAPIError(f"Expected dict response, got {type(result).__name__}")
         return result
 
-    def _parse_rate_limit_header(self, headers: httpx.Headers, name: str, default: int) -> int:
-        """Rate Limitヘッダーを安全にパースする。
-
-        Args:
-            headers: HTTPレスポンスヘッダー
-            name: ヘッダー名（例: "X-RateLimit-Remaining"）
-            default: パース失敗時のフォールバック値
-
-        Returns:
-            パースされた整数値。ヘッダー未設定またはパース失敗時は default を返す。
-
-        Note:
-            ValueErrorをキャッチし、warningログを出力してフォールバック値を返す。
-        """
-        raw = headers.get(name)
-        if raw is None:
-            return default
-        try:
-            return int(raw)
-        except ValueError:
-            self.logger.warning(
-                "invalid_rate_limit_header",
-                header=name,
-                value=repr(raw)[:100],
-            )
-            return default
+    def _parse_rate_limit_header(
+        self,
+        headers: httpx.Headers,
+        name: str,
+        default: int,
+    ) -> int:
+        """Delegate rate-limit header parsing to the rate-limit module."""
+        return parse_rate_limit_header(headers, name, default, logger=self.logger)
 
     def _prepare_headers(self, cache_key: str) -> dict[str, str]:
         """ETagキャッシュが存在する場合に If-None-Match ヘッダーを含む dict を返す。
@@ -551,36 +446,8 @@ class AsyncGitHubClient:
         response_headers: httpx.Headers,
         remaining: int,
     ) -> int | None:
-        """RateLimit残量が閾値未満の場合に警告ログを出力する。
-
-        Args:
-            response_headers: HTTPレスポンスヘッダー（X-RateLimit-Reset を参照）
-            remaining: 残りAPIコール数
-
-        Returns:
-            remaining が閾値未満の場合は X-RateLimit-Reset のエポック秒（int）を返す。
-            閾値以上の場合は None を返す。
-            返却値は呼び出し元で Rate Limit エラー処理用 reset_time としても使用される。
-        """
-        if remaining < _RATE_LIMIT_WARNING_THRESHOLD:
-            # 戻り値 >= 1: 有効な Unix タイムスタンプ（rate limit warning 発生時）
-            reset_time = self._parse_rate_limit_header(
-                response_headers, "X-RateLimit-Reset", _RATE_LIMIT_RESET_FALLBACK
-            )
-            # 異常に大きい reset_time では OverflowError/OSError が発生する場合がある。
-            # RateLimitError.__init__（L127-130）と同じパターンで保護し、
-            # 警告ログの継続出力を保証する。
-            try:
-                reset_str = datetime.fromtimestamp(reset_time, tz=UTC).isoformat()
-            except (OverflowError, OSError):  # fmt: skip
-                reset_str = f"unix:{reset_time}"
-            self.logger.warning(
-                "rate_limit_low",
-                remaining=remaining,
-                reset_time=reset_str,
-            )
-            return reset_time
-        return None
+        """Delegate low-quota detection to the rate-limit module."""
+        return check_rate_limit_warning(response_headers, remaining, logger=self.logger)
 
     def _handle_304_response(self, cache_key: str) -> dict[str, Any] | list[dict[str, Any]]:
         """304 Not Modified: キャッシュデータを返却する。キャッシュミス時はエラー。"""
@@ -607,45 +474,13 @@ class AsyncGitHubClient:
         rate_remaining: int | None = None,
         reset_time: int | None = None,
     ) -> NoReturn:
-        """403エラー処理: Rate Limit超過 vs その他の403を判別して raise する。"""
-        # フォールバック -1 = 不正値時はRate Limit超過と判定せずGitHubAPIErrorへ
-        if rate_remaining is None:
-            rate_remaining = self._parse_rate_limit_header(
-                response.headers, "X-RateLimit-Remaining", _RATE_LIMIT_FORBIDDEN_FALLBACK
-            )
-        if rate_remaining == 0:
-            # Rate Limit超過確定
-            if reset_time is None:
-                reset_time = self._parse_rate_limit_header(
-                    response.headers, "X-RateLimit-Reset", _RATE_LIMIT_RESET_FALLBACK
-                )
-            raise RateLimitError(reset_time) from None
-        # その他の403エラー（IPブロック、アクセス権限不足等）
-        error_message = ""
-        try:
-            parsed = response.json()
-            if isinstance(parsed, dict):
-                raw_message = parsed.get("message", "")
-                if isinstance(raw_message, str):
-                    error_message = raw_message[:_MAX_403_ERROR_MESSAGE_CHARS]
-        except json.JSONDecodeError as parse_err:
-            # JSONパース失敗は想定内（GitHub APIが非JSON形式で403を返す場合がある）
-            # PII漏洩防止: parse_err.doc はレスポンスbody全体を保持するため、
-            # ログのみ記録し active exception context の外で raise して __context__ を None に保つ。
-            self.logger.warning(
-                "failed_to_parse_403_message",
-                error_type=type(parse_err).__qualname__,
-                error_module=type(parse_err).__module__,
-                error_pos=parse_err.pos,
-                error_lineno=parse_err.lineno,
-            )
-
-        # JSONDecodeError.doc はレスポンスbody全体を保持する。
-        # except 外で raise して __context__ を None に保つ（_parse_json_response と同方針）。
-        # JSONDecodeError パス（error_message=""）も正常パスも同一の raise で処理。
-        raise GitHubAPIError(
-            f"Access forbidden: {error_message}" if error_message else "Access forbidden"
-        ) from None
+        """Delegate 403 classification to the error-handler module."""
+        handle_403_response(
+            response,
+            logger=self.logger,
+            rate_remaining=rate_remaining,
+            reset_time=reset_time,
+        )
 
     async def _handle_5xx_response(
         self,
@@ -654,73 +489,23 @@ class AsyncGitHubClient:
         endpoint: str,
         method: str,
     ) -> None:
-        """5xxエラーのリトライ制御。最終試行なら raise、継続なら return する。
-
-        リトライ継続時は return し、呼び出し元が continue する。
-
-        Raises:
-            GitHubServerError: リトライ上限到達
-        """
-        if attempt < self.max_retries - 1:
-            delay = exponential_backoff_with_jitter(attempt, base_delay=2.0)
-            self.logger.warning(
-                "retrying_server_error",
-                attempt=attempt + 1,
-                max_retries=self.max_retries,
-                delay=delay,
-                status_code=response.status_code,
-                endpoint=endpoint,
-                method=method,
-            )
-            await asyncio.sleep(delay)
-            return
-        self.logger.error(
-            "github_retry_failed",
-            endpoint=endpoint,
-            method=method,
-            error_type=f"HTTP_{response.status_code}",
-            error_module="httpx",
-            error_context=f"{method} {endpoint}",
+        """Delegate 5xx retry handling to the error-handler module."""
+        await handle_5xx_response(
+            response,
+            attempt,
+            endpoint,
+            method,
             max_retries=self.max_retries,
-            status_code=response.status_code,
+            logger=self.logger,
         )
-        raise GitHubServerError(
-            f"Server error: {response.status_code} after {self.max_retries} attempts",
-        ) from None
 
     def _parse_json_response(
         self,
         response: httpx.Response,
         endpoint: str,
     ) -> dict[str, Any] | list[dict[str, Any]]:
-        """JSONレスポンスをパースする。破損JSON時はGitHubAPIErrorを発生。"""
-        _sanitized_cause: _SanitizedJSONDecodeError | None = None
-        try:
-            return cast(
-                "dict[str, Any] | list[dict[str, Any]]",
-                response.json(),
-            )
-        except json.JSONDecodeError as e:
-            self.logger.error(
-                "json_decode_error",
-                endpoint=endpoint,
-                error_type=type(e).__qualname__,
-                error_module=type(e).__module__,
-                error_pos=e.pos,
-                error_lineno=e.lineno,
-            )
-            # JSONDecodeError.doc はレスポンスbody全体を保持する。
-            # doc を除外し、型情報と位置情報のみを保持する sanitized cause を作成。
-            # except 内で raise すると __context__ に元例外が残存して露出するため、
-            # active exception context の外で raise して __context__ を None に保つ。
-            _sanitized_cause = _SanitizedJSONDecodeError(
-                f"{type(e).__module__}.{type(e).__qualname__}",
-                e.msg,
-                e.pos,
-                e.lineno,
-                e.colno,
-            )
-        raise GitHubAPIError("Invalid JSON response") from _sanitized_cause
+        """Delegate PII-safe JSON parsing to the error-handler module."""
+        return parse_json_response(response, endpoint, logger=self.logger)
 
     def _handle_http_status_error(
         self,
@@ -728,74 +513,8 @@ class AsyncGitHubClient:
         endpoint: str,
         method: str,
     ) -> NoReturn:
-        """HTTPエラーレスポンスを適切な例外に変換して raise する。
-
-        404/429/403 は専用例外 (NotFoundError/RateLimitError/GitHubAPIError) に変換し、
-        それ以外の 4xx/5xx は GitHubAPIError に変換する。
-
-        通常フローでは 404/429/403/5xx は _request の main path で先行処理済みのため、
-        本メソッドは主に httpx.HTTPStatusError defensive path (except 外) から呼ばれる。
-        401/400/405 等の other 4xx はこのメソッドのみで処理される。
-
-        設計上の制約: `from None` を使用し __cause__ を None に設定する。
-        理由: 全 PII 回避パス（timeout/unexpected/NotFound/RateLimit/JSONDecode）と統一し、
-        呼び出し元が __cause__ を参照する際の分岐を不要とするため。
-        診断情報は構造化ログの endpoint フィールドで取得可能なため __cause__ への記録は不要。
-        コーディング規約 Section 5「from e でチェーン維持」の意図的例外（PII漏洩防止優先）。
-
-        response/endpoint/method を直接受け取る理由: 呼び出し元が except 外で呼ぶことで
-        __context__ に PII含有オブジェクトが残存しないよう設計（PII漏洩防止）。
-        """
-        status_code = response.status_code
-
-        # 404: NotFoundError に変換（通常パスと等価）
-        if status_code == 404:
-            raise NotFoundError(f"Resource not found: {endpoint}") from None
-
-        # 429: RateLimitError に変換（通常パスと等価）
-        if status_code == 429:
-            reset_time = self._parse_rate_limit_header(
-                response.headers, "X-RateLimit-Reset", _RATE_LIMIT_RESET_FALLBACK
-            )
-            raise RateLimitError(reset_time) from None
-
-        # 403: Rate Limit超過 vs その他 403 を詳細分析して raise（通常パスと等価）
-        if status_code == 403:
-            remaining = self._parse_rate_limit_header(
-                response.headers, "X-RateLimit-Remaining", _RATE_LIMIT_FORBIDDEN_FALLBACK
-            )
-            reset_time_403 = (
-                self._parse_rate_limit_header(
-                    response.headers, "X-RateLimit-Reset", _RATE_LIMIT_RESET_FALLBACK
-                )
-                if remaining == 0
-                else None
-            )
-            # _handle_403_response は NoReturn（全経路で必ず raise）のため後続は到達不能。
-            # 防御 assert は置かず NoReturn 型契約に委ねる（mypy が非 raise 経路を静的に
-            # 検出するため契約違反は型検査で捕捉される）。同関数を呼ぶ警告経路と防御
-            # パターンを統一する（PR#347 #2-7: 旧 `raise AssertionError("unreachable")` 削除）。
-            self._handle_403_response(response, rate_remaining=remaining, reset_time=reset_time_403)
-
-        # ログレベル別出力先
-        # warning(401) → LOG__LEVEL=ERROR未満の全設定でstdoutに出力（デフォルトINFO含む）
-        # debug(404等) → LOG__LEVEL=DEBUGの場合のみstdoutに出力
-        # いずれもSentry非送信: make_filtering_bound_logger によりDEBUG/WARNING は
-        #   Sentry送信前にフィルタ済み（参照: utils/logger.py L160, _sentry_processor L52-54）
-        body_preview_raw = response.content[:_MAX_HTTP_ERROR_BODY_PREVIEW_BYTES].decode(
-            response.encoding or "utf-8",
-            errors="replace",
-        )
-        # 401 (Unauthorized) は認証エラーのため warning、その他の想定内エラーは debug に抑制
-        log_fn = self.logger.warning if status_code == 401 else self.logger.debug
-        log_fn(
-            "http_status_error",
-            status_code=status_code,
-            endpoint=endpoint,
-            method=method,
-            body_preview=_redact_body_preview(body_preview_raw),
-        )
-        raise GitHubAPIError(f"HTTP {status_code} error") from None
+        """Delegate HTTP status classification to the error-handler module."""
+        handle_http_status_error(response, endpoint, method, logger=self.logger)
 
     def _update_etag_cache(
         self,
@@ -1053,8 +772,8 @@ class AsyncGitHubClient:
 
                 if response.status_code == 403:
                     # 注: warning_reset_time は _check_rate_limit_warning が
-                    # remaining < _RATE_LIMIT_WARNING_THRESHOLD (=10) のときのみ
-                    # 非 None を返す (utils/github_client.py L75, L440-473)。
+                    # remaining < RATE_LIMIT_WARNING_THRESHOLD (=10) のときのみ
+                    # 非 None を返す (utils/github_rate_limit.py)。
                     # 閾値変更時はこの reset_time が常に None になり _handle_403_response
                     # 側の Retry-After ヘッダー fallback パスに倒れる挙動になる。
                     # debug-only ログのため動作影響は限定的だが、依存関係を明示する。
