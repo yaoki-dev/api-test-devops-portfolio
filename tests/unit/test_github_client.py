@@ -21,6 +21,7 @@ from utils.github_error_handler import (
     SanitizedJSONDecodeError,
     redact_body_preview,
 )
+from utils.github_etag_cache import _ETAG_PATTERN
 from utils.github_rate_limit import RATE_LIMIT_WARNING_THRESHOLD
 
 pytestmark = pytest.mark.unit
@@ -326,7 +327,7 @@ async def test_timeout_logging_no_pii_leak():
     - GitHubAPIError msgにもsensitive文字列が漏洩しない
     - __cause__ chain切断（from None）で Sentry/traceback walker 経由の PII 漏洩を防止
     """
-    sensitive_detail = "https://api.example.com/internal?token=SECRET_API_KEY_12345"
+    sensitive_detail = "https://api.example.com/internal?token=SECRET_API_KEY_12345"  # noqa: S105
     timeout_exception = httpx.ConnectTimeout(sensitive_detail)
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=timeout_exception)
 
@@ -360,7 +361,7 @@ async def test_timeout_logging_no_pii_leak():
 @respx.mock
 async def test_timeout_final_retry_logs_error() -> None:
     """最終タイムアウト失敗時に非PIIのERRORサマリログを出力する"""
-    timeout_exception = httpx.ConnectTimeout("https://example.com?token=secret")
+    timeout_exception = httpx.ConnectTimeout("https://example.com?token=secret")  # noqa: S105
     respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=timeout_exception)
 
     with patch(
@@ -523,7 +524,7 @@ async def test_network_and_protocol_error_logging_no_pii_leak(
     exception_class: type[Exception],
 ) -> None:
     """NetworkError/RemoteProtocolError例外メッセージがログフィールド値へ漏洩しないこと検証"""
-    sensitive_detail = "https://api.example.com/internal?token=SECRET_API_KEY_12345"
+    sensitive_detail = "https://api.example.com/internal?token=SECRET_API_KEY_12345"  # noqa: S105
     transport_exception = exception_class(sensitive_detail)
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=transport_exception)
 
@@ -559,7 +560,7 @@ async def test_network_and_protocol_error_logging_no_pii_leak(
 @respx.mock
 async def test_local_protocol_error_is_not_retried() -> None:
     """LocalProtocolErrorはクライアント側protocol violationのためretry対象外。"""
-    sensitive_detail = "https://api.example.com/internal?token=SECRET_API_KEY_12345"
+    sensitive_detail = "https://api.example.com/internal?token=SECRET_API_KEY_12345"  # noqa: S105
     local_protocol_error = httpx.LocalProtocolError(sensitive_detail)
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=local_protocol_error)
 
@@ -1992,7 +1993,7 @@ def test_enforce_cache_limit_evicts_multiple_entries_when_excess_gt_one() -> Non
         client._etag_cache[key] = f"etag-{index}"
         client._data_cache[key] = {"id": index}
 
-    with patch.object(client, "logger") as mock_logger:
+    with patch.object(client._cache, "logger") as mock_logger:
         client._enforce_cache_limit()
 
     assert list(client._etag_cache) == ["/entry-3", "/entry-4"]
@@ -2023,7 +2024,10 @@ def test_update_etag_cache_enforces_limit_before_insert_with_reserve() -> None:
         client._data_cache[f"/old-{index}"] = {"id": index}
 
     captured: dict[str, object] = {}
-    original_enforce = client._enforce_cache_limit
+    # GW2 抽出後は _update_etag_cache の実体が GitHubETagCache 内にあり、
+    # cache 内部の _enforce_cache_limit 呼び出しは facade wrapper を経由しないため、
+    # spy は所有者である client._cache 側にパッチする。
+    original_enforce = client._cache._enforce_cache_limit
 
     def spy(reserve: int = 0) -> None:
         captured["reserve"] = reserve
@@ -2035,7 +2039,7 @@ def test_update_etag_cache_enforces_limit_before_insert_with_reserve() -> None:
         headers={"ETag": '"new-etag"'},
         request=httpx.Request("GET", "https://api.github.com/new"),
     )
-    with patch.object(client, "_enforce_cache_limit", side_effect=spy):
+    with patch.object(client._cache, "_enforce_cache_limit", side_effect=spy):
         client._update_etag_cache("/new", response, {"id": 99})
 
     # 新規 1 件分を予約して挿入前に退避する
@@ -2059,7 +2063,7 @@ def test_enforce_cache_limit_invariant_violation_clears_both_caches() -> None:
     client._data_cache["/first"] = {"id": 1}
     client._data_cache["/orphan"] = {"id": 99}
 
-    with patch.object(client, "logger") as mock_logger:
+    with patch.object(client._cache, "logger") as mock_logger:
         client._enforce_cache_limit()
 
     # 両キャッシュclear確認
@@ -2086,7 +2090,7 @@ def test_enforce_cache_limit_strips_query_strings_from_invariant_logs() -> None:
     client._etag_cache["/repos/octocat/Hello-World?sort=updated"] = "etag-updated"
     client._data_cache["/repos/octocat/Hello-World?sort=created"] = {"id": 1}
 
-    with patch.object(client, "logger") as mock_logger:
+    with patch.object(client._cache, "logger") as mock_logger:
         client._enforce_cache_limit()
 
     assert client._etag_cache == {}
@@ -2117,7 +2121,7 @@ def test_enforce_cache_limit_detects_key_divergence_with_same_length() -> None:
     client._data_cache["/a"] = {"id": 1}
     client._data_cache["/c"] = {"id": 3}  # /b ではなく /c (divergence)
 
-    with patch.object(client, "logger") as mock_logger:
+    with patch.object(client._cache, "logger") as mock_logger:
         client._enforce_cache_limit()
 
     # 両キャッシュclear確認
@@ -2145,7 +2149,7 @@ def test_enforce_cache_limit_invariant_violation_truncated_flag_requires_over_li
         client._etag_cache[f"/etag-only-{index}"] = f"etag-{index}"
     client._data_cache["/data-only"] = {"id": 1}
 
-    with patch.object(client, "logger") as mock_logger:
+    with patch.object(client._cache, "logger") as mock_logger:
         client._enforce_cache_limit()
 
     mock_logger.error.assert_called_once()
@@ -2338,7 +2342,7 @@ def test_sanitized_jsondecodeerror_reduce_roundtrip_preserves_fields() -> None:
 def test_parse_json_response_unexpected_parse_error_propagates() -> None:
     """_parse_json_response: JSONDecodeError以外のパース例外は呼び出し元へ伝播"""
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
-    sensitive_detail = "https://api.example.com/internal?token=SECRET_API_KEY_12345"
+    sensitive_detail = "https://api.example.com/internal?token=SECRET_API_KEY_12345"  # noqa: S105
     response = Mock(spec=httpx.Response)
     response.json.side_effect = RuntimeError(sensitive_detail)
 
@@ -2389,7 +2393,7 @@ def test_update_etag_cache_clears_stale_cache_and_logs_endpoint(
     client._data_cache[cache_key] = {"id": 1}
     response = httpx.Response(200, content=b'{"id": 2}')
 
-    with patch.object(client, "logger") as mock_logger:
+    with patch.object(client._cache, "logger") as mock_logger:
         client._update_etag_cache(cache_key, response, {"id": 2})
         mock_logger.info.assert_called_once_with("etag_removed", endpoint=expected_logged_endpoint)
 
@@ -2410,12 +2414,108 @@ def test_update_etag_cache_invalid_etag_evicts_stale_cache() -> None:
     # 不正形式（前後のダブルクォートなし）の ETag を持つレスポンス
     response = httpx.Response(200, headers={"ETag": "bad-etag-no-quotes"}, content=b'{"id": 2}')
 
-    with patch.object(client, "logger") as mock_logger:
+    with patch.object(client._cache, "logger") as mock_logger:
         client._update_etag_cache(cache_key, response, {"id": 2})
         mock_logger.warning.assert_called_once()
         assert mock_logger.warning.call_args.args[0] == "invalid_etag_format"
 
     # stale キャッシュが破棄されていること（修正の核心）
+    assert cache_key not in client._etag_cache
+    assert cache_key not in client._data_cache
+
+
+@pytest.mark.parametrize(
+    "invalid_etag",
+    [
+        pytest.param('"a\tb"', id="htab"),
+        pytest.param('"a\x7fb"', id="del"),
+        pytest.param('"aĀb"', id="u0100"),
+        pytest.param("no-quotes", id="no_quotes"),
+        pytest.param('w/"abc"', id="lowercase_weak_prefix"),
+    ],
+)
+def test_etag_pattern_rejects_non_etagc_characters(invalid_etag: str) -> None:
+    """RFC 9110 etagc に含まれない文字（HTAB・DEL・U+0100等）を含むETagを拒否する
+
+    小文字 ``w/`` も拒否する（RFC 9110 §8.8.3: ``weak = %x57.2F`` は大文字 ``W/`` のみ）。
+
+    NOTE: backslash はRFC 9110 etagc（%x21 / %x23-7E / obs-text）に含まれるため
+    受理対象（test_etag_pattern_accepts_rfc9110_valid_etags 参照）。
+    """
+    assert _ETAG_PATTERN.match(invalid_etag) is None
+
+
+def test_update_etag_cache_invalid_etag_with_htab_rejected_end_to_end() -> None:
+    """HTABを含む不正ETagをレスポンスヘッダーで受信した場合、キャッシュされず警告ログが出る"""
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    response = httpx.Response(200, headers={"ETag": '"a\tb"'}, content=b'{"id": 1}')
+
+    with patch.object(client._cache, "logger") as mock_logger:
+        client._update_etag_cache("/repos/test", response, {"id": 1})
+        mock_logger.warning.assert_called_once()
+        assert mock_logger.warning.call_args.args[0] == "invalid_etag_format"
+
+    assert "/repos/test" not in client._etag_cache
+    assert "/repos/test" not in client._data_cache
+
+
+@pytest.mark.parametrize(
+    "valid_etag",
+    [
+        pytest.param('"abc123"', id="opaque_tag"),
+        pytest.param('W/"abc"', id="weak_tag"),
+        pytest.param('""', id="empty_opaque_tag"),
+        pytest.param('"a\xffb"', id="obs_text"),
+        pytest.param('"a\\b"', id="backslash_valid_per_rfc9110"),
+    ],
+)
+def test_etag_pattern_accepts_rfc9110_valid_etags(valid_etag: str) -> None:
+    """RFC 9110 etagc に適合するETag（obs-textやbackslashを含む）を受理する
+
+    backslash はRFC 9110 opaque-tag が quoted-pair を使わないため etagc の
+    範囲内（%x23-7E）として有効な文字である（quoted-string とは異なる仕様）。
+    """
+    assert _ETAG_PATTERN.match(valid_etag) is not None
+
+
+def test_update_etag_cache_invalid_etag_evicts_even_if_logger_raises() -> None:
+    """不正ETag受信時、logger.warningが例外を送出してもキャッシュ無効化は保証される
+
+    呼び出し元 github_client 側の _update_etag_cache 呼び出しは例外を抑制するため、
+    キャッシュ破棄(pop)がlogger呼び出しより先に実行されている必要がある。
+    """
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    cache_key = "/repos/octocat/hello"
+    client._etag_cache[cache_key] = '"stale-valid-etag"'
+    client._data_cache[cache_key] = {"id": 1}
+    response = httpx.Response(200, headers={"ETag": "bad-etag-no-quotes"}, content=b'{"id": 2}')
+
+    with patch.object(client._cache, "logger") as mock_logger:
+        mock_logger.warning.side_effect = RuntimeError("boom")
+        with pytest.raises(RuntimeError, match="boom"):
+            client._update_etag_cache(cache_key, response, {"id": 2})
+
+    assert cache_key not in client._etag_cache
+    assert cache_key not in client._data_cache
+
+
+def test_update_etag_cache_etag_removed_evicts_even_if_logger_raises() -> None:
+    """ETagヘッダー消失時、logger.infoが例外を送出してもキャッシュ無効化は保証される
+
+    2a（invalid_etag分岐）と同一方針: popをloggerより先に実行することで、
+    logger例外時もキャッシュ無効化を保証する。
+    """
+    client = AsyncGitHubClient(max_retries=MAX_RETRIES)
+    cache_key = "/repos/octocat/hello"
+    client._etag_cache[cache_key] = '"stale-valid-etag"'
+    client._data_cache[cache_key] = {"id": 1}
+    response = httpx.Response(200, content=b'{"id": 2}')
+
+    with patch.object(client._cache, "logger") as mock_logger:
+        mock_logger.info.side_effect = RuntimeError("boom")
+        with pytest.raises(RuntimeError, match="boom"):
+            client._update_etag_cache(cache_key, response, {"id": 2})
+
     assert cache_key not in client._etag_cache
     assert cache_key not in client._data_cache
 
@@ -2672,7 +2772,7 @@ def test_handle_http_status_error_cause_excludes_response_body() -> None:
     Sentry 等の例外チェーン解析ツールに露出しないことを保証する。
     """
     client = AsyncGitHubClient(max_retries=MAX_RETRIES)
-    sensitive_body = "token=SUPER_SECRET_API_KEY_12345"
+    sensitive_body = "token=SUPER_SECRET_API_KEY_12345"  # noqa: S105
     request = httpx.Request("GET", "https://api.github.com/repos/test")
     response = httpx.Response(422, request=request, text=sensitive_body)
 

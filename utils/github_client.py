@@ -1,10 +1,8 @@
 """GitHub Async APIクライアント"""
 
-import itertools
 import re
 from types import TracebackType
 from typing import Any, NoReturn, Self
-from urllib.parse import quote, urlencode
 
 import httpx
 
@@ -27,6 +25,7 @@ from utils.github_error_handler import (
 from utils.github_error_handler import (
     _parse_json_response as parse_json_response,
 )
+from utils.github_etag_cache import GitHubETagCache
 from utils.github_rate_limit import (
     _RATE_LIMIT_FALLBACK_REMAINING,
     _RATE_LIMIT_RESET_FALLBACK,
@@ -43,11 +42,6 @@ from utils.github_rate_limit import (
 from utils.http_helpers import log_error_with_stderr_fallback
 from utils.logger import get_logger
 
-# モジュールレベル logger: ``@staticmethod`` (例: ``_cache_key``) など
-# ``self.logger`` を参照できない経路で構造化ログを出力するために使用する
-# （structlog のため同名 logger を返し、インスタンス側 ``self.logger`` と一貫。PR#347 #2-6）。
-_module_logger = get_logger(__name__)
-
 # =============================================================================
 # 入力バリデーション（OWASP A03:2021 - Injection対策）
 # =============================================================================
@@ -56,8 +50,6 @@ _module_logger = get_logger(__name__)
 GITHUB_USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$")
 # GitHub repository名仕様: 1-100文字、英数字・ドット・ハイフン・アンダースコア
 GITHUB_REPO_PATTERN = re.compile(r"^[a-zA-Z0-9._-]{1,100}$")
-# ETag形式バリデーション（RFC 7232準拠: W/"..." または "..."）
-_ETAG_PATTERN: re.Pattern[str] = re.compile(r'^(?:W/)?"[^"\r\n\\]*"$')
 
 
 def validate_github_username(username: str) -> None:
@@ -95,10 +87,6 @@ def validate_github_repo(repo: str) -> None:
     """
     if not repo or repo in {".", ".."} or not GITHUB_REPO_PATTERN.match(repo):
         raise ValueError(f"Invalid GitHub repository name: '{repo}'")
-
-
-# cache_invariant_violation logger.error 出力時のキーリスト上限件数 (PII漏洩防止)
-_MAX_CACHE_INVARIANT_LOG_KEYS = 5
 
 
 # =============================================================================
@@ -141,17 +129,35 @@ class AsyncGitHubClient:
             max_cache_entries: ETag/dataキャッシュの最大エントリ数（デフォルト256）
 
         """
-        if max_cache_entries < 1:
-            raise ValueError("max_cache_entries must be >= 1")
         self.timeout = timeout
         self.max_retries = max_retries
         self.user_agent = user_agent
-        self.max_cache_entries = max_cache_entries
         self._client: httpx.AsyncClient | None = None
-        self._etag_cache: dict[str, str] = {}  # cache_key (endpoint+sorted query) -> ETag
-        # cache_key -> response data（304レスポンス時のキャッシュ返却用）
-        self._data_cache: dict[str, dict[str, Any] | list[dict[str, Any]]] = {}
         self.logger = get_logger(__name__)
+        # ETag/data キャッシュは GitHubETagCache が排他所有する（facade は保持と委譲のみ）。
+        # max_cache_entries の下限バリデーション（1 未満で ValueError）も cache 側で実施する。
+        self._cache = GitHubETagCache(max_cache_entries, logger=self.logger)
+
+    @property
+    def max_cache_entries(self) -> int:
+        """ETag/dataキャッシュの最大エントリ数（GitHubETagCache に委譲）。"""
+        return self._cache.max_cache_entries
+
+    @property
+    def _etag_cache(self) -> dict[str, str]:
+        """ETagキャッシュ実体への読み取り用参照（書込は GitHubETagCache に一元化）。
+
+        既存テストの白箱アクセス互換のための暫定アクセサ（GW4 mirror テスト移行後に削除予定）。
+        """
+        return self._cache._etag_cache
+
+    @property
+    def _data_cache(self) -> dict[str, dict[str, Any] | list[dict[str, Any]]]:
+        """データキャッシュ実体への読み取り用参照（書込は GitHubETagCache に一元化）。
+
+        既存テストの白箱アクセス互換のための暫定アクセサ（GW4 mirror テスト移行後に削除予定）。
+        """
+        return self._cache._data_cache
 
     async def _log_and_sleep_for_retry(
         self,
@@ -432,14 +438,8 @@ class AsyncGitHubClient:
         return parse_rate_limit_header(headers, name, default, logger=self.logger)
 
     def _prepare_headers(self, cache_key: str) -> dict[str, str]:
-        """ETagキャッシュが存在する場合に If-None-Match ヘッダーを含む dict を返す。
-
-        Conditional Requests対応。
-        """
-        headers: dict[str, str] = {}
-        if cache_key in self._etag_cache:
-            headers["If-None-Match"] = self._etag_cache[cache_key]
-        return headers
+        """Delegate If-None-Match header construction to the ETag cache."""
+        return self._cache._prepare_headers(cache_key)
 
     def _check_rate_limit_warning(
         self,
@@ -450,22 +450,8 @@ class AsyncGitHubClient:
         return check_rate_limit_warning(response_headers, remaining, logger=self.logger)
 
     def _handle_304_response(self, cache_key: str) -> dict[str, Any] | list[dict[str, Any]]:
-        """304 Not Modified: キャッシュデータを返却する。キャッシュミス時はエラー。"""
-        if cache_key in self._data_cache:
-            return self._data_cache[cache_key]
-        # キャッシュミス時（理論上発生しない: ETagあり=キャッシュあり）
-        # Fail-fast: キャッシュ不整合は実装バグの証拠
-        # endpoint_only: クエリパラメータを除去してデバッグ可能性を確保しつつ機密パラメータを非露出
-        endpoint_only = cache_key.split("?")[0]
-        self.logger.error(
-            "cache_miss_on_304",
-            endpoint=endpoint_only,
-            hint="ETag存在時のキャッシュミスは実装バグ",
-            etag=self._etag_cache.get(cache_key),
-        )
-        raise GitHubAPIError(
-            f"Cache inconsistency: 304 response without cached data for {endpoint_only}"
-        )
+        """Delegate 304 cached-data retrieval to the ETag cache."""
+        return self._cache._handle_304_response(cache_key)
 
     def _handle_403_response(
         self,
@@ -522,167 +508,17 @@ class AsyncGitHubClient:
         response: httpx.Response,
         result_json: dict[str, Any] | list[dict[str, Any]],
     ) -> None:
-        """ETagとデータキャッシュを同時更新する。
-
-        asyncio シングルスレッド環境のため競合は発生しない。
-
-        挿入順序（挿入前退避方式）:
-          1. 既存キーを both dict から削除して挿入順を更新する。
-          2. _enforce_cache_limit(reserve=1) で挿入前に退避し、新規 1 件分の余地を確保する。
-          3. data→ETag の順で保存する（挿入後も上限を超えない, PR#347 review #9）。
-
-        例外発生時は「dataあり/ETagなし」の一時状態になりうるが、ETagなしなら次回は
-        通常リクエスト（304非使用）となり安全に回復する。
-        「ETagあり/dataなし」はETagが最後に書き込まれるため物理的に発生しない。
-        """
-        if "ETag" in response.headers:
-            etag = response.headers["ETag"]
-            # ETag形式バリデーション（RFC 7232準拠: W/"..." または "..."）
-            if not _ETAG_PATTERN.match(etag):
-                self.logger.warning(
-                    "invalid_etag_format",
-                    endpoint=cache_key.split("?")[0],
-                    etag_prefix=etag[:20] if len(etag) > 20 else etag,
-                )
-                # 無効ETag受信時は既存キャッシュを破棄（次回リクエストで304再利用を防止）
-                self._etag_cache.pop(cache_key, None)
-                self._data_cache.pop(cache_key, None)
-                return
-            self._etag_cache.pop(cache_key, None)
-            self._data_cache.pop(cache_key, None)
-            # 挿入前に reserve=1 で退避し、挿入後もエントリ数が max_cache_entries を
-            # 超えないようにする。挿入後 enforce では瞬間的に max+1 件になるため、
-            # 新規エントリ 1 件分の余地を空けてから挿入する (PR#347 review #9)。
-            self._enforce_cache_limit(reserve=1)
-            self._data_cache[cache_key] = result_json
-            self._etag_cache[cache_key] = etag
-        else:
-            if cache_key in self._etag_cache or cache_key in self._data_cache:
-                self.logger.info("etag_removed", endpoint=cache_key.split("?")[0])
-            self._etag_cache.pop(cache_key, None)
-            self._data_cache.pop(cache_key, None)
+        """Delegate ETag/data cache updates to the ETag cache."""
+        self._cache._update_etag_cache(cache_key, response, result_json)
 
     @staticmethod
     def _cache_key(endpoint: str, params: dict[str, str | int] | None = None) -> str:
-        """エンドポイントとクエリパラメータからキャッシュキーを生成する。
-
-        params が None または空の場合は endpoint をそのまま返す。
-        params={} は httpx の仕様（空クエリ = クエリなし）に従い、
-        params=None と同一のキャッシュキーを生成する。
-        params がある場合は ``endpoint?key1=val1&key2=val2`` 形式で返す。
-        URLエンコードには ``quote_via=quote`` を使用する（スペースは ``%20``）。
-        パラメータはキーでソートされ決定論的なキーを生成する。
-
-        Args:
-            endpoint: APIエンドポイントパス（例: ``/users/octocat/repos``）。
-            params: クエリパラメータ辞書（None可）
-
-        Returns:
-            キャッシュキー文字列
-
-        """
-        if not params:
-            return endpoint
-        try:
-            sorted_params = sorted((k, str(v)) for k, v in params.items())
-            return f"{endpoint}?{urlencode(sorted_params, quote_via=quote)}"
-        except (TypeError, UnicodeEncodeError) as e:
-            # PR#347 review #4-[8]: 通常パスの try/except 外で実行されるため、
-            # 例外型のみ含む GitHubAPIError に変換して呼び出し元のリトライ/エラー
-            # ハンドリング体系に統合。params 値は PII 含有可能性があるため
-            # ``from None`` で例外チェーンを切断し、エラーメッセージに含めない。
-            # 観測可能性のため endpoint と例外型のみを構造化ログに記録する。
-            # params の値は記録しない（PII 非露出。PR#347 #2-6）。
-            _module_logger.warning(
-                "cache_key_build_failed",
-                endpoint=endpoint,
-                error_type=type(e).__name__,
-            )
-            raise GitHubAPIError(
-                f"cache_key build failed for endpoint={endpoint!r}: {type(e).__name__}"
-            ) from None
+        """Delegate cache-key construction to the ETag cache."""
+        return GitHubETagCache._cache_key(endpoint, params)
 
     def _enforce_cache_limit(self, reserve: int = 0) -> None:
-        """ETag/dataキャッシュを ``max_cache_entries - reserve`` 以下に保つ。
-
-        Args:
-            reserve: 直後に挿入する新規エントリ数の予約枠（デフォルト 0）。
-                ``_update_etag_cache`` は挿入前に ``reserve=1`` で呼び出すことで、
-                挿入後もエントリ数が ``max_cache_entries`` を超えない（瞬間的な
-                max+1 を防止, PR#347 review #9）。``max_cache_entries >= 1``
-                かつ ``reserve in (0, 1)`` のため退避目標は常に 0 以上。
-
-        _update_etag_cache は _etag_cache と _data_cache を常にペアで書き込むため、
-        _etag_cache のみを基準に古いエントリを削除すれば両キャッシュの整合性が保たれる。
-
-        Invariant 違反検出時は logger.error + 両キャッシュ clear で safe-fallback する。
-        ``assert`` 文は ``python -O`` モードで silent disable されるため production では使わない。
-
-        Invariant 判定は ``dict.keys()`` の集合等価比較 (defense-in-depth)。
-        ``len`` だけでは「同件数だがキー集合が異なる」状態 (例: 1 件抜けて 1 件余分) を
-        検出できないため、set-equality でキー差異も検出する。
-
-        Note: After clearing both caches (invariant violation), all subsequent requests will
-        hit the API without cache, potentially causing rate limit spikes in the short term.
-        """
-        # O(1) fast path before O(n) set comparison:
-        # サイズが異なれば invariant 違反確定
-        # （同件数だがキー集合が異なる場合は下記 set-equality で検出）。
-        invariant_violated = (
-            len(self._etag_cache) != len(self._data_cache)
-            or self._etag_cache.keys() != self._data_cache.keys()
-        )
-        if invariant_violated:
-            # PII漏洩防止 (PR#347 review #3-2): キーパスは GitHub API endpoint
-            # (例: /users/octocat, /repos/owner/name) を含み、SENSITIVE_KEYS の
-            # redact 対象外。logger.error → Sentry 送信時のログ肥大・PII露出を
-            # 抑えるため _MAX_CACHE_INVARIANT_LOG_KEYS 件に制限する。
-            # query string は split("?")[0] で除去済み。
-            etag_only_cache_keys = self._etag_cache.keys() - self._data_cache.keys()
-            data_only_cache_keys = self._data_cache.keys() - self._etag_cache.keys()
-            etag_only_count = len(etag_only_cache_keys)
-            data_only_count = len(data_only_cache_keys)
-            etag_only_keys = sorted(k.split("?")[0] for k in etag_only_cache_keys)[
-                :_MAX_CACHE_INVARIANT_LOG_KEYS
-            ]
-            data_only_keys = sorted(k.split("?")[0] for k in data_only_cache_keys)[
-                :_MAX_CACHE_INVARIANT_LOG_KEYS
-            ]
-            # 通常フローでは発生しない。発生した場合は実装バグの兆候として
-            # Sentry に捕捉される logger.error を出力し、両キャッシュを clear して
-            # 次回リクエストの fresh fetch に倒す（user request flow は維持）。
-            try:
-                self.logger.error(
-                    "cache_invariant_violation",
-                    etag_cache_size=len(self._etag_cache),
-                    data_cache_size=len(self._data_cache),
-                    etag_only_keys=etag_only_keys,
-                    data_only_keys=data_only_keys,
-                    etag_only_keys_truncated=etag_only_count > _MAX_CACHE_INVARIANT_LOG_KEYS,
-                    data_only_keys_truncated=data_only_count > _MAX_CACHE_INVARIANT_LOG_KEYS,
-                    action="cleared_both_caches",
-                )
-            except Exception:  # noqa: BLE001, S110
-                # logger 自体が例外を投げても両キャッシュ clear を必ず実行する。
-                # clear をスキップすると invariant 違反が継続し、外側 _update_etag_cache の
-                # except に etag_cache_update_failed として埋没する（PR#347 B-3 fail-closed）。
-                pass
-            self._etag_cache.clear()
-            self._data_cache.clear()
-            return  # clear() によりサイズ 0 → max_cache_entries 制限は達成済み（while ループ不要）
-        excess = len(self._etag_cache) - (self.max_cache_entries - reserve)
-        if excess > 0:
-            # 削除件数を事前計算し islice でまとめて取得（毎反復 len() 再計算を回避, PR#347）。
-            keys_to_evict = list(itertools.islice(self._etag_cache, excess))
-            for key in keys_to_evict:
-                self._etag_cache.pop(key, None)
-                self._data_cache.pop(key, None)
-            self.logger.info(
-                "cache_entries_evicted",
-                evicted_count=excess,
-                current_size=len(self._etag_cache),
-                max_size=self.max_cache_entries,
-            )
+        """Delegate cache size enforcement to the ETag cache."""
+        self._cache._enforce_cache_limit(reserve)
 
     async def _request(  # noqa: C901 - HTTPプロトコル処理の最小必要分岐（4xxステータス, 5xxリトライ, タイムアウト, キャンセル等）のため許容 CC≈12
         self,
