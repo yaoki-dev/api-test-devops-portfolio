@@ -47,7 +47,6 @@ class GitHubETagCache:
 
         Raises:
             ValueError: max_cache_entries が 1 未満
-
         """
         if max_cache_entries < 1:
             raise ValueError("max_cache_entries must be >= 1")
@@ -58,10 +57,7 @@ class GitHubETagCache:
         self.logger = logger
 
     def _prepare_headers(self, cache_key: str) -> dict[str, str]:
-        """ETagキャッシュが存在する場合に If-None-Match ヘッダーを含む dict を返す。
-
-        Conditional Requests対応。
-        """
+        """ETagキャッシュが存在する場合に If-None-Match ヘッダーを含む dict を返す。"""
         headers: dict[str, str] = {}
         if cache_key in self._etag_cache:
             headers["If-None-Match"] = self._etag_cache[cache_key]
@@ -154,7 +150,6 @@ class GitHubETagCache:
 
         Returns:
             キャッシュキー文字列
-
         """
         if not params:
             return endpoint
@@ -196,9 +191,6 @@ class GitHubETagCache:
         Invariant 判定は ``dict.keys()`` の集合等価比較 (defense-in-depth)。
         ``len`` だけでは「同件数だがキー集合が異なる」状態 (例: 1 件抜けて 1 件余分) を
         検出できないため、set-equality でキー差異も検出する。
-
-        Note: After clearing both caches (invariant violation), all subsequent requests will
-        hit the API without cache, potentially causing rate limit spikes in the short term.
         """
         # O(1) fast path before O(n) set comparison:
         # サイズが異なれば invariant 違反確定
