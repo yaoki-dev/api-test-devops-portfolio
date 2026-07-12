@@ -16,8 +16,9 @@ from utils.logger import get_logger
 # （structlog のため同名 logger を返し、インスタンス側 ``self.logger`` と一貫。PR#347 #2-6）。
 _module_logger = get_logger(__name__)
 
-# ETag形式バリデーション（RFC 7232準拠: W/"..." または "..."）
-_ETAG_PATTERN: re.Pattern[str] = re.compile(r'^(?:W/)?"[^"\r\n\\]*"$')
+# ETag形式バリデーション（RFC 9110 §8.8.3 準拠: W/"..." または "..."、
+# etagc = %x21 / %x23-7E / obs-text (%x80-FF)。HTAB・DEL・U+0100 等を拒否する）
+_ETAG_PATTERN: re.Pattern[str] = re.compile(r'^(?:W/)?"[\x21\x23-\x7e\x80-\xff]*"$')
 
 # cache_invariant_violation logger.error 出力時のキーリスト上限件数 (PII漏洩防止)
 _MAX_CACHE_INVARIANT_LOG_KEYS = 5
@@ -105,16 +106,19 @@ class GitHubETagCache:
         """
         if "ETag" in response.headers:
             etag = response.headers["ETag"]
-            # ETag形式バリデーション（RFC 7232準拠: W/"..." または "..."）
+            # ETag形式バリデーション（RFC 9110 §8.8.3 準拠: W/"..." または "..."）
             if not _ETAG_PATTERN.match(etag):
+                # 無効ETag受信時は既存キャッシュを破棄（次回リクエストで304再利用を防止）。
+                # pop を logger より先に実行: logger が例外を送出しても（呼び出し元
+                # github_client 側で抑制される）キャッシュ無効化を必ず保証する
+                # （_enforce_cache_limit の PR#347 B-3 fail-closed と同一方針）。
+                self._etag_cache.pop(cache_key, None)
+                self._data_cache.pop(cache_key, None)
                 self.logger.warning(
                     "invalid_etag_format",
                     endpoint=cache_key.split("?")[0],
                     etag_prefix=etag[:20] if len(etag) > 20 else etag,
                 )
-                # 無効ETag受信時は既存キャッシュを破棄（次回リクエストで304再利用を防止）
-                self._etag_cache.pop(cache_key, None)
-                self._data_cache.pop(cache_key, None)
                 return
             self._etag_cache.pop(cache_key, None)
             self._data_cache.pop(cache_key, None)
@@ -125,10 +129,13 @@ class GitHubETagCache:
             self._data_cache[cache_key] = result_json
             self._etag_cache[cache_key] = etag
         else:
-            if cache_key in self._etag_cache or cache_key in self._data_cache:
-                self.logger.info("etag_removed", endpoint=cache_key.split("?")[0])
+            # pop を logger より先に実行するため、削除前に存在有無を退避する
+            # （logger 例外時もキャッシュ無効化を保証。2a と同一方針）。
+            had_cached_entry = cache_key in self._etag_cache or cache_key in self._data_cache
             self._etag_cache.pop(cache_key, None)
             self._data_cache.pop(cache_key, None)
+            if had_cached_entry:
+                self.logger.info("etag_removed", endpoint=cache_key.split("?")[0])
 
     @staticmethod
     def _cache_key(endpoint: str, params: dict[str, str | int] | None = None) -> str:
