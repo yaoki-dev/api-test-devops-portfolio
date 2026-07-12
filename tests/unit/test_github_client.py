@@ -1992,7 +1992,7 @@ def test_enforce_cache_limit_evicts_multiple_entries_when_excess_gt_one() -> Non
         client._etag_cache[key] = f"etag-{index}"
         client._data_cache[key] = {"id": index}
 
-    with patch.object(client, "logger") as mock_logger:
+    with patch.object(client._cache, "logger") as mock_logger:
         client._enforce_cache_limit()
 
     assert list(client._etag_cache) == ["/entry-3", "/entry-4"]
@@ -2023,7 +2023,10 @@ def test_update_etag_cache_enforces_limit_before_insert_with_reserve() -> None:
         client._data_cache[f"/old-{index}"] = {"id": index}
 
     captured: dict[str, object] = {}
-    original_enforce = client._enforce_cache_limit
+    # GW2 抽出後は _update_etag_cache の実体が GitHubETagCache 内にあり、
+    # cache 内部の _enforce_cache_limit 呼び出しは facade wrapper を経由しないため、
+    # spy は所有者である client._cache 側にパッチする。
+    original_enforce = client._cache._enforce_cache_limit
 
     def spy(reserve: int = 0) -> None:
         captured["reserve"] = reserve
@@ -2035,7 +2038,7 @@ def test_update_etag_cache_enforces_limit_before_insert_with_reserve() -> None:
         headers={"ETag": '"new-etag"'},
         request=httpx.Request("GET", "https://api.github.com/new"),
     )
-    with patch.object(client, "_enforce_cache_limit", side_effect=spy):
+    with patch.object(client._cache, "_enforce_cache_limit", side_effect=spy):
         client._update_etag_cache("/new", response, {"id": 99})
 
     # 新規 1 件分を予約して挿入前に退避する
@@ -2059,7 +2062,7 @@ def test_enforce_cache_limit_invariant_violation_clears_both_caches() -> None:
     client._data_cache["/first"] = {"id": 1}
     client._data_cache["/orphan"] = {"id": 99}
 
-    with patch.object(client, "logger") as mock_logger:
+    with patch.object(client._cache, "logger") as mock_logger:
         client._enforce_cache_limit()
 
     # 両キャッシュclear確認
@@ -2086,7 +2089,7 @@ def test_enforce_cache_limit_strips_query_strings_from_invariant_logs() -> None:
     client._etag_cache["/repos/octocat/Hello-World?sort=updated"] = "etag-updated"
     client._data_cache["/repos/octocat/Hello-World?sort=created"] = {"id": 1}
 
-    with patch.object(client, "logger") as mock_logger:
+    with patch.object(client._cache, "logger") as mock_logger:
         client._enforce_cache_limit()
 
     assert client._etag_cache == {}
@@ -2117,7 +2120,7 @@ def test_enforce_cache_limit_detects_key_divergence_with_same_length() -> None:
     client._data_cache["/a"] = {"id": 1}
     client._data_cache["/c"] = {"id": 3}  # /b ではなく /c (divergence)
 
-    with patch.object(client, "logger") as mock_logger:
+    with patch.object(client._cache, "logger") as mock_logger:
         client._enforce_cache_limit()
 
     # 両キャッシュclear確認
@@ -2145,7 +2148,7 @@ def test_enforce_cache_limit_invariant_violation_truncated_flag_requires_over_li
         client._etag_cache[f"/etag-only-{index}"] = f"etag-{index}"
     client._data_cache["/data-only"] = {"id": 1}
 
-    with patch.object(client, "logger") as mock_logger:
+    with patch.object(client._cache, "logger") as mock_logger:
         client._enforce_cache_limit()
 
     mock_logger.error.assert_called_once()
@@ -2389,7 +2392,7 @@ def test_update_etag_cache_clears_stale_cache_and_logs_endpoint(
     client._data_cache[cache_key] = {"id": 1}
     response = httpx.Response(200, content=b'{"id": 2}')
 
-    with patch.object(client, "logger") as mock_logger:
+    with patch.object(client._cache, "logger") as mock_logger:
         client._update_etag_cache(cache_key, response, {"id": 2})
         mock_logger.info.assert_called_once_with("etag_removed", endpoint=expected_logged_endpoint)
 
@@ -2410,7 +2413,7 @@ def test_update_etag_cache_invalid_etag_evicts_stale_cache() -> None:
     # 不正形式（前後のダブルクォートなし）の ETag を持つレスポンス
     response = httpx.Response(200, headers={"ETag": "bad-etag-no-quotes"}, content=b'{"id": 2}')
 
-    with patch.object(client, "logger") as mock_logger:
+    with patch.object(client._cache, "logger") as mock_logger:
         client._update_etag_cache(cache_key, response, {"id": 2})
         mock_logger.warning.assert_called_once()
         assert mock_logger.warning.call_args.args[0] == "invalid_etag_format"
