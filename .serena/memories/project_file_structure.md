@@ -69,7 +69,9 @@ api-test-devops-portfolio/
 │
 ├── utils/                     # コアモジュール実装（フラット責任分割）
 │   ├── exceptions.py           # API例外階層
-│   ├── github_client.py        # GitHub API統合
+│   ├── github_client.py        # GitHub API統合（facade: AsyncGitHubClient + 入力検証）
+│   ├── github_error_handler.py # GitHub例外階層 + 403/5xx/JSONエラー処理（PII-safe）
+│   ├── github_rate_limit.py    # GitHub Rate Limitヘルパー（RATE_LIMIT_WARNING_THRESHOLD）
 │   ├── http_helpers.py         # エラーハンドリング・設定解決
 │   ├── jsonplaceholder_base_async.py  # 非同期ベースクライアント
 │   ├── jsonplaceholder_base_sync.py   # 同期ベースクライアント
@@ -369,10 +371,12 @@ utils/
 ├── exceptions.py                     # API例外階層
 ├── http_helpers.py                   # エラーハンドリング・設定解決・バリデーション
 ├── response_parsing.py               # safe_parse_json() + parse_response_model()
-└── github_client.py                  # AsyncGitHubClient（GitHub API統合）
+├── github_client.py                  # AsyncGitHubClient（GitHub API統合 facade）
+├── github_error_handler.py           # GitHub例外階層 + 403/5xx/JSONエラー処理（PII-safe）
+└── github_rate_limit.py              # GitHub Rate Limitヘルパー
 ```
 
-**旧構造**: api_client.py（972行モノリス）を責任単位で9モジュールに分割（W1-W3 リファクタリング完了）
+**旧構造**: api_client.py（972行モノリス）を責任単位で9モジュールに分割（W1-W3 リファクタリング完了）。GW1でgithub_client.pyからエラー処理・Rate Limit処理を`github_error_handler.py`/`github_rate_limit.py`へ抽出。
 
 ### 設定管理（`config/settings.py`）
 
