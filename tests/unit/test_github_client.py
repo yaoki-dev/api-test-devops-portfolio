@@ -3,6 +3,7 @@
 import asyncio
 import json
 import re
+import sys
 from datetime import UTC, datetime
 from unittest.mock import ANY, AsyncMock, Mock, call, patch
 
@@ -952,7 +953,7 @@ async def test_request_etag_cache_fatal_exception_propagates(
 
     async with AsyncGitHubClient() as client:
         with (
-            patch.object(client, "_update_etag_cache", side_effect=fatal_exc),
+            patch.object(client._cache, "_update_etag_cache", side_effect=fatal_exc),
             pytest.raises(type(fatal_exc)),
         ):
             await client.get_user("octocat")
@@ -971,7 +972,11 @@ async def test_request_etag_cache_non_fatal_exception_logs_error_and_returns_res
 
     async with AsyncGitHubClient() as client:
         with (
-            patch.object(client, "_update_etag_cache", side_effect=RuntimeError("cache failed")),
+            patch.object(
+                client._cache,
+                "_update_etag_cache",
+                side_effect=RuntimeError("cache failed"),
+            ),
             capture_logs() as logs,
         ):
             result = await client.get_user("octocat")
@@ -984,6 +989,75 @@ async def test_request_etag_cache_non_fatal_exception_logs_error_and_returns_res
     assert error_logs[0]["error_type"] == "RuntimeError"
     assert error_logs[0]["method"] == "GET"
     assert error_logs[0]["endpoint"] == "/users/octocat"
+
+
+@respx.mock
+async def test_request_uses_composed_helpers_not_temporary_facade_wrappers() -> None:
+    """GW3: _request は暫定facade wrapperを経由せず、分割済みhelper/cacheへ直接委譲する。"""
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+        status_code=200,
+        json={"login": "octocat"},
+        headers={"ETag": '"etag-value"', "X-RateLimit-Remaining": "50"},
+    )
+
+    async with AsyncGitHubClient() as client:
+        blocked_wrappers = (
+            "_cache_key",
+            "_prepare_headers",
+            "_parse_rate_limit_header",
+            "_check_rate_limit_warning",
+            "_parse_json_response",
+            "_update_etag_cache",
+        )
+        for wrapper_name in blocked_wrappers:
+            setattr(
+                client,
+                wrapper_name,
+                Mock(side_effect=AssertionError(f"{wrapper_name} wrapper was called")),
+            )
+
+        assert await client.get_user("octocat") == {"login": "octocat"}
+        assert client._etag_cache["/users/octocat"] == '"etag-value"'
+
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_request_http_status_error_is_saved_before_safe_handler_call() -> None:
+    """GW3: HTTPStatusError は except 外へ退避後にPII-safe handlerへ渡す。"""
+    request = httpx.Request("GET", f"{GITHUB_API_BASE_URL}/users/octocat?token=secret")
+    response = httpx.Response(401, request=request, content=b"token=secret")
+    status_error = httpx.HTTPStatusError("401 secret", request=request, response=response)
+
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
+    route.side_effect = [status_error]
+
+    def safe_handler(
+        handled_response: httpx.Response,
+        endpoint: str,
+        method: str,
+        *,
+        logger: Mock,
+    ) -> None:
+        if sys.exception() is not None:
+            raise AssertionError("HTTPStatusError handler was called inside an active exception")
+        if handled_response is not response:
+            raise AssertionError("HTTPStatusError response was not preserved")
+        raise GitHubAPIError(f"HTTP {handled_response.status_code} error") from None
+
+    async with AsyncGitHubClient() as client:
+        client._handle_http_status_error = Mock(
+            side_effect=AssertionError("_handle_http_status_error wrapper was called")
+        )
+        with patch("utils.github_client.handle_http_status_error", side_effect=safe_handler):
+            with pytest.raises(GitHubAPIError) as exc_info:
+                await client.get_user("octocat")
+
+    assert str(exc_info.value) == "HTTP 401 error"
+    assert "secret" not in str(exc_info.value)
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
+    assert route.call_count == 1
 
 
 @respx.mock

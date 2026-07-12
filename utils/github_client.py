@@ -565,8 +565,8 @@ class AsyncGitHubClient:
         if self._client is None:
             raise RuntimeError("Client not initialized. Use 'async with' context.")
 
-        cache_key = self._cache_key(endpoint, params)
-        headers = self._prepare_headers(cache_key)
+        cache_key = GitHubETagCache._cache_key(endpoint, params)
+        headers = self._cache._prepare_headers(cache_key)
 
         for attempt in range(self.max_retries):
             retry_error_message: str | None = None
@@ -581,14 +581,21 @@ class AsyncGitHubClient:
                 )
 
                 # Rate Limit監視
-                remaining = self._parse_rate_limit_header(
-                    response.headers, "X-RateLimit-Remaining", _RATE_LIMIT_FALLBACK_REMAINING
+                remaining = parse_rate_limit_header(
+                    response.headers,
+                    "X-RateLimit-Remaining",
+                    _RATE_LIMIT_FALLBACK_REMAINING,
+                    logger=self.logger,
                 )
-                warning_reset_time = self._check_rate_limit_warning(response.headers, remaining)
+                warning_reset_time = check_rate_limit_warning(
+                    response.headers,
+                    remaining,
+                    logger=self.logger,
+                )
 
                 # ステータスコード処理
                 if response.status_code == 304:
-                    return self._handle_304_response(cache_key)
+                    return self._cache._handle_304_response(cache_key)
 
                 if response.status_code == 404:
                     raise NotFoundError(f"Resource not found: {endpoint}") from None
@@ -598,8 +605,11 @@ class AsyncGitHubClient:
                     reset_time = (
                         warning_reset_time
                         if warning_reset_time is not None
-                        else self._parse_rate_limit_header(
-                            response.headers, "X-RateLimit-Reset", _RATE_LIMIT_RESET_FALLBACK
+                        else parse_rate_limit_header(
+                            response.headers,
+                            "X-RateLimit-Reset",
+                            _RATE_LIMIT_RESET_FALLBACK,
+                            logger=self.logger,
                         )
                     )
                     # PII漏洩防止: 例外チェーン経由の httpx URL/header 露出を抑制
@@ -613,24 +623,32 @@ class AsyncGitHubClient:
                     # 閾値変更時はこの reset_time が常に None になり _handle_403_response
                     # 側の Retry-After ヘッダー fallback パスに倒れる挙動になる。
                     # debug-only ログのため動作影響は限定的だが、依存関係を明示する。
-                    self._handle_403_response(
+                    handle_403_response(
                         response,
+                        logger=self.logger,
                         rate_remaining=remaining,
                         reset_time=warning_reset_time,
                     )
                 elif response.status_code >= 500:
-                    await self._handle_5xx_response(response, attempt, endpoint, method)
+                    await handle_5xx_response(
+                        response,
+                        attempt,
+                        endpoint,
+                        method,
+                        max_retries=self.max_retries,
+                        logger=self.logger,
+                    )
                     continue
                 else:
                     response.raise_for_status()
 
-                result_json = self._parse_json_response(response, endpoint)
+                result_json = parse_json_response(response, endpoint, logger=self.logger)
                 # PR#347 review #4-[9]: ETag cache 更新失敗を HTTP 層 unexpected_error
                 # と分離。cache update 失敗はレスポンス返却を阻害してはならず (cache の
                 # 副作用) かつ専用イベントで観測性を確保する。HTTP 層 unexpected_error
                 # は retry/エラー判定の対象だが、本イベントは error ログで監視対象にする。
                 try:
-                    self._update_etag_cache(cache_key, response, result_json)
+                    self._cache._update_etag_cache(cache_key, response, result_json)
                 except (MemoryError, RecursionError):  # fmt: skip
                     # MemoryError / RecursionError も Exception 派生のため、再raise しないと
                     # 下流の except Exception に捕捉されサイレント隠蔽される（sentry_init と
@@ -667,13 +685,15 @@ class AsyncGitHubClient:
                 # (unexpected_errorパスと同じ方針:
                 #  error_type + error_module + error_context で診断情報を提供)
                 retry_error_message = f"Request timeout: {type(e).__qualname__}"
-                await self._log_and_sleep_for_retry(
+                await log_and_sleep_for_retry(
                     event="request_timeout",
                     error_context="timeout",
                     error=e,
                     endpoint=endpoint,
                     method=method,
                     attempt=attempt,
+                    max_retries=self.max_retries,
+                    logger=self.logger,
                 )
                 if attempt < self.max_retries - 1:
                     continue
@@ -681,13 +701,15 @@ class AsyncGitHubClient:
             except (httpx.NetworkError, httpx.RemoteProtocolError) as e:  # fmt: skip
                 # PII漏洩防止: str(e)はURL/host:port等を含む可能性があるためログから除外
                 retry_error_message = f"Network error: {type(e).__qualname__}"
-                await self._log_and_sleep_for_retry(
+                await log_and_sleep_for_retry(
                     event="request_network_error",
                     error_context="network",
                     error=e,
                     endpoint=endpoint,
                     method=method,
                     attempt=attempt,
+                    max_retries=self.max_retries,
+                    logger=self.logger,
                 )
                 if attempt < self.max_retries - 1:
                     continue
@@ -725,9 +747,21 @@ class AsyncGitHubClient:
                 # 個別分岐を維持。404/429/403/その他 は _handle_http_status_error に一本化。
                 if http_status_response.status_code >= 500:
                     # 防御的パス: 5xxをhttpx.HTTPStatusErrorとして受信した場合、通常パスと同等に処理
-                    await self._handle_5xx_response(http_status_response, attempt, endpoint, method)
+                    await handle_5xx_response(
+                        http_status_response,
+                        attempt,
+                        endpoint,
+                        method,
+                        max_retries=self.max_retries,
+                        logger=self.logger,
+                    )
                     continue
-                self._handle_http_status_error(http_status_response, endpoint, method)
+                handle_http_status_error(
+                    http_status_response,
+                    endpoint,
+                    method,
+                    logger=self.logger,
+                )
 
             if retry_error_message is not None:
                 # PII漏洩防止 (__context__): active exception context の外で raise して
