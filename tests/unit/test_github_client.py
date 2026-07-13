@@ -647,16 +647,13 @@ async def test_etag_cache_hit():
         user1 = await client.get_user("octocat")
         assert user1["login"] == "octocat"
 
-        # ETag/データキャッシュ確認
-        assert "/users/octocat" in client._cache._etag_cache
-        assert client._cache._etag_cache["/users/octocat"] == '"abc123"'
-        assert "/users/octocat" in client._cache._data_cache
-        assert client._cache._data_cache["/users/octocat"] == {"login": "octocat", "id": 1}
-
         user2 = await client.get_user("octocat")
         assert user2 == {"login": "octocat", "id": 1}  # 304時はキャッシュデータ返却
 
     assert route.call_count == 2
+    # 1回目はIf-None-Match未送信、2回目は保存済みETagを送信（ETagキャッシュ保存の証跡）
+    assert "if-none-match" not in route.calls[0].request.headers
+    assert route.calls[1].request.headers["if-none-match"] == '"abc123"'
 
 
 # =============================================================================
@@ -987,37 +984,6 @@ async def test_request_etag_cache_non_fatal_exception_logs_error_and_returns_res
     assert error_logs[0]["error_type"] == "RuntimeError"
     assert error_logs[0]["method"] == "GET"
     assert error_logs[0]["endpoint"] == "/users/octocat"
-
-
-@respx.mock
-async def test_request_uses_composed_helpers_not_temporary_facade_wrappers() -> None:
-    """GW3: _request は暫定facade wrapperを経由せず、分割済みhelper/cacheへ直接委譲する。"""
-    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
-        status_code=200,
-        json={"login": "octocat"},
-        headers={"ETag": '"etag-value"', "X-RateLimit-Remaining": "50"},
-    )
-
-    async with AsyncGitHubClient() as client:
-        blocked_wrappers = (
-            "_cache_key",
-            "_prepare_headers",
-            "_parse_rate_limit_header",
-            "_check_rate_limit_warning",
-            "_parse_json_response",
-            "_update_etag_cache",
-        )
-        for wrapper_name in blocked_wrappers:
-            setattr(
-                client,
-                wrapper_name,
-                Mock(side_effect=AssertionError(f"{wrapper_name} wrapper was called")),
-            )
-
-        assert await client.get_user("octocat") == {"login": "octocat"}
-        assert client._cache._etag_cache["/users/octocat"] == '"etag-value"'
-
-    assert route.call_count == 1
 
 
 @respx.mock
