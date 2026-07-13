@@ -6,6 +6,7 @@ facade 非依存で検証する。
 """
 
 import json
+import re
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -55,6 +56,19 @@ def test_redact_body_preview_never_returns_original_body() -> None:
     external_message = "ghp_external_message_token_12345"  # noqa: S105 — test fixture, not a real external_message
     result = redact_body_preview(external_message)
     assert "ghp_external_message" not in result
+
+
+def test_redact_body_preview_returns_fixed_hash_format_for_empty_body() -> None:
+    """空 body でも固定長 SHA256 fingerprint 形式を返す。"""
+    result = redact_body_preview("")
+    assert result == "[redacted:e3b0c44298fc1c14]"
+    assert re.fullmatch(r"\[redacted:[0-9a-f]{16}\]", result)
+
+
+def test_redact_body_preview_is_deterministic() -> None:
+    """同一 body は同じ fingerprint を返す。"""
+    body = "A" * 200
+    assert redact_body_preview(body) == redact_body_preview(body)
 
 
 # =============================================================================
@@ -111,6 +125,29 @@ def test_rate_limit_error_str_includes_iso_timestamp() -> None:
     err = RateLimitError(reset_time)
     expected_iso = datetime.fromtimestamp(reset_time, tz=UTC).isoformat()
     assert expected_iso in str(err)
+
+
+def test_rate_limit_error_overflow_falls_back_to_unix_timestamp() -> None:
+    """極端な reset_time は unix:{reset_time} 形式へフォールバックする。"""
+    extreme_reset_time = 2**63
+    err = RateLimitError(extreme_reset_time)
+    assert err.reset_time == extreme_reset_time
+    assert f"unix:{extreme_reset_time}" in str(err)
+
+
+@pytest.mark.parametrize(
+    "reset_time",
+    [
+        pytest.param(-1, id="negative_one"),
+        pytest.param(-100, id="negative_hundred"),
+        pytest.param(0, id="zero_boundary"),
+    ],
+)
+def test_rate_limit_error_non_positive_reset_time_is_unknown(reset_time: int) -> None:
+    """reset_time が 0 以下なら unknown へフォールバックする。"""
+    err = RateLimitError(reset_time)
+    assert err.reset_time == reset_time
+    assert "unknown" in str(err)
 
 
 # =============================================================================
@@ -287,19 +324,27 @@ def test_parse_json_response_returns_parsed_list() -> None:
 
 def test_parse_json_response_raises_github_api_error_on_invalid_json() -> None:
     """不正な JSON body は GitHubAPIError（cause=SanitizedJSONDecodeError）を送出。"""
-    mock_response = MagicMock(spec=httpx.Response)
-    mock_response.json.side_effect = json.JSONDecodeError("Expecting value", "not json", 0)
+    logger = MagicMock()
+    response = httpx.Response(
+        200, content=b"not-valid-json", headers={"Content-Type": "application/json"}
+    )
 
     with pytest.raises(GitHubAPIError) as exc_info:
         _parse_json_response(
-            response=mock_response,
+            response=response,
             endpoint="/test",
-            logger=MagicMock(),
+            logger=logger,
         )
 
     assert "Invalid JSON response" in str(exc_info.value)
     assert isinstance(exc_info.value.__cause__, SanitizedJSONDecodeError)
-    assert "not json" not in str(exc_info.value.__cause__)
+    assert not isinstance(exc_info.value.__cause__, json.JSONDecodeError)
+    assert b"not-valid-json" not in repr(exc_info.value.__cause__).encode()
+    # raise が except 節の外にあることを固定する。中に戻すと __context__ に
+    # 生の json.JSONDecodeError（.doc に未リダクションの body を保持）が残る。
+    assert exc_info.value.__context__ is None
+    logger.error.assert_called_once()
+    assert logger.error.call_args.kwargs["endpoint"] == "/test"
 
 
 def test_parse_json_response_logs_on_decode_error() -> None:
@@ -400,3 +445,171 @@ def test_handle_http_status_error_all_use_from_none() -> None:
             logger=MagicMock(),
         )
     assert exc_info2.value.__cause__ is None
+
+
+# =============================================================================
+# Migrated facade-wrapper tests — direct github_error_handler ownership
+# =============================================================================
+
+
+def test_handle_403_response_no_json_log() -> None:
+    response = httpx.Response(
+        403,
+        headers={"X-RateLimit-Remaining": "50", "X-RateLimit-Reset": "0"},
+        content=b"not json",
+    )
+    logger = MagicMock()
+    with pytest.raises(GitHubAPIError) as exc_info:
+        _handle_403_response(response, logger=logger)
+    logger.warning.assert_called_once()
+    assert logger.warning.call_args.args[0] == "failed_to_parse_403_message"
+    assert logger.warning.call_args.kwargs["error_type"] == "JSONDecodeError"
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param({"message": 999}, id="message-is-not-str"),
+        pytest.param([{"message": "listed"}], id="body-is-not-dict"),
+    ],
+)
+def test_handle_403_response_skips_preview_for_unexpected_body_shapes(body: object) -> None:
+    """message が str でない / body が dict でない 403 は message_preview を出さずに送出する。
+
+    isinstance ガードを外すと raw_message[:200] が TypeError になるため、
+    GitHubAPIError 以外が漏れないことを分岐ごとに固定する。
+    """
+    logger = MagicMock()
+    response = httpx.Response(403, json=body)
+
+    with pytest.raises(GitHubAPIError, match="^Access forbidden$") as exc_info:
+        _handle_403_response(response, rate_remaining=50, logger=logger)
+
+    logger.warning.assert_not_called()
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
+
+
+def test_handle_403_response_truncates_message_to_200_chars() -> None:
+    logger = MagicMock()
+    response = httpx.Response(403, json={"message": "z" * 201})
+    with pytest.raises(GitHubAPIError, match="^Access forbidden$"):
+        _handle_403_response(response, rate_remaining=50, logger=logger)
+    assert logger.warning.call_args.kwargs["message_preview"] == redact_body_preview("z" * 200)
+
+
+def test_handle_403_response_no_truncation_at_boundary() -> None:
+    logger = MagicMock()
+    exact_message = "z" * 200
+    response = httpx.Response(403, json={"message": exact_message})
+    with pytest.raises(GitHubAPIError, match="^Access forbidden$"):
+        _handle_403_response(response, rate_remaining=50, logger=logger)
+    assert logger.warning.call_args.kwargs["message_preview"] == redact_body_preview(exact_message)
+
+
+def test_handle_http_status_error_uses_debug_for_other_4xx() -> None:
+    response = httpx.Response(400, request=httpx.Request("GET", "https://api.github.com/test"))
+    logger = MagicMock()
+    with pytest.raises(GitHubAPIError, match=r"^HTTP 400 error$") as exc_info:
+        _handle_http_status_error(response, "/test", "GET", logger=logger)
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
+    logger.debug.assert_called_once_with(
+        "http_status_error",
+        status_code=400,
+        endpoint="/test",
+        method="GET",
+        body_preview=redact_body_preview(""),
+    )
+    logger.warning.assert_not_called()
+
+
+def test_handle_http_status_error_uses_warning_for_401() -> None:
+    response = httpx.Response(401, request=httpx.Request("GET", "https://api.github.com/test"))
+    logger = MagicMock()
+    with pytest.raises(GitHubAPIError, match=r"^HTTP 401 error$") as exc_info:
+        _handle_http_status_error(response, "/test", "GET", logger=logger)
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
+    logger.warning.assert_called_once_with(
+        "http_status_error",
+        status_code=401,
+        endpoint="/test",
+        method="GET",
+        body_preview=redact_body_preview(""),
+    )
+    logger.debug.assert_not_called()
+
+
+def test_handle_http_status_error_warning_truncates_body_preview_for_401() -> None:
+    response = httpx.Response(
+        401,
+        content=b"A" * 201,
+        request=httpx.Request("GET", "https://api.github.com/test"),
+    )
+    logger = MagicMock()
+    with pytest.raises(GitHubAPIError, match=r"^HTTP 401 error$"):
+        _handle_http_status_error(response, "/test", "GET", logger=logger)
+    assert logger.warning.call_args.kwargs["body_preview"] == redact_body_preview("A" * 200)
+
+
+def test_handle_http_status_error_with_5xx_raises_github_api_error() -> None:
+    response = httpx.Response(503, request=httpx.Request("GET", "https://api.github.com/test"))
+    with pytest.raises(GitHubAPIError, match=r"^HTTP 503 error$"):
+        _handle_http_status_error(response, "/test", "GET", logger=MagicMock())
+
+
+def test_parse_json_response_unexpected_parse_error_propagates() -> None:
+    response = MagicMock(spec=httpx.Response)
+    response.json.side_effect = RuntimeError("parser exploded")
+    with pytest.raises(RuntimeError, match="parser exploded"):
+        _parse_json_response(response, "/test", logger=MagicMock())
+
+
+@pytest.mark.parametrize(
+    ("body", "expected_preview_source"),
+    [
+        pytest.param("x" * 201, "x" * 200, id="ascii_truncation"),
+        pytest.param("x" * 200, "x" * 200, id="ascii_boundary"),
+        pytest.param("あ" * 201, "あ" * 200, id="multibyte_truncation"),
+    ],
+)
+def test_handle_http_status_error_body_preview_truncation(
+    body: str, expected_preview_source: str
+) -> None:
+    response = httpx.Response(
+        400, text=body, request=httpx.Request("GET", "https://api.github.com/test")
+    )
+    logger = MagicMock()
+    with pytest.raises(GitHubAPIError):
+        _handle_http_status_error(response, "/test", "GET", logger=logger)
+    expected = response.content[:200].decode(response.encoding or "utf-8", errors="replace")
+    assert logger.debug.call_args.kwargs["body_preview"] == redact_body_preview(expected)
+
+
+def test_handle_http_status_error_with_invalid_bytes() -> None:
+    response = httpx.Response(
+        400,
+        content=b"\xff\xfe invalid bytes \x80\x81",
+        request=httpx.Request("GET", "https://api.github.com/test"),
+    )
+    with pytest.raises(GitHubAPIError, match=r"^HTTP 400 error$"):
+        _handle_http_status_error(response, "/test", "GET", logger=MagicMock())
+
+
+def test_handle_http_status_error_cause_excludes_response_body() -> None:
+    sensitive_body = "token=SUPER_SECRET_API_KEY_12345"  # noqa: S105
+    response = httpx.Response(
+        422, request=httpx.Request("GET", "https://api.github.com/repos/test"), text=sensitive_body
+    )
+    logger = MagicMock()
+    with pytest.raises(GitHubAPIError) as exc_info:
+        _handle_http_status_error(response, "/repos/test", "GET", logger=logger)
+    body_preview_logged = logger.debug.call_args.kwargs["body_preview"]
+    assert body_preview_logged.startswith("[redacted:")
+    assert sensitive_body not in body_preview_logged
+    assert sensitive_body not in str(exc_info.value)
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None

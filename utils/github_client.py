@@ -2,7 +2,7 @@
 
 import re
 from types import TracebackType
-from typing import Any, NoReturn, Self
+from typing import Any, Self
 
 import httpx
 
@@ -142,44 +142,6 @@ class AsyncGitHubClient:
     def max_cache_entries(self) -> int:
         """ETag/dataキャッシュの最大エントリ数（GitHubETagCache に委譲）。"""
         return self._cache.max_cache_entries
-
-    @property
-    def _etag_cache(self) -> dict[str, str]:
-        """ETagキャッシュ実体への読み取り用参照（書込は GitHubETagCache に一元化）。
-
-        既存テストの白箱アクセス互換のための暫定アクセサ（GW4 mirror テスト移行後に削除予定）。
-        """
-        return self._cache._etag_cache
-
-    @property
-    def _data_cache(self) -> dict[str, dict[str, Any] | list[dict[str, Any]]]:
-        """データキャッシュ実体への読み取り用参照（書込は GitHubETagCache に一元化）。
-
-        既存テストの白箱アクセス互換のための暫定アクセサ（GW4 mirror テスト移行後に削除予定）。
-        """
-        return self._cache._data_cache
-
-    async def _log_and_sleep_for_retry(
-        self,
-        *,
-        event: str,
-        error_context: str,
-        error: httpx.TimeoutException | httpx.NetworkError | httpx.RemoteProtocolError,
-        endpoint: str,
-        method: str,
-        attempt: int,
-    ) -> None:
-        """Delegate retry logging and delay handling to the rate-limit module."""
-        await log_and_sleep_for_retry(
-            event=event,
-            error_context=error_context,
-            error=error,
-            endpoint=endpoint,
-            method=method,
-            attempt=attempt,
-            max_retries=self.max_retries,
-            logger=self.logger,
-        )
 
     async def __aenter__(self) -> Self:
         """非同期コンテキストマネージャーのエントリー"""
@@ -427,98 +389,6 @@ class AsyncGitHubClient:
         if not isinstance(result, dict):
             raise GitHubAPIError(f"Expected dict response, got {type(result).__name__}")
         return result
-
-    def _parse_rate_limit_header(
-        self,
-        headers: httpx.Headers,
-        name: str,
-        default: int,
-    ) -> int:
-        """Delegate rate-limit header parsing to the rate-limit module."""
-        return parse_rate_limit_header(headers, name, default, logger=self.logger)
-
-    def _prepare_headers(self, cache_key: str) -> dict[str, str]:
-        """Delegate If-None-Match header construction to the ETag cache."""
-        return self._cache._prepare_headers(cache_key)
-
-    def _check_rate_limit_warning(
-        self,
-        response_headers: httpx.Headers,
-        remaining: int,
-    ) -> int | None:
-        """Delegate low-quota detection to the rate-limit module."""
-        return check_rate_limit_warning(response_headers, remaining, logger=self.logger)
-
-    def _handle_304_response(self, cache_key: str) -> dict[str, Any] | list[dict[str, Any]]:
-        """Delegate 304 cached-data retrieval to the ETag cache."""
-        return self._cache._handle_304_response(cache_key)
-
-    def _handle_403_response(
-        self,
-        response: httpx.Response,
-        *,
-        rate_remaining: int | None = None,
-        reset_time: int | None = None,
-    ) -> NoReturn:
-        """Delegate 403 classification to the error-handler module."""
-        handle_403_response(
-            response,
-            logger=self.logger,
-            rate_remaining=rate_remaining,
-            reset_time=reset_time,
-        )
-
-    async def _handle_5xx_response(
-        self,
-        response: httpx.Response,
-        attempt: int,
-        endpoint: str,
-        method: str,
-    ) -> None:
-        """Delegate 5xx retry handling to the error-handler module."""
-        await handle_5xx_response(
-            response,
-            attempt,
-            endpoint,
-            method,
-            max_retries=self.max_retries,
-            logger=self.logger,
-        )
-
-    def _parse_json_response(
-        self,
-        response: httpx.Response,
-        endpoint: str,
-    ) -> dict[str, Any] | list[dict[str, Any]]:
-        """Delegate PII-safe JSON parsing to the error-handler module."""
-        return parse_json_response(response, endpoint, logger=self.logger)
-
-    def _handle_http_status_error(
-        self,
-        response: httpx.Response,
-        endpoint: str,
-        method: str,
-    ) -> NoReturn:
-        """Delegate HTTP status classification to the error-handler module."""
-        handle_http_status_error(response, endpoint, method, logger=self.logger)
-
-    def _update_etag_cache(
-        self,
-        cache_key: str,
-        response: httpx.Response,
-        result_json: dict[str, Any] | list[dict[str, Any]],
-    ) -> None:
-        """Delegate ETag/data cache updates to the ETag cache."""
-        self._cache._update_etag_cache(cache_key, response, result_json)
-
-    @staticmethod
-    def _cache_key(endpoint: str, params: dict[str, str | int] | None = None) -> str:
-        """Delegate cache-key construction to the ETag cache."""
-        return GitHubETagCache._cache_key(endpoint, params)
-
-    def _enforce_cache_limit(self, reserve: int = 0) -> None:
-        """Delegate cache size enforcement to the ETag cache."""
-        self._cache._enforce_cache_limit(reserve)
 
     async def _request(  # noqa: C901 - HTTPプロトコル処理の最小必要分岐（4xxステータス, 5xxリトライ, タイムアウト, キャンセル等）のため許容 CC≈12
         self,
