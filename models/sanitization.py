@@ -3,7 +3,7 @@
 import html
 import re
 import unicodedata
-from urllib.parse import ParseResult, quote, unquote, urlunparse
+from urllib.parse import ParseResult, quote, unquote, urlparse, urlunparse
 
 _SCHEME_RE: re.Pattern[str] = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 _HTML_META_RE: re.Pattern[str] = re.compile(r'[<>"\'&]')
@@ -240,3 +240,94 @@ def validate_scheme_less_url(sanitized: str) -> None:
         raise ValueError("Scheme-less URL cannot contain a fragment")
     if "?" in sanitized or "?" in decoded:
         raise ValueError("Scheme-less URL cannot contain a query")
+
+
+def _shared_url_prefix(raw: str, *, empty_message: str) -> str:
+    """URL 検証の共通 prefix: 不可視文字除去 → 空拒否 → percent-ctrl / incomplete-pct。
+
+    実装詳細（regex 定数）は private のまま隠蔽する。
+    """
+    sanitized = strip_invisible_chars(raw).strip()
+    if not sanitized:
+        raise ValueError(empty_message)
+    sanitized_lower = sanitized.lower()
+    # CRLF injection 防止: パーセントエンコードされた制御文字を拒否（%00-%1f および %7f）
+    if _PERCENT_CTRL_RE.search(sanitized_lower):
+        raise ValueError("URL contains percent-encoded control characters")
+    # 不完全な%シーケンス（%、%G、%GG など）は unquote がリテラル扱いするため個別チェック
+    if _INCOMPLETE_PCT_RE.search(sanitized):
+        raise ValueError("URL contains incomplete percent-encoding")
+    return sanitized
+
+
+def _finalize_http_url(sanitized: str) -> str:
+    """http(s) 共通 suffix: urlparse → netloc 検証 → 正規化 → 最大長チェック。"""
+    parsed = urlparse(sanitized)
+    _validate_netloc(parsed)
+    return _ensure_website_max_length(normalize_url(parsed))
+
+
+def validate_website_url(raw: str) -> str:
+    """User.website 用 URL 検証（scheme 任意 + https 補完）。
+
+    スキームなしドメインは ``https://`` を自動補完する。プロトコル相対 URL（//）と
+    危険スキームは拒否。スキームなし URL の port / path / query / fragment も拒否。
+
+    Args:
+        raw: 検証対象の URL 文字列（呼び出し元で str 型を保証すること）。
+
+    Returns:
+        正規化済み URL 文字列（最大 ``WEBSITE_NORMALIZED_MAX_LENGTH`` 文字）。
+
+    Raises:
+        ValueError: 空・危険スキーム・protocol-relative・netloc 不正・長すぎる場合など。
+    """
+    sanitized = _shared_url_prefix(
+        raw,
+        empty_message="Website became empty after control character removal",
+    )
+    sanitized_lower = sanitized.lower()
+    if sanitized_lower.startswith("//"):
+        raise ValueError("Protocol-relative URLs are not allowed")
+    # urlparse は各分岐で1回のみ（http/https と補完で入力が異なるため共通化不可）
+    if sanitized_lower.startswith(("http://", "https://")):
+        # NOTE: sanitized（元の大文字混在）を使用 — スキーム小文字化は normalize_url に委譲
+        return _finalize_http_url(sanitized)
+    # RFC 3986 スキーム検出: http/https 以外のスキームが存在すれば拒否
+    # domain:port はスキームなし扱いのため http(s):// を明示しない限り拒否
+    if _SCHEME_RE.match(sanitized_lower):
+        raise ValueError("Dangerous URL scheme detected")
+    # スキームなし → https:// を補完して検証
+    validate_scheme_less_url(sanitized)
+    parsed = urlparse("https://" + sanitized)
+    _validate_netloc(parsed)
+    # IPアドレス:port 形式（例: 192.168.1.1:8080）がここに到達する
+    # （ドメイン:port は _SCHEME_RE にマッチし上流で拒否される）
+    if parsed.port is not None:
+        raise ValueError(
+            "Scheme-less URL cannot contain a port (explicitly use http:// or https://)"
+        )
+    return _ensure_website_max_length(normalize_url(parsed))
+
+
+def validate_strict_url(raw: str) -> str:
+    """Photo.url / thumbnailUrl 用 URL 検証（http/https スキーム必須）。
+
+    スキームなしへの自動補完は行わない（外部 API 由来 URL のためスキーム必須）。
+
+    Args:
+        raw: 検証対象の URL 文字列。
+
+    Returns:
+        正規化済み URL 文字列（最大 ``WEBSITE_NORMALIZED_MAX_LENGTH`` 文字）。
+
+    Raises:
+        ValueError: 空・スキーム非 http(s)・netloc 不正・長すぎる場合など。
+    """
+    sanitized = _shared_url_prefix(
+        raw,
+        empty_message="URL became empty after control character removal",
+    )
+    if not sanitized.lower().startswith(("http://", "https://")):
+        raise ValueError("URL must start with http:// or https://")
+    return _finalize_http_url(sanitized)

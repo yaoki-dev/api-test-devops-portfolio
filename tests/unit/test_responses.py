@@ -6,7 +6,6 @@ from typing import Any, Final, TypedDict
 import pytest
 from pydantic import BaseModel, ValidationError
 
-import models.responses as responses_module
 from models.responses import Address, Album, Comment, Company, Geo, Photo, Post, Todo, User
 from models.sanitization import WEBSITE_NORMALIZED_MAX_LENGTH
 from tests.types import _UserData  # noqa: PLC2701 - test-internal helper naming preserved
@@ -667,7 +666,8 @@ class TestUserModel:
         def fake_urlparse(_: str) -> _OverflowingParseResult:
             return _OverflowingParseResult()
 
-        monkeypatch.setattr(responses_module, "urlparse", fake_urlparse)
+        # URL 検証は models.sanitization に委譲済みのため、urlparse はそちらを patch する
+        monkeypatch.setattr("models.sanitization.urlparse", fake_urlparse)
         valid_user_data["website"] = "https://example.com"
 
         with pytest.raises(ValidationError, match=re.escape("Failed to parse userinfo from URL")):
