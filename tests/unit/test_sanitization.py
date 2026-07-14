@@ -5,7 +5,12 @@ import re
 
 import pytest
 
-from models.sanitization import sanitize_user_content, strip_invisible_chars
+from models.sanitization import (
+    sanitize_user_content,
+    strip_invisible_chars,
+    validate_strict_url,
+    validate_website_url,
+)
 from tests.unit._response_test_vectors import XSS_TEST_VECTORS
 
 pytestmark = pytest.mark.unit
@@ -141,3 +146,67 @@ def test_strip_invisible_chars_preserves_combining_mark() -> None:
     """結合文字は保持され、NFD由来のホスト名をサイレントに改変しないこと。"""
     result = strip_invisible_chars("cafe\u0301.com")
     assert result == "café.com"
+
+
+class TestValidateWebsiteUrlFacade:
+    """validate_website_url() 公開 façade の契約テスト（Pydantic 非経由）。"""
+
+    def test_accepts_https_and_normalizes_host(self) -> None:
+        assert validate_website_url("HTTPS://Example.COM/Path") == "https://example.com/Path"
+
+    def test_scheme_less_complements_https(self) -> None:
+        assert validate_website_url("hildegard.org") == "https://hildegard.org"
+
+    def test_rejects_protocol_relative(self) -> None:
+        with pytest.raises(ValueError, match=re.escape("Protocol-relative")):
+            validate_website_url("//evil.example/phish")
+
+    def test_rejects_dangerous_scheme(self) -> None:
+        with pytest.raises(ValueError, match=re.escape("Dangerous URL scheme")):
+            validate_website_url("javascript:alert(1)")
+
+    def test_rejects_percent_encoded_control_chars(self) -> None:
+        with pytest.raises(ValueError, match=re.escape("percent-encoded control")):
+            validate_website_url("https://example.com/%0d%0aSet-Cookie:x")
+
+    def test_rejects_incomplete_percent_encoding(self) -> None:
+        with pytest.raises(ValueError, match=re.escape("incomplete percent-encoding")):
+            validate_website_url("https://example.com/path%")
+
+    def test_rejects_scheme_less_with_port(self) -> None:
+        with pytest.raises(ValueError, match=re.escape("cannot contain a port")):
+            validate_website_url("192.168.1.1:8080")
+
+    def test_rejects_control_char_only(self) -> None:
+        with pytest.raises(ValueError, match=re.escape("Website became empty")):
+            validate_website_url("\u200b\u200b")
+
+
+class TestValidateStrictUrlFacade:
+    """validate_strict_url() 公開 façade の契約テスト（Pydantic 非経由）。"""
+
+    def test_accepts_http_and_https(self) -> None:
+        assert validate_strict_url("http://example.com/a.jpg") == "http://example.com/a.jpg"
+        assert (
+            validate_strict_url("HTTPS://CDN.Example.COM/b.jpg") == "https://cdn.example.com/b.jpg"
+        )
+
+    def test_rejects_scheme_less(self) -> None:
+        with pytest.raises(ValueError, match=re.escape("must start with http:// or https://")):
+            validate_strict_url("example.com/a.jpg")
+
+    def test_rejects_dangerous_scheme(self) -> None:
+        with pytest.raises(ValueError, match=re.escape("must start with http:// or https://")):
+            validate_strict_url("javascript:alert(1)")
+
+    def test_rejects_percent_encoded_control_chars(self) -> None:
+        with pytest.raises(ValueError, match=re.escape("percent-encoded control")):
+            validate_strict_url("https://example.com/%0a/x.jpg")
+
+    def test_rejects_incomplete_percent_encoding(self) -> None:
+        with pytest.raises(ValueError, match=re.escape("incomplete percent-encoding")):
+            validate_strict_url("https://example.com/%GG/x.jpg")
+
+    def test_rejects_empty_after_strip(self) -> None:
+        with pytest.raises(ValueError, match=re.escape("URL became empty")):
+            validate_strict_url("   ")
