@@ -3,8 +3,8 @@ GitHub API Integration Tests（実API呼び出し）
 
 Note:
 - Rate Limit制約: 認証なし60 req/h
-- @pytest.mark.externalで分離（CI/CD時は除外推奨）
-- 実行コマンド: pytest -m external（手動実行時のみ）
+- @pytest.mark.externalで分離（週次CIで実行）
+- 手動実行コマンド: pytest -m external
 """
 
 import pytest
@@ -14,19 +14,8 @@ from utils.github_error_handler import NotFoundError
 
 pytestmark = [pytest.mark.external, pytest.mark.integration]
 
-# =============================================================================
-# 実API呼び出しテスト
-# =============================================================================
-
 
 async def test_get_user():
-    """ユーザー情報取得
-
-    検証項目:
-    - GitHub API v3の実際のレスポンス形式
-    - 必須フィールドの存在確認
-    - Rate Limit監視ログ出力（Remaining < 10の場合）
-    """
     async with AsyncGitHubClient() as client:
         user = await client.get_user("octocat")
 
@@ -43,17 +32,10 @@ async def test_get_user():
 
 
 async def test_get_repos():
-    """リポジトリ一覧取得
-
-    検証項目:
-    - per_pageパラメータの動作確認
-    - リポジトリ情報の必須フィールド
-    - ソート順の動作確認
-    """
     async with AsyncGitHubClient() as client:
         repos = await client.get_repos("octocat", per_page=5, sort="updated")
 
-        # ページネーション確認
+        # 取得件数確認
         assert len(repos) <= 5
 
         # 必須フィールド確認
@@ -67,12 +49,6 @@ async def test_get_repos():
 
 
 async def test_get_repo():
-    """リポジトリ詳細取得
-
-    検証項目:
-    - 特定リポジトリの詳細情報取得
-    - 統計情報フィールドの確認
-    """
     async with AsyncGitHubClient() as client:
         repo = await client.get_repo("octocat", "Hello-World")
 
@@ -90,12 +66,6 @@ async def test_get_repo():
 
 
 async def test_not_found_error():
-    """404エラーハンドリング
-
-    検証項目:
-    - 存在しないユーザーでNotFoundError発生
-    - エラーメッセージの適切性
-    """
     async with AsyncGitHubClient() as client:
         with pytest.raises(NotFoundError) as exc_info:
             await client.get_user("nonexistent-user-12345")
