@@ -8,16 +8,13 @@ websiteはURL形式のためhtmlコンテキスト出力時は呼び出し元で
 """
 
 from typing import Annotated
-from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
-from . import sanitization as _sanitization
 from .sanitization import (
-    normalize_url,
     sanitize_user_content,
-    strip_invisible_chars,
-    validate_scheme_less_url,
+    validate_strict_url,
+    validate_website_url,
 )
 
 # =============================================================================
@@ -286,54 +283,8 @@ class User(BaseModel):
         """
         if not isinstance(v, str):
             raise ValueError(f"String required (received type: {type(v).__name__})")
-
-        sanitized = strip_invisible_chars(v).strip()
-        # min_length=1 は真の空文字列を、ここでは制御文字のみの文字列を捕捉（2段階チェック）
-        if not sanitized:
-            raise ValueError("Website became empty after control character removal")
-        # CRLF injection防止: パーセントエンコードされた制御文字を拒否（%00-%1f全範囲）
-        # strip_invisible_chars は実際の制御文字を除去するが、
-        # %0d%0a 等のエンコード形式はバイパスする
-        sanitized_lower = sanitized.lower()
-        if _sanitization._PERCENT_CTRL_RE.search(sanitized_lower):
-            raise ValueError("URL contains percent-encoded control characters")
-        # 不完全な%シーケンス検出（全ブランチ共通 — http/httpsおよびスキームなし両対応）
-        # validate_scheme_less_url でも同様にチェックするが多層防御として二重確認
-        if _sanitization._INCOMPLETE_PCT_RE.search(sanitized):
-            raise ValueError("URL contains incomplete percent-encoding")
-        # プロトコル相対URLを明示的に拒否（攻撃面削減）
-        if sanitized_lower.startswith("//"):
-            raise ValueError("Protocol-relative URLs are not allowed")
-        # urlparseは各分岐で1回のみ呼び出す
-        # （http/httpsブランチと補完ブランチで入力が異なるため共通化不可）
-        if sanitized_lower.startswith(("http://", "https://")):
-            # _validate_netloc / normalize_url の ValueError はそのまま伝播
-            # NOTE: sanitized（元の大文字混在）を使用 — スキーム小文字化は normalize_url に委譲
-            # （sanitized_lower は path/query の大文字を失うため使用不可）
-            parsed = urlparse(sanitized)
-            _sanitization._validate_netloc(parsed)
-            return _sanitization._ensure_website_max_length(normalize_url(parsed))
-        # RFC 3986スキーム検出: http/https以外のスキームが存在すれば拒否
-        # is_domain_portロジックを削除: domain:portはスキームなし扱いのため
-        # http(s)://を明示しない限り拒否（例: example.com:8080 → ValueError）
-        if _sanitization._SCHEME_RE.match(sanitized_lower):
-            raise ValueError("Dangerous URL scheme detected")
-        # スキームなし → https:// を補完して検証
-        # _validate_netloc / normalize_url の ValueError はそのまま伝播
-        # 設計意図: スキームなしURLはドメインのみ許可（パス付きURLは拒否）
-        # パーセントエンコード済み %2F によるバイパスも防止
-        validate_scheme_less_url(sanitized)
-        parsed = urlparse("https://" + sanitized)
-        _sanitization._validate_netloc(parsed)
-        # スキームなし補完後のポートチェック:
-        # IPアドレス:port形式（例: 192.168.1.1:8080）がここに到達する
-        # （ドメイン:port形式（例: example.com:8080）は _SCHEME_RE にマッチし
-        #  「危険なURLスキーム」として上流で拒否されるため、このチェックに到達しない）
-        if parsed.port is not None:
-            raise ValueError(
-                "Scheme-less URL cannot contain a port (explicitly use http:// or https://)"
-            )
-        return _sanitization._ensure_website_max_length(normalize_url(parsed))
+        # policy 本体は sanitization.validate_website_url に委譲（private 非依存）
+        return validate_website_url(v)
 
 
 # =============================================================================
@@ -472,19 +423,5 @@ class Photo(BaseModel):
             エスケープが必須。
 
         """
-        sanitized = strip_invisible_chars(v).strip()
-        if not sanitized:
-            raise ValueError("URL became empty after control character removal")
-        # CRLF injection防止: パーセントエンコードされた制御文字を拒否（%00-%1f全範囲）
-        sanitized_lower = sanitized.lower()
-        if _sanitization._PERCENT_CTRL_RE.search(sanitized_lower):
-            raise ValueError("URL contains percent-encoded control characters")
-        # 不完全な%シーケンス（%、%G、%GGなど）はunquoteがリテラル扱いするため個別チェック
-        if _sanitization._INCOMPLETE_PCT_RE.search(sanitized):
-            raise ValueError("URL contains incomplete percent-encoding")
-        if not sanitized_lower.startswith(("http://", "https://")):
-            raise ValueError("URL must start with http:// or https://")
-        # _validate_netloc / normalize_url の ValueError はそのまま伝播
-        parsed = urlparse(sanitized)
-        _sanitization._validate_netloc(parsed)
-        return _sanitization._ensure_website_max_length(normalize_url(parsed))
+        # policy 本体は sanitization.validate_strict_url に委譲（private 非依存）
+        return validate_strict_url(v)
