@@ -229,8 +229,10 @@ def test_renamed() -> None:
 
     positive_passed = 0
     negative_passed = 0
-    positive_total = 2
-    negative_total = 3
+    # Derive totals from the case list so an added case that fails cannot
+    # silently pass by matching a stale hardcoded total.
+    positive_total = sum(1 for case in cases if case[3])
+    negative_total = len(cases) - positive_total
     for name, before, after, expected_equal in cases:
         try:
             equivalent = _equivalent(before, after, f"self-test: {name}")
