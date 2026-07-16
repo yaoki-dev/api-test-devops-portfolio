@@ -183,8 +183,13 @@ def _check_files(base_ref: str, paths: list[str]) -> int:
 def _is_tests_fixture_owner(owner: str | None, source: str) -> bool:
     normalized_owner = _normalize_fixture_source(owner) if owner is not None else ""
     normalized_source = _normalize_fixture_source(source)
-    owner_is_tests_fixture = normalized_owner.startswith(("tests/", "tests."))
-    return owner_is_tests_fixture and normalized_source.startswith("tests/")
+
+    # ownerが "conftest" 単体になるケースを明示的に許容する
+    owner_is_valid = (
+        normalized_owner.startswith(("tests/", "tests.")) or normalized_owner == "conftest"
+    )
+
+    return owner_is_valid and normalized_source.startswith("tests/")
 
 
 def _normalize_fixture_source(source: str) -> str:
@@ -311,11 +316,17 @@ posix_undocumented_fixture -- /repo/tests/unit/test_sample.py:20
 --------- fixtures defined from C:\repo\tests\unit\test_sample.py ---------
 windows_undocumented_fixture -- C:\repo\tests\unit\test_sample.py:30
     no docstring available
+--------- fixtures defined from conftest ---------
+conftest_undocumented_fixture -- tests/conftest.py:15
+    no docstring available
 """
     inventory = _parse_fixture_docstrings(output)
     undocumented = {
         "tests/unit/test_sample.py::posix_undocumented_fixture",
         "tests/unit/test_sample.py::windows_undocumented_fixture",
+        # owner見出しが bare "conftest" でも tests/conftest.py の共通fixtureを
+        # 落とさないことを保証する回帰ケース（旧AND条件では除外されて失敗する）
+        "tests/conftest.py::conftest_undocumented_fixture",
     }
     if inventory.undocumented != undocumented:
         return False

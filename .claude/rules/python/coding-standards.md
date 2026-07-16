@@ -78,7 +78,7 @@ fixture・helper・テスト用classは、global stateの変更/復元、teardow
 uv run python scripts/check_docstring_refactor.py --self-test
 uv run python scripts/check_docstring_refactor.py --fixture-gate
 BASE_REF=$(git merge-base HEAD origin/develop)
-uv run python scripts/check_docstring_refactor.py "$BASE_REF" <changed-test-files...>
+uv run python scripts/check_docstring_refactor.py "$BASE_REF" tests/path/to/test_file.py
 ```
 
 ---
