@@ -28,24 +28,16 @@ from utils.github_error_handler import (
 pytestmark = pytest.mark.unit
 
 
-# =============================================================================
-# redact_body_preview — PII 抑制関数
-# =============================================================================
-
-
 def test_redact_body_preview_different_inputs_produce_different_hashes() -> None:
-    """異なる入力は異なるハッシュを返す。"""
     assert redact_body_preview("body A") != redact_body_preview("body B")
 
 
 def test_redact_body_preview_handles_unicode() -> None:
-    """非 ASCII 文字を含む入力でもエラーなくハッシュを返す。"""
     result = redact_body_preview("日本語のエラーメッセージ")
     assert result.startswith("[redacted:")
 
 
 def test_redact_body_preview_handles_special_chars() -> None:
-    """特殊文字（改行、タブ、null）を含む文字列も処理できる。"""
     body = "line1\nline2\tindented\x00null"
     result = redact_body_preview(body)
     assert result.startswith("[redacted:")
@@ -66,18 +58,11 @@ def test_redact_body_preview_returns_fixed_hash_format_for_empty_body() -> None:
 
 
 def test_redact_body_preview_is_deterministic() -> None:
-    """同一 body は同じ fingerprint を返す。"""
     body = "A" * 200
     assert redact_body_preview(body) == redact_body_preview(body)
 
 
-# =============================================================================
-# SanitizedJSONDecodeError — PII 安全な JSON エラー
-# =============================================================================
-
-
 def test_sanitized_json_decode_error_str_with_multiline_msg() -> None:
-    """複雑な msg も正しく文字列化される。"""
     cause = SanitizedJSONDecodeError("json.JSONDecodeError", "Expecting ',' delimiter", 42, 3, 5)
     result = str(cause)
     assert result.startswith("json.JSONDecodeError:")
@@ -87,38 +72,27 @@ def test_sanitized_json_decode_error_str_with_multiline_msg() -> None:
 
 
 def test_sanitized_json_decode_error_is_exception_subclass() -> None:
-    """SanitizedJSONDecodeError は Exception のサブクラス。"""
     assert issubclass(SanitizedJSONDecodeError, Exception)
 
 
-# =============================================================================
-# 例外階層
-# =============================================================================
-
-
 def test_rate_limit_error_inherits_from_github_api_error() -> None:
-    """RateLimitError は GitHubAPIError のサブクラス。"""
     assert issubclass(RateLimitError, GitHubAPIError)
 
 
 def test_not_found_error_inherits_from_github_api_error() -> None:
-    """NotFoundError は GitHubAPIError のサブクラス。"""
     assert issubclass(NotFoundError, GitHubAPIError)
 
 
 def test_github_server_error_inherits_from_github_api_error() -> None:
-    """GitHubServerError は GitHubAPIError のサブクラス。"""
     assert issubclass(GitHubServerError, GitHubAPIError)
 
 
 def test_rate_limit_error_has_reset_time() -> None:
-    """RateLimitError は reset_time 属性を持つ。"""
     err = RateLimitError(1700000000)
     assert err.reset_time == 1700000000
 
 
 def test_rate_limit_error_str_includes_iso_timestamp() -> None:
-    """RateLimitError の文字列表現に ISO 8601 形式の reset 時刻が含まれる。"""
     from datetime import UTC, datetime
 
     reset_time = 1700000000
@@ -144,19 +118,13 @@ def test_rate_limit_error_overflow_falls_back_to_unix_timestamp() -> None:
     ],
 )
 def test_rate_limit_error_non_positive_reset_time_is_unknown(reset_time: int) -> None:
-    """reset_time が 0 以下なら unknown へフォールバックする。"""
+    """0以下のreset_timeをunknownへフォールバックする例外契約を検証する。"""
     err = RateLimitError(reset_time)
     assert err.reset_time == reset_time
     assert "unknown" in str(err)
 
 
-# =============================================================================
-# _handle_403_response — 403 レート制限判別
-# =============================================================================
-
-
 def _make_response(status_code: int, headers: dict | None = None) -> httpx.Response:
-    """httpx.Response の簡易ファクトリ。"""
     return httpx.Response(
         status_code=status_code,
         headers=headers or {},
@@ -165,7 +133,6 @@ def _make_response(status_code: int, headers: dict | None = None) -> httpx.Respo
 
 
 def test_handle_403_raises_rate_limit_error_when_remaining_is_zero() -> None:
-    """rate_remaining=0 の 403 は RateLimitError を送出する。"""
     response = _make_response(403)
     with pytest.raises(RateLimitError) as exc_info:
         _handle_403_response(
@@ -191,7 +158,6 @@ def test_handle_403_raises_github_api_error_when_remaining_is_negative() -> None
 
 
 def test_handle_403_raises_rate_limit_when_remaining_none_header_zero() -> None:
-    """rate_remaining=None でレスポンスヘッダーが 0 の場合も RateLimitError。"""
     response = _make_response(
         403,
         headers={
@@ -209,7 +175,6 @@ def test_handle_403_raises_rate_limit_when_remaining_none_header_zero() -> None:
 
 
 def test_handle_403_raises_github_api_error_when_remaining_positive() -> None:
-    """rate_remaining > 0 の 403 は通常の GitHubAPIError。"""
     response = _make_response(403)
     with pytest.raises(GitHubAPIError) as exc_info:
         _handle_403_response(
@@ -221,7 +186,7 @@ def test_handle_403_raises_github_api_error_when_remaining_positive() -> None:
 
 
 def test_handle_403_redacts_external_message() -> None:
-    """403 response message is never exposed through exceptions or logs."""
+    """外部メッセージが例外やログに露出せず、PII漏洩を防止することを検証する。"""
     external_message = "token=ghp_sensitive private-repo=user/restricted"
     response = httpx.Response(
         403,
@@ -246,13 +211,7 @@ def test_handle_403_redacts_external_message() -> None:
     assert external_message not in repr(logger.warning.call_args)
 
 
-# =============================================================================
-# _handle_5xx_response — 5xx リトライ制御（非同期）
-# =============================================================================
-
-
 async def test_handle_5xx_sleeps_unless_final_attempt() -> None:
-    """最終試行でなければログ出力し sleep する。"""
     response = _make_response(503)
     logger = MagicMock()
 
@@ -271,7 +230,6 @@ async def test_handle_5xx_sleeps_unless_final_attempt() -> None:
 
 
 async def test_handle_5xx_raises_github_server_error_on_final_attempt() -> None:
-    """最終試行では GitHubServerError を送出し sleep しない。"""
     response = _make_response(502)
     logger = MagicMock()
 
@@ -291,13 +249,7 @@ async def test_handle_5xx_raises_github_server_error_on_final_attempt() -> None:
     mock_sleep.assert_not_awaited()
 
 
-# =============================================================================
-# _parse_json_response — JSON パース + PII 安全なエラー（同期）
-# =============================================================================
-
-
 def test_parse_json_response_returns_parsed_dict() -> None:
-    """有効な JSON body から dict を返す。"""
     mock_response = MagicMock(spec=httpx.Response)
     mock_response.json.return_value = {"key": "value"}
 
@@ -310,7 +262,6 @@ def test_parse_json_response_returns_parsed_dict() -> None:
 
 
 def test_parse_json_response_returns_parsed_list() -> None:
-    """有効な JSON body から list を返す。"""
     mock_response = MagicMock(spec=httpx.Response)
     mock_response.json.return_value = [{"key": "value"}]
 
@@ -323,7 +274,7 @@ def test_parse_json_response_returns_parsed_list() -> None:
 
 
 def test_parse_json_response_raises_github_api_error_on_invalid_json() -> None:
-    """不正な JSON body は GitHubAPIError（cause=SanitizedJSONDecodeError）を送出。"""
+    """生のJSONDecodeErrorを漏らさず、SanitizedJSONDecodeErrorをcauseに保持する例外契約を検証する。"""
     logger = MagicMock()
     response = httpx.Response(
         200, content=b"not-valid-json", headers={"Content-Type": "application/json"}
@@ -348,7 +299,6 @@ def test_parse_json_response_raises_github_api_error_on_invalid_json() -> None:
 
 
 def test_parse_json_response_logs_on_decode_error() -> None:
-    """JSON デコード失敗時に logger.error を呼ぶ。"""
     mock_response = MagicMock(spec=httpx.Response)
     mock_response.json.side_effect = json.JSONDecodeError("Expecting value", "bad", 0)
     logger = MagicMock()
@@ -364,13 +314,7 @@ def test_parse_json_response_logs_on_decode_error() -> None:
     assert logger.error.call_args.kwargs["endpoint"] == "/users"
 
 
-# =============================================================================
-# _handle_http_status_error — HTTP エラー → 例外階層マッピング
-# =============================================================================
-
-
 def test_handle_http_status_error_raises_not_found_for_404() -> None:
-    """404 は NotFoundError を送出する。"""
     response = _make_response(404)
     with pytest.raises(NotFoundError) as exc_info:
         _handle_http_status_error(
@@ -383,7 +327,6 @@ def test_handle_http_status_error_raises_not_found_for_404() -> None:
 
 
 def test_handle_http_status_error_raises_rate_limit_for_429() -> None:
-    """429 は RateLimitError を送出する（セカンダリレート制限）。"""
     response = _make_response(
         429,
         headers={
@@ -401,7 +344,6 @@ def test_handle_http_status_error_raises_rate_limit_for_429() -> None:
 
 
 def test_handle_http_status_error_raises_generic_for_401() -> None:
-    """401 は GitHubAPIError を送出する。"""
     response = _make_response(401)
     with pytest.raises(GitHubAPIError) as exc_info:
         _handle_http_status_error(
@@ -414,7 +356,6 @@ def test_handle_http_status_error_raises_generic_for_401() -> None:
 
 
 def test_handle_http_status_error_raises_generic_for_422() -> None:
-    """422 は GitHubAPIError を送出する。"""
     response = _make_response(422)
     with pytest.raises(GitHubAPIError) as exc_info:
         _handle_http_status_error(
@@ -445,11 +386,6 @@ def test_handle_http_status_error_all_use_from_none() -> None:
             logger=MagicMock(),
         )
     assert exc_info2.value.__cause__ is None
-
-
-# =============================================================================
-# Migrated facade-wrapper tests — direct github_error_handler ownership
-# =============================================================================
 
 
 def test_handle_403_response_no_json_log() -> None:

@@ -1,2 +1,1 @@
-tests/unit/test_http_helpers.py::mock_settings
 tests/unit/test_jsonplaceholder_base_sync.py::mock_settings
