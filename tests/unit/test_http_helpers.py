@@ -41,7 +41,6 @@ pytestmark = pytest.mark.unit
 def test_validate_optional_int_none_value_skips_validation(
     value: int | None, name: str, min_value: int
 ) -> None:
-    """value=None の場合、min_valueに関わらず例外が発生しないこと（早期スキップ）"""
     _validate_optional_int(value, name, min_value)
 
 
@@ -56,7 +55,6 @@ def test_validate_optional_int_none_value_skips_validation(
 def test_validate_optional_int_boundary_value_equal_to_min_passes(
     value: int, name: str, min_value: int
 ) -> None:
-    """value == min_value の境界値では例外が発生しないこと（`<` 比較の検証）"""
     _validate_optional_int(value, name, min_value)
 
 
@@ -72,13 +70,11 @@ def test_validate_optional_int_boundary_value_equal_to_min_passes(
 def test_validate_optional_int_below_min_raises_value_error(
     value: int, name: str, min_value: int
 ) -> None:
-    """value < min_value の場合、期待メッセージでValueErrorが発生すること"""
     with pytest.raises(ValueError, match=f"{name} must be >= {min_value}"):
         _validate_optional_int(value, name, min_value)
 
 
 def test_map_request_error_too_many_redirects() -> None:
-    """TooManyRedirectsで非リトライエラー発生"""
     error = httpx.TooManyRedirects("Max redirects exceeded")
 
     with pytest.raises(APIClientError) as exc_info:
@@ -92,7 +88,6 @@ def test_map_request_error_too_many_redirects() -> None:
 
 
 def test_map_request_error_invalid_url() -> None:
-    """InvalidURLで非リトライエラー発生"""
     error = httpx.InvalidURL("Invalid URL format")
 
     with pytest.raises(APIClientError) as exc_info:
@@ -106,7 +101,6 @@ def test_map_request_error_invalid_url() -> None:
 
 
 def test_map_request_error_timeout() -> None:
-    """TimeoutExceptionでAPITimeoutError返却"""
     error = httpx.TimeoutException("Request timed out at https://internal.corp/api")
     result = _map_request_error(error)
 
@@ -119,7 +113,6 @@ def test_map_request_error_timeout() -> None:
 
 
 def test_map_request_error_connect_error() -> None:
-    """ConnectErrorでAPIConnectionError返却"""
     error = httpx.ConnectError("Connection refused to internal-proxy.corp.example.com")
     result = _map_request_error(error)
 
@@ -132,7 +125,6 @@ def test_map_request_error_connect_error() -> None:
 
 
 def test_map_request_error_network_error() -> None:
-    """NetworkError（else分岐）でAPIConnectionError返却"""
     error = httpx.NetworkError("Network unreachable via proxy.internal.example.com")
     result = _map_request_error(error)
 
@@ -145,7 +137,6 @@ def test_map_request_error_network_error() -> None:
 
 
 def test_classify_error_non_retryable_logs_error() -> None:
-    """TooManyRedirects時にlogger.errorが呼ばれる"""
     error = httpx.TooManyRedirects("Max redirects")
     mock_logger = Mock()
 
@@ -165,7 +156,6 @@ def test_classify_error_non_retryable_logs_error() -> None:
 
 
 def test_classify_error_non_retryable_async_field() -> None:
-    """async呼び出し時にis_asyncフィールドがTrueになる（静的イベント名 + 構造化フィールド）"""
     error = httpx.InvalidURL("Bad URL")
     mock_logger = Mock()
 
@@ -182,7 +172,6 @@ def test_classify_error_non_retryable_async_field() -> None:
 
 
 def test_classify_error_retryable_logs_warning() -> None:
-    """ConnectError時にlogger.warningが呼ばれる"""
     error = httpx.ConnectError("Connection refused")
     mock_logger = Mock()
 
@@ -200,7 +189,6 @@ def test_classify_error_retryable_logs_warning() -> None:
 
 
 def test_classify_error_retryable_timeout() -> None:
-    """TimeoutException時にAPITimeoutErrorが返される"""
     error = httpx.TimeoutException("Timed out")
     mock_logger = Mock()
 
@@ -216,7 +204,6 @@ def test_classify_error_retryable_timeout() -> None:
 
 
 def test_classify_error_retryable_network_error() -> None:
-    """ReadError（NetworkErrorサブクラス）時にAPIConnectionErrorが返される（else分岐）"""
     error = httpx.ReadError("Read failed")
     mock_logger = Mock()
 
@@ -254,11 +241,11 @@ class MockSettings:
 
 @pytest.fixture()
 def mock_settings() -> MockSettings:
+    """各テストに独立した設定を返し、patchしたsettingsのリークを防止する。"""
     return MockSettings()
 
 
 def test_resolve_client_config_base_url_none_uses_settings(mock_settings: MockSettings) -> None:
-    """base_url=None の場合 settings.api.base_url が使われる"""
     with patch("utils.http_helpers.settings", mock_settings):
         base_url, _, _, _, _ = _resolve_client_config(None, None, None, None, None)
     assert base_url == "https://settings.example.com"
@@ -269,21 +256,18 @@ def test_resolve_client_config_invalid_base_url_raises(
     mock_settings: MockSettings,
     invalid_base_url: str,
 ) -> None:
-    """空白のみの base_url で ValueError が発生"""
     with patch("utils.http_helpers.settings", mock_settings):
         with pytest.raises(ValueError, match="base_url が空です"):
             _resolve_client_config(invalid_base_url, None, None, None, None)
 
 
 def test_resolve_client_config_none_timeout_uses_settings(mock_settings: MockSettings) -> None:
-    """timeout=None の場合 settings.api.timeout が使われる"""
     with patch("utils.http_helpers.settings", mock_settings):
         _, timeout, _, _, _ = _resolve_client_config("https://example.com", None, None, None, None)
     assert timeout == 30.0
 
 
 def test_resolve_client_config_none_retry_count_uses_settings(mock_settings: MockSettings) -> None:
-    """retry_count=None の場合 settings.api.retry_count が使われる"""
     with patch("utils.http_helpers.settings", mock_settings):
         _, _, retry_count, _, _ = _resolve_client_config(
             "https://example.com", 10.0, None, 2.0, None
@@ -292,7 +276,6 @@ def test_resolve_client_config_none_retry_count_uses_settings(mock_settings: Moc
 
 
 def test_resolve_client_config_none_retry_delay_uses_settings(mock_settings: MockSettings) -> None:
-    """retry_delay=None の場合 settings.api.retry_delay が使われる"""
     with patch("utils.http_helpers.settings", mock_settings):
         _, _, _, retry_delay, _ = _resolve_client_config("https://example.com", 10.0, 5, None, None)
     assert retry_delay == 1.0
@@ -301,7 +284,6 @@ def test_resolve_client_config_none_retry_delay_uses_settings(mock_settings: Moc
 def test_resolve_client_config_headers_none_returns_defaults_only(
     mock_settings: MockSettings,
 ) -> None:
-    """headers=None の場合デフォルトヘッダーのみ返される"""
     with patch("utils.http_helpers.settings", mock_settings):
         _, _, _, _, headers = _resolve_client_config("https://example.com", None, None, None, None)
     assert set(headers.keys()) == {"User-Agent", "Accept", "Content-Type"}
@@ -321,7 +303,6 @@ def test_resolve_client_config_headers_empty_dict_triggers_update(
 
 
 def test_resolve_client_config_headers_merged_with_defaults(mock_settings: MockSettings) -> None:
-    """カスタムヘッダーがデフォルトヘッダーとマージされる"""
     with patch("utils.http_helpers.settings", mock_settings):
         _, _, _, _, headers = _resolve_client_config(
             "https://example.com", None, None, None, {"X-Custom": "value"}
@@ -333,7 +314,6 @@ def test_resolve_client_config_headers_merged_with_defaults(mock_settings: MockS
 def test_resolve_client_config_custom_headers_override_defaults(
     mock_settings: MockSettings,
 ) -> None:
-    """カスタムヘッダーがデフォルトヘッダーを上書きできる"""
     with patch("utils.http_helpers.settings", mock_settings):
         _, _, _, _, headers = _resolve_client_config(
             "https://example.com", None, None, None, {"User-Agent": "custom-agent"}

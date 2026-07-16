@@ -34,10 +34,7 @@ _PHOTO_BASE: Final[_PhotoBaseData] = {
 
 
 class TestPhotoModel:
-    """Photo モデルのテスト"""
-
     def test_photo_basic_creation(self) -> None:
-        """基本的な Photo モデル作成"""
         photo = Photo(
             album_id=1,
             id=1,
@@ -86,7 +83,6 @@ class TestPhotoModel:
     def test_photo_url_scheme_allows_http_https(
         self, url: str, thumbnail_url: str, expected_url: str, expected_thumbnail: str
     ) -> None:
-        """Photo.validate_url_scheme が http/https URLを許可・スキームを小文字正規化すること"""
         photo = Photo(
             album_id=1,
             id=1,
@@ -130,7 +126,7 @@ class TestPhotoModel:
         expected_url: str,
         expected_thumbnail: str,
     ) -> None:
-        """Photo.validate_url_schemeがホスト部を小文字正規化すること（RFC 3986）"""
+        """RFC 3986のホスト正規化契約を維持するため、大文字ホストを小文字へ正規化する。"""
         photo = Photo(
             album_id=1,
             id=1,
@@ -146,7 +142,7 @@ class TestPhotoModel:
         _XSS_MODEL_PARAMS,
     )
     def test_photo_title_sanitizes_xss(self, dirty: str, expected: str) -> None:
-        """Photo.title フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
+        """OWASP Cheat Sheetベースの独自5分類でXSS入力のサニタイズ契約を検証する。"""
         photo = Photo(
             album_id=1,
             id=1,
@@ -157,7 +153,6 @@ class TestPhotoModel:
         assert photo.title == expected
 
     def test_photo_rejects_javascript_url(self) -> None:
-        """Photo モデルが javascript: スキームを拒否することを確認"""
         with pytest.raises(ValidationError) as exc_info:
             Photo(
                 album_id=1,
@@ -170,7 +165,6 @@ class TestPhotoModel:
         assert "URL must start with http:// or https://" in str(exc_info.value)
 
     def test_photo_rejects_data_url(self) -> None:
-        """Photo モデルが data: スキームを拒否することを確認"""
         with pytest.raises(ValidationError) as exc_info:
             Photo(
                 album_id=1,
@@ -183,7 +177,6 @@ class TestPhotoModel:
         assert "URL must start with http:// or https://" in str(exc_info.value)
 
     def test_photo_rejects_schemeless_url(self) -> None:
-        """Photo.url がスキームなしURLを拒否すること"""
         with pytest.raises(
             ValidationError, match=re.escape("URL must start with http:// or https://")
         ):
@@ -196,7 +189,6 @@ class TestPhotoModel:
             )
 
     def test_photo_rejects_schemeless_thumbnail_url(self) -> None:
-        """Photo.thumbnail_url がスキームなしURLを拒否すること"""
         with pytest.raises(
             ValidationError, match=re.escape("URL must start with http:// or https://")
         ):
@@ -234,7 +226,6 @@ class TestPhotoModel:
     def test_photo_rejects_percent_encoded_crlf(
         self, url: str, thumbnail_url: str, expected_match: str
     ) -> None:
-        """Photo.validate_url_scheme がパーセントエンコードされたCRLFを拒否すること"""
         with pytest.raises(ValidationError, match=expected_match):
             Photo(album_id=1, id=1, title="Test", url=url, thumbnail_url=thumbnail_url)
 
@@ -251,7 +242,6 @@ class TestPhotoModel:
         ],
     )
     def test_photo_rejects_incomplete_percent_encoding(self, field_key: str, bad_url: str) -> None:
-        """Photo url/thumbnail_url が不完全なパーセントエンコードを拒否すること."""
         with pytest.raises(ValidationError, match=re.escape("incomplete percent-encoding")):
             Photo.model_validate({**_PHOTO_BASE, field_key: bad_url})
 
@@ -271,7 +261,6 @@ class TestPhotoModel:
         ],
     )
     def test_photo_rejects_control_char_only_url_fields(self, url: str, thumbnail_url: str) -> None:
-        """制御文字のみのPhoto url/thumbnail_urlが空文字エラーで拒否されること"""
         with pytest.raises(ValidationError, match=re.escape("URL became empty")):
             Photo(album_id=1, id=1, title="Test", url=url, thumbnail_url=thumbnail_url)
 
@@ -284,7 +273,6 @@ class TestPhotoModel:
         ],
     )
     def test_photo_url_rejects_empty_netloc(self, url: str) -> None:
-        """Photo.url に netloc 空の URL が渡されたとき ValidationError を発生させること"""
         with pytest.raises(ValidationError, match=re.escape("Valid hostname not found")):
             Photo(
                 album_id=1,
@@ -302,7 +290,6 @@ class TestPhotoModel:
         ],
     )
     def test_photo_thumbnail_url_rejects_empty_netloc(self, thumbnail_url: str) -> None:
-        """Photo.thumbnail_url に netloc 空の URL が渡されたとき ValidationError を発生させること"""
         with pytest.raises(ValidationError, match=re.escape("Valid hostname not found")):
             Photo(
                 album_id=1,
@@ -314,7 +301,6 @@ class TestPhotoModel:
 
     @pytest.mark.parametrize("field_name", ["url", "thumbnail_url"], ids=["url", "thumbnail"])
     def test_photo_rejects_ascii_whitespace_in_host(self, field_name: str) -> None:
-        """Photo の URL フィールドがホスト部のASCII空白を拒否すること."""
         key = "url" if field_name == "url" else "thumbnailUrl"
         with pytest.raises(ValidationError, match=re.escape("Hostname contains whitespace")):
             Photo.model_validate({**_PHOTO_BASE, key: "https://example .com/photo.jpg"})
@@ -331,7 +317,6 @@ class TestPhotoModel:
         ],
     )
     def test_photo_url_rejects_userinfo(self, url: str) -> None:
-        """Photo.url にuserinfo付きURLが渡されたとき ValidationError を発生させること"""
         with pytest.raises(ValidationError, match=re.escape("URL cannot contain userinfo")):
             Photo(
                 album_id=1,
@@ -359,7 +344,7 @@ class TestPhotoModel:
         ],
     )
     def test_photo_thumbnail_url_rejects_userinfo(self, thumbnail_url: str) -> None:
-        """Photo.thumbnail_urlがuserinfo付きURLを拒否すること（RFC 3986バイパス防止）"""
+        """Photo.thumbnail_urlがuserinfo付きURLを拒否（RFC 3986バイパス防止）"""
         with pytest.raises(ValidationError, match=re.escape("URL cannot contain userinfo")):
             Photo(
                 album_id=1,
@@ -385,7 +370,6 @@ class TestPhotoModel:
         ],
     )
     def test_photo_rejects_invalid_port(self, url: str, thumbnail_url: str) -> None:
-        """Photo url/thumbnail_url が無効なポート文字列を拒否すること"""
         with pytest.raises(ValidationError, match=re.escape("Invalid port")):
             Photo(album_id=1, id=1, title="Test", url=url, thumbnail_url=thumbnail_url)
 
@@ -413,7 +397,7 @@ class TestPhotoModel:
         _PHOTO_DANGEROUS_URLS,
     )
     def test_photo_url_rejects_invisible_char_dangerous_scheme(self, dangerous: str) -> None:
-        """Photo.url が不可視文字で難読化された危険スキームを拒否すること。
+        """Photo.url が不可視文字で難読化された危険スキームを拒否
 
         url と thumbnail_url は同一の validate_url_scheme バリデータを共有するため、
         url フィールドでの全件検証でバリデータロジックを網羅。
@@ -440,7 +424,7 @@ class TestPhotoModel:
     def test_photo_thumbnail_url_alias_rejects_invisible_char_dangerous_scheme(
         self, dangerous: str
     ) -> None:
-        """Photo.thumbnailUrl(alias) が同一バリデータで危険スキームを拒否すること。
+        """Photo.thumbnailUrl(alias) が同一バリデータで危険スキームを拒否
 
         alias 入力経路（thumbnailUrl=）でのバインド検証のみ実施。
         バリデータロジック検証は test_photo_url_rejects_invisible_char_dangerous_scheme に委譲。
@@ -448,14 +432,13 @@ class TestPhotoModel:
         with pytest.raises(
             ValidationError, match=re.escape("URL must start with http:// or https://")
         ):
-            # model_validate で外部入力（alias 名を含む辞書）をシミュレート
             Photo.model_validate(
                 {
                     "album_id": 1,
                     "id": 1,
                     "title": "Test",
                     "url": "https://example.com/photo.jpg",
-                    "thumbnailUrl": dangerous,  # alias 名を含む辞書で検証
+                    "thumbnailUrl": dangerous,
                 }
             )
 
@@ -491,7 +474,7 @@ class TestPhotoModel:
         assert photo.url == "https://example.com/photo.jpg"
 
     def test_photo_url_rejects_surrogate_codepoint(self) -> None:
-        """孤立サロゲートを含むURLはPydanticのUnicodeバリデーションで拒否されること（E2E）
+        """孤立サロゲートを含むURLはPydanticのUnicodeバリデーションで拒否
 
         Note:
             Pydanticはfield_validator呼び出し前にstring_unicodeエラーで拒否する。
@@ -507,7 +490,7 @@ class TestPhotoModel:
             )
 
     def test_photo_url_rejects_empty_string(self) -> None:
-        """Photo.url に空文字列を渡すと ValidationError が発生すること。
+        """Photo.url に空文字列を渡すと ValidationError が発生する。
 
         min_length 制約がないため、空文字列は strip_invisible_chars → .strip() を通過後
         validate_url_scheme のガード節（if not sanitized）に到達する。
@@ -522,7 +505,6 @@ class TestPhotoModel:
             )
 
     def test_photo_thumbnail_url_strips_bidi(self) -> None:
-        """Photo.thumbnail_url の Bidi 制御文字（U+202E）が除去されること"""
         bidi = "\u202e"  # RIGHT-TO-LEFT OVERRIDE (Cf カテゴリ)
         url_with_bidi = f"https://example.com/thumb{bidi}.jpg"
         photo = Photo.model_validate({**_PHOTO_BASE, "thumbnailUrl": url_with_bidi})
@@ -530,7 +512,6 @@ class TestPhotoModel:
         assert photo.thumbnail_url == "https://example.com/thumb.jpg"
 
     def test_photo_thumbnail_url_rejects_empty_string(self) -> None:
-        """Photo.thumbnail_url に空文字列を渡すと ValidationError が発生すること。"""
         with pytest.raises(ValidationError, match=re.escape("URL became empty")):
             Photo(
                 album_id=1,
@@ -566,7 +547,6 @@ class TestPhotoModel:
         ],
     )
     def test_photo_url_encodes_special_chars(self, input_url: str, expected_url: str) -> None:
-        """_normalize_url の quote() によるパス・クエリのURLエンコード動作を検証する."""
         photo = Photo(
             album_id=1, id=1, title="Test", url=input_url, thumbnail_url="https://example.com/t.jpg"
         )
@@ -574,7 +554,6 @@ class TestPhotoModel:
 
     @pytest.mark.parametrize("field_name", ["url", "thumbnail_url"], ids=["url", "thumbnail"])
     def test_photo_rejects_normalized_length_overflow(self, field_name: str) -> None:
-        """Photo のURLは正規化後も 2048 文字以内である必要があることを検証する。"""
         long_path = "あ" * 250
         key = "url" if field_name == "url" else "thumbnailUrl"
         photo_data = {
@@ -588,7 +567,7 @@ class TestPhotoModel:
             Photo.model_validate(photo_data)
 
     def test_photo_url_rejects_percent_encoded_at_with_literal_at(self) -> None:
-        """%40エンコード済み@と@リテラル混在のuserinfoバイパスを拒否すること.
+        """%40エンコード済み@と@リテラル混在のuserinfoバイパスを拒否
 
         urlparse は "user%40evil.com@host.example.com" をuserinfoとして解析するため、
         URLにuserinfoが含まれると判定しValidationErrorを発生させる。
@@ -597,7 +576,7 @@ class TestPhotoModel:
             Photo(**{**_PHOTO_BASE, "url": "https://user%40evil.com@host.example.com/path.jpg"})
 
     def test_photo_url_rejects_percent_encoded_at_in_host(self) -> None:
-        """%40（エンコード済み@）を含むURLはuserinfoバイパスとして拒否すること.
+        """%40（エンコード済み@）を含むURLはuserinfoバイパスとして拒否
 
         urlparse は "user%40evil.com" をhostname全体として解析するが、
         unquote後に@が検出されるためセキュリティ上拒否する。
@@ -606,36 +585,29 @@ class TestPhotoModel:
             Photo(**{**_PHOTO_BASE, "url": "https://user%40evil.com/path.jpg"})
 
     def test_photo_url_rejects_invalid_percent_encoding(self) -> None:
-        """不正なパーセントエンコード（UTF-8として無効）をネットロック部に含むURLを拒否すること"""
         with pytest.raises(ValidationError, match=re.escape("percent-encod")):
             Photo(**{**_PHOTO_BASE, "url": "https://exam%80ple.com/path.jpg"})
 
 
 class TestNormalizeUrl:
-    """_normalize_url の直接ユニットテスト"""
-
     def test_basic_normalization(self) -> None:
-        """スキームとホストの小文字正規化"""
         result = normalize_url(urlparse("HTTPS://EXAMPLE.COM/Path"))
         assert result == "https://example.com/Path"
 
     def test_ipv6_bracket_preservation(self) -> None:
-        """IPv6アドレスのブラケット復元"""
         result = normalize_url(urlparse("https://[::1]:8080/path"))
         assert result == "https://[::1]:8080/path"
 
     def test_safe_params_encoding(self) -> None:
-        """RFC 3986 §3.3 パラメータ部のエンコード"""
+        """RFC 3986 §3.3のパラメータ区切りを保持する契約を検証する。"""
         result = normalize_url(urlparse("https://example.com/path;type=pdf"))
         assert ";type=pdf" in result
 
     def test_fragment_preserves_unreserved(self) -> None:
-        """フラグメントのunreserved文字（._~）が過剰エンコードされないこと"""
         result = normalize_url(urlparse("https://example.com/page#section_1.2~draft"))
         assert result.endswith("#section_1.2~draft")
 
     def test_existing_percent_encoding_preserved(self) -> None:
-        """既存の%エンコードが二重エンコードされないこと"""
         result = normalize_url(urlparse("https://example.com/path%20name"))
         assert "%20" in result
         assert "%2520" not in result  # 二重エンコード防止
@@ -644,10 +616,10 @@ class TestNormalizeUrl:
         """シングルクォートがXSS防止のため%27にエンコードされること（RFC 3986 safe除外）"""
         result = normalize_url(urlparse("https://example.com/path/file'.jpg"))
         assert "%27" in result
-        assert "'" not in result.split("//", 1)[1]  # ホスト以降にシングルクォートなし
+        assert "'" not in result.split("//", 1)[1]
 
     def test_hostname_none_raises_error(self) -> None:
-        """hostname=None（netloc=':8080'）で ValueError が発生すること"""
+        """urlparseがhostname=Noneを返す入力の例外契約を固定する。"""
         parsed = urlparse("https://:8080/path")
         assert parsed.hostname is None, "前提条件: hostname が None であること"
         with pytest.raises(ValueError, match=re.escape("Failed to resolve hostname")):
@@ -655,28 +627,21 @@ class TestNormalizeUrl:
 
 
 class TestValidateSchemeLessUrl:
-    """_validate_scheme_less_url の直接ユニットテスト"""
-
     def test_rejects_incomplete_percent_encoding(self) -> None:
-        """不完全なパーセントエンコード（%GG等）を拒否すること"""
         with pytest.raises(ValueError, match=re.escape("incomplete percent-encoding")):
             validate_scheme_less_url("example%GG.com")
 
     def test_rejects_path_separator(self) -> None:
-        """パス区切り（/）を含むURLを拒否すること"""
         with pytest.raises(ValueError, match=re.escape("cannot contain a path")):
             validate_scheme_less_url("example.com/path")
 
     def test_rejects_fragment(self) -> None:
-        """フラグメント（#）を含むURLを拒否すること"""
         with pytest.raises(ValueError, match=re.escape("cannot contain a fragment")):
             validate_scheme_less_url("example.com#section")
 
     def test_rejects_query(self) -> None:
-        """クエリ（?）を含むURLを拒否すること"""
         with pytest.raises(ValueError, match=re.escape("cannot contain a query")):
             validate_scheme_less_url("example.com?key=val")
 
     def test_accepts_valid_domain(self) -> None:
-        """有効なドメイン名はエラーなしで通過すること"""
-        validate_scheme_less_url("example.com")  # 例外なし = 成功
+        validate_scheme_less_url("example.com")
