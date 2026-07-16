@@ -66,6 +66,21 @@ def func(attempt: int) -> float:
 
 公開クラス・関数にdocstring必須、Args/Returns/Raises明記
 
+### 4.1 テストコードのdocstring/comment方針
+
+テスト関数のdocstringとインラインコメントは、テスト名・assert内容・手順を言い換えるだけなら削除する。短いdocstringを残すのは、テスト名だけでは非自明な失敗モード、複数モジュールを通る結合経路、不自然だが本質的な前提や順序、または関数名に入れると長すぎる背景を説明する場合だけにする。
+
+fixture・helper・テスト用classは、global stateの変更/復元、teardown順序、fake client/transport、network blocker、autouse fixture、環境変数上書き、後続テストへの状態リーク防止を説明するWHYを1〜3行で残す。
+
+コメント/docstringのみの整理では、実行ASTとfixture文書化契約を必ず確認する。
+
+```bash
+uv run python scripts/check_docstring_refactor.py --self-test
+uv run python scripts/check_docstring_refactor.py --fixture-gate
+BASE_REF=$(git merge-base HEAD origin/develop)
+uv run python scripts/check_docstring_refactor.py "$BASE_REF" tests/path/to/test_file.py
+```
+
 ---
 
 ## 5. エラーハンドリング

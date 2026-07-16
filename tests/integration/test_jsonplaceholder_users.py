@@ -18,17 +18,17 @@ pytestmark = [pytest.mark.integration, pytest.mark.skipif(SKIP_INTEGRATION, reas
 
 
 async def test_async_user_nested_models_parsed() -> None:
+    """Alias解決の回帰を検知するため、3段の入れ子モデルを実APIで検証する。"""
     async with AsyncJSONPlaceholderClient() as client:
         user = await client.get_user(1)
 
     assert isinstance(user, User)
     assert user.id == 1
 
-    # Address → Geo（2段目・3段目の入れ子が構築されている）
     assert user.address.city
     assert isinstance(user.address.geo.lat, str)
 
-    # Company（alias catchPhrase → catch_phrase の解決が効いている）
+    # catchPhrase はモデル側の alias で catch_phrase に変換される。
     assert user.company.catch_phrase
 
 
@@ -41,7 +41,6 @@ async def test_async_get_user_data_parallel_aggregation() -> None:
     assert isinstance(data["user"], User)
     assert data["user"].id == user_id
 
-    # 各キーが「空でない」「期待する型」「全件が該当ユーザー」の3条件を満たすこと
     assert data["posts"]
     assert all(isinstance(post, Post) for post in data["posts"])
     assert all(post.user_id == user_id for post in data["posts"])

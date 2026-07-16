@@ -29,6 +29,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.skipif(SKIP_INTEGRATION, reas
 
 
 def test_sync_get_nonexistent_post_raises_404() -> None:
+    """GET /posts の欠番だけが安定した 404 契約を返すことを固定する。"""
     # 到達性確認 — 接続障害時は skip（404 契約バグではない）
     try:
         with SyncJSONPlaceholderClient() as client:
@@ -64,9 +65,8 @@ async def test_async_create_post_response_parses_into_post_model() -> None:
 
 
 async def test_async_update_post_returns_sent_fields_as_dict() -> None:
-    # JSONPlaceholderのPUTはuserIdを返さないため、Postモデルではなくdictで検証する
+    # JSONPlaceholder の PUT は userId を返さないため、Post ではなく dict で検証する。
     async with AsyncJSONPlaceholderClient() as client:
-        # 既存投稿を更新（id=1 は常に存在する）
         updated = await client.update_post(
             post_id=1,
             title="Updated Title via Integration Test",
@@ -86,7 +86,6 @@ async def test_async_delete_post_completes_without_exception() -> None:
 
 async def test_async_post_crud_sequence_reuses_one_client() -> None:
     async with AsyncJSONPlaceholderClient() as client:
-        # Step 1: Create - 新規投稿作成
         post = await client.create_post(
             title="E2E Integration Test",
             body="Testing full CRUD flow with real API",
@@ -96,14 +95,12 @@ async def test_async_post_crud_sequence_reuses_one_client() -> None:
         assert post_id == 101  # JSONPlaceholder API の仕様
         assert post.title == "E2E Integration Test"
 
-        # 投稿一覧取得
         # JSONPlaceholder API の仕様: 新規作成データは永続化されないため、
         # 既存データ（id=1-100）を取得して確認
         posts = await client.get_posts(limit=10)
         assert len(posts) > 0
         assert isinstance(posts, list)
 
-        # Update - 既存投稿を更新（id=1）
         updated = await client.update_post(
             post_id=1,
             title="Updated in Integration Test",
@@ -112,12 +109,12 @@ async def test_async_post_crud_sequence_reuses_one_client() -> None:
         assert updated["id"] == 1
         assert updated["title"] == "Updated in Integration Test"
 
-        # Step 4: Delete - 投稿削除（id=1）
-        # delete_post() returns None, so just verify no exception raised
+        # DELETE は永続化されず応答も空のため、例外がないことだけを契約にする。
         await client.delete_post(post_id=1)
 
 
 async def test_async_get_nonexistent_post_raises_404() -> None:
+    """実在する欠番をGETで確認し、APIの404契約が壊れた回帰を検知する。"""
     # 到達性確認 — 接続障害時は skip（404 契約バグではない）
     try:
         async with AsyncJSONPlaceholderClient() as client:

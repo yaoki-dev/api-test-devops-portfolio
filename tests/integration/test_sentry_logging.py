@@ -84,7 +84,7 @@ def captured_events(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[dict[str, 
     reload_settings()
     _reset_sentry_sdk_client_for_test()
 
-    assert init_sentry() is True, "fake DSN での Sentry 初期化に失敗"
+    assert init_sentry() is True, "Failed to initialize Sentry with the fake DSN."
 
     transport = _CapturingTransport()
     client = sentry_sdk.get_client()
@@ -102,7 +102,7 @@ def captured_events(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[dict[str, 
     # これを欠くと captured_events が空のまま PII 検証が vacuously true となり
     # サイレントにリークを見逃す（sentry-sdk 内部 API のバージョン差異対策）。
     # クリーンアップ後に assert することで、失敗してもセッション状態は復元済みにする。
-    assert not captured_errors, f"capturing transport で payload 抽出に失敗: {captured_errors}"
+    assert not captured_errors, f"Failed to extract captured payload: {captured_errors}"
 
 
 def test_logger_error_forwards_to_sentry_with_pii_scrubbed(
@@ -116,23 +116,19 @@ def test_logger_error_forwards_to_sentry_with_pii_scrubbed(
 
     # 空リストに対するvacuous passを防ぐため、capture成功を先に検証する
     assert len(captured_events) >= 1, (
-        f"ERROR ログが Sentry へ転送されていない（captured={len(captured_events)} 件）。"
-        " transport 差し替えタイミング / flush / structlog level routing を確認すること"
+        "Expected at least one captured Sentry event. "
+        "Check transport replacement timing, flush(), and structlog routing."
     )
 
     # event全体をシリアライズし、ネストした任意の場所へのPII漏洩を検査する
     serialized = json.dumps(captured_events, default=str)
 
-    # Assert 2: PII 値がどの event にも含まれない
-    # （_before_send スクラブが実 logger パスで効く証明）。
-    assert "super-secret-value" not in serialized, (
-        "PII 値 'super-secret-value' が capture event にリークしている"
-        "（_before_send のスクラブが実 logger 経路で機能していない）"
-    )
+    # _before_send スクラブが実 logger パスで効く証明。
+    assert "super-secret-value" not in serialized, "PII leaked into the captured Sentry event."
 
-    # Assert 3: スクラブ後も非機密のイベント名は残る（過剰スクラブで全消ししていないことの証明）。
+    # スクラブ後も非機密のイベント名は残る（過剰スクラブで全消ししていないことの証明）。
     assert "integration_test_error" in serialized, (
-        "非機密のイベント名 'integration_test_error' が失われている（過剰スクラブの疑い）"
+        "Non-sensitive event name 'integration_test_error' was removed unexpectedly."
     )
 
 
@@ -146,7 +142,7 @@ def test_logger_warning_does_not_forward_to_sentry(
     sentry_sdk.flush()
 
     assert len(captured_events) == events_before, (
-        "WARNING ログが Sentry event として送信されている（レベルルーティングが誤っている）"
+        "WARNING log was forwarded to Sentry unexpectedly."
     )
 
 
