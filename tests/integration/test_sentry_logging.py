@@ -123,14 +123,13 @@ def test_logger_error_forwards_to_sentry_with_pii_scrubbed(
     # event全体をシリアライズし、ネストした任意の場所へのPII漏洩を検査する
     serialized = json.dumps(captured_events, default=str)
 
-    # Assert 2: PII 値がどの event にも含まれない
     # （_before_send スクラブが実 logger パスで効く証明）。
     assert "super-secret-value" not in serialized, (
         "PII 値 'super-secret-value' が capture event にリークしている"
         "（_before_send のスクラブが実 logger 経路で機能していない）"
     )
 
-    # Assert 3: スクラブ後も非機密のイベント名は残る（過剰スクラブで全消ししていないことの証明）。
+    # スクラブ後も非機密のイベント名は残る（過剰スクラブで全消ししていないことの証明）。
     assert "integration_test_error" in serialized, (
         "非機密のイベント名 'integration_test_error' が失われている（過剰スクラブの疑い）"
     )
