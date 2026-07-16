@@ -1,4 +1,4 @@
-"""Response parsing tests for utils.response_parsing."""
+"""utils.response_parsing のJSON変換エラー契約テスト"""
 
 import json
 from collections.abc import Callable
@@ -29,15 +29,7 @@ MockResponseFactory = Callable[[object | None], Mock]
 
 @pytest.fixture()
 def mock_response_factory() -> MockResponseFactory:
-    """テスト用 Mock(spec=httpx.Response) を生成する factory fixture
-
-    テスト間で mock 生成ロジックを集約し、httpx.Response 仕様変更時の
-    修正を1箇所に限定する。
-
-    Returns:
-        payload（省略可）を受け取り、json.return_value を設定した
-        Mock(spec=httpx.Response) を返す callable
-    """
+    """httpx.Response 仕様変更時の修正点を1箇所に限定する。"""
 
     def _factory(payload: object | None = None) -> Mock:
         response = Mock(spec=httpx.Response)
@@ -49,14 +41,11 @@ def mock_response_factory() -> MockResponseFactory:
 
 
 class DummyModel(BaseModel):
-    """テスト用のシンプルなPydanticモデル"""
-
     id: int = Field(..., ge=1)
     name: str
 
 
 def test_parse_response_model_success(mock_response_factory: MockResponseFactory) -> None:
-    """_parse_response_model: 正常系（dict -> model）"""
     mock_response = mock_response_factory({"id": 1, "name": "test"})
 
     result = _parse_response_model(mock_response, DummyModel)
@@ -67,7 +56,6 @@ def test_parse_response_model_success(mock_response_factory: MockResponseFactory
 
 
 def test_parse_response_model_invalid_type(mock_response_factory: MockResponseFactory) -> None:
-    """_parse_response_model: 異常系（配列が返ってきた場合）"""
     mock_response = mock_response_factory([{"id": 1, "name": "test"}])
 
     with pytest.raises(APIJSONDecodeError, match="Expected object JSON for DummyModel, got list"):
@@ -75,7 +63,6 @@ def test_parse_response_model_invalid_type(mock_response_factory: MockResponseFa
 
 
 def test_parse_response_model_validation_error(mock_response_factory: MockResponseFactory) -> None:
-    """_parse_response_model: 異常系（バリデーションエラー）"""
     mock_response = mock_response_factory({"id": 0, "name": "test"})  # id < 1
 
     with pytest.raises(APIJSONDecodeError, match="Invalid DummyModel response schema"):
@@ -83,7 +70,6 @@ def test_parse_response_model_validation_error(mock_response_factory: MockRespon
 
 
 def test_parse_response_model_list_success(mock_response_factory: MockResponseFactory) -> None:
-    """_parse_response_model_list: 正常系（list -> list[model]）"""
     mock_response = mock_response_factory([{"id": 1, "name": "test1"}, {"id": 2, "name": "test2"}])
 
     result = _parse_response_model_list(mock_response, DummyModel)
@@ -96,7 +82,6 @@ def test_parse_response_model_list_success(mock_response_factory: MockResponseFa
 
 
 def test_parse_response_model_list_invalid_type(mock_response_factory: MockResponseFactory) -> None:
-    """_parse_response_model_list: 異常系（オブジェクトが返ってきた場合）"""
     mock_response = mock_response_factory({"id": 1, "name": "test"})
 
     with pytest.raises(APIJSONDecodeError, match="Expected array JSON for DummyModel, got dict"):
@@ -106,11 +91,7 @@ def test_parse_response_model_list_invalid_type(mock_response_factory: MockRespo
 def test_parse_response_model_list_validation_error(
     mock_response_factory: MockResponseFactory,
 ) -> None:
-    """_parse_response_model_list: 異常系（要素にバリデーションエラーがある場合）
-
-    エラーメッセージに失敗要素の index（loc 先頭）が含まれ、配列内の
-    どの要素が原因か診断できることを検証する（TypeAdapter による index 付与）。
-    """
+    """TypeAdapter が付与する index により、配列内の失敗要素を診断できることを固定する。"""
     mock_response = mock_response_factory([{"id": 1, "name": "test1"}, {"id": -1, "name": "test2"}])
 
     with pytest.raises(APIJSONDecodeError, match="Invalid DummyModel response schema") as exc_info:
@@ -123,7 +104,6 @@ def test_parse_response_model_list_validation_error(
 def test_safe_parse_json_invalid_json(
     mock_response_factory: MockResponseFactory,
 ) -> None:
-    """不正なJSONでAPIJSONDecodeErrorが発生（エラーパス）"""
     mock_response = mock_response_factory()
     mock_response.json.side_effect = json.JSONDecodeError("Invalid JSON", "doc", 0)
 
@@ -136,14 +116,7 @@ def test_safe_parse_json_invalid_json(
 
 
 def test_safe_parse_json_unicode_decode_error_converted_to_api_json_decode_error() -> None:
-    """不正なUTF-8ボディでAPIJSONDecodeErrorが発生（UnicodeDecodeError変換契約）
-
-    httpx==0.28.1 では ``httpx.Response.json()`` が不正 UTF-8 ボディに対して
-    ``json.JSONDecodeError`` ではなく ``UnicodeDecodeError`` を送出する（実測確認済み）。
-    safe_parse_json() が ``except (json.JSONDecodeError, UnicodeDecodeError)`` で
-    両方を捕捉し APIJSONDecodeError へ変換すること、および ``from e`` による
-    例外チェーン（``__cause__``）が維持されることを固定する回帰テスト。
-    """
+    """httpx 0.28.1 の不正UTF-8 UnicodeDecodeError を APIJSONDecodeError へ変換する。"""
     response = httpx.Response(200, content=b"\xff")
 
     with pytest.raises(APIJSONDecodeError) as exc_info:

@@ -4,18 +4,14 @@ from typing import Final
 
 import pytest
 
-# =============================================================================
 # XSS テストベクター（OWASP Cheat Sheetベース・プロジェクト独自分類）
 # Reference: https://cheatsheetseries.owasp.org/cheatsheets/XSS_Filter_Evasion_Cheat_Sheet.html
-# =============================================================================
 
 type XSSVector = tuple[str, str]  # XSS_TEST_VECTORS 用
 
 # XSSテストベクター定数
 XSS_TEST_VECTORS: Final[list[XSSVector]] = [
-    # ============================================
-    # Category 1: Basic Script Tags
-    # ============================================
+    # Basic Script Tags
     (
         "<script>alert('XSS')</script>",
         "&lt;script&gt;alert(&#x27;XSS&#x27;)&lt;/script&gt;",
@@ -24,9 +20,7 @@ XSS_TEST_VECTORS: Final[list[XSSVector]] = [
         "<SCRIPT>alert(1)</SCRIPT>",
         "&lt;SCRIPT&gt;alert(1)&lt;/SCRIPT&gt;",
     ),
-    # ============================================
-    # Category 2: Event Handlers (CRITICAL - most common bypass)
-    # ============================================
+    # Event Handlers (CRITICAL - most common bypass)
     (
         "<img src=x onerror=alert(1)>",
         "&lt;img src=x onerror=alert(1)&gt;",
@@ -51,9 +45,7 @@ XSS_TEST_VECTORS: Final[list[XSSVector]] = [
         "<marquee onstart=alert(1)>",
         "&lt;marquee onstart=alert(1)&gt;",
     ),
-    # ============================================
-    # Category 3: URI Schemes (CRITICAL)
-    # ============================================
+    # URI Schemes (CRITICAL)
     (
         '<a href="javascript:alert(1)">',
         "&lt;a href=&quot;javascript:alert(1)&quot;&gt;",
@@ -62,9 +54,7 @@ XSS_TEST_VECTORS: Final[list[XSSVector]] = [
         '<iframe src="javascript:alert(1)">',
         "&lt;iframe src=&quot;javascript:alert(1)&quot;&gt;",
     ),
-    # ============================================
-    # Category 4: Attribute Injection
-    # ============================================
+    # Attribute Injection
     (
         '" onclick="alert(1)"',
         "&quot; onclick=&quot;alert(1)&quot;",
@@ -73,18 +63,14 @@ XSS_TEST_VECTORS: Final[list[XSSVector]] = [
         "' onfocus='alert(1)'",
         "&#x27; onfocus=&#x27;alert(1)&#x27;",
     ),
-    # ============================================
-    # Category 5: Edge Cases
-    # ============================================
+    # Edge Cases
     ("", ""),  # Empty string
     ("Normal text", "Normal text"),  # Passthrough (no XSS)
     (
         "Hello <b>World</b>",
         "Hello &lt;b&gt;World&lt;/b&gt;",
     ),  # Safe HTML
-    # ============================================
-    # Category 6: Special Characters
-    # ============================================
+    # Special Characters
     ("Test & Test", "Test &amp; Test"),  # Ampersand
     ("Test < Test", "Test &lt; Test"),  # Less than
     ("Test > Test", "Test &gt; Test"),  # Greater than
