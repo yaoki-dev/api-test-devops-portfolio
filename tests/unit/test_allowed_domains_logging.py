@@ -14,8 +14,6 @@ pytestmark = pytest.mark.unit
 
 
 class TestAllowedDomainsLogging:
-    """ALLOWED_DOMAINS の警告ログ契約テスト。"""
-
     def test_empty_env_emits_warning(
         self,
         monkeypatch: pytest.MonkeyPatch,

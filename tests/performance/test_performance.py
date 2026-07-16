@@ -1,6 +1,4 @@
-"""
-APIパフォーマンステスト - 基盤実装
-"""
+"""外部API依存のため週次CIのみで実行するパフォーマンス契約テスト"""
 
 import asyncio
 import statistics
@@ -18,7 +16,7 @@ from utils.logger import get_logger
 # total=False makes all fields optional; in practice only `error` is intentionally optional.
 # Consider using Required[...] / NotRequired[...] (Python 3.11+) for precision.
 class PerformanceSummary(TypedDict, total=False):
-    """get_summary() の戻り値型（完全な構造は get_summary() の docstring 参照）"""
+    """PerformanceMetrics.get_summary() の部分的な戻り値型"""
 
     total_duration: float
     request_count: int
@@ -40,7 +38,7 @@ pytestmark = [pytest.mark.performance]
 
 
 class PerformanceMetrics:
-    """パフォーマンスメトリクス収集クラス"""
+    """non-blocking CPU warmup を含むパフォーマンスメトリクス収集器"""
 
     def __init__(self):
         self.response_times: list[float] = []
@@ -50,15 +48,9 @@ class PerformanceMetrics:
         self.cpu_usage: list[float | None] = []
 
     def start_monitoring(self):
-        """パフォーマンス監視開始
-
-        psutil.cpu_percent(interval=None) を warmup として呼び出す。
-        戻り値は破棄する（初回呼び出しは仕様上 0.0 で意味なし）。
-        次回 cpu_percent(interval=None) 呼び出し時に、ここからの delta を取得する。
-        blocking なしのため start_time の精度に影響しない。
-        cpu_usage はこの時点では append しない（stop_monitoring の delta 取得後に追記）。
-        """
-        psutil.cpu_percent(interval=None)  # warmup（内部カウンターリセット、戻り値破棄）
+        """初回 psutil.cpu_percent の artifact 値を捨て、non-blocking の delta 測定を開始する。"""
+        # warmup: 初回 cpu_percent は前サンプルが無く仕様上 0.0（無意味）を返すため破棄
+        psutil.cpu_percent(interval=None)
         self.start_time = time.time()
         self.memory_usage.append(psutil.Process().memory_info().rss / 1024 / 1024)  # MB
         self.cpu_usage.append(
@@ -66,21 +58,15 @@ class PerformanceMetrics:
         )  # 測定開始時点のベースライン: non-blocking 設計のため意図的に未計測
 
     def record_response_time(self, response_time: float) -> None:
-        """レスポンス時間記録"""
         self.response_times.append(response_time)
 
     def stop_monitoring(self):
-        """パフォーマンス監視終了
-
-        psutil.cpu_percent(interval=None) で start_monitoring からの
-        delta-based 平均 CPU% を取得する（blocking なし、end_time 精度を毀損しない）。
-        """
+        """blocking なしで start_monitoring からの delta-based 平均 CPU% を取得する。"""
         self.end_time = time.time()
         self.memory_usage.append(psutil.Process().memory_info().rss / 1024 / 1024)
         self.cpu_usage.append(psutil.cpu_percent(interval=None))
 
     def get_summary(self) -> PerformanceSummary:
-        """パフォーマンスサマリー取得"""
         if not self.response_times:
             return {"error": "No response times recorded"}
 
@@ -130,7 +116,7 @@ async def _measure_request(
     endpoint: str,
     metrics: PerformanceMetrics,
 ) -> None:
-    """リクエスト実行とレスポンス時間測定（HTTP 200応答確認時点で記録）"""
+    """失敗リクエストを測定値に混ぜないため、HTTP 200 確認後に応答時間を記録する。"""
     start_time = time.time()
     try:
         response = await client.get(endpoint)
@@ -147,7 +133,7 @@ async def _measure_request(
 
 
 class TestAPIPerformance:
-    """APIパフォーマンステストクラス"""
+    """外部API latency を保守的なしきい値で監視する。"""
 
     # パフォーマンス閾値設定
     RESPONSE_TIME_THRESHOLD = 2.0  # 2秒
@@ -158,7 +144,6 @@ class TestAPIPerformance:
     THROUGHPUT_THRESHOLD = 3  # 3 requests/sec
 
     def test_get_summary_empty_cpu_usage_uses_float_default(self):
-        """cpu_usage が空の場合も end_percent は float 型で返す"""
         metrics = PerformanceMetrics()
         metrics.start_time = 1.0
         metrics.end_time = 2.0
@@ -172,7 +157,6 @@ class TestAPIPerformance:
         assert summary["cpu_usage"]["start_percent"] is None
 
     def test_get_summary_trailing_none_cpu_usage_uses_float_default(self):
-        """cpu_usage 末尾が None の場合も end_percent は float 型で返す"""
         metrics = PerformanceMetrics()
         metrics.start_time = 1.0
         metrics.end_time = 2.0
@@ -187,7 +171,6 @@ class TestAPIPerformance:
         assert isinstance(summary["cpu_usage"]["end_percent"], float)
 
     async def test_single_request_performance(self):
-        """単一リクエストのパフォーマンステスト"""
         metrics = PerformanceMetrics()
 
         async with AsyncAPIClient() as client:
@@ -217,7 +200,6 @@ class TestAPIPerformance:
             )
 
     async def test_concurrent_requests_performance(self):
-        """並行リクエストのパフォーマンステスト"""
         metrics = PerformanceMetrics()
         concurrent_count = 10
 
@@ -279,7 +261,6 @@ class TestAPIPerformance:
             )
 
     async def test_load_test_simulation(self):
-        """負荷テストシミュレーション"""
         metrics = PerformanceMetrics()
         request_count = 50
         batch_size = 5
@@ -342,7 +323,6 @@ class TestAPIPerformance:
             )
 
     async def test_endpoint_comparison_performance(self):
-        """エンドポイント別パフォーマンス比較"""
         endpoints = ["/posts/1", "/users/1", "/todos/1", "/comments/1"]
         results = {}
 
@@ -376,14 +356,13 @@ class TestAPIPerformance:
 
 
 class TestPerformanceRegression:
-    """パフォーマンス回帰テスト"""
+    """外部APIとCI環境の実測に基づく保守的なしきい値で回帰を検知する。"""
 
     # ベースライン値（実際の測定値に基づいて調整）
     BASELINE_RESPONSE_TIME = 2.0  # 秒（外部API + CI環境の実測値に基づく保守的な値；旧: 1.0s）
     REGRESSION_THRESHOLD = 1.5  # 50%悪化まで許容；上限 = 2.0s × 1.5 = 3.0s（旧しきい値と同値）
 
     async def test_performance_regression_detection(self):
-        """パフォーマンス回帰検出テスト"""
         metrics = PerformanceMetrics()
 
         async with AsyncAPIClient() as client:
