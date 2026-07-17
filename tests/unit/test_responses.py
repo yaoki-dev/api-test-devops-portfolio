@@ -1,4 +1,4 @@
-"""Pydantic レスポンスモデル テスト"""
+"""Pydanticレスポンスモデルの契約テスト。"""
 
 import re
 from typing import Any, Final, TypedDict
@@ -34,16 +34,9 @@ _COMMENT_BASE: Final[_CommentBaseData] = {
 
 
 class TestGeoModel:
-    """Geo モデルのテスト
-
-    XSS サニタイゼーション: Geo.lat フィールドが html.escape() でサニタイズされることを確認。
-    XSS カバレッジ（OWASP Cheat Sheetベース・プロジェクト独自分類）:
-        Cat.1 Script Tags / Cat.2 Event Handlers / Cat.3 URI Schemes /
-        Cat.4 Attribute Injection / Cat.6 Special Characters
-    """
+    """Geo.lat/lngのhtml.escape()サニタイズをOWASP Cheat Sheetベースの独自分類で検証する。"""
 
     def test_geo_basic_creation(self) -> None:
-        """基本的な Geo モデル作成"""
         geo = Geo(lat="-37.3159", lng="81.1496")
 
         assert geo.lat == "-37.3159"
@@ -54,7 +47,6 @@ class TestGeoModel:
         _XSS_MODEL_PARAMS,
     )
     def test_geo_sanitizes_xss(self, dirty: str, expected: str) -> None:
-        """Geo.lat フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
         geo = Geo(lat=dirty, lng="normal")
         assert geo.lat == expected
 
@@ -63,12 +55,10 @@ class TestGeoModel:
         _XSS_MODEL_PARAMS,
     )
     def test_geo_lng_sanitizes_xss(self, dirty: str, expected: str) -> None:
-        """Geo.lng フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
         geo = Geo(lat="0", lng=dirty)
         assert geo.lng == expected
 
     def test_geo_extra_fields_forbidden(self) -> None:
-        """Geo モデルが extra フィールドを拒否することを確認"""
         with pytest.raises(ValidationError) as exc_info:
             Geo(lat="0", lng="0", extra="not allowed")  # type: ignore[call-arg]
 
@@ -83,7 +73,6 @@ class TestGeoModel:
         ],
     )
     def test_geo_lat_lng_boundary_values(self, lat: str, lng: str) -> None:
-        """Geo.lat/lng の max_length=50 境界値（上限）で正常作成できること"""
         geo = Geo(lat=lat, lng=lng)
         assert geo.lat == lat
         assert geo.lng == lng
@@ -96,7 +85,6 @@ class TestGeoModel:
         ],
     )
     def test_geo_lat_lng_exceeds_max_length(self, field: str) -> None:
-        """Geo.lat/lng が 51 文字（max_length=50 超過）で ValidationError が発生すること"""
         kwargs = {"lat": "0", "lng": "0"}
         kwargs[field] = "x" * 51
         with pytest.raises(ValidationError, match=field):
@@ -104,13 +92,7 @@ class TestGeoModel:
 
 
 class TestAddressModel:
-    """Address モデルのテスト
-
-    XSS サニタイゼーション: Address.street フィールドが html.escape() でサニタイズされることを確認。
-    XSS カバレッジ（OWASP Cheat Sheetベース・プロジェクト独自分類）:
-        Cat.1 Script Tags / Cat.2 Event Handlers / Cat.3 URI Schemes /
-        Cat.4 Attribute Injection / Cat.6 Special Characters
-    """
+    """Address.streetのhtml.escape()サニタイズをOWASP Cheat Sheetベースの独自分類で検証する。"""
 
     @pytest.fixture
     def valid_geo(self) -> Geo:
@@ -118,7 +100,6 @@ class TestAddressModel:
         return Geo(lat="0", lng="0")
 
     def test_address_basic_creation(self) -> None:
-        """基本的な Address モデル作成"""
         geo = Geo(lat="-37.3159", lng="81.1496")
         address = Address(
             street="Kulas Light",
@@ -137,7 +118,6 @@ class TestAddressModel:
         _XSS_MODEL_PARAMS,
     )
     def test_address_sanitizes_xss(self, valid_geo: Geo, dirty: str, expected: str) -> None:
-        """Address.street の XSS サニタイゼーション（OWASP CS・独自5分類）"""
         address = Address(street=dirty, suite="Test", city="City", zipcode="12345", geo=valid_geo)
         assert address.street == expected
 
@@ -149,7 +129,6 @@ class TestAddressModel:
     def test_address_sanitizes_xss_all_fields(
         self, valid_geo: Geo, dirty: str, expected: str, field: str
     ) -> None:
-        """Address の suite/city フィールドの XSS サニタイゼーション"""
         kwargs: dict[str, Any] = {
             "street": "Normal",
             "suite": "Normal",
@@ -173,17 +152,13 @@ class TestAddressModel:
         ],
     )
     def test_address_zipcode_sanitizes_xss(self, valid_geo: Geo, dirty: str, expected: str) -> None:
-        """Address.zipcode の XSS サニタイゼーション（max_length=20制約内）"""
+        """Address.zipcodeのXSSサニタイズを、max_length=20制約に収まるpayloadのみで検証する。"""
         address = Address(
             street="Normal", suite="Normal", city="Normal", zipcode=dirty, geo=valid_geo
         )
         assert address.zipcode == expected
 
     def test_address_boundary_values(self, valid_geo: Geo) -> None:
-        """Address フィールドの max_length 境界値（上限）で正常作成できること
-
-        street=200, suite=100, city=100, zipcode=20 が各フィールドの上限。
-        """
         address = Address(
             street="a" * 200,
             suite="b" * 100,
@@ -206,7 +181,6 @@ class TestAddressModel:
         ],
     )
     def test_address_exceeds_max_length(self, valid_geo: Geo, field: str, max_len: int) -> None:
-        """Address フィールドが max_length 超過で ValidationError が発生すること"""
         kwargs: dict[str, str | Geo] = {
             "street": "Normal",
             "suite": "Normal",
@@ -220,16 +194,9 @@ class TestAddressModel:
 
 
 class TestCompanyModel:
-    """Company モデルのテスト
-
-    XSS サニタイゼーション: Company.name フィールドが html.escape() でサニタイズされることを確認。
-    XSS カバレッジ（OWASP Cheat Sheetベース・プロジェクト独自分類）:
-        Cat.1 Script Tags / Cat.2 Event Handlers / Cat.3 URI Schemes /
-        Cat.4 Attribute Injection / Cat.6 Special Characters
-    """
+    """Company.nameのhtml.escape()サニタイズをOWASP Cheat Sheetベースの独自分類で検証する。"""
 
     def test_company_basic_creation(self) -> None:
-        """基本的な Company モデル作成"""
         company = Company(
             name="Romaguera-Crona",
             catch_phrase="Multi-layered client-server neural-net",
@@ -240,7 +207,6 @@ class TestCompanyModel:
         assert company.catch_phrase == "Multi-layered client-server neural-net"
 
     def test_company_alias_working(self) -> None:
-        """Company モデルの alias (catchPhrase → catch_phrase) が機能することを確認"""
         # mypy: pydantic.mypy plugin は alias kwarg を field として認識しないため抑制
         # validate_by_name=True により runtime は正常 (alias 動作の意図的検証)
         company = Company(
@@ -256,7 +222,6 @@ class TestCompanyModel:
         _XSS_MODEL_PARAMS,
     )
     def test_company_sanitizes_xss(self, dirty: str, expected: str) -> None:
-        """Company.name フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
         company = Company(name=dirty, catch_phrase="Normal", bs="Normal")
         assert company.name == expected
 
@@ -266,7 +231,6 @@ class TestCompanyModel:
     )
     @pytest.mark.parametrize("field", ["catch_phrase", "bs"])
     def test_company_sanitizes_xss_all_fields(self, dirty: str, expected: str, field: str) -> None:
-        """Company の catch_phrase/bs フィールドの XSS サニタイゼーション"""
         alias_map = {"catch_phrase": "catchPhrase", "bs": "bs"}
         kwargs: dict[str, Any] = {
             "name": "Normal",
@@ -279,15 +243,8 @@ class TestCompanyModel:
 
 
 class TestUserModel:
-    """User モデルのテスト
-
-    XSS サニタイゼーション: User.name, username, phone フィールドが
-    html.escape() でサニタイズされることを確認。
-    websiteフィールドは危険スキーム（javascript:, data:, vbscript:）バリデーション。
-    XSS カバレッジ（OWASP Cheat Sheetベース・プロジェクト独自分類）:
-        Cat.1 Script Tags / Cat.2 Event Handlers / Cat.3 URI Schemes /
-        Cat.4 Attribute Injection / Cat.6 Special Characters
-    """
+    """User.name/username/phoneのhtml.escape()サニタイズと、websiteの危険スキーム
+    （javascript:/data:/vbscript:）バリデーションをOWASP Cheat Sheetベースの独自分類で検証する。"""
 
     @pytest.fixture
     def valid_user_data(self) -> _UserData:
@@ -314,7 +271,6 @@ class TestUserModel:
         }
 
     def test_user_basic_creation(self, valid_user_data: _UserData) -> None:
-        """基本的な User モデル作成"""
         user = User(**valid_user_data)
 
         assert user.id == 1
@@ -323,7 +279,6 @@ class TestUserModel:
         assert user.company.name == "Romaguera-Crona"
 
     def test_user_nested_models(self, valid_user_data: _UserData) -> None:
-        """User モデルのネストされたモデル (Address, Company) が正しく解析されることを確認"""
         user = User(**valid_user_data)
 
         assert isinstance(user.address, Address)
@@ -341,18 +296,15 @@ class TestUserModel:
     def test_user_sanitizes_xss(
         self, valid_user_data: _UserData, field: str, dirty: str, expected: str
     ) -> None:
-        """User name/username/phone フィールドの XSS サニタイゼーション"""
         user = User(**{**valid_user_data, field: dirty})
         assert getattr(user, field) == expected
 
     def test_user_validate_by_name(self, valid_user_data: _UserData) -> None:
-        """User モデルの validate_by_name が有効であることを確認"""
         # User モデルは validate_by_name=True なので、alias で値を設定可能
         user = User(**valid_user_data)
         assert user.company.catch_phrase == "Multi-layered client-server neural-net"
 
     def test_user_extra_fields_forbidden(self, valid_user_data: _UserData) -> None:
-        """User モデルが extra フィールドを拒否することを確認"""
         valid_user_data["extra_field"] = "not allowed"  # type: ignore[typeddict-unknown-key]
 
         with pytest.raises(ValidationError) as exc_info:
@@ -361,7 +313,6 @@ class TestUserModel:
         assert exc_info.value.errors()[0]["type"] == "extra_forbidden"
 
     def test_user_email_must_be_valid_format(self, valid_user_data: _UserData) -> None:
-        """User.email が EmailStr 型により無効なメールアドレスを拒否すること"""
         valid_user_data["email"] = "not-an-email"
         with pytest.raises(ValidationError, match=r"email"):
             User(**valid_user_data)
@@ -380,20 +331,17 @@ class TestUserModel:
     def test_user_email_rejects_rfc_noncompliant(
         self, valid_user_data: _UserData, invalid_email: str
     ) -> None:
-        """User.email が RFC 5322 非準拠メールアドレスを拒否すること"""
         valid_user_data["email"] = invalid_email
         with pytest.raises(ValidationError, match=r"email"):
             User(**valid_user_data)
 
     def test_user_email_max_length_valid(self, valid_user_data: _UserData) -> None:
-        """User.email=100文字（max_length 上限）で正常作成できること"""
         # 52 + "@"(1) + 35 + ".example.com"(12) = 100文字（local≤64: RFC5321準拠）
         valid_user_data["email"] = "a" * 52 + "@" + "b" * 35 + ".example.com"
         user = User(**valid_user_data)
         assert len(user.email) == 100
 
     def test_user_email_max_length_invalid(self, valid_user_data: _UserData) -> None:
-        """User.email=101文字（max_length 超過）で ValidationError が発生すること"""
         # 52 + "@"(1) + 36 + ".example.com"(12) = 101文字（local≤64: RFC5321準拠）
         # emailフィールドのloc確認で検証（email-validatorバージョン依存のmatch文字列を回避）
         valid_user_data["email"] = "a" * 52 + "@" + "b" * 36 + ".example.com"
@@ -405,7 +353,6 @@ class TestUserModel:
         )
 
     def test_user_website_max_length_boundary(self, valid_user_data: _UserData) -> None:
-        """website の正規化後URL長 WEBSITE_NORMALIZED_MAX_LENGTH(2048) 境界値テスト."""
         max_len = WEBSITE_NORMALIZED_MAX_LENGTH  # 2048
         base = "https://example.com/"
         # ちょうど max_len 文字: 正常
@@ -431,7 +378,6 @@ class TestUserModel:
             User(**valid_user_data)
 
     def test_user_website_is_not_html_escaped(self, valid_user_data: _UserData) -> None:
-        """websiteはhtml.escape対象外（URL内の&がエスケープされない）"""
         value = "https://example.com/page?a=1&b=2"
         valid_user_data["website"] = value
         user = User(**valid_user_data)
@@ -583,13 +529,11 @@ class TestUserModel:
     def test_user_website_rejects_dangerous_scheme(
         self, valid_user_data: _UserData, dangerous_url: str, expected_match: str
     ) -> None:
-        """User.website が危険なURLスキームを拒否すること（エラーメッセージも検証）"""
         valid_user_data["website"] = dangerous_url
         with pytest.raises(ValidationError, match=expected_match):
             User(**valid_user_data)
 
     def test_user_website_rejects_protocol_relative_url(self, valid_user_data: _UserData) -> None:
-        """User.website がプロトコル相対URLを明示的なエラーで拒否すること"""
         valid_user_data["website"] = "//cdn.example.com/image.jpg"
         with pytest.raises(
             ValidationError, match=re.escape("Protocol-relative URLs are not allowed")
@@ -599,7 +543,7 @@ class TestUserModel:
     def test_user_website_rejects_fullwidth_javascript_scheme(
         self, valid_user_data: _UserData
     ) -> None:
-        """全角文字によるスキームバイパスがNFKC正規化で検出されること"""
+        """全角文字によるスキームバイパスをNFKC正規化で検出し拒否することを検証する。"""
         valid_user_data["website"] = "ｊａｖａｓｃｒｉｐｔ:alert(1)"
         with pytest.raises(ValidationError, match=re.escape("Dangerous URL scheme detected")):
             User(**valid_user_data)
@@ -614,7 +558,6 @@ class TestUserModel:
     def test_user_website_rejects_empty_netloc(
         self, valid_user_data: _UserData, empty_netloc_url: str
     ) -> None:
-        """User.website が空のnetlocを拒否すること"""
         valid_user_data["website"] = empty_netloc_url
         with pytest.raises(ValidationError, match=re.escape("Valid hostname not found")):
             User(**valid_user_data)
@@ -629,7 +572,6 @@ class TestUserModel:
     def test_user_website_rejects_ascii_whitespace_in_host(
         self, valid_user_data: _UserData, invalid_host_url: str
     ) -> None:
-        """User.website がホスト部のASCII空白を拒否すること."""
         valid_user_data["website"] = invalid_host_url
         with pytest.raises(ValidationError, match=re.escape("Hostname contains whitespace")):
             User(**valid_user_data)
@@ -637,8 +579,6 @@ class TestUserModel:
     def test_user_website_wraps_overflowerror_in_validationerror(
         self, valid_user_data: _UserData, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """parsed.username/password アクセス時の OverflowError が ValidationError になること."""
-
         class _OverflowingParseResult:
             scheme = "https"
             netloc = "example.com"
@@ -736,7 +676,6 @@ class TestUserModel:
     def test_user_website_rejects_security_bypass_patterns(
         self, valid_user_data: _UserData, dangerous_url: str, expected_match: str
     ) -> None:
-        """User.website がセキュリティバイパスパターンを拒否すること"""
         valid_user_data["website"] = dangerous_url
         with pytest.raises(ValidationError, match=expected_match):
             User(**valid_user_data)
@@ -752,7 +691,6 @@ class TestUserModel:
     def test_user_website_rejects_non_str_input(
         self, valid_user_data: _UserData, non_str_input: object
     ) -> None:
-        """User.website が非文字列入力を拒否すること"""
         valid_user_data["website"] = non_str_input  # type: ignore[typeddict-item]
         with pytest.raises(ValidationError, match=re.escape("String required")):
             User(**valid_user_data)
@@ -776,7 +714,6 @@ class TestUserModel:
     def test_user_website_allows_safe_url(
         self, valid_user_data: _UserData, input_url: str, expected_url: str
     ) -> None:
-        """User.website が安全なURL形式を受け入れること（スキームなしはhttps://に補完）"""
         valid_user_data["website"] = input_url
         user = User(**valid_user_data)
         assert user.website == expected_url
@@ -805,7 +742,6 @@ class TestUserModel:
     def test_user_website_normalizes_scheme_and_host(
         self, valid_user_data: _UserData, input_url: str, expected_url: str
     ) -> None:
-        """スキームとホストが小文字正規化されることを検証する（RFC 3986準拠）"""
         valid_user_data["website"] = input_url
         user = User(**valid_user_data)
         assert user.website == expected_url
@@ -825,7 +761,6 @@ class TestUserModel:
     def test_user_website_sanitizes_control_chars_in_safe_url(
         self, valid_user_data: _UserData, dirty_safe_url: str, expected: str
     ) -> None:
-        """User.website が安全なURLに含まれる制御文字を除去して返却すること"""
         valid_user_data["website"] = dirty_safe_url
         user = User(**valid_user_data)
         assert user.website == expected
@@ -845,7 +780,7 @@ class TestUserModel:
     def test_user_website_control_char_only_raises(
         self, valid_user_data: _UserData, control_only: str
     ) -> None:
-        """制御文字のみのwebsiteはサニタイズ後に空文字列となりValidationErrorになること"""
+        """制御文字のみのwebsiteはサニタイズ後に空文字列となるため、ValidationErrorになることを検証する。"""
         valid_user_data["website"] = control_only
         with pytest.raises(ValidationError, match=re.escape("Website became empty")):
             User(**valid_user_data)
@@ -918,7 +853,6 @@ class TestUserModel:
     def test_user_website_encodes_special_chars(
         self, valid_user_data: _UserData, input_url: str, expected_url: str
     ) -> None:
-        """_normalize_url の quote() によるパス・クエリ・フラグメントのエンコード動作を検証する."""
         valid_user_data["website"] = input_url
         user = User(**valid_user_data)
         assert user.website == expected_url
@@ -926,11 +860,7 @@ class TestUserModel:
     def test_user_website_rejects_percent_encoded_at_with_literal_at(
         self, valid_user_data: _UserData
     ) -> None:
-        """%40エンコード済み@と@リテラル混在のuserinfoバイパスを拒否すること.
-
-        urlparse は "user%40evil.com@host.example.com" をuserinfoとして解析するため、
-        URLにuserinfoが含まれると判定しValidationErrorを発生させる。
-        """
+        """urlparseが%40エンコード済み@と@リテラル混在をuserinfoと解釈しバイパスされることを防ぐ契約を検証する。"""
         valid_user_data["website"] = "https://user%40evil.com@host.example.com"
         with pytest.raises(ValidationError, match=re.escape("URL cannot contain userinfo")):
             User(**valid_user_data)
@@ -945,28 +875,20 @@ class TestUserModel:
     def test_user_website_rejects_incomplete_percent_encoding(
         self, valid_user_data: _UserData, bad_url: str
     ) -> None:
-        """不完全なパーセントエンコード（%GG・末尾%等）を含むURLを拒否すること.
-
-        %GG・末尾の裸%はいずれも_PERCENT_CTRL_RE（制御文字検出）にはマッチしないが、
-        _INCOMPLETE_PCT_RE（不完全%シーケンス検出）にマッチしValidationErrorを送出する。
-        """
+        """%GGや末尾%は_PERCENT_CTRL_REでなく_INCOMPLETE_PCT_REにマッチしてValidationErrorになる契約を検証する。"""
         valid_user_data["website"] = bad_url
         with pytest.raises(ValidationError, match=re.escape("incomplete percent-encoding")):
             User(**valid_user_data)
 
 
 class TestPostModel:
-    """Post モデルのテスト"""
-
     def test_post_basic_creation(self) -> None:
-        """基本的な Post モデル作成"""
         post = Post(user_id=1, id=1, title="Test Title", body="Test Body")
 
         assert post.user_id == 1
         assert post.title == "Test Title"
 
     def test_post_alias_working(self) -> None:
-        """Post モデルの alias (userId → user_id) が機能することを確認"""
         # mypy: pydantic.mypy plugin は alias kwarg を field として認識しないため抑制
         # validate_by_name=True により runtime は正常 (alias 動作の意図的検証)
         post = Post(userId=5, id=1, title="Test", body="Test")  # type: ignore[call-arg]
@@ -974,11 +896,7 @@ class TestPostModel:
         assert post.user_id == 5
 
     def test_post_alias_compatibility(self) -> None:
-        """Post モデルの model_validate と model_dump(by_alias=True) が整合すること
-
-        Pydantic 移行の検証: dict→モデル→dict のラウンドトリップで
-        alias（userId）→Python属性（user_id）→alias（userId）が正しく動作する。
-        """
+        """Pydantic移行時のalias⇄属性ラウンドトリップ退行を防ぐため、userId⇄user_idの往復変換を検証する。"""
         data = {"userId": 1, "id": 1, "title": "title", "body": "body"}
         post = Post.model_validate(data)
 
@@ -990,7 +908,6 @@ class TestPostModel:
         _XSS_MODEL_PARAMS,
     )
     def test_post_title_sanitizes_xss(self, dirty: str, expected: str) -> None:
-        """Post.title フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
         post = Post(user_id=1, id=1, title=dirty, body="Normal body")
         assert post.title == expected
 
@@ -999,7 +916,6 @@ class TestPostModel:
         _XSS_MODEL_PARAMS,
     )
     def test_post_body_sanitizes_xss(self, dirty: str, expected: str) -> None:
-        """Post.body フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
         post = Post(user_id=1, id=1, title="Normal title", body=dirty)
         assert post.body == expected
 
@@ -1011,26 +927,22 @@ class TestPostModel:
         ],
     )
     def test_post_invalid_id_raises_validation_error(self, invalid_id: int) -> None:
-        """id が ge=1 制約（id は1以上）に違反した場合 ValidationError が発生する"""
         with pytest.raises(ValidationError) as exc_info:
             Post(id=invalid_id, user_id=1, title="Test", body="Body")
         errors = exc_info.value.errors()
         assert any(e["loc"] == ("id",) and e["type"] == "greater_than_equal" for e in errors)
 
     def test_post_title_max_length_valid(self) -> None:
-        """title=200文字（max_length 上限）で正常作成できること"""
         post = Post(id=1, user_id=1, title="a" * 200, body="Body")
         assert len(post.title) == 200
 
     def test_post_title_max_length_invalid(self) -> None:
-        """title=201文字（max_length 超過）で ValidationError が発生すること"""
         with pytest.raises(ValidationError) as exc_info:
             Post(id=1, user_id=1, title="a" * 201, body="Body")
         errors = exc_info.value.errors()
         assert any(e["loc"] == ("title",) and e["type"] == "string_too_long" for e in errors)
 
     def test_post_body_exceeds_max_length_raises_validation_error(self) -> None:
-        """body>5000文字でValidationErrorが発生する（境界値テスト: max_length=5000）"""
         long_body = "a" * 5001
         with pytest.raises(ValidationError) as exc_info:
             Post(id=1, user_id=1, title="Test", body=long_body)
@@ -1038,23 +950,14 @@ class TestPostModel:
         assert any(e["loc"] == ("body",) and e["type"] == "string_too_long" for e in errors)
 
     def test_post_body_max_length_valid(self) -> None:
-        """body=5000文字（max_length 上限）で正常作成できること（境界値: ちょうど上限）"""
         post = Post(title="T", body="a" * 5000, user_id=1, id=1)
         assert len(post.body) == 5000
 
 
 class TestCommentModel:
-    """Comment モデルのテスト
-
-    XSS サニタイゼーション: Comment の name/body 2フィールドが
-                    html.escape() でサニタイズされることを確認。
-    XSS カバレッジ（OWASP Cheat Sheetベース・プロジェクト独自分類）:
-        Cat.1 Script Tags / Cat.2 Event Handlers / Cat.3 URI Schemes /
-        Cat.4 Attribute Injection / Cat.6 Special Characters
-    """
+    """Comment.name/bodyのhtml.escape()サニタイズをOWASP Cheat Sheetベースの独自分類で検証する。"""
 
     def test_comment_basic_creation(self) -> None:
-        """基本的な Comment モデル作成"""
         comment = Comment(
             post_id=1,
             id=1,
@@ -1067,11 +970,7 @@ class TestCommentModel:
         assert comment.email == "test@example.com"
 
     def test_comment_alias_compatibility(self) -> None:
-        """Comment モデルの model_validate と model_dump(by_alias=True) が整合すること
-
-        Pydantic 移行の検証: dict→モデル→dict のラウンドトリップで
-        alias（postId）→Python属性（post_id）→alias（postId）が正しく動作する。
-        """
+        """Pydantic移行時のalias⇄属性ラウンドトリップ退行を防ぐため、postId⇄post_idの往復変換を検証する。"""
         data = {
             "postId": 1,
             "id": 1,
@@ -1093,25 +992,21 @@ class TestCommentModel:
         ],
     )
     def test_comment_sanitizes_xss(self, field: str, dirty: str, expected: str) -> None:
-        """Comment XSS サニタイゼーション（name/body x OWASP CS・独自5分類）"""
         data: dict[str, str | int] = {**_COMMENT_BASE, field: dirty}  # type: ignore[dict-item]
         comment = Comment.model_validate(data)
         assert getattr(comment, field) == expected
 
     def test_comment_email_must_be_valid_format(self) -> None:
-        """Comment.email が EmailStr 型により無効なメールアドレスを拒否すること"""
         with pytest.raises(ValidationError, match=r"email"):
             Comment(post_id=1, id=1, name="Name", email="not-an-email", body="Body")
 
     def test_comment_email_max_length_valid(self) -> None:
-        """Comment.email=100文字（max_length 上限）で正常作成できること"""
         # 52 + "@"(1) + 35 + ".example.com"(12) = 100文字（local≤64: RFC5321準拠）
         long_email = "a" * 52 + "@" + "b" * 35 + ".example.com"
         comment = Comment(post_id=1, id=1, name="Name", email=long_email, body="Body")
         assert len(comment.email) == 100
 
     def test_comment_email_max_length_invalid(self) -> None:
-        """Comment.email=101文字（max_length 超過）で ValidationError が発生すること"""
         # 52 + "@"(1) + 36 + ".example.com"(12) = 101文字（local≤64: RFC5321準拠）
         # emailフィールドのloc確認で検証（email-validatorバージョン依存のmatch文字列を回避）
         long_email = "a" * 52 + "@" + "b" * 36 + ".example.com"
@@ -1123,17 +1018,13 @@ class TestCommentModel:
         )
 
     def test_comment_email_with_ampersand_accepted_by_emailstr(self) -> None:
-        """EmailStr は & を含むローカルパートを受理し、html.escape を適用しないこと。
-
-        email-validator は RFC 5321 の dot-atom で & を許容する。
-        動作変更時はこのテストが失敗するため、設計の再評価が必要。
-        """
+        """email-validatorがRFC 5321 dot-atomで&を許容しhtml.escapeが非適用となる仕様を保護する。"""
         comment = Comment(post_id=1, id=1, name="Name", email="user&tag@example.com", body="Body")
         # html.escape は適用されないため & は &amp; に変換されない
         assert comment.email == "user&tag@example.com"
 
     def test_comment_email_rejects_html_meta_chars(self) -> None:
-        """EmailStrが<>を含むアドレスを拒否することを確認（html.escape非適用の安全根拠）."""
+        """EmailStrが<>を含むアドレスを拒否するため、html.escapeを適用しなくても安全である根拠を検証する。"""
         with pytest.raises(ValidationError):
             Comment(post_id=1, id=1, name="Name", email="<xss>@evil.com", body="Body")
         with pytest.raises(ValidationError):
@@ -1141,10 +1032,7 @@ class TestCommentModel:
 
 
 class TestTodoModel:
-    """Todo モデルのテスト"""
-
     def test_todo_basic_creation(self) -> None:
-        """基本的な Todo モデル作成"""
         todo = Todo(user_id=1, id=1, title="Test TODO", completed=False)
 
         assert todo.user_id == 1
@@ -1156,16 +1044,12 @@ class TestTodoModel:
         _XSS_MODEL_PARAMS,
     )
     def test_todo_title_sanitizes_xss(self, dirty: str, expected: str) -> None:
-        """Todo.title フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
         todo = Todo(user_id=1, id=1, title=dirty, completed=False)
         assert todo.title == expected
 
 
 class TestAlbumModel:
-    """Album モデルのテスト"""
-
     def test_album_basic_creation(self) -> None:
-        """基本的な Album モデル作成"""
         album = Album(user_id=1, id=1, title="Test Album")
 
         assert album.user_id == 1
@@ -1176,14 +1060,11 @@ class TestAlbumModel:
         _XSS_MODEL_PARAMS,
     )
     def test_album_title_sanitizes_xss(self, dirty: str, expected: str) -> None:
-        """Album.title フィールドの XSS サニタイゼーション（OWASP Cheat Sheetベース・独自5分類）"""
         album = Album(user_id=1, id=1, title=dirty)
         assert album.title == expected
 
 
 class TestExtraFieldsForbidden:
-    """全モデルの extra="forbid" 設定確認"""
-
     @pytest.mark.parametrize(
         ("model_class", "valid_data", "extra_field"),
         [
@@ -1286,7 +1167,6 @@ class TestExtraFieldsForbidden:
         valid_data: dict[str, Any],
         extra_field: dict[str, Any],
     ) -> None:
-        """全モデルが extra フィールドを拒否することを確認"""
         invalid_data = {**valid_data, **extra_field}
 
         with pytest.raises(ValidationError) as exc_info:
