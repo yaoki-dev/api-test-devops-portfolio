@@ -13,6 +13,13 @@ RATE_LIMIT_WARNING_THRESHOLD = 10
 _RATE_LIMIT_FORBIDDEN_FALLBACK = -1
 _RATE_LIMIT_RESET_FALLBACK = 0
 
+# secondary rate limit で Retry-After が欠損・不正のときの待機秒数。GitHub docs の
+# 「最低1分待て」に対応する。Retry-After は primary / secondary を問わず常に保持され、
+# remaining == 0（primary 枯渇）で Retry-After もない場合は X-RateLimit-Reset まで待つため
+# 本定数は使われない。公式SDK octokit/plugin-throttling.js も
+# fallbackSecondaryRateRetryAfter=60 を既定にしている。
+SECONDARY_RATE_LIMIT_FALLBACK_RETRY_AFTER = 60
+
 
 def _parse_rate_limit_header(
     headers: httpx.Headers,

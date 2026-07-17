@@ -298,6 +298,36 @@ def test_parse_json_response_raises_github_api_error_on_invalid_json() -> None:
     assert logger.error.call_args.kwargs["endpoint"] == "/test"
 
 
+def test_parse_json_response_malformed_utf8_keeps_body_out_of_cause() -> None:
+    """不正 UTF-8 body でも生の UnicodeDecodeError を漏らさず body を cause から締め出す。
+
+    httpx の response.json() は bytes を直接デコードするため、不正 UTF-8 では
+    JSONDecodeError ではなく UnicodeDecodeError が飛ぶ（両者に継承関係はない）。
+    UnicodeDecodeError.object は JSONDecodeError.doc と同様に生 body を保持するため、
+    捕捉しないと Sentry へ body が届き SanitizedJSONDecodeError を設けた意味がなくなる。
+    行・列の概念を持たない型なので lineno/colno は -1（該当なし）で写す。
+    """
+    logger = MagicMock()
+    response = httpx.Response(200, content=b'{"token": "ghp_secret_leaked_value" \xff}')
+
+    with pytest.raises(GitHubAPIError) as exc_info:
+        _parse_json_response(
+            response=response,
+            endpoint="/test",
+            logger=logger,
+        )
+
+    assert "Invalid JSON response" in str(exc_info.value)
+    cause = exc_info.value.__cause__
+    assert isinstance(cause, SanitizedJSONDecodeError)
+    assert not isinstance(cause, UnicodeDecodeError)
+    assert b"ghp_secret_leaked_value" not in repr(cause).encode()
+    assert cause.error_type == "builtins.UnicodeDecodeError"
+    assert (cause.lineno, cause.colno) == (-1, -1)
+    assert exc_info.value.__context__ is None
+    assert logger.error.call_args.kwargs["error_type"] == "UnicodeDecodeError"
+
+
 def test_parse_json_response_logs_on_decode_error() -> None:
     mock_response = MagicMock(spec=httpx.Response)
     mock_response.json.side_effect = json.JSONDecodeError("Expecting value", "bad", 0)
@@ -398,10 +428,203 @@ def test_handle_403_response_no_json_log() -> None:
     with pytest.raises(GitHubAPIError) as exc_info:
         _handle_403_response(response, logger=logger)
     logger.warning.assert_called_once()
-    assert logger.warning.call_args.args[0] == "failed_to_parse_403_message"
+    assert logger.warning.call_args.args[0] == "failed_to_parse_error_message"
+    assert logger.warning.call_args.kwargs["status_code"] == 403
     assert logger.warning.call_args.kwargs["error_type"] == "JSONDecodeError"
     assert exc_info.value.__cause__ is None
     assert exc_info.value.__context__ is None
+
+
+def test_handle_403_response_malformed_utf8_body_stays_forbidden() -> None:
+    """不正 UTF-8 の secondary rate limit body は素通りせず Forbidden へ落ちる。
+
+    httpx は不正 UTF-8 に対し UnicodeDecodeError を送出する（JSONDecodeError ではない）。
+    捕捉しないと 403 整形が例外で抜け、呼び出し側が GitHubAPIError ではなく生の
+    UnicodeDecodeError を受け取る（.object が body を保持したまま）。
+    body をデコードできない以上 secondary 判定は不能なので、message 抽出不能の他ケースと
+    同じく Forbidden に倒すのが正しい。RateLimitError に昇格しないことを固定する。
+    """
+    response = httpx.Response(
+        403,
+        headers={"X-RateLimit-Remaining": "50", "X-RateLimit-Reset": "0"},
+        content=b'{"message": "You have exceeded a secondary rate limit \xff"}',
+    )
+    logger = MagicMock()
+    with pytest.raises(GitHubAPIError) as exc_info:
+        _handle_403_response(response, logger=logger)
+    assert not isinstance(exc_info.value, RateLimitError)
+    logger.warning.assert_called_once()
+    assert logger.warning.call_args.args[0] == "failed_to_parse_error_message"
+    assert logger.warning.call_args.kwargs["status_code"] == 403
+    assert logger.warning.call_args.kwargs["error_type"] == "UnicodeDecodeError"
+    # UnicodeDecodeError.start（不正バイト位置）が error_pos へ写ることを固定する。
+    assert logger.warning.call_args.kwargs["error_pos"] == 54
+    assert "error_lineno" not in logger.warning.call_args.kwargs
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
+
+
+def test_handle_403_response_empty_body_logs_no_warning() -> None:
+    """空 body は「パース失敗」ではなく「message なし」として warning なしで扱う。
+
+    body を持たない 429 が同じ抽出関数を通るようになったため、空 body を
+    パース失敗として警告すると常態がノイズになる。この意図的な挙動変更を固定する
+    （test_handle_403_response_no_json_log の非空・不正 JSON とは別経路）。
+    """
+    response = httpx.Response(
+        403,
+        headers={"X-RateLimit-Remaining": "50", "X-RateLimit-Reset": "0"},
+        content=b"",
+    )
+    logger = MagicMock()
+    with pytest.raises(GitHubAPIError) as exc_info:
+        _handle_403_response(response, logger=logger)
+    logger.warning.assert_not_called()
+    assert not isinstance(exc_info.value, RateLimitError)
+
+
+def test_handle_http_status_error_429_parse_failure_logs_status_code_429() -> None:
+    """パース失敗 warning は 429 由来なら status_code=429 を載せる。
+
+    このイベントは 403 と 429 の両経路から発火するため、status_code だけが由来の判別材料になる。
+    403 側のテスト (test_handle_403_response_no_json_log) は status_code を 403 に
+    固定実装しても通ってしまい、フィールドの存在意義そのものを検証できない。
+    """
+    response = httpx.Response(
+        429,
+        headers={"X-RateLimit-Remaining": "50", "X-RateLimit-Reset": "1700000000"},
+        content=b"not json",
+    )
+    logger = MagicMock()
+    with pytest.raises(RateLimitError):
+        _handle_http_status_error(
+            response=response,
+            endpoint="/test",
+            method="GET",
+            logger=logger,
+        )
+    logger.warning.assert_called_once()
+    assert logger.warning.call_args.args[0] == "failed_to_parse_error_message"
+    assert logger.warning.call_args.kwargs["status_code"] == 429
+
+
+_EXHAUSTED_PRIMARY_WITH_BOTH_HEADERS = {
+    "X-RateLimit-Remaining": "0",
+    "X-RateLimit-Reset": "1700000000",
+    "Retry-After": "45",
+}
+
+
+def test_handle_403_exhausted_primary_keeps_retry_after_and_reset() -> None:
+    """primary 枯渇の 403 でも Retry-After と Reset の両方を例外に保持する。
+
+    GitHub docs は「Retry-After 経過まで再試行しない」と「remaining == 0 なら reset まで
+    再試行しない」を独立条件として課すため、片方を破棄すると消費者が
+    max(now + retry_after, reset_time) を計算できない。remaining == 0 では body を
+    読まないため、非 JSON body でも warning が出ないことも同時に固定する。
+    """
+    response = httpx.Response(
+        403,
+        headers=_EXHAUSTED_PRIMARY_WITH_BOTH_HEADERS,
+        content=b"not json",
+    )
+    logger = MagicMock()
+    with pytest.raises(RateLimitError) as exc_info:
+        _handle_403_response(response, logger=logger)
+    assert exc_info.value.retry_after == 45
+    assert exc_info.value.reset_time == 1700000000
+    logger.warning.assert_not_called()
+
+
+def test_handle_http_status_error_429_exhausted_primary_keeps_retry_after_and_reset() -> None:
+    """primary 枯渇の 429 は 403 と同じ判定規則で両ヘッダーを保持する。
+
+    403 側 (test_handle_403_exhausted_primary_keeps_retry_after_and_reset) と同一ヘッダーで
+    同一の (retry_after, reset_time) になることを固定し、経路間の非対称の再発を防ぐ。
+    remaining == 0 で body を読まないため、非 JSON body でも warning は出ない。
+    """
+    response = httpx.Response(
+        429,
+        headers=_EXHAUSTED_PRIMARY_WITH_BOTH_HEADERS,
+        content=b"not json",
+    )
+    logger = MagicMock()
+    with pytest.raises(RateLimitError) as exc_info:
+        _handle_http_status_error(
+            response=response,
+            endpoint="/test",
+            method="GET",
+            logger=logger,
+        )
+    assert exc_info.value.retry_after == 45
+    assert exc_info.value.reset_time == 1700000000
+    logger.warning.assert_not_called()
+
+
+def test_handle_403_with_retry_after_but_no_rate_limit_signal_stays_forbidden() -> None:
+    """remaining != 0 かつ非 secondary の 403 は Retry-After が付いていても Forbidden のまま。
+
+    rate limit 判定に Retry-After の有無を使うと、WAF 等が Retry-After を付けた
+    通常の Forbidden を RateLimitError に誤分類する。判定材料は remaining と
+    message 文言のみであることを固定する。
+    """
+    response = httpx.Response(
+        403,
+        headers={"X-RateLimit-Remaining": "50", "Retry-After": "45"},
+        json={"message": "Forbidden by policy"},
+    )
+    logger = MagicMock()
+    with pytest.raises(GitHubAPIError, match="^Access forbidden$") as exc_info:
+        _handle_403_response(response, logger=logger)
+    assert not isinstance(exc_info.value, RateLimitError)
+
+
+def test_handle_403_exhausted_primary_without_retry_after_defers_to_reset() -> None:
+    """Retry-After 欠落の primary 枯渇 403 は retry_after=None で reset 待ちに委ねる。"""
+    response = httpx.Response(
+        403,
+        headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1700000000"},
+    )
+    logger = MagicMock()
+    with pytest.raises(RateLimitError) as exc_info:
+        _handle_403_response(response, logger=logger)
+    assert exc_info.value.retry_after is None
+    assert exc_info.value.reset_time == 1700000000
+
+
+def test_handle_403_exhausted_primary_without_reset_keeps_retry_after() -> None:
+    """Reset 欠落の primary 枯渇 403 でも Retry-After は破棄せず保持する（429 側と対称）。"""
+    response = httpx.Response(
+        403,
+        headers={"X-RateLimit-Remaining": "0", "Retry-After": "45"},
+    )
+    logger = MagicMock()
+    with pytest.raises(RateLimitError) as exc_info:
+        _handle_403_response(response, logger=logger)
+    assert exc_info.value.retry_after == 45
+    assert exc_info.value.reset_time == 0
+
+
+def test_handle_http_status_error_429_exhausted_primary_without_reset_keeps_retry_after() -> None:
+    """Reset 欠落の primary 枯渇 429 でも Retry-After は破棄せず保持する。
+
+    reset_time は欠落フォールバックの 0（= 不明）になるため、Retry-After まで捨てると
+    消費者が待機時間を一切算出できなくなる。
+    """
+    response = httpx.Response(
+        429,
+        headers={"X-RateLimit-Remaining": "0", "Retry-After": "45"},
+    )
+    logger = MagicMock()
+    with pytest.raises(RateLimitError) as exc_info:
+        _handle_http_status_error(
+            response=response,
+            endpoint="/test",
+            method="GET",
+            logger=logger,
+        )
+    assert exc_info.value.retry_after == 45
+    assert exc_info.value.reset_time == 0
 
 
 @pytest.mark.parametrize(
