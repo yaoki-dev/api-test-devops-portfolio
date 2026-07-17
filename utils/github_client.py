@@ -25,6 +25,9 @@ from utils.github_error_handler import (
 from utils.github_error_handler import (
     _parse_json_response as parse_json_response,
 )
+from utils.github_error_handler import (
+    _resolve_rate_limit_retry_after as resolve_rate_limit_retry_after,
+)
 from utils.github_etag_cache import GitHubETagCache
 from utils.github_rate_limit import (
     _RATE_LIMIT_FALLBACK_REMAINING,
@@ -482,17 +485,27 @@ class AsyncGitHubClient:
                             logger=self.logger,
                         )
                     )
+                    # 429 は primary / secondary の両方で返る。Retry-After は両者で保持し、
+                    # 再試行可能時刻は max(now + retry_after, reset_time)
+                    # (utils/github_error_handler.py の RateLimitError 参照)。
+                    # remaining は上でパース済み。渡さないと同じヘッダーが再パースされ、
+                    # 不正値のとき invalid_rate_limit_header warning が重複する。
+                    retry_after = resolve_rate_limit_retry_after(
+                        response,
+                        logger=self.logger,
+                        rate_remaining=remaining,
+                    )
                     # PII漏洩防止: 例外チェーン経由の httpx URL/header 露出を抑制
                     # (defensive path との等価性維持: 403→RateLimitError 変換も from None)
-                    raise RateLimitError(reset_time) from None
+                    raise RateLimitError(reset_time, retry_after=retry_after) from None
 
                 if response.status_code == 403:
                     # 注: warning_reset_time は _check_rate_limit_warning が
                     # remaining < RATE_LIMIT_WARNING_THRESHOLD (=10) のときのみ
                     # 非 None を返す (utils/github_rate_limit.py)。
-                    # 閾値変更時はこの reset_time が常に None になり _handle_403_response
-                    # 側の Retry-After ヘッダー fallback パスに倒れる挙動になる。
-                    # debug-only ログのため動作影響は限定的だが、依存関係を明示する。
+                    # 閾値変更時はこの reset_time が常に None になり、_handle_403_response
+                    # 側が X-RateLimit-Reset を自前パースする経路に倒れる。同じヘッダーを
+                    # 同じ既定値で読むため値は変わらないが、依存関係を明示する。
                     handle_403_response(
                         response,
                         logger=self.logger,
