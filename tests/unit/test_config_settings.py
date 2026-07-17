@@ -63,10 +63,7 @@ def deterministic_ssrf_validator_dns(monkeypatch: pytest.MonkeyPatch) -> Iterato
 
 
 class TestAPIConfigBaseUrlDependencyInjection:
-    """base_url検証の許可ドメイン注入テスト。"""
-
     def test_validate_base_url_accepts_injected_allowed_domain(self) -> None:
-        """ALLOWED_DOMAINSのモンキーパッチなしで許可ドメインを注入できる。"""
         result = _validate_base_url_with_allowed_domains(
             "https://example.com/",
             frozenset({"example.com"}),
@@ -77,7 +74,6 @@ class TestAPIConfigBaseUrlDependencyInjection:
     def test_validate_base_url_rejects_domain_missing_from_injected_allowlist(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """注入された許可リスト外のドメインは拒否される。"""
         # このテストは DNS/private-IP 判定経路を使わず、
         # allowlist 分岐だけを決定的に検証する。
         monkeypatch.setattr(socket, "gethostbyname", lambda _: "1.2.3.4")
@@ -88,7 +84,6 @@ class TestAPIConfigBaseUrlDependencyInjection:
             )
 
     def test_validate_base_url_rejects_missing_hostname(self) -> None:
-        """hostname が取れない URL は拒否される。"""
         with pytest.raises(ValueError, match="Invalid URL: hostname not found"):
             _validate_base_url_with_allowed_domains(
                 "https://",
@@ -100,7 +95,6 @@ class TestAPIConfigBaseUrlDependencyInjection:
         caplog: pytest.LogCaptureFixture,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """許可ドメイン不一致時はALLOWED_DOMAINS確認をログへ残す。"""
         # このテストは DNS/private-IP 判定経路を使わず、
         # allowlist 分岐だけを決定的に検証する。
         monkeypatch.setattr(socket, "gethostbyname", lambda _: "1.2.3.4")
@@ -120,7 +114,6 @@ class TestAPIConfigBaseUrlDependencyInjection:
     def test_validate_base_url_logs_warning_for_domain_not_in_allowlist(
         self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """許可ドメイン外アクセス試行時にSSRFセキュリティ証跡が記録される。"""
         monkeypatch.setattr(socket, "gethostbyname", lambda _: "1.2.3.4")
         with caplog.at_level(logging.WARNING, logger="config.settings"):
             with pytest.raises(ValueError, match="Domain not in allowlist"):
@@ -135,14 +128,6 @@ class TestAPIConfigBaseUrlDependencyInjection:
 
 
 class TestAPIConfigBoundaryValues:
-    """APIConfig数値フィールドの境界値テスト（P1-Critical）
-
-    Pydantic Fieldのge/le制約を検証:
-    - timeout: ge=1.0, le=300.0
-    - retry_count: ge=0, le=10
-    - retry_delay: ge=0.1, le=60.0
-    """
-
     @pytest.mark.parametrize(
         ("field", "value", "should_pass"),
         [
@@ -169,12 +154,6 @@ class TestAPIConfigBoundaryValues:
         value: float,
         should_pass: bool,
     ) -> None:
-        """数値フィールドの境界値検証
-
-        Note:
-            動的kwargs展開のため type: ignore を使用。
-            parametrizedテストの設計上、静的型チェックの限界。
-        """
         if should_pass:
             config = APIConfig(**{field: value})  # type: ignore[arg-type]
             assert getattr(config, field) == value
@@ -184,53 +163,41 @@ class TestAPIConfigBoundaryValues:
 
 
 class TestAPIConfigValidation:
-    """APIConfig.validate_base_url のテスト (lines 73-77)"""
-
     def test_base_url_without_scheme_raises_error(self):
-        """スキーム(http/https)なしのURLでエラー発生"""
         with pytest.raises(ValidationError) as exc_info:
             APIConfig(base_url="example.com")
         assert "Base URL must start with http:// or https://" in str(exc_info.value)
 
     def test_base_url_with_ftp_scheme_raises_error(self):
-        """ftp://スキームでエラー発生"""
         with pytest.raises(ValidationError) as exc_info:
             APIConfig(base_url="ftp://example.com")
         assert "Base URL must start with http:// or https://" in str(exc_info.value)
 
     def test_base_url_with_trailing_slash_removed(self):
-        """末尾のスラッシュが削除される (line 76-77)"""
         config = APIConfig(base_url="https://example.com/")
         assert config.base_url == "https://example.com"
         assert not config.base_url.endswith("/")
 
     def test_base_url_with_multiple_trailing_slashes_removed(self):
-        """複数の末尾スラッシュが削除される"""
         config = APIConfig(base_url="https://example.com///")
         assert config.base_url == "https://example.com"
 
     def test_base_url_http_scheme_valid(self):
-        """http://スキームが有効（SSRF対応: 許可ドメインを使用）"""
         config = APIConfig(base_url="http://httpbin.org")
         assert config.base_url == "http://httpbin.org"
 
     def test_base_url_https_scheme_valid(self):
-        """https://スキームが有効（DNS解決可能なドメインを使用）"""
         # Note: example.com系はDNS解決失敗でFail-Closedブロック
         config = APIConfig(base_url="https://api.github.com")
         assert config.base_url == "https://api.github.com"
 
 
 class TestLogConfigValidation:
-    """LogConfig.validate_log_file のテスト (lines 105-109)"""
-
     def test_log_file_none_handling(self):
-        """file=None の場合の処理 (line 105)"""
         config = LogConfig(file=None)
         assert config.file is None
 
     def test_log_file_directory_creation(self, tmp_path: Path) -> None:
-        """存在しないディレクトリが自動作成される (lines 106-108)"""
         log_file = tmp_path / "logs" / "subdir" / "app.log"
         assert not log_file.parent.exists()
 
@@ -241,7 +208,6 @@ class TestLogConfigValidation:
         assert log_file.parent.is_dir()
 
     def test_log_file_existing_directory(self, tmp_path: Path) -> None:
-        """既存ディレクトリの場合もエラーなし"""
         log_dir = tmp_path / "existing_logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         log_file = log_dir / "app.log"
@@ -250,15 +216,12 @@ class TestLogConfigValidation:
         assert config.file == str(log_file)
 
     def test_log_file_deep_nested_directory_creation(self, tmp_path: Path) -> None:
-        """深くネストされたディレクトリの作成"""
         log_file = tmp_path / "a" / "b" / "c" / "d" / "app.log"
         _ = LogConfig(file=str(log_file))
         assert log_file.parent.exists()
 
 
 class TestSettingsEnvironmentValidation:
-    """Settings.validate_environment のテスト (lines 192-194)"""
-
     @pytest.mark.parametrize(
         ("env_input", "expected", "needs_secret"),
         [
@@ -274,14 +237,7 @@ class TestSettingsEnvironmentValidation:
         expected: Environment,
         needs_secret: bool,
     ) -> None:
-        """環境設定バリデーション: 文字列→小文字変換、Enum直接指定
-
-        Note:
-            Pydantic field_validatorが実行時に文字列→Enum変換を行うため、
-            str | Environment を受け入れる。静的型チェックとの差異あり。
-            本番・ステージング環境はシークレット必須かつHTTPS強制のため、
-            needs_secret=Trueの場合はHTTPS URLも合わせて指定する。
-        """
+        """Pydanticのstr→Enum実行時変換により、静的型との差異を許容する契約を検証する。"""
         if needs_secret:
             settings = Settings(
                 environment=env_input,  # type: ignore[arg-type]
@@ -301,7 +257,6 @@ class TestSettingsEnvironmentValidation:
         ],
     )
     def test_environment_validation_strips_whitespace(self, env_input: str) -> None:
-        """validate_environment: 前後スペースを除去してから正規化する"""
         stripped = env_input.strip().lower()
         expected = Environment(stripped)
         needs_secret = expected in {Environment.PRODUCTION, Environment.STAGING}
@@ -324,12 +279,10 @@ class TestSettingsEnvironmentValidation:
         ],
     )
     def test_environment_validation_empty_raises(self, empty_input: str) -> None:
-        """validate_environment: 空文字列・スペースのみ・タブのみはValidationErrorを発生させる"""
         with pytest.raises(ValidationError):
             Settings(environment=empty_input)  # type: ignore[arg-type]
 
     def test_environment_validation_invalid_string_raises(self) -> None:
-        """validate_environment: タイポなど無効な文字列はValidationErrorを発生させる"""
         with pytest.raises(ValidationError) as exc_info:
             Settings(environment="producton")  # type: ignore[arg-type]
         # エラーメッセージに有効値リストが含まれることを検証（契約の明示的保護）
@@ -337,7 +290,6 @@ class TestSettingsEnvironmentValidation:
         assert any("有効な値" in str(e["msg"]) for e in exc_info.value.errors())
 
     def test_environment_validation_invalid_type_raises(self) -> None:
-        """validate_environment: str/Environment以外の型はValidationErrorを発生させる"""
         with pytest.raises(ValidationError):
             Settings(environment=123)  # type: ignore[arg-type]
 
@@ -351,36 +303,21 @@ class TestSettingsEnvironmentValidation:
         ],
     )
     def test_environment_validation_short_forms_raise(self, short_form: str) -> None:
-        """validate_environment: 短縮形 (dev/test/stg/prod) は ValidationError を発生させる.
-
-        .env.example および docker-compose.yml で「Pydantic Environment enum は
-        development/testing/staging/production の 4 値のみ。短縮形は不可」と明示している。
-        本テストはその契約を保護する。
-
-        Note:
-            dev/test/stg/prod は互換マッピングせず、Pydantic層で常に reject される。
-            本テストは「直接 python から Settings を instantiate する」シナリオ
-            (CI script, smoke test 等) を検証する。
-        """
+        """.env.example/docker-compose.ymlで明示された「短縮形不可」契約を、直接Settingsをinstantiateして保護する。"""
         with pytest.raises(ValidationError):
             Settings(environment=short_form)  # type: ignore[arg-type]
 
 
 class TestSettingsEnvironmentMethods:
-    """Settings環境判定メソッドのテスト (lines 198, 202, 206, 210)"""
-
     def test_is_development_true(self):
-        """is_development() がTrueを返す (line 198)"""
         settings = Settings(environment=Environment.DEVELOPMENT)
         assert settings.is_development() is True
 
     def test_is_testing_true(self):
-        """is_testing() がTrueを返す (line 202)"""
         settings = Settings(environment=Environment.TESTING)
         assert settings.is_testing() is True
 
     def test_is_production_true(self):
-        """is_production() がTrueを返す (line 206)"""
         # 本番環境ではシークレットが必須
         settings = Settings(
             environment=Environment.PRODUCTION,
@@ -398,7 +335,6 @@ class TestSettingsEnvironmentMethods:
         ],
     )
     def test_is_staging(self, env: Environment, expected: bool) -> None:
-        """is_staging() がステージング環境のみTrueを返す"""
         kwargs: dict[str, Any] = {"environment": env}
         if env in {Environment.PRODUCTION, Environment.STAGING}:
             kwargs["security"] = SecurityConfig(api_key=SecretStr("test-key"))
@@ -415,7 +351,6 @@ class TestSettingsEnvironmentMethods:
         ],
     )
     def test_is_production_like(self, env: Environment, expected: bool) -> None:
-        """is_production_like() が本番相当環境を正しく判定"""
         kwargs: dict[str, Any] = {"environment": env}
         if env in {Environment.PRODUCTION, Environment.STAGING}:
             kwargs["security"] = SecurityConfig(api_key=SecretStr("test-key"))
@@ -433,23 +368,18 @@ class TestSettingsEnvironmentMethods:
         ],
     )
     def test_get_log_level_mapping(self, log_level: LogLevel, expected: int) -> None:
-        """get_log_level() がLogLevel Enumを正しくlogging定数にマッピング"""
         settings = Settings()
         settings.log.level = log_level
         assert settings.get_log_level() == expected
 
 
 class TestProductionSecretValidation:
-    """本番・ステージング環境でのシークレット検証テスト"""
-
     def test_production_without_secrets_raises_error(self):
-        """本番環境でシークレット未設定時にエラー"""
         with pytest.raises(ValidationError) as exc_info:
             Settings(environment=Environment.PRODUCTION)
         assert "SECURITY__API_KEY or SECURITY__JWT_SECRET" in str(exc_info.value)
 
     def test_production_with_api_key_valid(self):
-        """本番環境でapi_key設定時は有効"""
         settings = Settings(
             environment=Environment.PRODUCTION,
             security=SecurityConfig(api_key=SecretStr("test-key")),
@@ -457,7 +387,6 @@ class TestProductionSecretValidation:
         assert settings.is_production() is True
 
     def test_production_with_jwt_secret_valid(self):
-        """本番環境でjwt_secret設定時は有効"""
         settings = Settings(
             environment=Environment.PRODUCTION,
             security=SecurityConfig(jwt_secret=SecretStr("test-secret")),
@@ -465,12 +394,11 @@ class TestProductionSecretValidation:
         assert settings.is_production() is True
 
     def test_development_without_secrets_valid(self):
-        """開発環境ではシークレット不要"""
         settings = Settings(environment=Environment.DEVELOPMENT)
         assert settings.is_development() is True
 
     def test_staging_without_secrets_raises_error(self):
-        """ステージング環境でシークレット未設定時にエラー (STAGING=本番同等ポリシー)"""
+        """TestProductionSecretValidationクラスだがSTAGINGも本番同等のシークレット必須ポリシーを検証する。"""
         with pytest.raises(ValidationError, match="SECURITY__API_KEY or SECURITY__JWT_SECRET"):
             Settings(
                 environment=Environment.STAGING,
@@ -478,7 +406,6 @@ class TestProductionSecretValidation:
             )
 
     def test_staging_with_api_key_valid(self):
-        """ステージング環境でapi_key設定時は有効"""
         settings = Settings(
             environment=Environment.STAGING,
             security=SecurityConfig(api_key=SecretStr("test-key")),
@@ -487,7 +414,6 @@ class TestProductionSecretValidation:
         assert settings.environment == Environment.STAGING
 
     def test_staging_with_jwt_secret_valid(self):
-        """ステージング環境でjwt_secret設定時は有効"""
         settings = Settings(
             environment=Environment.STAGING,
             security=SecurityConfig(jwt_secret=SecretStr("test-secret")),
@@ -498,10 +424,7 @@ class TestProductionSecretValidation:
 
 
 class TestProductionHTTPSValidation:
-    """本番環境でのHTTPS強制テスト"""
-
     def test_production_http_raises_error(self):
-        """本番環境でHTTP URLはエラー"""
         with pytest.raises(ValidationError) as exc_info:
             Settings(
                 environment=Environment.PRODUCTION,
@@ -511,7 +434,6 @@ class TestProductionHTTPSValidation:
         assert "requires HTTPS" in str(exc_info.value)
 
     def test_production_https_valid(self):
-        """本番環境でHTTPS URLは有効"""
         settings = Settings(
             environment=Environment.PRODUCTION,
             security=SecurityConfig(api_key=SecretStr("test-key")),
@@ -520,7 +442,7 @@ class TestProductionHTTPSValidation:
         assert settings.api.base_url == "https://jsonplaceholder.typicode.com"
 
     def test_staging_http_raises_error(self):
-        """ステージング環境でHTTP URLはエラー (OWASP A02)"""
+        """ステージング環境のHTTPS強制をOWASP A02（暗号化の失敗）対策として検証する。"""
         with pytest.raises(ValidationError) as exc_info:
             Settings(
                 environment=Environment.STAGING,
@@ -530,7 +452,6 @@ class TestProductionHTTPSValidation:
         assert "requires HTTPS" in str(exc_info.value)
 
     def test_staging_https_valid(self):
-        """ステージング環境でHTTPS URLは有効"""
         settings = Settings(
             environment=Environment.STAGING,
             security=SecurityConfig(api_key=SecretStr("test-key")),
@@ -539,7 +460,6 @@ class TestProductionHTTPSValidation:
         assert settings.api.base_url == "https://jsonplaceholder.typicode.com"
 
     def test_development_http_valid(self):
-        """開発環境ではHTTP URLを許可"""
         settings = Settings(
             environment=Environment.DEVELOPMENT,
             api=APIConfig(base_url="http://jsonplaceholder.typicode.com"),
@@ -548,10 +468,7 @@ class TestProductionHTTPSValidation:
 
 
 class TestSettingsSecretMasking:
-    """Settings.to_dict() のシークレットマスキングテスト (lines 214-225)"""
-
     def test_to_dict_with_secret_masking_enabled(self):
-        """exclude_secrets=True でシークレットがマスクされる (lines 217-223)"""
         settings = Settings()
         # テスト専用ダミー値（本番では使用されない）
         settings.security.api_key = SecretStr("test-api-key-12345")
@@ -563,7 +480,6 @@ class TestSettingsSecretMasking:
         assert result["security"]["jwt_secret"] == "***MASKED***"  # noqa: S105 - テスト用マスク文字列
 
     def test_to_dict_with_secret_masking_disabled(self):
-        """exclude_secrets=False でシークレットがそのまま出力される (line 216)"""
         settings = Settings()
         # テスト専用ダミー値（本番では使用されない）
         settings.security.api_key = SecretStr("test-api-key-12345")
@@ -577,7 +493,6 @@ class TestSettingsSecretMasking:
         assert "jwt_secret" in result["security"]
 
     def test_to_dict_model_dump_called(self):
-        """model_dump() が呼び出される (line 215)"""
         settings = Settings()
         result = settings.to_dict()
 
@@ -590,7 +505,6 @@ class TestSettingsSecretMasking:
         assert "security" in result
 
     def test_to_dict_api_key_none_not_masked(self):
-        """api_keyがNoneの場合はマスク処理がスキップされる (line 220)"""
         settings = Settings()
         settings.security.api_key = None
 
@@ -600,7 +514,6 @@ class TestSettingsSecretMasking:
         assert result["security"]["api_key"] is None
 
     def test_to_dict_jwt_secret_none_not_masked(self):
-        """jwt_secretがNoneの場合はマスク処理がスキップされる (line 222)"""
         settings = Settings()
         settings.security.jwt_secret = None
 
@@ -609,7 +522,6 @@ class TestSettingsSecretMasking:
         assert result["security"]["jwt_secret"] is None
 
     def test_to_dict_sentry_dsn_masked(self):
-        """Sentry DSN設定時にマスクされる (lines 385-389)"""
         from pydantic import SecretStr
 
         settings = Settings()
@@ -622,7 +534,7 @@ class TestSettingsSecretMasking:
         assert result["sentry"]["dsn"] == "***MASKED***"
 
     def test_to_dict_sentry_dsn_empty_also_masked(self):
-        """空DSNもマスクされる（model_dump後は文字列として扱われる）"""
+        """空のSecretStrもmodel_dump後は文字列化されマスク対象になる仕様を検証する。"""
         settings = Settings()
         # デフォルトは空SecretStr、model_dump()後は'**********'文字列
 
@@ -632,7 +544,6 @@ class TestSettingsSecretMasking:
         assert result["sentry"]["dsn"] == "***MASKED***"
 
     def test_sentry_config_default_factory(self):
-        """SentryConfigがdefault_factoryで作成される"""
         settings = Settings()
 
         assert isinstance(settings.sentry, SentryConfig)
@@ -641,7 +552,7 @@ class TestSettingsSecretMasking:
 
 
 class TestSettingsSingleton:
-    """シングルトンパターンのテスト (lines 239-248)"""
+    """シングルトン状態のリークを防ぐため、autouse fixtureでリセットし再生成契約を検証する。"""
 
     @pytest.fixture(autouse=True)
     def reset_singleton(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -651,20 +562,17 @@ class TestSettingsSingleton:
         monkeypatch.setattr(config.settings, "_settings", None)
 
     def test_get_settings_creates_instance_first_time(self) -> None:
-        """get_settings() が初回呼び出しで新インスタンスを作成 (lines 239-241)"""
         settings1 = get_settings()
         assert settings1 is not None
         assert isinstance(settings1, Settings)
 
     def test_get_settings_returns_same_instance(self) -> None:
-        """get_settings() が2回目以降は同じインスタンスを返す"""
         settings1 = get_settings()
         settings2 = get_settings()
 
         assert settings1 is settings2
 
     def test_reload_settings_creates_new_instance(self) -> None:
-        """reload_settings() が新しいインスタンスを作成 (lines 247-248)"""
         settings1 = get_settings()
         settings2 = reload_settings()
 
@@ -673,7 +581,6 @@ class TestSettingsSingleton:
         assert isinstance(settings2, Settings)
 
     def test_reload_settings_updates_global_variable(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """reload_settings() がグローバル変数を更新 (line 247)"""
         # 最初のインスタンス作成
         settings1 = get_settings()
         _ = settings1.project_name
@@ -693,8 +600,6 @@ class TestSettingsSingleton:
 
 
 class TestNestedConfigDefaults:
-    """ネスト設定のデフォルトファクトリーテスト"""
-
     @pytest.mark.parametrize(
         ("attr", "expected_type"),
         [
@@ -705,14 +610,11 @@ class TestNestedConfigDefaults:
         ],
     )
     def test_nested_config_type(self, attr: str, expected_type: type) -> None:
-        """各サブ設定がdefault_factoryで正しい型として初期化される"""
         settings = Settings()
         assert isinstance(getattr(settings, attr), expected_type)
 
 
 class TestTestConfigDefaults:
-    """TestConfig のデフォルト値テスト"""
-
     @pytest.mark.parametrize(
         ("attr", "expected"),
         [
@@ -723,16 +625,12 @@ class TestTestConfigDefaults:
         ],
     )
     def test_test_config_boolean_defaults(self, attr: str, expected: bool) -> None:
-        """TestConfig の bool デフォルトが退行しないことを保護する"""
         config = SettingsTestConfig()
         assert getattr(config, attr) is expected
 
 
 class TestEnvironmentVariableLoading:
-    """環境変数からの設定読み込みテスト"""
-
     def test_nested_environment_variable_loading(self, monkeypatch):
-        """ネスト記法（API__BASE_URL）での環境変数読み込み"""
         # Note: DNS解決可能なドメインを使用（example.com系はFail-Closedでブロック）
         monkeypatch.setenv("API__BASE_URL", "https://httpbin.org")
         import config.settings
@@ -743,7 +641,6 @@ class TestEnvironmentVariableLoading:
         assert settings.api.base_url == "https://httpbin.org"
 
     def test_case_insensitive_environment_variables(self, monkeypatch):
-        """大小文字を区別しない環境変数読み込み (case_sensitive=False)"""
         monkeypatch.setenv("project_name", "Test Project")
         import config.settings
 
@@ -753,7 +650,6 @@ class TestEnvironmentVariableLoading:
         assert settings.project_name == "Test Project"
 
     def test_debug_mode_from_environment(self, monkeypatch):
-        """DEBUG環境変数からのdebugモード設定"""
         monkeypatch.setenv("DEBUG", "false")
         import config.settings
 
@@ -764,11 +660,7 @@ class TestEnvironmentVariableLoading:
 
 
 class DNSCacheClearMixin:
-    """DNS解決キャッシュクリアの共通fixture
-
-    TestSSRFPrevention と TestResolveHostname で共有する。
-    autouse=True により各テスト前後にキャッシュをクリアし、テスト間の干渉を防止。
-    """
+    """TestSSRFPreventionとTestResolveHostnameでDNSキャッシュ汚染によるテスト間干渉を防ぐ共通fixtureを提供する。"""
 
     @pytest.fixture(autouse=True)
     def clear_dns_cache(self) -> Iterator[None]:
@@ -779,13 +671,7 @@ class DNSCacheClearMixin:
 
 
 class TestSSRFPrevention(DNSCacheClearMixin):
-    """SSRF攻撃防止のセキュリティテスト
-
-    OWASP API Security Top 10 - API7:2023 Server Side Request Forgery (SSRF)
-    - プライベートIP/ループバックアドレスのブロック
-    - 許可ドメインリストによるアクセス制御
-    - DNS解決失敗時のフェイルクローズド動作
-    """
+    """OWASP API7:2023 SSRF対策としてprivate IP・ドメイン外・DNS失敗時の防御を検証する。"""
 
     @pytest.mark.parametrize(
         ("malicious_url", "description"),
@@ -823,13 +709,6 @@ class TestSSRFPrevention(DNSCacheClearMixin):
         ],
     )
     def test_ssrf_private_ip_blocked(self, malicious_url: str, description: str) -> None:
-        """SSRF Prevention: プライベート/ループバックIPをブロック
-
-        Security Rationale:
-            内部ネットワークへのアクセスを防止し、
-            AWSメタデータ、ルーター設定、内部サービスへの
-            不正アクセスを防ぐ。
-        """
         with pytest.raises(ValidationError) as exc_info:
             APIConfig(base_url=malicious_url)
 
@@ -859,19 +738,7 @@ class TestSSRFPrevention(DNSCacheClearMixin):
         ],
     )
     def test_ssrf_domain_allowlist_enforced(self, unauthorized_url: str, domain: str) -> None:
-        """SSRF Prevention: 許可ドメインリスト外のドメインをブロック
-
-        Security Rationale:
-            許可されたドメイン（jsonplaceholder.typicode.com、
-            api.github.com等）のみアクセス可能とし、
-            任意のURLへのアクセスを防止。
-
-        Note:
-            設定バリデータは allowlist-only で判定し、DNS 解決や
-            private-IP 判定は行わない。
-            許可リスト外のホストは
-            「SSRF Prevention: Domain not in allowlist」でブロックされる。
-        """
+        """このvalidatorはallowlist判定のみでDNS解決やprivate-IP判定を行わない契約を検証する。"""
         with pytest.raises(ValidationError) as exc_info:
             APIConfig(base_url=unauthorized_url)
 
@@ -896,30 +763,14 @@ class TestSSRFPrevention(DNSCacheClearMixin):
         ],
     )
     def test_is_private_ip_detection(self, ip_address: str, expected_private: bool) -> None:
-        """is_private_ip()がプライベートIPを正しく検出
-
-        Security Rationale:
-            RFC 1918（プライベートIP）、RFC 3927（リンクローカル）、
-            RFC 5735（ループバック）を正しく識別し、
-            内部ネットワークへのSSRF攻撃を防止。
-        """
+        """RFC 1918/3927/5735のプライベート/リンクローカル/ループバック範囲の識別を検証する。"""
         result = is_private_ip(ip_address)
         assert result == expected_private, (
             f"Expected is_private_ip({ip_address}) == {expected_private}"
         )
 
     def test_is_private_ip_dns_failure_returns_true(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """DNS解決失敗時はTrueを返す（Fail-Closed動作）
-
-        Security Rationale (CRITICAL):
-            DNS解決が失敗した場合、攻撃者が制御する
-            DNSサーバーを介したSSRF攻撃を防ぐため、
-            安全側に倒す（ブロック）。
-
-            Fail-Open（False返却）は、以下の攻撃を許容してしまう:
-            - DNS rebinding attack
-            - Malicious DNS server による内部IP解決
-        """
+        """DNS rebinding攻撃を防ぐため、DNS解決失敗時はFail-ClosedでTrueを返す契約を検証する。"""
         import socket
 
         # DNS解決を常に失敗させる
@@ -935,12 +786,7 @@ class TestSSRFPrevention(DNSCacheClearMixin):
     def test_is_private_ip_invalid_dns_response_returns_true(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """DNS解決結果が不正なIPアドレス形式の場合、Fail-Closedでブロック（True）を返す
-
-        Security:
-            異常なDNS応答（IPアドレス形式でない文字列）に対するSSRF防止の最終砦。
-            _logger.warning()でセキュリティ証跡を記録することも検証する。
-        """
+        """不正なDNS応答に対するFail-Closed最終防御と、warningログ記録の両方を検証する。"""
         monkeypatch.setattr(socket, "gethostbyname", lambda _: "not-an-ip-address")
 
         with caplog.at_level(logging.WARNING, logger="config.settings"):
@@ -962,14 +808,6 @@ class TestSSRFPrevention(DNSCacheClearMixin):
         ],
     )
     def test_allowed_domains_accepted(self, allowed_domain: str) -> None:
-        """許可ドメインリスト内のドメインは受け入れられる
-
-        Note:
-            これらはテスト用・デモ用に許可されたドメイン。
-            本番環境では環境変数ALLOWED_DOMAINSで制限可能。
-            設定バリデータは allowlist-only で判定し、
-            DNS 解決や private-IP 判定は行わない（純粋関数）。
-        """
         config = APIConfig(base_url=allowed_domain)
         assert config.base_url == allowed_domain.rstrip("/")
 
@@ -991,12 +829,7 @@ class TestSSRFPrevention(DNSCacheClearMixin):
         ],
     )
     def test_is_private_ip_ipv6_detection(self, ipv6_address: str, expected_private: bool) -> None:
-        """IPv6プライベートIPの検出
-
-        Security Rationale:
-            IPv4-mapped IPv6（::ffff:x.x.x.x）を使ったSSRFバイパス攻撃を防止。
-            例: ::ffff:192.168.1.1 は実質的に192.168.1.1と同じ。
-        """
+        """IPv4-mapped IPv6（::ffff:x.x.x.x）によるSSRFバイパス攻撃を防止できることを検証する。"""
         result = is_private_ip(ipv6_address)
         assert result == expected_private, (
             f"Expected is_private_ip({ipv6_address}) == {expected_private}"
@@ -1042,12 +875,6 @@ class TestSSRFPrevention(DNSCacheClearMixin):
         expected_private: bool,
         description: str,
     ) -> None:
-        """プライベートIP範囲の境界値テスト
-
-        Security Rationale:
-            境界付近のIPアドレスで正しくプライベート/パブリックを
-            判定できることを確認し、Off-by-oneエラーを防止。
-        """
         result = is_private_ip(boundary_ip)
         assert result == expected_private, (
             f"Boundary test failed for {description}: "
@@ -1057,12 +884,6 @@ class TestSSRFPrevention(DNSCacheClearMixin):
     def test_validate_base_url_ssrf_block_logs_warning(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """SSRF Prevention: 許可ドメイン外のURLブロック時にwarningログを出力する
-
-        Security Rationale:
-            SSRF防止ブロックは重要なセキュリティイベントであるため、
-            warningレベルのログで監査証跡を残す。
-        """
         with caplog.at_level(logging.WARNING, logger="config.settings"):
             with pytest.raises(ValidationError):
                 APIConfig(base_url="https://evil.attacker.com/api")
@@ -1073,19 +894,9 @@ class TestSSRFPrevention(DNSCacheClearMixin):
 
 
 class TestResolveHostname(DNSCacheClearMixin):
-    """_resolve_hostname/_resolve_hostname_cached関数のDNS解決テスト
-
-    Security Rationale:
-        DNS解決結果のキャッシュ動作とエラーハンドリングを検証し、
-        ネットワーク障害時の安全なフォールバック（None返却）を保証する。
-
-    Design Note:
-        _resolve_hostname: ラッパー関数。失敗時にNoneを返す公開インターフェース。
-        _resolve_hostname_cached: LRUキャッシュ付き内部関数。成功時のみキャッシュ。
-    """
+    """DNS解決結果のキャッシュ動作を検証し、ネットワーク障害時にNoneへ安全にフォールバックする契約を保護する。"""
 
     def test_resolve_hostname_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """DNS解決成功時に正しいIPアドレス文字列を返す"""
         monkeypatch.setattr(socket, "gethostbyname", lambda _: "93.184.216.34")
 
         result = _resolve_hostname("example.com")
@@ -1093,12 +904,7 @@ class TestResolveHostname(DNSCacheClearMixin):
         assert result == "93.184.216.34"
 
     def test_resolve_hostname_failure_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """DNS解決失敗（OSError）時にNoneを返す（キャッシュされないこと含む）
-
-        設計保証: lru_cacheは例外をキャッシュしないため、一時的なDNS障害後に
-        再試行が可能であることを call_count == 2 で明示的に検証する。
-        これにより「成功のみキャッシュ」設計の回帰防止テストとなる。
-        """
+        """lru_cacheは例外をキャッシュしないため、DNS障害後も再試行できる「成功のみキャッシュ」設計を保護する。"""
         call_count = 0
 
         def raise_os_error(hostname: str) -> str:
@@ -1121,7 +927,6 @@ class TestResolveHostname(DNSCacheClearMixin):
         )
 
     def test_resolve_hostname_cache_hit(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """2回目の呼び出しでキャッシュヒット（socket.gethostbynameが1回しか呼ばれない）"""
         call_count = 0
 
         def counting_resolver(hostname: str) -> str:
@@ -1141,7 +946,6 @@ class TestResolveHostname(DNSCacheClearMixin):
         )
 
     def test_resolve_hostname_cache_clear(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """cache_clear()後に再度DNS解決が実行される"""
         call_count = 0
 
         def counting_resolver(hostname: str) -> str:
@@ -1179,13 +983,7 @@ class TestResolveHostname(DNSCacheClearMixin):
         caplog: pytest.LogCaptureFixture,
         exc_factory: Callable[[], Exception],
     ) -> None:
-        """SSRF攻撃的ホスト名による例外発生時にSSRF証跡ログが出力される
-
-        Security Rationale:
-            UnicodeDecodeError/UnicodeEncodeError/TypeError/OverflowErrorは攻撃的な入力パターン（SSRF試行）を
-            示すため、セキュリティインシデントの事後調査に必要なwarningレベルログを出力する。
-            一時的なDNS障害（OSError）とはログレベルで明確に区別する。
-        """
+        """Unicode/Type/OverflowErrorは攻撃的ホスト名の兆候として、一時的なOSErrorと区別してwarningログに残す契約を検証する。"""
 
         def raise_exc(hostname: str) -> str:
             raise exc_factory()
@@ -1225,14 +1023,7 @@ class TestResolveHostname(DNSCacheClearMixin):
         exc_factory: Callable[[], Exception],
         expected_log_message: str,
     ) -> None:
-        """ネットワーク関連例外時にwarningレベルでログが出力されNoneを返す
-
-        Design Rationale:
-            socket.gaierror/herror（DNS解決失敗）と汎用OSError（ネットワーク障害）は
-            いずれもNone返却+warningログ出力だが、ログメッセージで区別する。
-            各例外型を個別ケースとしてテストし、将来のリファクタリングで
-            except節から誤って除外されないことを保証する（退行防止）。
-        """
+        """gaierror/herror/OSErrorが個別exceptとして誤って除外されない回帰防止のため、ログメッセージ差異を検証する。"""
 
         def raise_exc(hostname: str) -> str:
             raise exc_factory()
@@ -1250,13 +1041,6 @@ class TestResolveHostname(DNSCacheClearMixin):
 
 
 class TestTestConfigBoundaryValues:
-    """TestConfig 数値フィールドの境界値テスト.
-
-    SettingsTestConfig フィールド検証:
-    - slow_test_threshold: ge=0.1 (float)
-    - max_concurrent_requests: ge=1, le=50 (int)
-    """
-
     @pytest.mark.parametrize(
         ("value", "expected_valid"),
         [
@@ -1266,7 +1050,6 @@ class TestTestConfigBoundaryValues:
         ],
     )
     def test_slow_test_threshold_boundary(self, value: float, expected_valid: bool) -> None:
-        """slow_test_threshold: ge=0.1 境界値検証"""
         if expected_valid:
             config = SettingsTestConfig(slow_test_threshold=value)
             assert config.slow_test_threshold == value
@@ -1284,7 +1067,6 @@ class TestTestConfigBoundaryValues:
         ],
     )
     def test_max_concurrent_requests_boundary(self, value: int, expected_valid: bool) -> None:
-        """max_concurrent_requests: ge=1, le=50 境界値検証"""
         if expected_valid:
             config = SettingsTestConfig(max_concurrent_requests=value)
             assert config.max_concurrent_requests == value
@@ -1294,29 +1076,10 @@ class TestTestConfigBoundaryValues:
 
 
 class TestAllowedDomainsEnvOverride:
-    """ALLOWED_DOMAINS 環境変数 override テスト.
-
-    _get_allowed_domains() は環境変数 ALLOWED_DOMAINS を参照し、
-    カンマ区切りで許可ドメインを上書き可能。
-
-    重要な制約 (開発者向け注意):
-        モジュールレベル変数 ALLOWED_DOMAINS (config/settings.py L59)
-        は module import 時に _get_allowed_domains() の戻り値で確定する。
-        validate_base_url() は ALLOWED_DOMAINS 変数を参照するため、
-        起動後 (= import 後) の monkeypatch.setenv による環境変数変更は
-        validate_base_url() の挙動に反映されない。
-
-        テストで動的に変更する場合は以下のいずれかを使う:
-        1. _get_allowed_domains() を直接呼ぶ (本クラスの既存テスト方式)
-        2. importlib.reload(config.settings) でモジュール再読み込み
-        3. モジュールインポート前に環境変数を設定 (pytest-env 等)
-
-        本制約の保護テストは test_allowed_domains_override_does_not_affect_validate_base_url
-        を参照。
-    """
+    """ALLOWED_DOMAINSはmodule import時に一度だけ確定するため、起動後のmonkeypatch.setenvが
+    validate_base_url()に反映されない制約を検証する。"""
 
     def test_allowed_domains_env_override(self, monkeypatch):
-        """環境変数 ALLOWED_DOMAINS で許可ドメインを上書き"""
         from config.settings import _get_allowed_domains
 
         monkeypatch.setenv("ALLOWED_DOMAINS", "custom.example.com,api.custom.com")
@@ -1325,7 +1088,6 @@ class TestAllowedDomainsEnvOverride:
         assert result == frozenset({"custom.example.com", "api.custom.com"})
 
     def test_allowed_domains_env_empty_returns_default(self, monkeypatch):
-        """環境変数未設定時はデフォルトドメインを返す"""
         from config.settings import _get_allowed_domains
 
         monkeypatch.delenv("ALLOWED_DOMAINS", raising=False)
@@ -1350,7 +1112,7 @@ class TestAllowedDomainsEnvOverride:
     def test_allowed_domains_blank_env_entries_return_empty_set(
         self, monkeypatch: pytest.MonkeyPatch, value: str
     ) -> None:
-        """空白・空要素のみの ALLOWED_DOMAINS は deny-all (空セット) を返す"""
+        """空白のみのALLOWED_DOMAINSはdeny-all（空セット）として扱われるfail-safe仕様を検証する。"""
         from config.settings import _get_allowed_domains
 
         monkeypatch.setenv("ALLOWED_DOMAINS", value)
@@ -1360,15 +1122,7 @@ class TestAllowedDomainsEnvOverride:
     def test_allowed_domains_override_does_not_affect_validate_base_url(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """ALLOWED_DOMAINS 動的変更は validate_base_url() に反映されない契約を保護する.
-
-        config.settings.ALLOWED_DOMAINS は module-level で _get_allowed_domains() の戻り値で
-        確定する (module import 時に1度のみ評価)。validate_base_url() は ALLOWED_DOMAINS を
-        参照するため、起動後の monkeypatch.setenv("ALLOWED_DOMAINS", ...) は反映されない。
-
-        本テストは「monkeypatch で custom ドメインを追加しても、APIConfig(base_url=) の
-        バリデーションで ValidationError が出る」ことを確認し、この重要な制約を退行から保護する。
-        """
+        """ALLOWED_DOMAINSのimport時確定という制約を、setenv後もValidationErrorが出ることで保護する。"""
         # custom.example.com を ALLOWED_DOMAINS に追加しても、
         # モジュールは既に評価済みのため反映されない
         monkeypatch.setenv("ALLOWED_DOMAINS", "custom.example.com")
