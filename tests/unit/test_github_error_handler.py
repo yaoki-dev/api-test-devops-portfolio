@@ -298,6 +298,36 @@ def test_parse_json_response_raises_github_api_error_on_invalid_json() -> None:
     assert logger.error.call_args.kwargs["endpoint"] == "/test"
 
 
+def test_parse_json_response_malformed_utf8_keeps_body_out_of_cause() -> None:
+    """不正 UTF-8 body でも生の UnicodeDecodeError を漏らさず body を cause から締め出す。
+
+    httpx の response.json() は bytes を直接デコードするため、不正 UTF-8 では
+    JSONDecodeError ではなく UnicodeDecodeError が飛ぶ（両者に継承関係はない）。
+    UnicodeDecodeError.object は JSONDecodeError.doc と同様に生 body を保持するため、
+    捕捉しないと Sentry へ body が届き SanitizedJSONDecodeError を設けた意味がなくなる。
+    行・列の概念を持たない型なので lineno/colno は -1（該当なし）で写す。
+    """
+    logger = MagicMock()
+    response = httpx.Response(200, content=b'{"token": "ghp_secret_leaked_value" \xff}')
+
+    with pytest.raises(GitHubAPIError) as exc_info:
+        _parse_json_response(
+            response=response,
+            endpoint="/test",
+            logger=logger,
+        )
+
+    assert "Invalid JSON response" in str(exc_info.value)
+    cause = exc_info.value.__cause__
+    assert isinstance(cause, SanitizedJSONDecodeError)
+    assert not isinstance(cause, UnicodeDecodeError)
+    assert b"ghp_secret_leaked_value" not in repr(cause).encode()
+    assert cause.error_type == "builtins.UnicodeDecodeError"
+    assert (cause.lineno, cause.colno) == (-1, -1)
+    assert exc_info.value.__context__ is None
+    assert logger.error.call_args.kwargs["error_type"] == "UnicodeDecodeError"
+
+
 def test_parse_json_response_logs_on_decode_error() -> None:
     mock_response = MagicMock(spec=httpx.Response)
     mock_response.json.side_effect = json.JSONDecodeError("Expecting value", "bad", 0)
@@ -401,6 +431,35 @@ def test_handle_403_response_no_json_log() -> None:
     assert logger.warning.call_args.args[0] == "failed_to_parse_error_message"
     assert logger.warning.call_args.kwargs["status_code"] == 403
     assert logger.warning.call_args.kwargs["error_type"] == "JSONDecodeError"
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
+
+
+def test_handle_403_response_malformed_utf8_body_stays_forbidden() -> None:
+    """不正 UTF-8 の secondary rate limit body は素通りせず Forbidden へ落ちる。
+
+    httpx は不正 UTF-8 に対し UnicodeDecodeError を送出する（JSONDecodeError ではない）。
+    捕捉しないと 403 整形が例外で抜け、呼び出し側が GitHubAPIError ではなく生の
+    UnicodeDecodeError を受け取る（.object が body を保持したまま）。
+    body をデコードできない以上 secondary 判定は不能なので、message 抽出不能の他ケースと
+    同じく Forbidden に倒すのが正しい。RateLimitError に昇格しないことを固定する。
+    """
+    response = httpx.Response(
+        403,
+        headers={"X-RateLimit-Remaining": "50", "X-RateLimit-Reset": "0"},
+        content=b'{"message": "You have exceeded a secondary rate limit \xff"}',
+    )
+    logger = MagicMock()
+    with pytest.raises(GitHubAPIError) as exc_info:
+        _handle_403_response(response, logger=logger)
+    assert not isinstance(exc_info.value, RateLimitError)
+    logger.warning.assert_called_once()
+    assert logger.warning.call_args.args[0] == "failed_to_parse_error_message"
+    assert logger.warning.call_args.kwargs["status_code"] == 403
+    assert logger.warning.call_args.kwargs["error_type"] == "UnicodeDecodeError"
+    # UnicodeDecodeError.start（不正バイト位置）が error_pos へ写ることを固定する。
+    assert logger.warning.call_args.kwargs["error_pos"] == 54
+    assert "error_lineno" not in logger.warning.call_args.kwargs
     assert exc_info.value.__cause__ is None
     assert exc_info.value.__context__ is None
 

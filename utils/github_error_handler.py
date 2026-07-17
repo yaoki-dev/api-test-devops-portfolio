@@ -123,6 +123,17 @@ class GitHubServerError(GitHubAPIError):
     """GitHub returned a server-side failure."""
 
 
+def _decode_error_position(error: json.JSONDecodeError | UnicodeDecodeError) -> dict[str, int]:
+    """Return the log-safe position fields of a body decode failure.
+
+    位置情報の属性名は型ごとに異なる（JSONDecodeError は pos/lineno、UnicodeDecodeError は
+    start のみで行・列の概念を持たない）。どちらも int しか返さないため body は漏れない。
+    """
+    if isinstance(error, json.JSONDecodeError):
+        return {"error_pos": error.pos, "error_lineno": error.lineno}
+    return {"error_pos": error.start}
+
+
 def _extract_error_message(
     response: httpx.Response,
     *,
@@ -141,7 +152,11 @@ def _extract_error_message(
         return ""
     try:
         parsed = response.json()
-    except json.JSONDecodeError as parse_err:
+    except (json.JSONDecodeError, UnicodeDecodeError) as parse_err:
+        # httpx は response.json() で bytes を直接デコードするため、不正 UTF-8 では
+        # JSONDecodeError ではなく UnicodeDecodeError が飛ぶ。utils/response_parsing.py と
+        # 同じ扱い。捕捉しないと 403/429 の整形が例外で抜け、UnicodeDecodeError.object が
+        # 生 body を Sentry へ運ぶ（モジュール docstring の PII 制約に反する）。
         logger.warning(
             "failed_to_parse_error_message",
             # 本関数は 403 と 429 の両経路から呼ばれるため、status_code がないと
@@ -149,8 +164,7 @@ def _extract_error_message(
             status_code=response.status_code,
             error_type=type(parse_err).__qualname__,
             error_module=type(parse_err).__module__,
-            error_pos=parse_err.pos,
-            error_lineno=parse_err.lineno,
+            **_decode_error_position(parse_err),
         )
         return ""
     if not isinstance(parsed, dict):
@@ -326,22 +340,28 @@ def _parse_json_response(
     sanitized_cause: SanitizedJSONDecodeError | None = None
     try:
         return cast("dict[str, Any] | list[dict[str, Any]]", response.json())
-    except json.JSONDecodeError as error:
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        # 不正 UTF-8 では UnicodeDecodeError が飛ぶ（_extract_error_message と同じ理由）。
+        # 生のまま漏らすと .object が body を保持したまま Sentry へ届き、本モジュールが
+        # SanitizedJSONDecodeError を設けた意味がなくなる。
         logger.error(
             "json_decode_error",
             endpoint=endpoint,
             error_type=type(error).__qualname__,
             error_module=type(error).__module__,
-            error_pos=error.pos,
-            error_lineno=error.lineno,
+            **_decode_error_position(error),
         )
-        sanitized_cause = SanitizedJSONDecodeError(
-            f"{type(error).__module__}.{type(error).__qualname__}",
-            error.msg,
-            error.pos,
-            error.lineno,
-            error.colno,
-        )
+        cause_type = f"{type(error).__module__}.{type(error).__qualname__}"
+        if isinstance(error, json.JSONDecodeError):
+            sanitized_cause = SanitizedJSONDecodeError(
+                cause_type, error.msg, error.pos, error.lineno, error.colno
+            )
+        else:
+            # UnicodeDecodeError は行・列の概念を持たないため -1（該当なし）を渡す。
+            # msg/pos に相当するのは reason/start。
+            sanitized_cause = SanitizedJSONDecodeError(
+                cause_type, error.reason, error.start, -1, -1
+            )
     raise GitHubAPIError("Invalid JSON response") from sanitized_cause
 
 
