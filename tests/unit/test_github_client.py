@@ -21,13 +21,22 @@ from utils.github_error_handler import (
     SanitizedJSONDecodeError,
     redact_body_preview,
 )
-from utils.github_rate_limit import RATE_LIMIT_WARNING_THRESHOLD
+from utils.github_rate_limit import (
+    RATE_LIMIT_WARNING_THRESHOLD,
+    SECONDARY_RATE_LIMIT_FALLBACK_RETRY_AFTER,
+)
 
 pytestmark = pytest.mark.unit
 # @pytest.mark.asyncio: asyncio_mode = "auto" (pyproject.toml) のため、@pytest.mark.asyncio は不要
 # pytest-asyncio が async テストを自動検出する
 
 GITHUB_API_BASE_URL = "https://api.github.com"
+
+# octokit issue #566 が記録した実レスポンスの body message。
+# secondary rate limit はヘッダーでは primary と区別できないため、この文言が唯一の判定材料になる。
+SECONDARY_RATE_LIMIT_MESSAGE = (
+    "You have exceeded a secondary rate limit. Please wait a few minutes before you try again."
+)
 MAX_RETRIES = 3
 
 
@@ -1511,6 +1520,32 @@ async def test_invalid_rate_limit_header_403():
 
 
 @respx.mock
+async def test_invalid_rate_limit_header_429_secondary_logs_warning_once():
+    """429の secondary 判定でも X-RateLimit-Remaining を二重パースしない。
+
+    403 は _handle_403_response にパース済みの値を渡して重複を避けており
+    (test_invalid_rate_limit_header_403)、429 も同じ不変条件「1レスポンスにつき warning 1件」
+    を満たす必要がある。secondary 判定を後付けした際、この注入を忘れると warning が 2 件になる。
+    """
+    respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+        status_code=429,
+        json={"message": SECONDARY_RATE_LIMIT_MESSAGE},
+        headers={"X-RateLimit-Remaining": "invalid"},
+    )
+
+    with capture_logs() as log_output:
+        async with AsyncGitHubClient() as client:
+            with pytest.raises(RateLimitError) as exc_info:
+                await client.get_user("octocat")
+
+    warning_logs = [log for log in log_output if log.get("event") == "invalid_rate_limit_header"]
+    assert len(warning_logs) == 1
+    assert warning_logs[0]["header"] == "X-RateLimit-Remaining"
+    # 不正値は fallback (0以外) に倒れるため primary 枯渇とは判定されず、既定60秒が載る。
+    assert exc_info.value.retry_after == SECONDARY_RATE_LIMIT_FALLBACK_RETRY_AFTER
+
+
+@respx.mock
 async def test_invalid_rate_limit_reset_header_low_remaining():
     """remaining<10かつX-RateLimit-Resetが不正値の場合、2つのwarningログを出力して処理継続
 
@@ -1701,10 +1736,11 @@ def test_sanitized_jsondecodeerror_reduce_roundtrip_preserves_fields() -> None:
 
 @respx.mock
 async def test_429_response_raises_rate_limit_error() -> None:
-    """429 Too Many RequestsはRateLimitErrorに変換される（_requestレベル・通常パス）
+    """secondary の message を含まない 429 では retry_after が None のままになる。
 
-    GitHub Secondary Rate LimitはHTTP 429を返す。_requestは429を検出し、
-    X-RateLimit-ResetヘッダーからリセットタイムをパースしてRateLimitErrorを発生させる。
+    429 は primary / secondary の両方で返る。両者を区別しないと secondary 向けの
+    60秒フォールバックが primary にも適用され、reset まで待つ仕様に反する待機時間を
+    呼び出し側へ渡す。
     """
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         429,
@@ -1716,6 +1752,7 @@ async def test_429_response_raises_rate_limit_error() -> None:
             await client.get_user("octocat")
 
     assert exc_info.value.reset_time == 1700000000
+    assert exc_info.value.retry_after is None
     assert route.call_count == 1
 
 
@@ -1778,6 +1815,290 @@ async def test_httpx_status_error_429_missing_reset_header_falls_back_to_zero() 
 
     assert exc_info.value.reset_time == 0
     assert "unknown" in str(exc_info.value)  # else分岐のメッセージ内容を保護
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_httpx_status_error_429_secondary_rate_limit_sets_retry_after() -> None:
+    """防御的パスの429でも secondary を検出し retry_after を載せる。
+
+    通常パスの429とは別関数（_handle_http_status_error）が処理するため、
+    片方だけ実装・修正しても気付けない。両経路を独立に固定する。
+    """
+    request = httpx.Request("GET", f"{GITHUB_API_BASE_URL}/users/octocat")
+    response_429 = httpx.Response(
+        429,
+        request=request,
+        headers={"Retry-After": "45"},
+        json={"message": SECONDARY_RATE_LIMIT_MESSAGE},
+    )
+    error_429 = httpx.HTTPStatusError(
+        "429 Too Many Requests", request=request, response=response_429
+    )
+
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
+    route.side_effect = [error_429]
+
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(RateLimitError) as exc_info:
+            await client.get_user("octocat")
+
+    assert exc_info.value.retry_after == 45
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_httpx_status_error_429_secondary_falls_back_to_default_retry_after() -> None:
+    """防御的パス(429)で Retry-After 欠損・remaining!=0 なら既定60秒へ倒す。"""
+    request = httpx.Request("GET", f"{GITHUB_API_BASE_URL}/users/octocat")
+    response_429 = httpx.Response(
+        429,
+        request=request,
+        headers={"X-RateLimit-Remaining": "25"},
+        json={"message": SECONDARY_RATE_LIMIT_MESSAGE},
+    )
+    error_429 = httpx.HTTPStatusError(
+        "429 Too Many Requests", request=request, response=response_429
+    )
+
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
+    route.side_effect = [error_429]
+
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(RateLimitError) as exc_info:
+            await client.get_user("octocat")
+
+    assert exc_info.value.retry_after == SECONDARY_RATE_LIMIT_FALLBACK_RETRY_AFTER
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_httpx_status_error_429_secondary_with_exhausted_primary_defers_to_reset() -> None:
+    """防御的パス(429)でも remaining=0 の secondary で既定60秒へ倒さない。
+
+    通常パスと防御的パスは別関数が待機秒数を決めるため、片方だけ修正しても気付けない。
+    実際この組み合わせは、通常パス側を直した時点では防御的パス側が未固定のままだった。
+    """
+    request = httpx.Request("GET", f"{GITHUB_API_BASE_URL}/users/octocat")
+    response_429 = httpx.Response(
+        429,
+        request=request,
+        headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1700000000"},
+        json={"message": SECONDARY_RATE_LIMIT_MESSAGE},
+    )
+    error_429 = httpx.HTTPStatusError(
+        "429 Too Many Requests", request=request, response=response_429
+    )
+
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
+    route.side_effect = [error_429]
+
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(RateLimitError) as exc_info:
+            await client.get_user("octocat")
+
+    assert exc_info.value.retry_after is None
+    assert exc_info.value.reset_time == 1700000000
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_httpx_status_error_429_secondary_invalid_remaining_logs_warning_once() -> None:
+    """防御的パスの429でも不正 remaining は warning 1件で既定60秒へ倒す。
+
+    通常パス側の同名不変条件は test_invalid_rate_limit_header_429_secondary_logs_warning_once
+    が固定しているが、防御的パスは _handle_http_status_error が独立に remaining を解決するため
+    別テストが要る。この分岐が 403 側のように remaining を先読みして
+    _resolve_rate_limit_retry_after への注入を忘れると warning が 2 件になる。
+    """
+    request = httpx.Request("GET", f"{GITHUB_API_BASE_URL}/users/octocat")
+    response_429 = httpx.Response(
+        429,
+        request=request,
+        headers={"X-RateLimit-Remaining": "invalid"},
+        json={"message": SECONDARY_RATE_LIMIT_MESSAGE},
+    )
+    error_429 = httpx.HTTPStatusError(
+        "429 Too Many Requests", request=request, response=response_429
+    )
+
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
+    route.side_effect = [error_429]
+
+    with capture_logs() as log_output:
+        async with AsyncGitHubClient() as client:
+            with pytest.raises(RateLimitError) as exc_info:
+                await client.get_user("octocat")
+
+    warning_logs = [log for log in log_output if log.get("event") == "invalid_rate_limit_header"]
+    assert len(warning_logs) == 1
+    assert warning_logs[0]["header"] == "X-RateLimit-Remaining"
+    # 不正値は fallback (0以外) に倒れるため primary 枯渇とは判定されず、既定60秒が載る。
+    assert exc_info.value.retry_after == SECONDARY_RATE_LIMIT_FALLBACK_RETRY_AFTER
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_403_secondary_rate_limit_falls_back_to_default_retry_after() -> None:
+    """secondary rate limit は remaining != 0 かつ Retry-After 欠損でも RateLimitError にする。
+
+    primary 超過と違い remaining は 0 にならず Retry-After も付かないことがあるため、
+    ヘッダーだけでは通常の 403 Forbidden と区別できない。ヘッダー値は octokit issue #566 が
+    記録した実レスポンス（remaining=25 / Retry-After なし）をそのまま再現している。
+    """
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+        403,
+        headers={
+            "X-RateLimit-Limit": "30",
+            "X-RateLimit-Remaining": "25",
+            "X-RateLimit-Reset": "1675318655",
+        },
+        json={"message": SECONDARY_RATE_LIMIT_MESSAGE},
+    )
+
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(RateLimitError) as exc_info:
+            await client.get_user("octocat")
+
+    assert exc_info.value.retry_after == SECONDARY_RATE_LIMIT_FALLBACK_RETRY_AFTER
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_403_secondary_rate_limit_uses_retry_after_header() -> None:
+    """GitHub が Retry-After を明示した secondary では既定60秒でなくその値を使う。"""
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+        403,
+        headers={"X-RateLimit-Remaining": "25", "Retry-After": "30"},
+        json={"message": SECONDARY_RATE_LIMIT_MESSAGE},
+    )
+
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(RateLimitError) as exc_info:
+            await client.get_user("octocat")
+
+    assert exc_info.value.retry_after == 30
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_403_secondary_rate_limit_http_date_retry_after_falls_back() -> None:
+    """RFC 9110 は Retry-After に HTTP-date も許すため、秒数パース失敗を許容値として扱う。"""
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+        403,
+        headers={
+            "X-RateLimit-Remaining": "25",
+            "Retry-After": "Wed, 21 Oct 2015 07:28:00 GMT",
+        },
+        json={"message": SECONDARY_RATE_LIMIT_MESSAGE},
+    )
+
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(RateLimitError) as exc_info:
+            await client.get_user("octocat")
+
+    assert exc_info.value.retry_after == SECONDARY_RATE_LIMIT_FALLBACK_RETRY_AFTER
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_403_secondary_rate_limit_non_positive_retry_after_falls_back() -> None:
+    """非正の Retry-After は待機時間として無意味なため既定へ倒す。
+
+    HTTP-date のテストは int() が失敗して既定へ倒れるのに対し、こちらは int() が成功した上で
+    値が非正になる経路を通る。行き先は同じ既定だが到達経路が異なるため両方を固定する。
+    """
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+        403,
+        headers={"X-RateLimit-Remaining": "25", "Retry-After": "0"},
+        json={"message": SECONDARY_RATE_LIMIT_MESSAGE},
+    )
+
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(RateLimitError) as exc_info:
+            await client.get_user("octocat")
+
+    assert exc_info.value.retry_after == SECONDARY_RATE_LIMIT_FALLBACK_RETRY_AFTER
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_403_non_json_body_is_not_detected_as_secondary_rate_limit() -> None:
+    """body が JSON でない 403（プロキシの HTML エラー等）で誤検出も例外送出もしない。"""
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+        403,
+        headers={"X-RateLimit-Remaining": "25"},
+        content=b"<html>secondary rate limit</html>",
+    )
+
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(GitHubAPIError) as exc_info:
+            await client.get_user("octocat")
+
+    assert not isinstance(exc_info.value, RateLimitError)
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_429_secondary_rate_limit_uses_retry_after_header() -> None:
+    """通常パス(429)でも Retry-After を明示した secondary はその値を使う。"""
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+        429,
+        headers={"X-RateLimit-Remaining": "25", "Retry-After": "45"},
+        json={"message": SECONDARY_RATE_LIMIT_MESSAGE},
+    )
+
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(RateLimitError) as exc_info:
+            await client.get_user("octocat")
+
+    assert exc_info.value.retry_after == 45
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_429_secondary_rate_limit_falls_back_to_default_retry_after() -> None:
+    """通常パス(429)で Retry-After 欠損・remaining!=0 なら既定60秒へ倒す。
+
+    既定60秒は 403 経路にもテストがあるが、429 通常パスの配線は別関数なので独立に固定する。
+    """
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+        429,
+        headers={"X-RateLimit-Remaining": "25"},
+        json={"message": SECONDARY_RATE_LIMIT_MESSAGE},
+    )
+
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(RateLimitError) as exc_info:
+            await client.get_user("octocat")
+
+    assert exc_info.value.retry_after == SECONDARY_RATE_LIMIT_FALLBACK_RETRY_AFTER
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_429_secondary_rate_limit_with_exhausted_primary_defers_to_reset() -> None:
+    """primary quota 枯渇中(remaining=0)の secondary で既定60秒へ倒さない。
+
+    GitHub docs の待機時間の優先順位は Retry-After → remaining == 0 なら reset → 最低1分。
+    ここで60秒を返すと quota 枯渇のまま再送させ、docs が警告する BAN を招く。
+
+    retry_after is None は「secondary と判定されなかった」場合にも成立するため、本テスト単体
+    では検出が働いたことまでは示せない（それは Retry-After 系のテストが担う）。ここで固定する
+    のは remaining == 0 のとき 60 を返さないことに限る。
+    """
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+        429,
+        headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1700000000"},
+        json={"message": SECONDARY_RATE_LIMIT_MESSAGE},
+    )
+
+    async with AsyncGitHubClient() as client:
+        with pytest.raises(RateLimitError) as exc_info:
+            await client.get_user("octocat")
+
+    assert exc_info.value.retry_after is None
+    assert exc_info.value.reset_time == 1700000000
     assert route.call_count == 1
 
 
