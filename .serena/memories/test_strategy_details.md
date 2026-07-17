@@ -1,6 +1,6 @@
 # テスト戦略・詳細実装ガイド
 
-*最終更新: 2026年06月07日*
+*最終更新: 2026年07月17日*
 
 > **概要版**: @memory:test_strategy を参照
 
@@ -240,7 +240,7 @@ async with AsyncJSONPlaceholderClient() as client:
 ### 8.1 テストコード品質
 - **DRY**: Factory Pattern活用
 - **命名**: `test_[機能]_[ケース]`
-- **docstring必須**: 検証項目明記
+- **docstring方針**: 言い換えは削除、WHY のみ残す（coding-standards.md §4.1）
 
 ### 8.2 技術的負債管理
 ```python
