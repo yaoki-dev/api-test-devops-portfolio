@@ -1,18 +1,6 @@
 # .trivyignore
-# 最終更新: 2026-03-12
+# 最終更新: 2026-07-18
 #
-# CVE-2026-0861: glibc memalign 整数オーバーフロー (HIGH)
-# 対象: libc-bin, libc6 2.41-12+deb13u1 (Debian 13 trixie)
-# 抑制理由:
-#   - Debian公式が no-dsa (Minor issue) に分類 → DSA発行予定なし
-#   - 修正版: glibc 2.43 (sid/forky のみ, Debian 13向けパッチ未提供)
-#   - 攻撃条件: memalign の size と alignment 両方を攻撃者制御 +
-#              size が PTRDIFF_MAX 付近 → 本プロジェクト（APIテストクライアント）
-#              では該当する攻撃経路なし
-#   - 参考: https://security-tracker.debian.org/tracker/CVE-2026-0861
-#   - 確認日: 2026-03-12（Five Whys 根本原因分析 + ローカル Trivy スキャン検証）
-#   - 再評価: Debian 13向けパッチリリース時に本エントリを削除する。
-#     ただし本エントリで抑制中はCIのTrivyスキャンに現れないため、自動検出はされない。
-#     上記 security-tracker で手動確認するか、Dependabotのdocker digest更新PR
-#     （.github/dependabot.yml, weekly）時に併せて再評価すること。
-CVE-2026-0861
+# アクティブな抑制エントリなし。
+# CVE-2026-0861 (glibc memalign HIGH) は base image が修正版 glibc 2.41-12+deb13u3 を
+# 取り込んだため削除 (2026-07-18)。参考: https://security-tracker.debian.org/tracker/CVE-2026-0861
