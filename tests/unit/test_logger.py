@@ -11,7 +11,6 @@ from structlog.testing import capture_logs
 from config.settings import LogFormat
 from utils.logger import _safe_error_summary, _sentry_debug_detail, _sentry_processor, get_logger
 
-# Module-level marker: All tests in this file are unit tests
 pytestmark = pytest.mark.unit
 
 
@@ -30,27 +29,20 @@ def _make_fake_validation_error(raise_exc: BaseException) -> type[Exception]:
 
 
 class TestGetLogger:
-    """get_logger関数のテスト"""
-
     def test_get_logger_returns_bound_logger(self) -> None:
-        """get_loggerがBoundLoggerインスタンスを返すことを確認"""
         logger = get_logger(__name__)
 
-        # structlogのBoundLoggerインスタンスであること
         assert hasattr(logger, "info")
         assert hasattr(logger, "warning")
         assert hasattr(logger, "error")
         assert hasattr(logger, "debug")
 
     def test_get_logger_with_name(self) -> None:
-        """名前付きロガーが正しく取得できることを確認"""
         logger = get_logger("test.module.name")
 
-        # ロガーが取得できること
         assert logger is not None
 
     def test_get_logger_without_name(self) -> None:
-        """名前なしでもロガーが取得できることを確認"""
         logger = get_logger()
 
         assert logger is not None
@@ -58,10 +50,7 @@ class TestGetLogger:
 
 
 class TestStructlogConfiguration:
-    """structlog設定のテスト"""
-
     def test_structlog_is_configured_after_get_logger(self) -> None:
-        """get_logger呼び出し後にstructlogが設定済みになることを確認"""
         # 事前にリセット（テスト間の独立性確保）
         structlog.reset_defaults()
 
@@ -71,21 +60,17 @@ class TestStructlogConfiguration:
 
         logger = get_logger(__name__)
 
-        # get_logger呼び出し後は設定済み
         assert structlog.is_configured()
         assert logger is not None
 
     def test_lazy_initialization_only_once(self) -> None:
-        """structlog設定が1回のみ実行されることを確認"""
         structlog.reset_defaults()
 
         with patch("structlog.configure", wraps=structlog.configure) as mock_configure:
-            # 複数回get_loggerを呼び出し
             logger1 = get_logger("module1")
             logger2 = get_logger("module2")
             logger3 = get_logger("module3")
 
-        # すべてロガーが取得できること（例外なし）
         assert logger1 is not None
         assert logger2 is not None
         assert logger3 is not None
@@ -93,10 +78,7 @@ class TestStructlogConfiguration:
 
 
 class TestLogOutput:
-    """ログ出力のテスト"""
-
     def test_structured_log_captures_event(self) -> None:
-        """構造化ログがイベント名とフィールドをキャプチャすることを確認"""
         with capture_logs() as captured:
             logger = structlog.get_logger()
             logger.info("test_event", user_id=123, action="login")
@@ -135,19 +117,14 @@ class TestLogOutput:
 
 
 class TestLogFormat:
-    """ログフォーマット設定のテスト"""
-
     @patch("utils.logger.get_settings")
     def test_console_format_configuration(self, mock_get_settings: MagicMock) -> None:
-        """コンソールフォーマット設定時の動作確認"""
-        # モック設定
         mock_settings = mock_get_settings.return_value
         mock_settings.log.format = LogFormat.CONSOLE
-        mock_settings.get_log_level.return_value = 20  # INFO
+        mock_settings.get_log_level.return_value = 20
 
         structlog.reset_defaults()
 
-        # ロガー取得（設定が適用される）
         logger = get_logger("test_console")
 
         assert logger is not None
@@ -155,15 +132,12 @@ class TestLogFormat:
 
     @patch("utils.logger.get_settings")
     def test_json_format_configuration(self, mock_get_settings: MagicMock) -> None:
-        """JSONフォーマット設定時の動作確認"""
-        # モック設定
         mock_settings = mock_get_settings.return_value
         mock_settings.log.format = LogFormat.JSON
-        mock_settings.get_log_level.return_value = 20  # INFO
+        mock_settings.get_log_level.return_value = 20
 
         structlog.reset_defaults()
 
-        # ロガー取得（設定が適用される）
         logger = get_logger("test_json")
 
         assert logger is not None
@@ -171,32 +145,24 @@ class TestLogFormat:
 
 
 class TestLoggerIntegration:
-    """ロガー統合テスト"""
-
     def test_logger_works_with_api_client_pattern(self) -> None:
-        """api_clientで使用されるパターンでロガーが動作することを確認"""
         logger = get_logger(__name__)
 
-        # api_client.pyで使用される構造化ログパターン
         with capture_logs() as captured:
             logger.info("api_client_initialized", base_url="https://example.com")
             logger.warning("server_error", status_code=503, method="GET", endpoint="/users")
             logger.error("all_retries_failed", method="GET", endpoint="/users")
 
-        # INFO以上のログがキャプチャされていること（DEBUGはフィルタリングされる可能性）
         assert len(captured) >= 3
 
-        # イベント名の確認
         events = [log["event"] for log in captured]
         assert "api_client_initialized" in events
         assert "server_error" in events
         assert "all_retries_failed" in events
 
     def test_logger_works_with_github_client_pattern(self) -> None:
-        """github_clientで使用されるパターンでロガーが動作することを確認"""
         logger = get_logger(__name__)
 
-        # github_client.pyで使用される構造化ログパターン
         with capture_logs() as captured:
             logger.warning(
                 "rate_limit_low",
@@ -213,7 +179,6 @@ class TestLoggerIntegration:
 
         assert len(captured) == 2
 
-        # フィールドの確認
         rate_limit_log = captured[0]
         assert rate_limit_log["remaining"] == 5
 
@@ -223,19 +188,9 @@ class TestLoggerIntegration:
 
 
 class TestSentryProcessor:
-    """_sentry_processor関数のテスト（5分岐カバレッジ）
+    """警告状態fixtureでthrottle経路を分離
 
-    テスト対象分岐:
-    1. INFO/WARNログ → 即return（Sentry送信しない）
-    2. Sentry未初期化 → 即return
-    3. 例外情報あり → capture_exception()
-    4. 例外情報なし → capture_message()
-    5. ImportError/Exception → エラー処理
-
-    **注意 (SENTRY_DEBUG)**: `_is_sentry_debug_enabled` は lru_cache 削除済みで
-    環境変数をリアルタイム取得する。`monkeypatch.setenv/delenv` の変更は
-    即時反映されるため、`cache_clear()` の呼び出しは不要。
-    """
+    Note: setenv/delenv を使用する場合、ここでは cache_clear() は不要。"""
 
     # ダミーのWrappedLoggerとmethod_name（未使用だが引数として必要）
     _dummy_logger = None
@@ -246,12 +201,10 @@ class TestSentryProcessor:
         ["info", "INFO", "warning", "WARNING", "debug", "DEBUG", ""],
     )
     def test_skip_non_error_levels(self, level: str) -> None:
-        """分岐1: ERROR以上以外のログレベルはスキップされる"""
         event_dict = {"level": level, "event": "test message"}
 
         result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
 
-        # event_dictがそのまま返される（Sentry送信なし）
         assert result is event_dict
         assert result["event"] == "test message"
 
@@ -267,7 +220,6 @@ class TestSentryProcessor:
         ],
     )
     def test_process_error_levels(self, level: str, expected_sentry_level: str) -> None:
-        """ERROR/CRITICAL/EXCEPTIONレベルは処理対象 (level 正規化を含む)"""
         event_dict = {"level": level, "event": "error message"}
 
         # 動的インポートをパッチするため sentry_sdk モジュール全体をモック
@@ -283,8 +235,7 @@ class TestSentryProcessor:
             result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
 
         assert result is event_dict
-        # Sentryメソッドが呼ばれたことを確認
-        # capture_message / capture_exception はいずれも scope 内で呼ばれる
+        # 両経路ともscope内で呼び、bind済みコンテキストを送る。
         assert mock_scope.capture_message.called or mock_scope.capture_exception.called
 
         # _SENTRY_LEVEL_MAP の正規化が capture_message(level=...) に反映されることを検証。
@@ -296,12 +247,11 @@ class TestSentryProcessor:
         assert kwargs.get("level") == expected_sentry_level
 
     def test_skip_when_sentry_not_active(self) -> None:
-        """分岐2: Sentry未初期化時はスキップ"""
         event_dict = {"level": "error", "event": "error message"}
 
         mock_sdk = MagicMock()
         mock_client = MagicMock()
-        mock_client.is_active.return_value = False  # 未初期化
+        mock_client.is_active.return_value = False
         mock_sdk.get_client.return_value = mock_client
 
         with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
@@ -311,12 +261,10 @@ class TestSentryProcessor:
         # is_active=False のため new_scope() への入場自体が発生しないことを検証
         # (scope.set_extra/capture_* に到達する可能性そのものを排除)
         mock_sdk.new_scope.assert_not_called()
-        # capture_messageもcapture_exceptionも呼ばれない
         mock_sdk.capture_message.assert_not_called()
         mock_sdk.capture_exception.assert_not_called()
 
     def test_capture_exception_with_exc_info(self) -> None:
-        """分岐3: 例外情報ありの場合capture_exceptionをnew_scope内で呼ぶ (extra context付与)"""
         test_exception = ValueError("test error")
         event_dict = {
             "level": "error",
@@ -351,7 +299,6 @@ class TestSentryProcessor:
         assert set_extra_calls.get("request_id") == "req-abc"
 
     def test_capture_exception_with_exc_info_tuple(self) -> None:
-        """分岐3: sys.exc_info() 形式の tuple でも capture_exception を呼ぶ"""
         event_dict = {
             "level": "error",
             "event": "error with tuple exc_info",
@@ -388,7 +335,6 @@ class TestSentryProcessor:
         assert set_extra_calls.get("user_id") == 456
 
     def test_capture_message_without_exc_info(self) -> None:
-        """分岐4: 例外情報なしの場合capture_messageを呼ぶ"""
         event_dict = {
             "level": "error",
             "event": "error without exception",
@@ -454,7 +400,7 @@ class TestSentryProcessor:
         assert len(passed_exc) == 3
         assert passed_exc[0] is ValueError
         assert isinstance(passed_exc[1], ValueError)
-        assert passed_exc[2] is not None  # traceback object
+        assert passed_exc[2] is not None
         mock_scope.capture_message.assert_not_called()
         mock_sdk.capture_exception.assert_not_called()
 
@@ -522,7 +468,6 @@ class TestSentryProcessor:
             with patch.object(logger_module, "get_settings", return_value=mock_settings):
                 result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
 
-        # event_dictがそのまま返される（例外は発生しない）
         assert result is event_dict
         # 警告が出力されないことを明示検証 (is_production_like=False AND SENTRY_DEBUG未設定)
         captured = capsys.readouterr()
@@ -609,7 +554,6 @@ class TestSentryProcessor:
                 "get_settings",
                 side_effect=RuntimeError("Settings validation failed"),
             ):
-                # 例外伝播せず event_dict が返ることを検証
                 result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
 
         assert result is event_dict
@@ -795,7 +739,7 @@ class TestSentryProcessor:
         from utils import logger as logger_module
 
         mock_settings = MagicMock()
-        mock_settings.is_production_like.return_value = True  # 本番環境
+        mock_settings.is_production_like.return_value = True
 
         with patch.dict("sys.modules", {"sentry_sdk": None}):
             with patch.object(
@@ -943,7 +887,7 @@ class TestSentryProcessor:
         capsys: pytest.CaptureFixture[str],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """分岐5b: Sentry送信失敗時はstderrへ出力 (SENTRY_DEBUG 無効時、詳細非出力)"""
+        """Sentry送信失敗は、debug無効時に詳細を漏らさずstderrへ通知する。"""
         # SENTRY_DEBUG が外部環境に残っている場合「詳細が出力されない」検証が偽陰性化する。
         # 対称テスト test_stderr_output_on_sentry_failure_in_debug 側は setenv 明示なので
         # こちらも明示的に削除して環境非依存にする。
@@ -959,16 +903,13 @@ class TestSentryProcessor:
         mock_scope = MagicMock()
         mock_sdk.new_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
         mock_sdk.new_scope.return_value.__exit__ = MagicMock(return_value=False)
-        # capture_messageで例外を発生させる
         mock_scope.capture_message.side_effect = RuntimeError("Sentry connection failed")
 
         with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
             result = _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
 
-        # event_dictは正常に返される（プロセッサーチェーン継続）
         assert result is event_dict
 
-        # stderrにエラーメッセージが出力される
         captured = capsys.readouterr()
         assert "[SENTRY_ERROR]" in captured.err
         assert "RuntimeError" in captured.err
@@ -979,7 +920,7 @@ class TestSentryProcessor:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """分岐5b: SENTRY_DEBUG有効時はSentry失敗の詳細をstderrへ出力する"""
+        """Sentry debug有効時だけ送信失敗の詳細をstderrへ出す。"""
         event_dict = {"level": "error", "event": "error message"}
         monkeypatch.setenv("SENTRY_DEBUG", "true")
 
@@ -1003,7 +944,6 @@ class TestSentryProcessor:
         assert "Sentry connection failed" in captured.err
 
     def test_extra_context_set_in_scope(self) -> None:
-        """追加コンテキストがSentryスコープに設定される"""
         event_dict = {
             "level": "error",
             "event": "error with context",
@@ -1024,7 +964,6 @@ class TestSentryProcessor:
         with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
             _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
 
-        # set_extraが追加コンテキストで呼ばれる
         set_extra_calls = {call[0][0]: call[0][1] for call in mock_scope.set_extra.call_args_list}
         assert set_extra_calls.get("user_id") == 456
         assert set_extra_calls.get("request_id") == "abc-123"
@@ -1067,11 +1006,9 @@ class TestSentryProcessor:
         with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
             _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
 
-        # broken_obj はスキップされ他キーは送信される
         assert "broken_obj" not in captured
         assert captured.get("user_id") == 789
         assert captured.get("request_id") == "req-xyz"
-        # capture_message は正常に呼ばれている (per-key 失敗で abort されない)
         mock_scope.capture_message.assert_called_once()
 
     def test_capture_exception_invalid_type_falls_back_to_capture_message(self) -> None:
@@ -1100,16 +1037,14 @@ class TestSentryProcessor:
         with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
             _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
 
-        # capture_exception は呼ばれない (TypeError 経路を回避)
         mock_scope.capture_exception.assert_not_called()
-        # capture_message へ降格される
         mock_scope.capture_message.assert_called_once_with(
             "invalid exc_info type",
             level="error",
         )
 
     def test_capture_exception_invalid_tuple_falls_back_to_capture_message(self) -> None:
-        """壊れた exc_info tuple は warning 後に capture_message へ降格される"""
+        """不正なexc_info tupleはSDKのTypeErrorを避けてメッセージ送信へ降格する。"""
         event_dict = {
             "level": "error",
             "event": "invalid exc_info tuple",
@@ -1139,7 +1074,6 @@ class TestSentryProcessor:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """invalid exc_info 警告は per-process 1 回のみ出力される"""
         monkeypatch.delenv("SENTRY_DEBUG", raising=False)
 
         mock_sdk = MagicMock()
@@ -1171,7 +1105,6 @@ class TestSentryProcessor:
     def test_invalid_exc_info_tuple_warning_emitted(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """壊れた tuple でも invalid exc_info warning が出る"""
         mock_sdk = MagicMock()
         mock_sdk.get_client.return_value.is_active.return_value = True
         mock_scope = MagicMock()
@@ -1194,8 +1127,7 @@ class TestSentryProcessor:
         )
 
     def test_default_message_when_event_missing(self) -> None:
-        """eventキーがない場合のデフォルトメッセージ"""
-        event_dict = {"level": "error"}  # eventキーなし
+        event_dict = {"level": "error"}
 
         mock_sdk = MagicMock()
         mock_client = MagicMock()
@@ -1209,14 +1141,13 @@ class TestSentryProcessor:
         with patch.dict("sys.modules", {"sentry_sdk": mock_sdk}):
             _sentry_processor(self._dummy_logger, self._dummy_method, event_dict)
 
-        # デフォルトメッセージが使用される
         mock_scope.capture_message.assert_called_once_with(
             "Unknown error",
             level="error",
         )
 
     def test_system_exception_reraises_not_swallowed(self) -> None:
-        """MemoryError は except Exception で飲み込まれずに再発生する（K8s OOMKilled検知対応）"""
+        """MemoryErrorを汎用例外処理で握り潰さず、KubernetesのOOM検知へ伝播させる。"""
         mock_sdk = MagicMock()
         mock_client = MagicMock()
         mock_client.is_active.return_value = True
@@ -1388,10 +1319,6 @@ class TestSentryProcessor:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """[SENTRY_WARN] outside except block 警告は per-process 1 回のみ出力される
-
-        他の throttle テスト群と対称性を保つ。capsys で stderr 行数を検証。
-        """
         monkeypatch.delenv("SENTRY_DEBUG", raising=False)
 
         mock_sdk = MagicMock()
@@ -1474,10 +1401,7 @@ class TestSentryProcessor:
 
 @pytest.mark.unit
 class TestSafeErrorSummary:
-    """_safe_error_summary の分岐カバレッジ"""
-
     def test_real_validation_error_returns_sanitized_count(self) -> None:
-        """real ValidationError は件数のみの summary を返す"""
         from pydantic import BaseModel, ValidationError
 
         class _Payload(BaseModel):
@@ -1558,12 +1482,7 @@ class TestSafeErrorSummary:
 
 @pytest.mark.unit
 class TestSentryProcessorPIIIntegration:
-    """_sentry_processor → scope.set_extra → _before_send の PII 除去パイプライン統合テスト
-
-    structlog bind 由来の機密キー (password, api_key 等) が
-    `_sentry_processor` 経由で extra に積まれた後、`sentry_init._before_send` で
-    確実に [REDACTED] へ置換されるか検証する。
-    """
+    """Sentry processorからbefore_sendまでのPII除去連携を検証する。"""
 
     _dummy_logger = MagicMock()
     _dummy_method = "error"
