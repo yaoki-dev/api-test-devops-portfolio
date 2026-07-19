@@ -609,7 +609,7 @@ async def test_context_manager_initialization():
 async def test_aexit_aclose_known_exception_is_suppressed_with_warning(
     close_exception: Exception, expected_type: str, expected_module: str
 ) -> None:
-    """既知のクローズ時例外はwarningへ記録し、body例外を上書きしない。"""
+    """既知のクローズ時例外をwarningへ記録して抑制する。"""
     client = AsyncGitHubClient()
     client._client = AsyncMock()
     client._client.aclose = AsyncMock(side_effect=close_exception)

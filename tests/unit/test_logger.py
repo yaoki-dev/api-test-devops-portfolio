@@ -121,7 +121,7 @@ class TestLogFormat:
     def test_console_format_configuration(self, mock_get_settings: MagicMock) -> None:
         mock_settings = mock_get_settings.return_value
         mock_settings.log.format = LogFormat.CONSOLE
-        mock_settings.get_log_level.return_value = 20
+        mock_settings.get_log_level.return_value = logging.INFO
 
         structlog.reset_defaults()
 
@@ -134,7 +134,7 @@ class TestLogFormat:
     def test_json_format_configuration(self, mock_get_settings: MagicMock) -> None:
         mock_settings = mock_get_settings.return_value
         mock_settings.log.format = LogFormat.JSON
-        mock_settings.get_log_level.return_value = 20
+        mock_settings.get_log_level.return_value = logging.INFO
 
         structlog.reset_defaults()
 
@@ -1482,8 +1482,6 @@ class TestSafeErrorSummary:
 
 @pytest.mark.unit
 class TestSentryProcessorPIIIntegration:
-    """Sentry processorからbefore_sendまでのPII除去連携を検証する。"""
-
     _dummy_logger = MagicMock()
     _dummy_method = "error"
 
