@@ -41,12 +41,10 @@ MAX_RETRIES = 3
 
 
 def test_github_api_error_uses_shared_api_client_error() -> None:
-    """GitHub例外は分割後も共有API例外階層に属する。"""
     assert issubclass(GitHubAPIError, APIClientError)
 
 
 def test_gw1_public_contract_symbols_are_promoted() -> None:
-    """GW1で固定契約シンボルを責務別モジュールから公開する。"""
     cause = SanitizedJSONDecodeError("json.JSONDecodeError", "Expecting value", 0, 1, 1)
 
     assert RATE_LIMIT_WARNING_THRESHOLD == 10
@@ -54,20 +52,8 @@ def test_gw1_public_contract_symbols_are_promoted() -> None:
     assert str(cause) == "json.JSONDecodeError: Expecting value pos=0, lineno=1, colno=1"
 
 
-# =============================================================================
-# 基本機能テスト（正常系）
-# =============================================================================
-
-
 @respx.mock
 async def test_get_user_success():
-    """ユーザー情報取得成功
-
-    検証項目:
-    - async withコンテキストマネージャーの動作
-    - HTTPXクライアントのリクエスト実行
-    - JSONレスポンスの正常パーシング
-    """
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=200,
         json={
@@ -84,12 +70,11 @@ async def test_get_user_success():
     assert user["login"] == "octocat"
     assert user["name"] == "The Octocat"
     assert user["public_repos"] == 8
-    assert route.call_count == 1  # GETリクエストが1回発行されたことを確認
+    assert route.call_count == 1
 
 
 @respx.mock
 async def test_get_repos_success():
-    """リポジトリ一覧取得成功"""
     route = respx.get(
         f"{GITHUB_API_BASE_URL}/users/octocat/repos", params={"sort": "updated", "per_page": 2}
     ).respond(
@@ -107,7 +92,7 @@ async def test_get_repos_success():
     assert len(repos) == 2
     assert repos[0]["name"] == "Hello-World"
     assert repos[1]["stargazers_count"] == 50
-    assert route.call_count == 1  # GETリクエストが1回発行されたことを確認
+    assert route.call_count == 1
 
 
 @pytest.mark.parametrize(
@@ -118,7 +103,7 @@ async def test_get_repos_success():
     ],
 )
 async def test_get_repos_rejects_invalid_sort(sort: str) -> None:
-    """get_repos() は GitHub API に渡す前に sort 許容値を検証する"""
+    """外部APIへ送る前にsortの許容値を検証し、無効入力を到達させない。"""
     async with AsyncGitHubClient() as client:
         with pytest.raises(ValueError, match="sort must be one of"):
             await client.get_repos("octocat", sort=sort)
@@ -132,7 +117,7 @@ async def test_get_repos_rejects_invalid_sort(sort: str) -> None:
     ],
 )
 async def test_get_repos_rejects_invalid_per_page(per_page: int) -> None:
-    """get_repos() は GitHub API に渡す前に per_page 範囲を検証する"""
+    """外部APIへ送る前にper_pageの範囲を検証し、無効入力を到達させない。"""
     async with AsyncGitHubClient() as client:
         with pytest.raises(ValueError, match="per_page must be between 1 and 100"):
             await client.get_repos("octocat", per_page=per_page)
@@ -140,7 +125,6 @@ async def test_get_repos_rejects_invalid_per_page(per_page: int) -> None:
 
 @respx.mock
 async def test_get_repo_success():
-    """リポジトリ詳細取得成功"""
     route = respx.get(f"{GITHUB_API_BASE_URL}/repos/octocat/Hello-World").respond(
         status_code=200,
         json={
@@ -157,22 +141,11 @@ async def test_get_repo_success():
 
     assert repo["name"] == "Hello-World"
     assert repo["stargazers_count"] == 100
-    assert route.call_count == 1  # GETリクエストが1回発行されたことを確認
-
-
-# =============================================================================
-# エラーハンドリングテスト（異常系）
-# =============================================================================
+    assert route.call_count == 1
 
 
 @respx.mock
 async def test_get_user_not_found():
-    """ユーザーが存在しない（404 Not Found）
-
-    検証項目:
-    - 404ステータスコードでNotFoundError例外発生
-    - エラーメッセージにエンドポイント含む
-    """
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/nonexistent-user-12345").respond(
         status_code=404,
         headers={"X-RateLimit-Remaining": "60"},
@@ -184,17 +157,11 @@ async def test_get_user_not_found():
 
     assert "Resource not found" in str(exc_info.value)
     assert "/users/nonexistent-user-12345" in str(exc_info.value)
-    assert route.call_count == 1  # GETリクエストが1回発行されたことを確認
+    assert route.call_count == 1
 
 
 @respx.mock
 async def test_rate_limit_exceeded():
-    """Rate Limit超過（403 Forbidden）
-
-    検証項目:
-    - 403ステータスコードでRateLimitError例外発生
-    - reset_time属性が正しく設定される
-    """
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=403,
         headers={
@@ -209,20 +176,13 @@ async def test_rate_limit_exceeded():
 
     assert exc_info.value.reset_time == 1640000000
     assert "Rate limit exceeded" in str(exc_info.value)
-    assert route.call_count == 1  # GETリクエストが1回発行されたことを確認
+    assert route.call_count == 1
 
 
 @respx.mock
 @patch("utils.github_error_handler.exponential_backoff_with_jitter", return_value=0.0)
 @patch("utils.github_error_handler.asyncio.sleep", new_callable=AsyncMock)
 async def test_retry_on_server_error(mock_sleep: AsyncMock, mock_backoff: Mock) -> None:
-    """5xxエラーで3回リトライ後、GitHubServerError発生
-
-    検証項目:
-    - 500エラー発生時に指数バックオフでリトライ
-    - 3回失敗後にGitHubServerError例外
-    - 最終試行後にサーバーエラー情報を保持
-    """
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
     route.side_effect = [
         httpx.Response(500, headers={"X-RateLimit-Remaining": "50"}),
@@ -239,7 +199,7 @@ async def test_retry_on_server_error(mock_sleep: AsyncMock, mock_backoff: Mock) 
     assert f"after {MAX_RETRIES} attempts" in str(exc_info.value)
     assert exc_info.value.__cause__ is None
     assert exc_info.value.__context__ is None
-    assert mock_backoff.call_count == MAX_RETRIES - 1  # MAX_RETRIES試行 → 最終試行以外でバックオフ
+    assert mock_backoff.call_count == MAX_RETRIES - 1
     assert mock_sleep.await_count == MAX_RETRIES - 1
     mock_sleep.assert_has_awaits([call(0.0)] * (MAX_RETRIES - 1))
 
@@ -279,14 +239,6 @@ async def test_timeout_handling(
     timeout_exception: httpx.TimeoutException,
     expected_message: str,
 ):
-    """タイムアウト時に再試行後、GitHubAPIError発生
-
-    検証項目:
-    - httpx.TimeoutException系 → retry 後に GitHubAPIError 変換
-    - retry 回数が max_retries に一致すること
-    - 例外チェーン切断（from None）: PII漏洩防止のため __cause__ を抑制
-    - 警告ログ出力
-    """
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=timeout_exception)
 
     with patch(
@@ -328,13 +280,7 @@ async def test_timeout_handling(
 
 @respx.mock
 async def test_timeout_logging_no_pii_leak():
-    """タイムアウト例外メッセージがログフィールド値・例外チェーンに漏洩しないこと検証
-
-    検証項目:
-    - httpx.TimeoutException msg内のsensitive文字列(token/URL等)がログ全フィールドに含まれない
-    - GitHubAPIError msgにもsensitive文字列が漏洩しない
-    - __cause__ chain切断（from None）で Sentry/traceback walker 経由の PII 漏洩を防止
-    """
+    """タイムアウト詳細をログと例外チェーンから除外し、PII漏洩を防止する。"""
     sensitive_detail = "https://api.example.com/internal?token=SECRET_API_KEY_12345"  # noqa: S105
     timeout_exception = httpx.ConnectTimeout(sensitive_detail)
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=timeout_exception)
@@ -368,7 +314,7 @@ async def test_timeout_logging_no_pii_leak():
 
 @respx.mock
 async def test_timeout_final_retry_logs_error() -> None:
-    """最終タイムアウト失敗時に非PIIのERRORサマリログを出力する"""
+    """最終失敗を観測可能にし、retry中断を見落とさないERRORログを固定する。"""
     timeout_exception = httpx.ConnectTimeout("https://example.com?token=secret")  # noqa: S105
     respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=timeout_exception)
 
@@ -480,10 +426,6 @@ async def test_network_error_retry_handling(
 async def test_network_error_final_retry_logs_error(
     network_exception: httpx.NetworkError | httpx.RemoteProtocolError,
 ) -> None:
-    """NetworkError最終リトライ時にERRORレベルで、github_retry_failed がログ出力される。
-
-    最終試行後の、ERRORログ欠落の回帰テスト
-    """
     respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=network_exception)
 
     with patch(
@@ -531,7 +473,7 @@ async def test_network_error_final_retry_logs_error(
 async def test_network_and_protocol_error_logging_no_pii_leak(
     exception_class: type[Exception],
 ) -> None:
-    """NetworkError/RemoteProtocolError例外メッセージがログフィールド値へ漏洩しないこと検証"""
+    """ネットワーク例外の詳細をログへ出さず、PII漏洩を防止する。"""
     sensitive_detail = "https://api.example.com/internal?token=SECRET_API_KEY_12345"  # noqa: S105
     transport_exception = exception_class(sensitive_detail)
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=transport_exception)
@@ -567,7 +509,7 @@ async def test_network_and_protocol_error_logging_no_pii_leak(
 
 @respx.mock
 async def test_local_protocol_error_is_not_retried() -> None:
-    """LocalProtocolErrorはクライアント側protocol violationのためretry対象外。"""
+    """クライアント側protocol violationは再試行しても回復しないため、retry対象外とする。"""
     sensitive_detail = "https://api.example.com/internal?token=SECRET_API_KEY_12345"  # noqa: S105
     local_protocol_error = httpx.LocalProtocolError(sensitive_detail)
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=local_protocol_error)
@@ -592,19 +534,8 @@ async def test_local_protocol_error_is_not_retried() -> None:
         )
 
 
-# =============================================================================
-# Rate Limit監視テスト
-# =============================================================================
-
-
 @respx.mock
 async def test_rate_limit_warning_log():
-    """Rate Limit残数が10未満の場合、警告ログ出力
-
-    検証項目:
-    - X-RateLimit-Remaining < 10で警告ログ
-    - reset_time情報をログに含む
-    """
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=200,
         json={"login": "octocat"},
@@ -625,23 +556,11 @@ async def test_rate_limit_warning_log():
                 reset_time=ANY,
             )
 
-    assert route.call_count == 1  # GETリクエストが1回発行されたことを確認
-
-
-# =============================================================================
-# ETagキャッシュテスト（Conditional Requests）
-# =============================================================================
+    assert route.call_count == 1
 
 
 @respx.mock
 async def test_etag_cache_hit():
-    """ETagキャッシュヒット時304 Not Modified処理
-
-    検証項目:
-    - 1回目: 200 + ETag保存 + データキャッシュ保存
-    - 2回目: If-None-Matchヘッダー送信 + 304レスポンス
-    - 304時はキャッシュデータを返却
-    """
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
     route.side_effect = [
         httpx.Response(
@@ -657,7 +576,7 @@ async def test_etag_cache_hit():
         assert user1["login"] == "octocat"
 
         user2 = await client.get_user("octocat")
-        assert user2 == {"login": "octocat", "id": 1}  # 304時はキャッシュデータ返却
+        assert user2 == {"login": "octocat", "id": 1}
 
     assert route.call_count == 2
     # 1回目はIf-None-Match未送信、2回目は保存済みETagを送信（ETagキャッシュ保存の証跡）
@@ -665,26 +584,17 @@ async def test_etag_cache_hit():
     assert route.calls[1].request.headers["if-none-match"] == '"abc123"'
 
 
-# =============================================================================
-# コンテキストマネージャーテスト
-# =============================================================================
-
-
 async def test_context_manager_initialization():
-    """async withコンテキストマネージャーの初期化・終了処理"""
     client = AsyncGitHubClient()
     managed_client: httpx.AsyncClient | None = None
     assert client._client is None
 
     async with client as ctx_client:
-        # __aenter__がself を返す（Self型アノテーション契約）
         assert ctx_client is client
-        # __aenter__で_clientが初期化される
         assert ctx_client._client is not None
         assert isinstance(ctx_client._client, httpx.AsyncClient)
         managed_client = ctx_client._client
 
-    # __aexit__でhttpx.AsyncClientがクローズされたことを確認
     assert managed_client is not None
     assert managed_client.is_closed
 
@@ -699,10 +609,7 @@ async def test_context_manager_initialization():
 async def test_aexit_aclose_known_exception_is_suppressed_with_warning(
     close_exception: Exception, expected_type: str, expected_module: str
 ) -> None:
-    """__aexit__ で httpx.CloseError / OSError は warning ログのみ出力する。
-
-    既知のクローズ時例外は warning レベルで記録し、body 例外を上書きしない。
-    """
+    """既知のクローズ時例外をwarningへ記録して抑制する。"""
     client = AsyncGitHubClient()
     client._client = AsyncMock()
     client._client.aclose = AsyncMock(side_effect=close_exception)
@@ -723,7 +630,7 @@ async def test_aexit_aclose_known_exception_is_suppressed_with_warning(
     assert len(error_logs) == 0
     # else節スキップ検証。aclose() 例外時は __aexit__ の
     # else 節 (utils/github_client.py L291-292) が実行されず "async_github_client_closed"
-    # info ログは出力されない設計意図 (test_aexit_normal_close_logs_info L2431 の対照)
+    # info ログは出力されない設計意図 (test_aexit_normal_close_logs_infoの対照)
     closed_logs = [log for log in log_output if log.get("event") == "async_github_client_closed"]
     assert len(closed_logs) == 0
 
@@ -750,22 +657,18 @@ async def test_aexit_aclose_unexpected_exception_reraises_when_no_body_exception
     assert error_logs[0]["has_body_exception"] is False
     # exc_info=True によりスタックトレースが記録される
     assert error_logs[0].get("exc_info") is True
-    # 予期しない例外では warning ログは出ない
     known_event = "async_github_client_aclose_failed"
     warning_logs = [log for log in log_output if log.get("event") == known_event]
     assert len(warning_logs) == 0
     # else節スキップ検証。aclose() 例外時は __aexit__ の
     # else 節 (utils/github_client.py L291-292) が実行されず "async_github_client_closed"
-    # info ログは出力されない設計意図 (test_aexit_normal_close_logs_info L2431 の対照)
+    # info ログは出力されない設計意図 (test_aexit_normal_close_logs_infoの対照)
     closed_logs = [log for log in log_output if log.get("event") == "async_github_client_closed"]
     assert len(closed_logs) == 0
 
 
 async def test_aclose_standalone_success_sets_client_none() -> None:
-    """standalone aclose() 正常系 → else 節で _client=None + info ログ
-
-    __aexit__ を経由しない finally 用クローズ経路の直接検証
-    """
+    """__aexit__を経由しないfinally経路のクローズ契約を固定する。"""
     client = AsyncGitHubClient()
     client._client = AsyncMock()
 
@@ -779,7 +682,6 @@ async def test_aclose_standalone_success_sets_client_none() -> None:
 
 
 async def test_aclose_standalone_known_close_error_warns_and_sets_none() -> None:
-    """standalone aclose() で既知の CloseError → warning のみ・re-raise しない・_client=None。"""
     client = AsyncGitHubClient()
     client._client = AsyncMock()
     client._client.aclose = AsyncMock(side_effect=httpx.CloseError("known-close"))
@@ -796,7 +698,6 @@ async def test_aclose_standalone_known_close_error_warns_and_sets_none() -> None
 
 
 async def test_aclose_standalone_fatal_reraises_and_sets_none() -> None:
-    """standalone aclose() で ASYNC_FATAL（CancelledError）→ _client=None 後 re-raise。"""
     client = AsyncGitHubClient()
     client._client = AsyncMock()
     client._client.aclose = AsyncMock(side_effect=asyncio.CancelledError())
@@ -833,28 +734,19 @@ async def test_aclose_standalone_unexpected_is_suppressed() -> None:
 
 
 async def test_aclose_standalone_idempotent_when_client_none() -> None:
-    """standalone aclose() は _client が既に None なら早期 return（ダブル aclose 冪等性）。"""
     client = AsyncGitHubClient()
     client._client = None
 
     with capture_logs() as log_output:
-        await client.aclose()  # 早期 return — 何も起きない
+        await client.aclose()
 
     assert client._client is None
-    # 早期 return のためクローズ系ログは一切出ない
     assert log_output == []
 
 
 async def test_aexit_body_exception_not_overridden_by_close_exception() -> None:
-    """__aexit__ で本体例外発生中に aclose() も予期しない例外を出すケース。
-
-    body 例外 (exc_val) が close 例外で上書きされないこと
-    (re-raise しない) を end-to-end で検証する。設計意図:
-    ``async with`` body 例外 + aclose 例外の両発生時、原因情報 (body 例外) を
-    優先伝播させて debuggability を維持する (CWE-755 例外マスク回避)。
-    RuntimeError は予期しない例外ブランチ → error ログ + has_body_exception=True。
-    body 例外あり時は close_exc を re-raise しない（二段構え）。
-    """
+    """body例外とaclose例外の併発時に原因情報を失わないため、close例外をre-raiseせず
+    body例外を優先伝播させることを検証する（CWE-755例外マスク回避）。"""
     client = AsyncGitHubClient()
 
     with pytest.raises(ValueError, match="body-error"), capture_logs() as log_output:
@@ -875,13 +767,12 @@ async def test_aexit_body_exception_not_overridden_by_close_exception() -> None:
     assert error_logs[0]["has_body_exception"] is True
     # exc_info=True によりスタックトレースが記録される
     assert error_logs[0].get("exc_info") is True
-    # warning ログは出ない
     known_event = "async_github_client_aclose_failed"
     warning_logs = [log for log in log_output if log.get("event") == known_event]
     assert len(warning_logs) == 0
     # else節スキップ検証。body+close 二重例外時も
     # else 節 (utils/github_client.py L291-292) は実行されず "async_github_client_closed"
-    # info ログは出力されない (test_aexit_normal_close_logs_info L2431 の対照)。
+    # info ログは出力されない (test_aexit_normal_close_logs_infoの対照)。
     closed_logs = [log for log in log_output if log.get("event") == "async_github_client_closed"]
     assert len(closed_logs) == 0
 
@@ -893,17 +784,9 @@ async def test_aexit_body_exception_not_overridden_by_close_exception() -> None:
 async def test_aexit_fatal_close_exception_propagates_even_with_body_exception(
     fatal_exc: MemoryError | RecursionError,
 ) -> None:
-    """__aexit__ で body 例外併発時でも aclose() の MemoryError / RecursionError は
-    握りつぶさず fail-fast で伝播する。
-
-    両者は ``Exception`` 派生（MemoryError は ``Exception`` 直系、RecursionError は
-    ``RuntimeError`` 派生）のため ``except Exception`` の has_body_exception 抑制ロジックに
-    捕捉されうるが、専用 except 句で先取りし即時 re-raise する設計
-    （api_client._close_async_client / sentry_init と同一方針）。
-    ``test_aexit_body_exception_not_overridden_by_close_exception``（RuntimeError は
-    body 例外保護のため抑制）と対になり、「fatal のみ has_body_exception を貫いて伝播する」
-    不変条件を固定する回帰防止テスト。fix 除去時に RED 化する。
-    """
+    """fatal例外（MemoryError/RecursionError）はexcept Exceptionの抑制に捕捉されうるため、
+    専用except句で先取りしbody例外併発時もfail-fastで伝播させる
+    （api_client._close_async_client/sentry_initと同一方針の回帰防止）。"""
     client = AsyncGitHubClient()
 
     with pytest.raises(type(fatal_exc)), capture_logs() as log_output:
@@ -927,7 +810,6 @@ async def test_aexit_fatal_close_exception_propagates_even_with_body_exception(
 
 
 async def test_request_without_context_manager():
-    """コンテキストマネージャー未使用時にRuntimeError発生"""
     client = AsyncGitHubClient()
     # async withを使わずに直接_requestを呼ぶ
     with pytest.raises(RuntimeError) as exc_info:
@@ -948,7 +830,6 @@ async def test_request_without_context_manager():
 async def test_request_etag_cache_fatal_exception_propagates(
     fatal_exc: MemoryError | RecursionError,
 ) -> None:
-    """_update_etag_cache の fatal 例外は GitHubAPIError に変換せず伝播する。"""
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=200,
         json={"login": "octocat"},
@@ -967,7 +848,6 @@ async def test_request_etag_cache_fatal_exception_propagates(
 
 @respx.mock
 async def test_request_etag_cache_non_fatal_exception_logs_error_and_returns_response() -> None:
-    """_update_etag_cache の non-fatal 例外はerrorログを残し、正常レスポンスを返す。"""
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=200,
         json={"login": "octocat"},
@@ -1032,8 +912,6 @@ async def test_request_http_status_error_is_saved_before_safe_handler_call() -> 
 
 @respx.mock
 async def test_httpx_status_error_4xx():
-    """httpx.HTTPStatusError（4xx）処理の検証"""
-    # 401 Unauthorized: respxでステータスコードを返す
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=401,
         headers={"X-RateLimit-Remaining": "60"},
@@ -1043,14 +921,12 @@ async def test_httpx_status_error_4xx():
         with pytest.raises(GitHubAPIError) as exc_info:
             await client.get_user("octocat")
 
-    # GitHubAPIError であり、httpx.HTTPStatusError ではないことを明示検証
     assert not isinstance(exc_info.value, httpx.HTTPStatusError)
     # from None による完全PII遮断: __cause__ は None
     assert exc_info.value.__cause__ is None
     # except外raiseパターン: HTTPStatusErrorが__context__に残存しないこと（PII漏洩防止）
     assert exc_info.value.__context__ is None
-    assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
-    # メッセージ形式検証: ボディ除去後の正確なフォーマット確認
+    assert route.call_count == 1
     assert str(exc_info.value) == "HTTP 401 error"
 
 
@@ -1058,16 +934,6 @@ async def test_httpx_status_error_4xx():
 @patch("utils.github_error_handler.exponential_backoff_with_jitter", return_value=0.0)
 @patch("utils.github_error_handler.asyncio.sleep", new_callable=AsyncMock)
 async def test_httpx_status_error_5xx(mock_sleep: AsyncMock, mock_backoff: Mock) -> None:
-    """5xxステータスコード（response.status_code >= 500）リトライパスの検証
-
-    リトライ動作に加え、retrying_server_error ログ出力を検証する。
-
-    検証項目:
-    - attempt 値の連続性・順序・件数（list(range(1, MAX_RETRIES)) との等価比較）
-    - endpoint / method フィールドの値
-      （_handle_5xx_response はリクエストコンテキストを保持）
-    - status_code / max_retries / delay フィールドの値
-    """
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
     route.side_effect = [
         httpx.Response(503, headers={"X-RateLimit-Remaining": "60"}),
@@ -1084,26 +950,22 @@ async def test_httpx_status_error_5xx(mock_sleep: AsyncMock, mock_backoff: Mock)
     assert exc_info.value.__cause__ is None
     assert exc_info.value.__context__ is None
     assert route.call_count == MAX_RETRIES
-    assert mock_backoff.call_count == MAX_RETRIES - 1  # MAX_RETRIES試行 → 最終試行以外でバックオフ
+    assert mock_backoff.call_count == MAX_RETRIES - 1
     assert mock_sleep.await_count == MAX_RETRIES - 1
 
-    # リトライ中間試行のログ出力検証
     retry_logs = [log for log in log_output if log.get("event") == "retrying_server_error"]
     assert len(retry_logs) == MAX_RETRIES - 1, (
         f"retrying_server_error ログが{MAX_RETRIES - 1}件を期待 (実際: {len(retry_logs)}件)"
     )
     bad_level = [log for log in retry_logs if log.get("log_level") != "warning"]
     assert not bad_level, f"log_level が warning でないエントリ: {bad_level}"
-    # 順序・値・件数の統合検証: リトライがattempt 1〜MAX_RETRIES-1の昇順で実行されること
     actual_attempts = [log_entry.get("attempt") for log_entry in retry_logs]
     assert actual_attempts == list(range(1, MAX_RETRIES)), f"attempt 値不一致: {actual_attempts}"
-    # フィールド検証（順序非依存）
     for log_entry in retry_logs:
         assert log_entry["endpoint"] == "/users/octocat"
         assert log_entry["method"] == "GET"
         assert log_entry["status_code"] == 503
         assert log_entry["max_retries"] == MAX_RETRIES
-        # delay は @patch(return_value=0.0) のモック値に対応
         assert log_entry["delay"] == 0.0
 
 
@@ -1114,16 +976,6 @@ async def test_httpx_status_error_5xx_defensive_path(
     mock_sleep: AsyncMock,
     mock_backoff: Mock,
 ) -> None:
-    """httpx.HTTPStatusError（5xx）防御的コードパスの検証
-
-    C2修正後: httpx.HTTPStatusError として直接 5xx が発生した場合も
-    _handle_5xx_response() を経由してリトライし、GitHubServerError を発生させる。
-
-    検証項目:
-    - MAX_RETRIES 回リトライ後に GitHubServerError が発生すること
-    - route.call_count が MAX_RETRIES であること
-    - retrying_server_error ログが MAX_RETRIES - 1 件出力されること
-    """
     request = httpx.Request("GET", f"{GITHUB_API_BASE_URL}/users/octocat")
     response_503 = httpx.Response(503, request=request)
     error_503 = httpx.HTTPStatusError("503 Server Error", request=request, response=response_503)
@@ -1159,16 +1011,6 @@ async def test_httpx_status_error_5xx_defensive_path(
 
 @respx.mock
 async def test_httpx_status_error_403_defensive_path() -> None:
-    """403レスポンス（Rate Limit超過）が RateLimitError に変換されることの検証
-
-    通常パス: respx.respond(403) で 403 レスポンスを返し、
-    _handle_http_status_error → _handle_403_response 経由で RateLimitError が発生する。
-
-    検証項目:
-    - 403 + RateLimitヘッダーありで RateLimitError が発生すること
-    - reset_time 属性が正しく設定されること
-    - リクエストが1回のみ実行されること
-    """
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         403,
         headers={
@@ -1189,16 +1031,6 @@ async def test_httpx_status_error_403_defensive_path() -> None:
 
 @respx.mock
 async def test_httpx_status_error_403_auth_error_defensive_path() -> None:
-    """httpx.HTTPStatusError（403・非Rate Limit）防御的コードパスの検証
-
-    防御的パス: Rate Limitヘッダーなしの403をhttpx.HTTPStatusErrorとして受信した場合、
-    _handle_403_response() を経由してGitHubAPIError（Access forbidden）を発生させる。
-
-    検証項目:
-    - httpx.HTTPStatusError(403・Rate Limitヘッダーなし)がGitHubAPIErrorに変換されること
-    - "Access forbidden"メッセージが含まれること
-    - リクエストが1回のみ実行されること
-    """
     request = httpx.Request("GET", f"{GITHUB_API_BASE_URL}/users/octocat")
     response_403 = httpx.Response(403, request=request)  # Rate Limitヘッダーなし
     error_403 = httpx.HTTPStatusError("403 Forbidden", request=request, response=response_403)
@@ -1216,16 +1048,6 @@ async def test_httpx_status_error_403_auth_error_defensive_path() -> None:
 
 @respx.mock
 async def test_httpx_status_error_403_auth_error_with_message() -> None:
-    """httpx.HTTPStatusError（403・JSONメッセージ付き）防御的コードパスの検証
-
-    防御的パス: Rate Limitヘッダーなし・JSONボディ付き403をhttpx.HTTPStatusErrorとして受信した場合、
-    _handle_403_response() を経由して固定文言のGitHubAPIErrorを発生させる。
-
-    検証項目:
-    - httpx.HTTPStatusError(403・JSONメッセージ付き)がGitHubAPIErrorに変換されること
-    - 外部APIのmessageを含まない固定文言であること
-    - リクエストが1回のみ実行されること
-    """
     request = httpx.Request("GET", f"{GITHUB_API_BASE_URL}/users/octocat")
     response_403 = httpx.Response(
         403,
@@ -1248,7 +1070,6 @@ async def test_httpx_status_error_403_auth_error_with_message() -> None:
 
 @respx.mock
 async def test_unexpected_exception():
-    """予期しない例外処理の検証"""
     sensitive_detail = "secret connection string"
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(
         side_effect=ValueError(sensitive_detail)
@@ -1264,7 +1085,7 @@ async def test_unexpected_exception():
     # 例外チェーンは切断し、元例外メッセージは露出しない
     assert exc_info.value.__cause__ is None
     assert exc_info.value.__context__ is None
-    assert route.call_count == 1  # エラー時はリトライなし（1回のみ実行）
+    assert route.call_count == 1
     error_logs = [log for log in log_output if log.get("event") == "unexpected_error"]
     assert len(error_logs) == 1
     assert "error" not in error_logs[0]
@@ -1280,18 +1101,12 @@ async def test_unexpected_exception():
 
 @respx.mock
 async def test_response_not_read_propagates_without_unexpected_wrapper():
-    """ResponseNotRead は unexpected_error に包まずそのまま伝播する"""
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
     route.side_effect = [httpx.ResponseNotRead()]
     async with AsyncGitHubClient() as client:
         with pytest.raises(httpx.ResponseNotRead):
             await client.get_user("octocat")
     assert route.call_count == 1
-
-
-# =============================================================================
-# セキュリティ改善テスト（OWASP A03:2021対策）
-# =============================================================================
 
 
 @pytest.mark.parametrize(
@@ -1307,29 +1122,23 @@ async def test_response_not_read_propagates_without_unexpected_wrapper():
     ],
 )
 def test_username_validation_valid(username: str) -> None:
-    """有効なユーザー名でValueError未発生を確認"""
     validate_github_username(username)
 
 
 async def test_username_validation_invalid():
-    """無効なユーザー名でValueError発生（Path Traversal防止）"""
+    """ユーザー名をURL pathへ組み込むため、Path Traversal入力を拒否する。"""
     async with AsyncGitHubClient() as client:
         # Path Traversal攻撃パターン
         with pytest.raises(ValueError, match="Invalid GitHub username"):
             await client.get_user("../../../etc/passwd")
-
-        # 空文字列
         with pytest.raises(ValueError, match="Invalid GitHub username"):
             await client.get_user("")
-
-        # 40文字超過
         with pytest.raises(ValueError, match="Invalid GitHub username"):
             await client.get_user("a" * 40)
 
 
 @respx.mock
 async def test_403_non_rate_limit():
-    """403エラー（Rate Limit以外）でGitHubAPIError発生"""
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
     route.side_effect = [
         httpx.Response(
@@ -1348,7 +1157,6 @@ async def test_403_non_rate_limit():
         with pytest.raises(GitHubAPIError, match="Access forbidden"):
             await client.get_user("octocat")
 
-        # 2回目: GitHubAPIErrorが発生し、RateLimitErrorではないことを確認
         with pytest.raises(GitHubAPIError, match="Access forbidden") as exc_info:
             await client.get_user("octocat")
         assert not isinstance(exc_info.value, RateLimitError)
@@ -1356,7 +1164,6 @@ async def test_403_non_rate_limit():
 
 @respx.mock
 async def test_json_decode_error():
-    """JSONパース失敗時にGitHubAPIError発生"""
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=200,
         content=b"invalid json content",
@@ -1371,7 +1178,7 @@ async def test_json_decode_error():
             with pytest.raises(GitHubAPIError, match="Invalid JSON"):
                 await client.get_user("octocat")
 
-    assert route.call_count == 1  # GETリクエストが1回発行されたことを確認
+    assert route.call_count == 1
     decode_logs = [log for log in logs if log.get("event") == "json_decode_error"]
     assert len(decode_logs) == 1
     assert decode_logs[0]["endpoint"] == "/users/octocat"
@@ -1384,10 +1191,9 @@ async def test_json_decode_error():
 
 @respx.mock
 async def test_get_user_type_guard_rejects_non_dict():
-    """get_user: APIが非dictレスポンスを返した場合にGitHubAPIErrorを発生"""
     respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=200,
-        json=[{"id": 1}],  # list instead of dict
+        json=[{"id": 1}],
         headers={"X-RateLimit-Remaining": "50"},
     )
     async with AsyncGitHubClient() as client:
@@ -1397,10 +1203,9 @@ async def test_get_user_type_guard_rejects_non_dict():
 
 @respx.mock
 async def test_get_repos_type_guard_rejects_non_list():
-    """get_repos: APIが非listレスポンスを返した場合にGitHubAPIErrorを発生"""
     respx.get(f"{GITHUB_API_BASE_URL}/users/octocat/repos").respond(
         status_code=200,
-        json={"id": 1},  # dict instead of list
+        json={"id": 1},
         headers={"X-RateLimit-Remaining": "50"},
     )
     async with AsyncGitHubClient() as client:
@@ -1410,10 +1215,9 @@ async def test_get_repos_type_guard_rejects_non_list():
 
 @respx.mock
 async def test_get_repo_type_guard_rejects_non_dict():
-    """get_repo: APIが非dictレスポンスを返した場合にGitHubAPIErrorを発生"""
     respx.get(f"{GITHUB_API_BASE_URL}/repos/octocat/Hello-World").respond(
         status_code=200,
-        json=[{"id": 1}],  # list instead of dict
+        json=[{"id": 1}],
         headers={"X-RateLimit-Remaining": "50"},
     )
     async with AsyncGitHubClient() as client:
@@ -1421,9 +1225,6 @@ async def test_get_repo_type_guard_rejects_non_dict():
             await client.get_repo("octocat", "Hello-World")
 
 
-# =============================================================================
-# システム例外伝播テスト
-# =============================================================================
 # KeyboardInterruptはpytest自体がSIGINTハンドラとして処理するためunitテストでの検証は省略
 # SystemExit / MemoryError / CancelledError の3種で例外伝播パスをカバー
 
@@ -1458,20 +1259,9 @@ async def test_base_exception_propagates_through_request(
                 await client.get_user("octocat")
 
 
-# =============================================================================
-# Rate Limitヘッダー不正値テスト
-# =============================================================================
-
-
 @respx.mock
 async def test_invalid_rate_limit_header_remaining():
-    """X-RateLimit-Remaining に不正値が含まれる場合、warningログ出力して処理継続
-
-    検証項目:
-    - ValueError が外部に伝播しないこと（正常完了）
-    - invalid_rate_limit_header warning ログが出力されること
-    - header/value フィールドがログに含まれること
-    """
+    """不正なレート制限ヘッダーで外部例外を出さず、安全なフォールバックへ進む。"""
     respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=200,
         json={"login": "octocat"},
@@ -1492,14 +1282,7 @@ async def test_invalid_rate_limit_header_remaining():
 
 @respx.mock
 async def test_invalid_rate_limit_header_403():
-    """403応答時にX-RateLimit-Remainingが不正値の場合、warningログ後 GitHubAPIError 発生
-
-    検証項目:
-    - フォールバック -1 により rate_remaining == 0 は偽 → GitHubAPIError("Access forbidden") が発生
-    - invalid_rate_limit_header warning ログが1件出力されること
-      （X-RateLimit-Remainingの二重パースを避ける）
-    - header/value フィールドがログに含まれること
-    """
+    """403経路でも不正ヘッダーを再解析せず、warning後に安全なAPIエラーへ落とす。"""
     respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=403,
         json={"message": "Forbidden"},
@@ -1547,15 +1330,7 @@ async def test_invalid_rate_limit_header_429_secondary_logs_warning_once():
 
 @respx.mock
 async def test_invalid_rate_limit_reset_header_low_remaining():
-    """remaining<10かつX-RateLimit-Resetが不正値の場合、2つのwarningログを出力して処理継続
-
-    検証項目:
-    - ValueError が外部に伝播しないこと（正常完了）
-    - invalid_rate_limit_header warning ログが出力されること
-      （header="X-RateLimit-Reset", value="not-a-timestamp"）
-    - rate_limit_low warning ログが出力されること（remaining=5）
-    - reset_time はフォールバック値（epoch: 1970-01-01T00:00:00+00:00）になること
-    """
+    """レート制限ヘッダーの一部が壊れても、警告と処理継続を両立する。"""
     respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=200,
         json={"login": "octocat"},
@@ -1592,15 +1367,7 @@ async def test_invalid_rate_limit_reset_header_low_remaining():
 
 @respx.mock
 async def test_invalid_rate_limit_reset_header_rate_limit_exceeded():
-    """rate_remaining==0かつX-RateLimit-Resetが不正値の場合、警告ログ後RateLimitError発生
-
-    検証項目:
-    - RateLimitError が発生すること（rate_remaining==0のため）
-    - invalid_rate_limit_header warning ログが1件出力されること
-      （共通remaining<10チェックパスのX-RateLimit-Resetパース結果を再利用する）
-    - rate_limit_low warning ログが1件出力されること（remaining=0 < 10）
-    - header="X-RateLimit-Reset", value="broken" がログに含まれること
-    """
+    """remaining=0ではreset解析失敗後もRateLimitErrorによる待機制御を維持する。"""
     respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=403,
         json={"message": "Forbidden"},
@@ -1635,11 +1402,6 @@ async def test_invalid_rate_limit_reset_header_rate_limit_exceeded():
     assert rate_limit_low_logs[0]["reset_time"] == expected_reset_time
 
 
-# =============================================================================
-# validate_github_repo バリデーションテスト
-# =============================================================================
-
-
 @pytest.mark.parametrize(
     "repo",
     [
@@ -1653,7 +1415,6 @@ async def test_invalid_rate_limit_reset_header_rate_limit_exceeded():
     ],
 )
 def test_repo_validation_valid(repo: str) -> None:
-    """有効なリポジトリ名でValueError未発生を確認"""
     validate_github_repo(repo)
 
 
@@ -1670,12 +1431,9 @@ def test_repo_validation_valid(repo: str) -> None:
     ],
 )
 def test_repo_validation_invalid(repo: str) -> None:
-    """無効なリポジトリ名でValueError発生（セキュリティ境界テスト）"""
+    """リポジトリ名をURL pathへ組み込むため、Path Traversalを入力境界で拒否する。"""
     with pytest.raises(ValueError, match="Invalid GitHub repository name"):
         validate_github_repo(repo)
-
-
-# ── D-07 追加: _prepare_headers / _handle_304 / _handle_403 / _update_etag_cache ──
 
 
 def test_sanitized_jsondecodeerror_str_contains_no_response_body() -> None:
@@ -1694,7 +1452,6 @@ def test_sanitized_jsondecodeerror_str_contains_no_response_body() -> None:
     )
 
     rendered = str(cause)
-    # 型・msg・位置情報のみが厳密に含まれる（body 由来の文字列を混入させる余地がない）。
     # msg は json.JSONDecodeError.msg（静的パーサ診断文字列）で PII 非含有
     assert rendered == "json.JSONDecodeError: Expecting value pos=42, lineno=3, colno=7"
     assert cause.msg == "Expecting value"  # 破損種別識別用 msg を保持
@@ -1758,16 +1515,6 @@ async def test_429_response_raises_rate_limit_error() -> None:
 
 @respx.mock
 async def test_httpx_status_error_429_defensive_path() -> None:
-    """429レスポンスが RateLimitError に変換されることの検証
-
-    通常パス: respx.respond(429) で 429 レスポンスを返し、
-    _handle_http_status_error 経由で RateLimitError が発生する。
-
-    検証項目:
-    - 429 + X-RateLimit-Reset ヘッダーありで RateLimitError が発生すること
-    - reset_time 属性が正しく設定されること
-    - リクエストが1回のみ実行されること
-    """
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         429,
         headers={"X-RateLimit-Reset": "1640000000"},
@@ -1785,7 +1532,6 @@ async def test_httpx_status_error_429_defensive_path() -> None:
 
 @respx.mock
 async def test_429_response_missing_reset_header_falls_back_to_zero() -> None:
-    """X-RateLimit-Resetヘッダー欠損時は reset_time=0 にフォールバックする（通常パス）"""
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(429)
 
     async with AsyncGitHubClient() as client:
@@ -1799,7 +1545,6 @@ async def test_429_response_missing_reset_header_falls_back_to_zero() -> None:
 
 @respx.mock
 async def test_httpx_status_error_429_missing_reset_header_falls_back_to_zero() -> None:
-    """X-RateLimit-Resetヘッダー欠損時は reset_time=0 にフォールバックする（防御的パス）"""
     request = httpx.Request("GET", f"{GITHUB_API_BASE_URL}/users/octocat")
     response_429 = httpx.Response(429, request=request)
     error_429 = httpx.HTTPStatusError(
@@ -1849,7 +1594,6 @@ async def test_httpx_status_error_429_secondary_rate_limit_sets_retry_after() ->
 
 @respx.mock
 async def test_httpx_status_error_429_secondary_falls_back_to_default_retry_after() -> None:
-    """防御的パス(429)で Retry-After 欠損・remaining!=0 なら既定60秒へ倒す。"""
     request = httpx.Request("GET", f"{GITHUB_API_BASE_URL}/users/octocat")
     response_429 = httpx.Response(
         429,
@@ -1966,7 +1710,7 @@ async def test_403_secondary_rate_limit_falls_back_to_default_retry_after() -> N
 
 @respx.mock
 async def test_403_secondary_rate_limit_uses_retry_after_header() -> None:
-    """GitHub が Retry-After を明示した secondary では既定60秒でなくその値を使う。"""
+    """GitHub指定のRetry-Afterを既定値より優先し、実際の待機時間を尊重する。"""
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         403,
         headers={"X-RateLimit-Remaining": "25", "Retry-After": "30"},
@@ -2041,7 +1785,7 @@ async def test_403_non_json_body_is_not_detected_as_secondary_rate_limit() -> No
 
 @respx.mock
 async def test_429_secondary_rate_limit_uses_retry_after_header() -> None:
-    """通常パス(429)でも Retry-After を明示した secondary はその値を使う。"""
+    """通常経路でもGitHub指定のRetry-Afterを既定値より優先する。"""
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         429,
         headers={"X-RateLimit-Remaining": "25", "Retry-After": "45"},
@@ -2104,7 +1848,7 @@ async def test_429_secondary_rate_limit_with_exhausted_primary_defers_to_reset()
 
 @respx.mock
 async def test_httpx_status_error_403_defensive_path_uses_rate_limit_headers() -> None:
-    """403の防御的パスでも RateLimitError 判定と reset_time を通常パスに揃える。"""
+    """通常経路と防御的経路のRateLimitError判定を一致させ、経路差の回帰を防ぐ。"""
     request = httpx.Request("GET", f"{GITHUB_API_BASE_URL}/users/octocat")
     response_403 = httpx.Response(
         403,
@@ -2130,7 +1874,7 @@ async def test_httpx_status_error_403_defensive_path_uses_rate_limit_headers() -
 
 @respx.mock
 async def test_httpx_status_error_404_defensive_path_raises_not_found_error() -> None:
-    """404の防御的パスでも NotFoundError に揃うことを確認する"""
+    """HTTPStatusErrorを直接受ける防御経路でも404契約を維持する。"""
     request = httpx.Request("GET", f"{GITHUB_API_BASE_URL}/users/octocat")
     response_404 = httpx.Response(404, request=request)
     error_404 = httpx.HTTPStatusError("404 Not Found", request=request, response=response_404)
@@ -2148,18 +1892,9 @@ async def test_httpx_status_error_404_defensive_path_raises_not_found_error() ->
     assert route.call_count == 1
 
 
-# =============================================================================
-# _cache_key テスト（ETagキャッシュキーにクエリパラメータを含める）
-# =============================================================================
-
-
 @respx.mock
 async def test_etag_cache_key_includes_query_params() -> None:
-    """get_repos() の sort/per_page が異なると異なるキャッシュキーを使用する
-
-    1回目: sort=updated, per_page=30 → 200 + ETag保存
-    2回目: sort=created, per_page=10 → 200 (別キーでキャッシュヒットせず)
-    """
+    """クエリ違いのレスポンス混在を防ぐため、ETagキーにsort/per_pageを含める。"""
     updated_route = respx.get(
         f"{GITHUB_API_BASE_URL}/users/octocat/repos",
         params={"sort": "updated", "per_page": "30"},
@@ -2189,13 +1924,11 @@ async def test_etag_cache_key_includes_query_params() -> None:
         repos2 = await client.get_repos("octocat", sort="created", per_page=10)
         assert repos2[0]["name"] == "repo-b"
 
-        # 再度 updated を呼ぶと304キャッシュが返る
         repos3 = await client.get_repos("octocat", sort="updated", per_page=30)
         assert repos3[0]["name"] == "repo-a"
 
     assert updated_route.call_count == 2  # 200 + 304
     assert created_route.call_count == 1  # 200 only
-    # 2回目リクエスト (304条件付き) で If-None-Match ヘッダーが正しく送出されている
     second_request = updated_route.calls[1].request
     assert "if-none-match" in second_request.headers
     assert second_request.headers["if-none-match"] == '"updated-etag"'
@@ -2203,12 +1936,7 @@ async def test_etag_cache_key_includes_query_params() -> None:
 
 @respx.mock
 async def test_304_returns_correct_cached_data_per_params() -> None:
-    """sort 違いのキャッシュが混ざらないこと
-
-    1. sort=updated → 200, data=[repo-updated]
-    2. sort=created → 200, data=[repo-created]
-    3. sort=updated → 304, data=[repo-updated] (not repo-created)
-    """
+    """304時に別クエリのキャッシュを返す回帰を防ぐ。"""
     octocat_base = f"{GITHUB_API_BASE_URL}/users/octocat/repos"
 
     updated_route = respx.get(octocat_base, params={"sort": "updated", "per_page": "30"})
@@ -2237,7 +1965,6 @@ async def test_304_returns_correct_cached_data_per_params() -> None:
         r2 = await client.get_repos("octocat", sort="created", per_page=30)
         assert r2[0]["name"] == "repo-created"
 
-        # 304 → updated のキャッシュが返るべき
         r3 = await client.get_repos("octocat", sort="updated", per_page=30)
         assert r3[0]["name"] == "repo-updated"
 
@@ -2254,11 +1981,6 @@ async def test_304_returns_correct_cached_data_per_params() -> None:
     ],
 )
 def test_async_github_client_max_cache_entries_validation(invalid_value: int) -> None:
-    """AsyncGitHubClient: max_cache_entries が 1 未満の値で ValueError を送出する
-
-    max_cache_entries=0 / -1 / -100 はいずれも不正値であり、
-    "max_cache_entries must be >= 1" メッセージの ValueError を発生させる。
-    """
     with pytest.raises(ValueError, match="max_cache_entries must be >= 1"):
         AsyncGitHubClient(max_cache_entries=invalid_value)
 
@@ -2283,33 +2005,16 @@ async def test_aexit_normal_close_logs_info() -> None:
     """
     with capture_logs() as log_output:
         async with AsyncGitHubClient():
-            pass  # 正常終了
+            pass
 
     closed_logs = [log for log in log_output if log.get("event") == "async_github_client_closed"]
     assert len(closed_logs) == 1
     assert closed_logs[0]["log_level"] == "info"
 
 
-# =============================================================================
-# _check_rate_limit_warning: 異常 reset_time フォールバックテスト
-# =============================================================================
-
-
 @respx.mock
 async def test_check_rate_limit_warning_overflow_reset_time() -> None:
-    """_check_rate_limit_warning: 極端に大きい X-RateLimit-Reset でも例外が伝播しないこと
-
-    検証項目:
-    - OverflowError/OSError が呼び出し元に伝播しないこと（正常完了）
-    - rate_limit_low warning ログが1件出力されること
-    - reset_time ログフィールドが "unix:{reset_time}" 形式のフォールバック文字列になること
-    - 戻り値（_request 内での reset_time）は元の int 値が保持されること
-      （result["login"] が正常取得できることで間接確認）
-
-    既存パターン準拠:
-    - RateLimitError.__init__ の try/except (OverflowError, OSError) と同じ保護
-    - フォールバック形式 "unix:{reset_time}" は L130 と完全一致
-    """
+    """巨大なreset値のログ変換に失敗しても、レート制限処理を継続する。"""
     # 2**63 はほとんどのプラットフォームで datetime.fromtimestamp が
     # OverflowError または OSError を送出する値
     overflow_reset: int = 2**63
@@ -2325,37 +2030,16 @@ async def test_check_rate_limit_warning_overflow_reset_time() -> None:
 
     with capture_logs() as log_output:
         async with AsyncGitHubClient() as client:
-            # 例外が伝播しないことを確認（正常完了）
             result = await client.get_user("octocat")
 
-    # (3) 戻り値: 正常取得できること
     assert result["login"] == "octocat"
 
-    # (1) 例外が伝播しないこと → ここまで到達できれば検証済み
-
-    # (2) rate_limit_low warning ログが1件出力されること
     rate_limit_low_logs = [log for log in log_output if log.get("event") == "rate_limit_low"]
     assert len(rate_limit_low_logs) == 1
     assert rate_limit_low_logs[0]["log_level"] == "warning"
     assert rate_limit_low_logs[0]["remaining"] == 5
 
-    # (2) reset_time フィールドが "unix:{reset_time}" フォールバック形式になること
     assert rate_limit_low_logs[0]["reset_time"] == f"unix:{overflow_reset}"
-
-
-# =============================================================================
-# _cache_key エラーパステスト（Fix #12-Q-9）
-# =============================================================================
-
-
-# =============================================================================
-# _check_rate_limit_warning: 閾値インタラクションテスト（Fix #10-QC-3）
-# =============================================================================
-
-
-# =============================================================================
-# 429 E2E test with warning_reset_time handoff（Fix #15-Q-6）
-# =============================================================================
 
 
 @respx.mock
