@@ -1,4 +1,9 @@
-"""Sync JSONPlaceholder client tests for utils.jsonplaceholder_client_sync."""
+"""utils.jsonplaceholder_client_sync モジュールの同期APIクライアントテスト
+
+
+Note:
+ - Create/Update/Delete は永続化されない。POST は常に ``id=101`` を返す。
+"""
 
 import json
 from unittest.mock import patch
@@ -16,14 +21,6 @@ pytestmark = pytest.mark.unit
 
 @respx.mock
 def test_sync_health_check_success() -> None:
-    """
-    API ヘルスチェック正常系テスト（同期版）
-
-    検証項目：
-    - health_check()メソッドの正常動作
-    - 正常時: True返却
-
-    """
     route = respx.get(f"{BASE_URL}/users", params={"_limit": 1}).respond(
         json=[{"id": 1, "name": "User 1"}]
     )
@@ -37,13 +34,6 @@ def test_sync_health_check_success() -> None:
 
 @respx.mock
 def test_sync_health_check_connection_error() -> None:
-    """
-    API ヘルスチェック接続エラー時のテスト（同期版）
-
-    検証項目：
-    - 接続エラー時: False返却（graceful degradation）
-    - httpx.ConnectError → APIConnectionErrorに変換 → health_checkでキャッチ
-    """
     route = respx.get(f"{BASE_URL}/users", params={"_limit": 1}).mock(
         side_effect=httpx.ConnectError("Connection refused")
     )
@@ -57,7 +47,6 @@ def test_sync_health_check_connection_error() -> None:
 
 @respx.mock
 def test_sync_health_check_log_structure() -> None:
-    """health_check失敗時のログ構造検証（error_type/endpointフィールド）"""
     respx.get(f"{BASE_URL}/users", params={"_limit": 1}).mock(
         side_effect=httpx.ConnectError("Connection refused to secret-host.internal")
     )
@@ -96,14 +85,6 @@ def test_sync_health_check_log_structure() -> None:
 )
 @respx.mock
 def test_sync_get_posts(limit: int | None, expected_count: int) -> None:
-    """
-    SyncJSONPlaceholderClient.get_posts()のlimitパラメータ検証
-
-    検証項目：
-    - limit指定時に正しくパラメータが送信される
-    - limit=Noneで全件取得
-    - limit=0で0件取得（API仕様では空配列返却、境界値検証）
-    """
     all_posts = [
         {"id": i, "userId": 1, "title": f"Post {i}", "body": f"Content {i}"} for i in range(1, 6)
     ]
@@ -141,14 +122,6 @@ def test_sync_get_posts(limit: int | None, expected_count: int) -> None:
 )
 @respx.mock
 def test_sync_get_posts_user_filter(user_id: int | None, expected_count: int) -> None:
-    """
-    SyncJSONPlaceholderClient.get_posts()のuser_idパラメータ検証
-
-    検証項目：
-    - user_id=None: フィルタなしで全投稿取得
-    - user_id=1/2: 指定ユーザーの投稿のみ取得（API側フィルタ）
-    - user_id=999: 存在しないユーザーで空配列返却
-    """
     all_posts = [
         {"id": 1, "userId": 1, "title": "Post 1", "body": "Content 1"},
         {"id": 2, "userId": 2, "title": "Post 2", "body": "Content 2"},
@@ -199,13 +172,6 @@ def test_sync_get_posts_user_filter(user_id: int | None, expected_count: int) ->
 def test_sync_get_posts_validation_error(
     limit: int | None, user_id: int | None, expected_error: str
 ) -> None:
-    """
-    SyncJSONPlaceholderClient.get_posts()の入力値バリデーション検証
-
-    検証項目：
-    - limit < 0: ValueError発生
-    - user_id < 1: ValueError発生（JSONPlaceholder APIはID=1から）
-    """
     with SyncJSONPlaceholderClient() as client:
         with pytest.raises(ValueError, match=expected_error):
             client.get_posts(limit=limit, user_id=user_id)
@@ -213,13 +179,6 @@ def test_sync_get_posts_validation_error(
 
 @respx.mock
 def test_sync_get_post_success() -> None:
-    """
-    SyncJSONPlaceholderClient.get_post()の正常系テスト
-
-    検証項目：
-    - post_id指定で特定投稿を取得
-    - レスポンスデータが正確に返却される
-    """
     post_id = 1
     expected_post = {"id": 1, "userId": 1, "title": "Test Post", "body": "Test Content"}
 
@@ -235,14 +194,6 @@ def test_sync_get_post_success() -> None:
 
 @respx.mock
 def test_sync_create_post() -> None:
-    """
-    SyncJSONPlaceholderClient.create_post()の正常系テスト
-
-    検証項目：
-    - title/body/user_id指定で投稿作成
-    - リクエストボディの正確性（title, body, userId）
-    - レスポンスにidが付与される（サーバー生成）
-    """
     title = "New Post"
     body = "This is a new post content"
     user_id = 1
@@ -290,14 +241,6 @@ def test_sync_get_todos(
     limit: int | None,
     expected_count: int,
 ) -> None:
-    """
-    SyncJSONPlaceholderClient.get_todos()の複数パラメータ組み合わせ検証
-
-    検証項目：
-    - user_id/completed/limitの全組み合わせ動作確認
-    - クエリパラメータが正確に構築される
-    - Noneパラメータは送信されない
-    """
     all_todos = [
         {"id": 1, "userId": 1, "title": "Todo 1", "completed": True},
         {"id": 2, "userId": 1, "title": "Todo 2", "completed": False},
@@ -359,13 +302,6 @@ def test_sync_get_todos(
 def test_sync_get_todos_validation_error(
     limit: int | None, user_id: int | None, expected_error: str
 ) -> None:
-    """
-    SyncJSONPlaceholderClient.get_todos()の入力値バリデーション検証
-
-    検証項目：
-    - limit < 0: ValueError発生
-    - user_id < 1: ValueError発生（JSONPlaceholder APIはID=1から）
-    """
     with SyncJSONPlaceholderClient() as client:
         with pytest.raises(ValueError, match=expected_error):
             client.get_todos(limit=limit, user_id=user_id)
@@ -378,14 +314,6 @@ def test_sync_get_todos_validation_error(
 )
 @respx.mock
 def test_sync_get_albums(user_id: int | None, expected_count: int) -> None:
-    """
-    SyncJSONPlaceholderClient.get_albums()のuser_idパラメータ検証
-
-    検証項目：
-    - user_id指定時に正しくパラメータが送信される
-    - user_id=Noneで全件取得
-    - フィルタ結果が期待通りの件数である
-    """
     # モックデータ（5件のアルバム、複数ユーザー）
     all_albums = [
         {"id": 1, "userId": 1, "title": "Album 1"},
@@ -422,12 +350,6 @@ def test_sync_get_albums(user_id: int | None, expected_count: int) -> None:
     ids=["zero_user_id", "negative_user_id"],
 )
 def test_sync_get_albums_validation_error(user_id: int, expected_error: str) -> None:
-    """
-    SyncJSONPlaceholderClient.get_albums()の入力値バリデーション検証
-
-    検証項目：
-    - user_id < 1: ValueError発生（JSONPlaceholder APIはID=1から）
-    """
     with SyncJSONPlaceholderClient() as client:
         with pytest.raises(ValueError, match=expected_error):
             client.get_albums(user_id=user_id)
@@ -440,14 +362,6 @@ def test_sync_get_albums_validation_error(user_id: int, expected_error: str) -> 
 )
 @respx.mock
 def test_sync_get_photos(album_id: int | None, expected_count: int) -> None:
-    """
-    SyncJSONPlaceholderClient.get_photos()のalbum_idパラメータ検証
-
-    検証項目：
-    - album_id指定時に正しくエンドポイントが構築される（/albums/{album_id}/photos）
-    - album_id=Noneで全件取得（/photos）
-    - フィルタ結果が期待通りの件数である
-    """
     # モックデータ（6件の写真、複数アルバム）
     all_photos = [
         {
@@ -512,14 +426,6 @@ def test_sync_get_photos(album_id: int | None, expected_count: int) -> None:
 
 @respx.mock
 def test_sync_get_comments_with_post_id() -> None:
-    """
-    SyncJSONPlaceholderClient.get_comments()のpost_id指定時の正常系
-
-    検証項目：
-    - post_id=1 指定時に /posts/1/comments にGETリクエストが送られる
-    - レスポンスのコメントリストがそのまま返される
-    - リクエストが1回だけ発行される
-    """
     mock_comments = [
         {"id": 1, "postId": 1, "name": "Test Comment", "email": "test@example.com", "body": "Body"},
     ]
@@ -534,14 +440,6 @@ def test_sync_get_comments_with_post_id() -> None:
 
 @respx.mock
 def test_sync_get_comments_without_post_id() -> None:
-    """
-    SyncJSONPlaceholderClient.get_comments()のpost_id未指定時の正常系
-
-    検証項目：
-    - post_id未指定時に /comments にGETリクエストが送られる
-    - 全コメントのリストがそのまま返される
-    - リクエストが1回だけ発行される
-    """
     mock_comments = [
         {"id": 1, "postId": 1, "name": "Comment 1", "email": "a@b.com", "body": "Body 1"},
         {"id": 2, "postId": 2, "name": "Comment 2", "email": "c@d.com", "body": "Body 2"},
@@ -561,14 +459,6 @@ def test_sync_get_comments_without_post_id() -> None:
     ids=["post_id_zero", "post_id_negative", "post_id_large_negative"],
 )
 def test_sync_get_comments_invalid_post_id(post_id: int) -> None:
-    """
-    SyncJSONPlaceholderClient.get_comments()の無効post_idバリデーション
-
-    検証項目：
-    - post_id=0 は ValueError を発生させる（JSONPlaceholder API は1-based ID）
-    - 負数のpost_idも同様に ValueError を発生させる
-    - HTTP リクエストは発行されない
-    """
     with SyncJSONPlaceholderClient() as client:
         with pytest.raises(ValueError, match="post_id must be >= 1"):
             client.get_comments(post_id=post_id)
@@ -580,14 +470,6 @@ def test_sync_get_comments_invalid_post_id(post_id: int) -> None:
     ids=["album_id_zero", "album_id_negative", "album_id_large_negative"],
 )
 def test_sync_get_photos_invalid_album_id(album_id: int) -> None:
-    """
-    SyncJSONPlaceholderClient.get_photos()の無効album_idバリデーション
-
-    検証項目：
-    - album_id=0 は ValueError を発生させる（JSONPlaceholder API は1-based ID）
-    - 負数のalbum_idも同様に ValueError を発生させる
-    - HTTP リクエストは発行されない
-    """
     with SyncJSONPlaceholderClient() as client:
         with pytest.raises(ValueError, match="album_id must be >= 1"):
             client.get_photos(album_id=album_id)
@@ -595,13 +477,6 @@ def test_sync_get_photos_invalid_album_id(album_id: int) -> None:
 
 @respx.mock
 def test_sync_patch_method() -> None:
-    """SyncAPIClient.patch() HTTP PATCHメソッドの動作確認
-
-    検証項目:
-    - PATCHリクエストが正しく送信される
-    - HTTPメソッドが "PATCH" である
-    - リクエストボディが正確に送信される
-    """
     endpoint = "/todos/1"
     patch_data = {"completed": True}
     full_response = {"id": 1, "title": "Test Todo", "completed": True, "userId": 1}
@@ -627,13 +502,6 @@ def test_sync_patch_method() -> None:
 
 @respx.mock
 def test_sync_get_users() -> None:
-    """SyncJSONPlaceholderClient.get_users() ユーザー一覧取得の動作確認
-
-    検証項目:
-    - GET /users リクエストが送信される
-    - ユーザーリストが正しく返される
-    - call_count で1回のリクエストを確認
-    """
     mock_users = [
         make_mock_user(
             1,
@@ -670,12 +538,6 @@ def test_sync_get_users() -> None:
 
 @respx.mock
 def test_sync_get_todo() -> None:
-    """SyncJSONPlaceholderClient.get_todo() 特定TODO取得の動作確認
-
-    検証項目:
-    - GET /todos/{id} リクエストが送信される
-    - 正しいTODOデータが返される
-    """
     mock_todo = {"id": 1, "userId": 1, "title": "delectus aut autem", "completed": False}
 
     route = respx.get(f"{BASE_URL}/todos/1").respond(json=mock_todo)
@@ -691,13 +553,6 @@ def test_sync_get_todo() -> None:
 
 @respx.mock
 def test_sync_create_todo() -> None:
-    """SyncJSONPlaceholderClient.create_todo() 新規TODO作成の動作確認
-
-    検証項目:
-    - POST /todos リクエストが送信される
-    - リクエストボディに title/userId/completed が含まれる
-    - 201 Created レスポンスが正しく処理される
-    """
     new_todo_response = {
         "id": 201,
         "title": "Buy groceries",

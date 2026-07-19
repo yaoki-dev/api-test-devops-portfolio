@@ -1,4 +1,8 @@
-"""Sync base client tests for utils.jsonplaceholder_base_sync."""
+"""JSONPlaceholder_base_sync モジュールの同期通信基盤テスト
+
+Note:
+ - Create/Update/Delete は永続化されない。POST は常に ``id=101`` を返す。
+"""
 
 import logging
 import sys
@@ -44,6 +48,7 @@ mock_settings_instance = MockSettings()
 
 @pytest.fixture(autouse=True)
 def mock_settings():
+    """import済みsettingsを参照先でpatchし、実settingsへの漏れと設定リークを防ぐ。"""
     # NOTE: 各クライアントモジュールは `from config.settings import settings` により
     # 自前の `settings` バインディングを import 時に確定する。そのため
     # `config.settings.settings` を patch しても、それらのバインディングには届かず
@@ -57,7 +62,6 @@ def mock_settings():
 
 
 def test_base_client_initialization():
-    """クライアント初期化テスト"""
     client = SyncAPIClient(base_url="https://test.com", timeout=10.0, retry_count=1)
     assert client.base_url == "https://test.com"
     assert client.timeout == 10.0
@@ -66,14 +70,12 @@ def test_base_client_initialization():
 
 
 def test_context_manager_basic():
-    """Context Manager基本動作テスト"""
     with SyncAPIClient(base_url="https://test.com") as client:
         assert client._client is not None
         assert isinstance(client._client, httpx.Client)
 
 
 def test_base_client_uses_default_settings_if_not_provided():
-    """引数がない場合にデフォルト設定が使用されることを確認"""
     client = SyncAPIClient()  # Uses mock_settings_instance
     assert client.base_url == BASE_URL
     assert client.timeout == 30.0
@@ -81,7 +83,7 @@ def test_base_client_uses_default_settings_if_not_provided():
 
 
 def test_mock_settings_fixture_is_effective():
-    """mock_settings fixture が実際に有効であることを保証する回帰テスト。
+    """mock_settings fixture が実際に有効であることを保証する回帰テスト
 
     retry_delay は mock 値 0.1 と実 .env 既定値 1.0 が異なるため、パッチ標的が
     誤っている（import 済みバインディングに届かない）場合は実値 1.0 が返り、この
@@ -92,7 +94,6 @@ def test_mock_settings_fixture_is_effective():
 
 
 def test_base_client_headers_are_set_correctly():
-    """ヘッダーが正しく設定されることを確認"""
     custom_headers = {"X-Custom-Header": "Value"}
     client = SyncAPIClient(base_url="https://test.com", headers=custom_headers)
     assert client.default_headers["X-Custom-Header"] == "Value"
@@ -100,7 +101,6 @@ def test_base_client_headers_are_set_correctly():
 
 
 def test_base_client_close_method():
-    """closeメソッドがクライアントを閉じることを確認"""
     client = SyncAPIClient(base_url="https://test.com")
     client.__enter__()  # Manually enter context to ensure _client is initialized
     assert client._client is not None
@@ -129,7 +129,6 @@ def test_sync_close_sets_client_none_even_when_close_raises() -> None:
 
 @respx.mock
 def test_sync_get_user() -> None:
-    """GETリクエスト検証"""
     route = respx.get(f"{BASE_URL}/users/1").respond(json={"id": 1, "name": "Test User"})
 
     with SyncAPIClient() as client:
@@ -142,7 +141,6 @@ def test_sync_get_user() -> None:
 
 @respx.mock
 def test_sync_post_create_user() -> None:
-    """POSTリクエスト検証"""
     route = respx.post(f"{BASE_URL}/users").respond(
         status_code=201,
         json={"id": 101, "name": "New User", "email": "new@example.com"},
@@ -158,7 +156,6 @@ def test_sync_post_create_user() -> None:
 
 @respx.mock
 def test_sync_put_update_user() -> None:
-    """PUTリクエスト検証"""
     route = respx.put(f"{BASE_URL}/users/1").respond(json={"id": 1, "name": "Updated"})
 
     with SyncAPIClient() as client:
@@ -171,7 +168,6 @@ def test_sync_put_update_user() -> None:
 
 @respx.mock
 def test_sync_delete_user() -> None:
-    """DELETEリクエスト検証（httpx.Response返却を検証）"""
     route = respx.delete(f"{BASE_URL}/users/1").respond(status_code=204, content=b"")
 
     with SyncAPIClient() as client:
@@ -182,13 +178,7 @@ def test_sync_delete_user() -> None:
 
 
 def test_sync_context_manager_cleanup() -> None:
-    """with文コンテキストマネージャーのクリーンアップ検証
-
-    Note:
-        SyncAPIClient.__exit__でself._client.close()が呼ばれることを検証。
-        patch.objectでhttpx.Clientのcloseメソッドをスパイし、
-        コンテキストマネージャー終了時に呼ばれることを確認する。
-    """
+    """httpx.Client.close() の呼出しを with 終了時に固定するため patch で検証する。"""
     client_instance = SyncAPIClient()
     with patch.object(client_instance._client, "close") as mock_close:
         with client_instance:
@@ -201,7 +191,6 @@ def test_sync_context_manager_cleanup() -> None:
 
 @respx.mock
 def test_sync_empty_response_handling() -> None:
-    """空レスポンス（{}）の安全処理検証"""
     route = respx.get(f"{BASE_URL}/empty").respond(json={})
 
     with SyncAPIClient() as client:
@@ -213,7 +202,6 @@ def test_sync_empty_response_handling() -> None:
 
 @respx.mock
 def test_sync_malformed_json_handling() -> None:
-    """不正JSON時の例外処理検証"""
     route = respx.get(f"{BASE_URL}/malformed").respond(
         content=b"invalid json",
         headers={"content-type": "application/json"},
@@ -230,7 +218,6 @@ def test_sync_malformed_json_handling() -> None:
 @pytest.mark.parametrize("user_id", [0, -1, sys.maxsize], ids=["zero", "negative", "max_int"])
 @respx.mock
 def test_sync_boundary_user_id(user_id: int) -> None:
-    """境界値テスト: user_id=0, -1, MAX_INT（parametrize化）"""
     route = respx.get(f"{BASE_URL}/users/{user_id}").respond(json={"id": user_id})
 
     with SyncAPIClient() as client:
@@ -340,7 +327,6 @@ def test_sync_4xx_error_no_retry() -> None:
 @respx.mock
 @patch("utils.jsonplaceholder_base_sync.exponential_backoff_with_jitter", return_value=0.0)
 def test_sync_timeout_error_retry(mock_backoff: Mock) -> None:
-    """タイムアウト時にAPIRetryErrorが発生することを確認"""
     route = respx.get(f"{BASE_URL}/posts/1")
     route.side_effect = [
         httpx.TimeoutException("Request timed out"),
@@ -360,7 +346,6 @@ def test_sync_timeout_error_retry(mock_backoff: Mock) -> None:
 @respx.mock
 @patch("utils.jsonplaceholder_base_sync.exponential_backoff_with_jitter", return_value=0.0)
 def test_sync_connection_error_retry(mock_backoff: Mock) -> None:
-    """接続エラー時にAPIRetryErrorが発生することを確認"""
     route = respx.get(f"{BASE_URL}/posts/1")
     route.side_effect = [
         httpx.ConnectError("Connection refused"),
@@ -401,7 +386,6 @@ def test_sync_retry_exhausted(mock_backoff: Mock) -> None:
 @respx.mock
 @patch("utils.jsonplaceholder_base_sync.exponential_backoff_with_jitter", return_value=0.0)
 def test_sync_timeout_then_success(mock_backoff: Mock) -> None:
-    """タイムアウト後に成功するケース"""
     route = respx.get(f"{BASE_URL}/posts/1")
     route.side_effect = [
         httpx.TimeoutException("Timeout 1"),
@@ -420,7 +404,6 @@ def test_sync_timeout_then_success(mock_backoff: Mock) -> None:
 @respx.mock
 @patch("utils.jsonplaceholder_base_sync.exponential_backoff_with_jitter", return_value=0.0)
 def test_sync_connection_then_success(mock_backoff: Mock) -> None:
-    """接続エラー後に成功するケース"""
     route = respx.get(f"{BASE_URL}/posts/1")
     route.side_effect = [
         httpx.ConnectError("Connection 1"),
@@ -440,7 +423,6 @@ def test_sync_connection_then_success(mock_backoff: Mock) -> None:
 @respx.mock
 @patch("utils.jsonplaceholder_base_sync.exponential_backoff_with_jitter", return_value=0.0)
 def test_sync_mixed_errors_then_success(mock_backoff: Mock) -> None:
-    """タイムアウト→サーバーエラー→成功のシナリオ"""
     route = respx.get(f"{BASE_URL}/posts/1")
     route.side_effect = [
         httpx.TimeoutException("Timeout"),
@@ -460,7 +442,6 @@ def test_sync_mixed_errors_then_success(mock_backoff: Mock) -> None:
 @respx.mock
 @patch("utils.jsonplaceholder_base_sync.exponential_backoff_with_jitter", return_value=0.0)
 def test_sync_mixed_errors_exhaust_retries(mock_backoff: Mock) -> None:
-    """複数のエラータイプでリトライ上限に達するケース"""
     route = respx.get(f"{BASE_URL}/posts/1")
     route.side_effect = [
         httpx.TimeoutException("Timeout"),
@@ -502,7 +483,6 @@ def test_sync_put_4xx_no_retry(mock_backoff: Mock) -> None:
 @respx.mock
 @patch("utils.jsonplaceholder_base_sync.exponential_backoff_with_jitter", return_value=0.0)
 def test_sync_delete_with_retry(mock_backoff: Mock) -> None:
-    """DELETEリクエストのリトライ動作確認"""
     route = respx.delete(f"{BASE_URL}/posts/1")
     route.side_effect = [
         httpx.TimeoutException("Timeout"),

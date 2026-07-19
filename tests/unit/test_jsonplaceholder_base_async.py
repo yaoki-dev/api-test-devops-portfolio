@@ -1,4 +1,8 @@
-"""Async base client tests for utils.jsonplaceholder_base_async."""
+"""JSONPlaceholder_base_async モジュールの非同期通信基盤テスト
+
+Note:
+ - Create/Update/Delete は永続化されない。POST は常に ``id=101`` を返す。
+"""
 
 import asyncio
 from unittest.mock import AsyncMock, Mock, patch
@@ -24,20 +28,7 @@ pytestmark = pytest.mark.unit
 @respx.mock
 @patch("utils.jsonplaceholder_base_async.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_timeout_retry_then_success(mock_backoff: Mock) -> None:
-    """
-    タイムアウトエラー後のリトライで最終的に成功するテスト
-
-    検証項目：
-    - タイムアウトエラー発生時にリトライが行われること（2回連続タイムアウト）
-    - リトライ回数が設定値（retry_count=3）に基づくこと
-      （初回+最大3回リトライ=最大4回実行、本テストは3回目で成功）
-    - リトライ後に成功した場合のレスポンスが正しく返却されること
-
-    Note: test_async_client_error_handling.py の test_async_timeout_then_success（1回タイムアウト）
-          と対をなすテスト。こちらは「2回連続タイムアウト → 3回目で成功」を検証する。
-          @patch(exponential_backoff_with_jitter)でリトライ待機を0秒化しCI時間短縮。
-          respxトランスポートモックにより実際のhttpxコードパスを通じて検証する。
-    """
+    """2回連続タイムアウト後に3回目で成功するリトライ境界を固定する。"""
     # respxルート: 最初の2回はタイムアウト、3回目で成功
     # retry_count=3 の場合: 初回(1) + 最大リトライ(3) = 最大4リクエスト。
     # 本テストは3回目で成功するためリスト要素は3個（TimeoutException 2個 + Response 1個）。
@@ -67,19 +58,7 @@ async def test_async_timeout_retry_then_success(mock_backoff: Mock) -> None:
 @respx.mock
 @patch("utils.jsonplaceholder_base_async.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_performance_and_timeout(mock_backoff: Mock) -> None:
-    """
-    非同期処理のパフォーマンス・タイムアウト・リソース管理テスト
-
-    検証項目：
-    - リクエストタイムアウト時のリトライ動作
-    - 全リトライ失敗後のAPIRetryError発生
-    - リトライ回数がretry_countに基づくこと（route.call_countで決定論的に検証）
-
-    Note: タイムアウト時、実装はリトライ後にAPIRetryErrorを発生させる。
-          TimeoutExceptionは内部でキャッチされる。
-          @patch(exponential_backoff_with_jitter)でリトライ待機を0秒化しCI時間短縮。
-          respxトランスポートモックにより実際のhttpxコードパスを通じて検証する。
-    """
+    """全リトライ失敗時にAPIRetryErrorへ集約される境界を固定する。"""
     retry_count = 1  # retry_count=1: 初回 + 1回リトライ = 2回のリクエスト
 
     # respxルート: 全リクエストでタイムアウト（retry_count+1 回）
@@ -100,14 +79,7 @@ async def test_async_performance_and_timeout(mock_backoff: Mock) -> None:
 
 
 async def test_async_context_manager_cleanup_on_success():
-    """
-    正常終了時のコンテキストマネージャーリソースクリーンアップテスト
-
-    検証項目：
-    - async with ブロック正常終了時に aclose() が呼び出されること
-
-    Note: aclose()呼び出し検証はhttpxクライアントの内部動作に依存するためpatchを使用。
-    """
+    """httpx.AsyncClient の aclose() 呼出しは内部動作に依存するため patch で検証する。"""
     with patch("httpx.AsyncClient") as mock_client_class:
         mock_client_instance = AsyncMock()
         mock_client_class.return_value = mock_client_instance
@@ -120,17 +92,7 @@ async def test_async_context_manager_cleanup_on_success():
 
 
 async def test_async_context_manager_cleanup_on_exception():
-    """
-    例外発生時でもコンテキストマネージャーがクリーンアップするテスト
-
-    検証項目：
-    - 例外発生時でも aclose() が呼び出されること（リソースリークなし）
-
-    Note: aclose()呼び出し検証はhttpxクライアントの内部動作に依存するためpatchを使用。
-          RuntimeError は httpx.RequestError のサブクラスではないため、リトライを通らず
-          そのまま伝播する。基底クラス Exception より具体的な型を使用することで
-          テストバグの誤検知を防ぐ。
-    """
+    """RuntimeError は httpx.RequestError ではなく、リトライ対象外の例外でも close を保証する。"""
     with patch("httpx.AsyncClient") as mock_client_class:
         mock_client_instance = AsyncMock()
         mock_client_class.return_value = mock_client_instance
@@ -159,7 +121,7 @@ async def test_async_api_client_aexit_aclose_exception_is_suppressed_with_warnin
     expected_type: str,
     expected_module: str,
 ) -> None:
-    """__aexit__ で aclose() が例外を投げても警告ログのみ出力する"""
+    """通常の close 例外は warning のみで抑止し、例外種別をログに残す。"""
     client = AsyncAPIClient()
 
     with (
@@ -313,7 +275,7 @@ async def test_aclose_exception_is_suppressed_with_warning(
     expected_type: str,
     expected_module: str,
 ) -> None:
-    """aclose() 単独呼び出しでも close 例外は warning のみで抑止する。"""
+    """単独 close の既知例外は warning のみで抑止し、予期しない例外と分類を分ける。"""
     client = AsyncAPIClient()
 
     with (
@@ -333,7 +295,6 @@ async def test_aclose_exception_is_suppressed_with_warning(
 
 
 async def test_aclose_normal_close_logs_info() -> None:
-    """aclose() 単独呼び出し時に async_api_client_closed の info ログが1回出力される。"""
     client = AsyncAPIClient()
 
     with (
@@ -473,15 +434,6 @@ async def test_async_performance_benchmark():
 
 @respx.mock
 async def test_http_put_method():
-    """
-    AsyncAPIClient.put()メソッドの基本動作検証
-
-    検証項目：
-    - PUTリクエストが正しく送信される
-    - JSONデータが正確に送信される
-    - レスポンスが正常に返却される
-    - HTTPメソッドが"PUT"である
-    """
     endpoint = "/posts/1"
     update_data = {"id": 1, "title": "Updated Title", "body": "Updated Content", "userId": 1}
 
@@ -501,14 +453,6 @@ async def test_http_put_method():
 
 @respx.mock
 async def test_http_delete_method():
-    """
-    AsyncAPIClient.delete()メソッドの基本動作検証
-
-    検証項目：
-    - DELETEリクエストが正しく送信される
-    - 204 No Content または 200 OK が返却される
-    - エンドポイントが正確に構築される
-    """
     endpoint = "/posts/1"
 
     # DELETEレスポンスをモック化（204 No Content）
@@ -524,15 +468,6 @@ async def test_http_delete_method():
 
 @respx.mock
 async def test_http_patch_method():
-    """
-    AsyncAPIClient.patch()メソッドの基本動作検証
-
-    検証項目：
-    - PATCHリクエストが正しく送信される
-    - 部分更新データが正確に送信される
-    - レスポンスが正常に返却される
-    - HTTPメソッドが"PATCH"である
-    """
     endpoint = "/posts/1"
     partial_data = {"title": "Partially Updated Title"}
     full_response = {
@@ -558,14 +493,6 @@ async def test_http_patch_method():
 
 @respx.mock
 async def test_http_put_with_error():
-    """
-    AsyncAPIClient.put()の404エラーケーステスト
-
-    検証項目：
-    - 存在しないリソースへのPUTで404エラー
-    - APIHTTPErrorが正しく発生する
-    - エラーステータスコードが404である
-    """
     endpoint = "/posts/999999"
     update_data = {"title": "Non-existent Post"}
 
@@ -649,7 +576,7 @@ async def test_async_client_falsy_values_not_overridden() -> None:
 @respx.mock
 @patch("utils.jsonplaceholder_base_async.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_retry_on_server_error_then_success(mock_backoff: Mock) -> None:
-    """サーバーエラー後に成功するケース（5xxはリトライ対象）"""
+    """5xx はリトライ対象とし、成功したレスポンスで終了する境界を固定する。"""
     route = respx.get(f"{BASE_URL}/posts/1")
     route.side_effect = [
         httpx.Response(500),  # 初回: 失敗
@@ -671,7 +598,7 @@ async def test_async_retry_on_server_error_then_success(mock_backoff: Mock) -> N
 @respx.mock
 @patch("utils.jsonplaceholder_base_async.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_retry_exhausted(mock_backoff: Mock) -> None:
-    """リトライ上限でAPIRetryErrorが発生することを確認（5xxのみリトライ）"""
+    """5xx のリトライ上限到達時に APIRetryError へ集約する境界を固定する。"""
     retry_count = 2
     route = respx.get(f"{BASE_URL}/posts/1")
     route.side_effect = [httpx.Response(500)] * (retry_count + 1)  # 初回 + リトライ数
@@ -690,7 +617,7 @@ async def test_async_retry_exhausted(mock_backoff: Mock) -> None:
 @respx.mock
 @patch("utils.jsonplaceholder_base_async.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_4xx_error_no_retry(mock_backoff: Mock) -> None:
-    """4xxクライアントエラーはリトライせず即座にAPIHTTPErrorを発生"""
+    """4xx はリトライせず即時に APIHTTPError とする境界を固定する。"""
     route = respx.get(f"{BASE_URL}/posts/999")
     route.side_effect = [
         httpx.Response(404),
@@ -710,7 +637,6 @@ async def test_async_4xx_error_no_retry(mock_backoff: Mock) -> None:
 @respx.mock
 @patch("utils.jsonplaceholder_base_async.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_timeout_error_retry(mock_backoff: Mock) -> None:
-    """タイムアウト時にAPIRetryErrorが発生することを確認"""
     route = respx.get(f"{BASE_URL}/posts/1")
     route.side_effect = [
         httpx.TimeoutException("Request timed out"),
@@ -731,7 +657,6 @@ async def test_async_timeout_error_retry(mock_backoff: Mock) -> None:
 @respx.mock
 @patch("utils.jsonplaceholder_base_async.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_timeout_then_success(mock_backoff: Mock) -> None:
-    """タイムアウト後に成功するケース"""
     route = respx.get(f"{BASE_URL}/posts/1")
     route.side_effect = [
         httpx.TimeoutException("Timeout 1"),
@@ -750,7 +675,6 @@ async def test_async_timeout_then_success(mock_backoff: Mock) -> None:
 @respx.mock
 @patch("utils.jsonplaceholder_base_async.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_connection_error_retry(mock_backoff: Mock) -> None:
-    """接続エラー時にAPIRetryErrorが発生することを確認"""
     route = respx.get(f"{BASE_URL}/posts/1")
     route.side_effect = [
         httpx.ConnectError("Connection refused"),
@@ -770,7 +694,6 @@ async def test_async_connection_error_retry(mock_backoff: Mock) -> None:
 @respx.mock
 @patch("utils.jsonplaceholder_base_async.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_connection_then_success(mock_backoff: Mock) -> None:
-    """接続エラー後に成功するケース"""
     route = respx.get(f"{BASE_URL}/posts/1")
     route.side_effect = [
         httpx.ConnectError("Connection 1"),
@@ -790,7 +713,6 @@ async def test_async_connection_then_success(mock_backoff: Mock) -> None:
 @respx.mock
 @patch("utils.jsonplaceholder_base_async.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_mixed_errors_then_success(mock_backoff: Mock) -> None:
-    """タイムアウト→サーバーエラー→成功のシナリオ"""
     route = respx.get(f"{BASE_URL}/posts/1")
     route.side_effect = [
         httpx.TimeoutException("Timeout"),
@@ -810,7 +732,6 @@ async def test_async_mixed_errors_then_success(mock_backoff: Mock) -> None:
 @respx.mock
 @patch("utils.jsonplaceholder_base_async.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_mixed_errors_exhaust_retries(mock_backoff: Mock) -> None:
-    """複数のエラータイプでリトライ上限に達するケース"""
     route = respx.get(f"{BASE_URL}/posts/1")
     route.side_effect = [
         httpx.TimeoutException("Timeout"),
@@ -832,7 +753,7 @@ async def test_async_mixed_errors_exhaust_retries(mock_backoff: Mock) -> None:
 @respx.mock
 @patch("utils.jsonplaceholder_base_async.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_post_with_retry(mock_backoff: Mock) -> None:
-    """POSTリクエストのリトライ動作確認（5xxはリトライ対象）"""
+    """POSTの5xxはリトライ対象とする外部APIクライアントの境界を固定する。"""
     route = respx.post(f"{BASE_URL}/posts")
     route.side_effect = [
         httpx.Response(502),
@@ -854,7 +775,7 @@ async def test_async_post_with_retry(mock_backoff: Mock) -> None:
 @respx.mock
 @patch("utils.jsonplaceholder_base_async.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_put_4xx_no_retry(mock_backoff: Mock) -> None:
-    """PUTリクエストで4xxエラーはリトライせず即座にAPIHTTPErrorを発生"""
+    """PUT の 4xx はリトライせず即時に APIHTTPError とする境界を固定する。"""
     route = respx.put(f"{BASE_URL}/posts/1")
     route.side_effect = [
         httpx.Response(400),
@@ -874,7 +795,6 @@ async def test_async_put_4xx_no_retry(mock_backoff: Mock) -> None:
 @respx.mock
 @patch("utils.jsonplaceholder_base_async.exponential_backoff_with_jitter", return_value=0.0)
 async def test_async_delete_with_retry(mock_backoff: Mock) -> None:
-    """DELETEリクエストのリトライ動作確認"""
     route = respx.delete(f"{BASE_URL}/posts/1")
     route.side_effect = [
         httpx.TimeoutException("Timeout"),

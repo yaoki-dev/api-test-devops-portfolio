@@ -1,1 +1,0 @@
-tests/unit/test_jsonplaceholder_base_sync.py::mock_settings
