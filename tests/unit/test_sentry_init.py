@@ -34,7 +34,6 @@ from utils.sentry_init import (
     reset_sentry_state,
 )
 
-# Module-level marker: All tests in this file are unit tests
 pytestmark = pytest.mark.unit
 
 
@@ -42,21 +41,18 @@ class TestScrubSensitiveData:
     """機密データスクラブのテスト"""
 
     def test_scrub_password_field(self) -> None:
-        """パスワードフィールドがREDACTEDされる"""
         data = {"password": "dummy", "display_name": "user"}
         result = _scrub_sensitive_data(data)
         assert result["password"] == "[REDACTED]"  # noqa: S105
         assert result["display_name"] == "user"
 
     def test_scrub_nested_dict(self) -> None:
-        """ネストされた辞書内の機密データもスクラブ"""
         data = {"user": {"api_key": "key123", "email": "user@example.com"}}
         result = _scrub_sensitive_data(data)
         assert result["user"]["api_key"] == "[REDACTED]"
         assert result["user"]["email"] == "[REDACTED]"  # email はPII（GDPR対応）でスクラブ対象
 
     def test_scrub_list_of_dicts(self) -> None:
-        """リスト内辞書の機密データもスクラブ"""
         data = {
             "headers": [
                 {"Authorization": "Bearer token123"},
@@ -68,14 +64,12 @@ class TestScrubSensitiveData:
         assert result["headers"][1]["Content-Type"] == "application/json"
 
     def test_scrub_nested_list(self) -> None:
-        """リスト内のネストしたlistも再帰的にスクラブされる"""
         data = {"items": [[{"x-auth-token": "tok"}, {"name": "public"}]]}
         result = _scrub_sensitive_data(data)
         assert result["items"][0][0]["x-auth-token"] == "[REDACTED]"  # noqa: S105
         assert result["items"][0][1]["name"] == "public"
 
     def test_scrub_case_insensitive(self) -> None:
-        """キー名は大文字小文字を区別しない"""
         data = {"PASSWORD": "secret", "Api_Key": "key", "TOKEN": "tok"}
         result = _scrub_sensitive_data(data)
         assert result["PASSWORD"] == "[REDACTED]"  # noqa: S105
@@ -93,7 +87,6 @@ class TestScrubSensitiveData:
         ],
     )
     def test_scrub_non_dict_passthrough(self, input_data: Any, expected: Any) -> None:
-        """非辞書データはそのまま返す"""
         assert _scrub_sensitive_data(input_data) == expected
 
     def test_scrub_non_dict_triggers_fail_open_warning(self) -> None:
@@ -107,25 +100,22 @@ class TestScrubSensitiveData:
         assert call_kwargs["action"] == "return_as_is"
 
     def test_scrub_empty_dict(self) -> None:
-        """空辞書は空辞書を返す"""
         assert _scrub_sensitive_data({}) == {}
 
     def test_scrub_deeply_nested(self) -> None:
-        """3階層ネストでもスクラブされる"""
         data = {"level1": {"level2": {"level3": {"secret": "deep_secret", "public": "visible"}}}}
         result = _scrub_sensitive_data(data)
         assert result["level1"]["level2"]["level3"]["secret"] == "[REDACTED]"  # noqa: S105
         assert result["level1"]["level2"]["level3"]["public"] == "visible"
 
     def test_scrub_preserves_original(self) -> None:
-        """元データは変更されない（イミュータビリティ）"""
         original = {"password": "dummy"}
         _scrub_sensitive_data(original)
         assert original["password"] == "dummy"  # noqa: S105
 
     def test_scrub_max_depth_exceeded(self) -> None:
-        """再帰制限を超えると[MAX_DEPTH_EXCEEDED]を返す（循環参照対策）"""
         # MAX_SCRUB_DEPTH階層のネストを作成
+        """再帰制限を超えると[MAX_DEPTH_EXCEEDED]を返す（循環参照対策）"""
         deep_data: dict[str, Any] = {"safe_key": "value"}
         current = deep_data
         for i in range(MAX_SCRUB_DEPTH + 2):
@@ -141,7 +131,6 @@ class TestScrubSensitiveData:
         assert nested == "[MAX_DEPTH_EXCEEDED]"
 
     def test_scrub_max_depth_constant(self) -> None:
-        """MAX_SCRUB_DEPTHが適切な値に設定されている"""
         assert MAX_SCRUB_DEPTH == 10
         assert isinstance(MAX_SCRUB_DEPTH, int)
 
@@ -150,7 +139,6 @@ class TestSensitiveKeysCompleteness:
     """SENSITIVE_KEYSの網羅性テスト"""
 
     def test_sensitive_keys_is_frozenset(self) -> None:
-        """SENSITIVE_KEYSはfrozenset（不変）"""
         assert isinstance(SENSITIVE_KEYS, frozenset)
 
     def test_sensitive_keys_count(self) -> None:
@@ -220,7 +208,6 @@ class TestSensitiveKeysCompleteness:
         ],
     )
     def test_expected_keys_present(self, key: str) -> None:
-        """期待される機密キーが含まれている"""
         assert key in SENSITIVE_KEYS
 
     def test_sensitive_key_match_uses_word_boundaries_with_hyphen_normalization(self) -> None:
@@ -368,7 +355,7 @@ class TestSensitiveKeysCompleteness:
     def test_username_variants_over_redacted(self, key: str) -> None:
         """username を含むキーは意図的に over-redact される。
 
-        ``user_id`` (False) と異なり、``username`` は SENSITIVE_KEYS に含まれるため、
+        `user_id` (False) と異なり、`username` は SENSITIVE_KEYS に含まれるため、
         派生キー (get_username / username_hash / display_username 等) も True になる。
         セキュリティ観点では過剰 redact は漏洩より低リスクであり、この意図的な
         over-redact 挙動を契約テストとして固定する（実挙動を empirical に確認済み）。
@@ -478,7 +465,6 @@ class TestScrubbedEventFieldsCompleteness:
     """_SCRUBBED_EVENT_FIELDSの網羅性テスト"""
 
     def test_scrubbed_event_fields_match_expected_contract(self) -> None:
-        """スクラブ対象フィールドが過不足なく定義されている。"""
         assert isinstance(_SCRUBBED_EVENT_FIELDS, frozenset)
         assert _SCRUBBED_EVENT_FIELDS == frozenset(
             {
@@ -497,23 +483,19 @@ class TestScrubQueryStringAndUrl:
     """query string / URL スクラブのテスト"""
 
     def test_scrub_query_string_preserves_duplicate_params(self) -> None:
-        """重複クエリパラメータを落とさずスクラブする"""
         result = _scrub_query_string("token=a&safe=1&token=b&empty=")
         assert result == "token=%5BREDACTED%5D&safe=1&token=%5BREDACTED%5D&empty="
 
     def test_scrub_request_query_string_accepts_bytes(self) -> None:
-        """request.query_string が bytes でもスクラブする"""
         result = sentry_module._scrub_request_query_string(b"token=a&safe=1")
         assert result == "token=%5BREDACTED%5D&safe=1"
 
     def test_scrub_url_removes_userinfo_and_fragment(self) -> None:
-        """URLのuserinfo/fragmentを除去しqueryをスクラブする"""
         url = "https://user:pass@example.com/path?x-access-token=tok&safe=1#frag"
         result = _scrub_url(url)
         assert result == "https://example.com/path?x-access-token=%5BREDACTED%5D&safe=1"
 
     def test_scrub_url_preserves_non_sensitive_query_params(self) -> None:
-        """非機密 query は変更せず、通常URLの正常系を保持する。"""
         url = "https://example.com/path?page=2&sort=asc"
         assert _scrub_url(url) == url
 
@@ -530,14 +512,12 @@ class TestScrubQueryStringAndUrl:
         assert "#" not in result
 
     def test_scrub_url_redacts_email_in_path(self) -> None:
-        """URL パスセグメント内のメールアドレスを [REDACTED] に置換する (#16)。"""
         result = _scrub_url("https://example.com/users/user@example.com/profile?sort=asc")
         assert "user@example.com" not in result
         assert "[REDACTED]" in result
         assert "sort=asc" in result  # query は保持
 
     def test_scrub_url_redacts_email_in_path_params(self) -> None:
-        """RFC 2396 パスパラメータ内のメールアドレスも [REDACTED] に置換する (#16)。"""
         result = _scrub_url("https://example.com/activate;email=user@example.com?sort=asc")
         assert "user@example.com" not in result
         assert "[REDACTED]" in result
@@ -603,7 +583,6 @@ class TestScrubExceptionField:
         assert call_kwargs["action"] == "skip_frame_scrub"
 
     def test_scrubs_exception_value_string(self) -> None:
-        """exception.values[*].value はメッセージ文字列ごと redaction する。"""
         exception_value = {
             "values": [
                 {
@@ -642,7 +621,6 @@ class TestScrubExceptionField:
         assert exception_value["values"]["error_1"]["token"] == "secret_123"  # noqa: S105
 
     def test_scrub_exception_field_with_empty_dict_values(self) -> None:
-        """values が空 dict でも例外なく処理される。"""
         exception_value: dict[str, Any] = {"values": {}}
 
         result = _scrub_exception_field(exception_value)
@@ -757,7 +735,6 @@ class TestScrubExceptionFailOpenBranches:
         mock_warn.assert_not_called()
 
     def test_frame_vars_dict_is_scrubbed(self) -> None:
-        """frame['vars'] が dict (正常): 機密キーを [REDACTED] にスクラブし非機密は保持する。"""
         frame = {"vars": {"password": "secret", "user_input": "safe_value"}}
         result = sentry_module._scrub_exception_frame(frame)
 
@@ -765,7 +742,6 @@ class TestScrubExceptionFailOpenBranches:
         assert result["vars"]["user_input"] == "safe_value"
 
     def test_frame_source_context_is_removed_and_vars_are_scrubbed(self) -> None:
-        """ソースコンテキストは削除し、変数値の scrub は維持する。"""
         frame = {
             "pre_context": ["API_KEY = 'secret'"],
             "context_line": "raise RuntimeError(password)",
@@ -792,7 +768,6 @@ class TestScrubExceptionFailOpenBranches:
         assert mock_warn.call_args.args[0] == "sentry_exception_frames_unexpected_type"
 
     def test_frames_none_no_warning(self) -> None:
-        """stacktrace['frames'] が None (正常: frames 欠如): 警告を出さず stacktrace を返す。"""
         stacktrace = {"registers": {"rax": "0x0"}}
         with patch.object(sentry_module, "_safe_log_warning") as mock_warn:
             result = sentry_module._scrub_exception_stacktrace(stacktrace)
@@ -811,7 +786,6 @@ class TestScrubSentryFieldExceptionAsList:
     """
 
     def test_exception_as_list_redacts_value_and_scrubs_frame_vars(self) -> None:
-        """exception が list 形式: values[*].value を [REDACTED] にし frame vars を scrub する。"""
         event_dict: dict[str, Any] = {
             "exception": [
                 {
@@ -873,13 +847,11 @@ class TestBeforeSend:
         return cast(dict[str, Any], result)
 
     def test_scrub_request_headers(self) -> None:
-        """リクエストヘッダーがスクラブされる"""
         event = cast(Event, {"request": {"headers": {"Cookie": "session=abc123"}}})
         result_dict = self._call_before_send(event)
         assert result_dict["request"]["headers"]["Cookie"] == "[REDACTED]"
 
     def test_scrub_request_cookies_and_env(self) -> None:
-        """request.cookies / request.env もスクラブされる。"""
         event = cast(
             Event,
             {
@@ -899,7 +871,6 @@ class TestBeforeSend:
         assert result_dict["request"]["env"]["SERVER_NAME"] == "example.com"
 
     def test_scrub_request_data(self) -> None:
-        """リクエストボディがスクラブされる"""
         event = cast(Event, {"request": {"data": {"password": "secret", "username": "user"}}})
         result_dict = self._call_before_send(event)
         assert result_dict["request"]["data"]["password"] == "[REDACTED]"  # noqa: S105
@@ -920,31 +891,26 @@ class TestBeforeSend:
         assert call_kwargs["action"] == "replaced_with_redacted"
 
     def test_scrub_extra_data(self) -> None:
-        """extraデータがスクラブされる"""
         event = cast(Event, {"extra": {"token": "secret_token"}})
         result_dict = self._call_before_send(event)
         assert result_dict["extra"]["token"] == "[REDACTED]"  # noqa: S105
 
     def test_scrub_extra_body_preview(self) -> None:
-        """extra.body_preview がスクラブされる"""
         event = cast(Event, {"extra": {"body_preview": "password=secret"}})
         result_dict = self._call_before_send(event)
         assert result_dict["extra"]["body_preview"] == "[REDACTED]"  # noqa: S105
 
     def test_scrub_tags(self) -> None:
-        """タグがスクラブされる"""
         event = cast(Event, {"tags": {"api_key": "key123"}})
         result_dict = self._call_before_send(event)
         assert result_dict["tags"]["api_key"] == "[REDACTED]"
 
     def test_scrub_breadcrumbs(self) -> None:
-        """breadcrumbs内の機密データがスクラブされる"""
         event = cast(Event, {"breadcrumbs": {"values": [{"data": {"set-cookie": "a=b"}}]}})
         result_dict = self._call_before_send(event)
         assert result_dict["breadcrumbs"]["values"][0]["data"]["set-cookie"] == "[REDACTED]"
 
     def test_scrub_breadcrumbs_list_form(self) -> None:
-        """list[dict] 形式 breadcrumbs 内の機密データもスクラブされる"""
         event = cast(
             Event,
             {"breadcrumbs": [{"data": {"Authorization": "Bearer secret", "request_id": "req-1"}}]},
@@ -964,7 +930,6 @@ class TestBeforeSend:
         assert (scrubbed[1][0], scrubbed[1][1]) == ("name", "public")
 
     def test_scrub_tags_list_pair_form(self) -> None:
-        """tags が list[list[str, str]] 形式 (JSON roundtrip) でも機密キーが redact される"""
         event = cast(Event, {"tags": [["api_token", "abc"], ["safe", "ok"]]})
         result_dict = self._call_before_send(event)
         scrubbed = list(result_dict["tags"])
@@ -984,7 +949,6 @@ class TestBeforeSend:
         assert tag_dict["label"] == "public"
 
     def test_scrub_tags_non_sensitive_preserved(self) -> None:
-        """tags 内の非機密ペア (key が SENSITIVE_KEYS に該当しない) は redact されない"""
         event = cast(Event, {"tags": [("environment", "production"), ("version", "1.0.0")]})
         result_dict = self._call_before_send(event)
         scrubbed = list(result_dict["tags"])
@@ -1014,7 +978,6 @@ class TestBeforeSend:
         assert breadcrumb_data == [["display_label", "visible-text"]]
 
     def test_scrub_request_preserves_duplicate_query_params(self) -> None:
-        """request.query_stringの重複キーを保持してスクラブする"""
         event = cast(Event, {"request": {"query_string": "token=a&safe=1&token=b"}})
         result_dict = self._call_before_send(event)
         assert (
@@ -1023,13 +986,11 @@ class TestBeforeSend:
         )
 
     def test_scrub_request_query_string_accepts_bytes(self) -> None:
-        """request.query_string が bytes でも機密値をスクラブする"""
         event = cast(Event, {"request": {"query_string": b"token=a&safe=1"}})
         result_dict = self._call_before_send(event)
         assert result_dict["request"]["query_string"] == "token=%5BREDACTED%5D&safe=1"
 
     def test_scrub_request_url_removes_userinfo_and_fragment(self) -> None:
-        """request.urlのuserinfo/fragmentを除去する"""
         event = cast(
             Event,
             {"request": {"url": "https://user:pass@example.com/path?x-auth-token=tok#fragment"}},
@@ -1069,7 +1030,6 @@ class TestBeforeSend:
         assert str(passed_exc) == "boom"
 
     def test_before_send_fail_closed_when_scrub_exception_field_raises(self) -> None:
-        """exception フィールドのスクラブ失敗でもイベントをdropして内部通知する。"""
         event = cast(
             Event,
             {
@@ -1174,7 +1134,7 @@ class TestBeforeSend:
         """scrub 失敗ログ出力中に _logger.error 自体が例外を投げた場合、二次 fallback の
         _safe_log_warning へ fall through し、event は drop (None) される。
 
-        既存 ``test_before_send_fail_closed_when_scrub_url_raises`` は _logger.error 正常系
+        既存 `test_before_send_fail_closed_when_scrub_url_raises` は _logger.error 正常系
         (mock_warning.assert_not_called()) のみカバーする。本テストはロガー障害時の
         二次 fallback 分岐 (sentry_init.py) を明示的に回帰検証する。
         一次 _logger.error は event_id を付与するが、フォールバック _safe_log_warning は
@@ -1317,7 +1277,6 @@ class TestBeforeSend:
         assert result["request"]["headers"]["Authorization"] == "Bearer SECRET"
 
     def test_emit_scrub_failure_to_sentry_sets_internal_tag(self) -> None:
-        """_emit_scrub_failure_to_sentry は _INTERNAL_TAG を付与して capture_message を呼ぶ"""
         mock_scope = MagicMock()
         mock_scope.__enter__ = MagicMock(return_value=mock_scope)
         mock_scope.__exit__ = MagicMock(return_value=False)
@@ -1385,7 +1344,7 @@ class TestBeforeSend:
         """内部 SDK 呼び出しが RecursionError を投げた場合 fail-fast で再 raise する。
 
         MemoryError/RecursionError は system 致命例外であり、_emit 内部の
-        ``except Exception`` で握り潰さず即時伝播させる契約（_safe_log_warning と同一方針）。
+        `except Exception` で握り潰さず即時伝播させる契約（_safe_log_warning と同一方針）。
         伝播した例外は Sentry SDK の capture_internal_exceptions が捕捉し event を破棄するため
         fail-closed（PII 非送信）は維持される。
         """
@@ -1404,13 +1363,11 @@ class TestBeforeSend:
                 sentry_module._emit_scrub_failure_to_sentry(ValueError("orig"))
 
     def test_returns_event(self) -> None:
-        """イベントオブジェクトを返す（Noneではない）"""
         event = cast(Event, {"message": "test"})
         result_dict = self._call_before_send(event)
         assert result_dict["message"] == "test"
 
     def test_before_send_user_non_dict_replaced_with_empty_dict(self) -> None:
-        """user が非 dict (str等) の場合、空dictに置換される."""
         event = cast(Event, {"user": "anonymous"})
         result = _before_send(event, {})
         assert result is not None
@@ -1449,7 +1406,6 @@ class TestBeforeSend:
         assert "SUPER_SECRET" not in str(result["tags"])
 
     def test_before_send_list_tags_passes_through_non_pair_items(self) -> None:
-        """list 内の (key, value) ペア形式でない要素はそのまま保持される。"""
         list_value: Any = ["item1", "item2", ("safe", "value")]
         event = cast(Event, {"tags": list_value})
         result = _before_send(event, {})
@@ -1552,7 +1508,6 @@ class TestBeforeSend:
         assert "error_type=RuntimeError" in captured.err
 
     def test_before_send_scrubs_exception_stacktrace_vars(self) -> None:
-        """exception.values[*].stacktrace.frames[*].vars 内の機密変数がスクラブされる。"""
         event = cast(
             Event,
             {
@@ -1738,7 +1693,6 @@ class TestBeforeSend:
         assert frame["vars"] == "not_a_dict", "元の vars が保持されている"
 
     def test_scrub_tags_item_nested_list_redacts_sensitive(self) -> None:
-        """_scrub_tags_item の nested list 分岐 (3要素以上) で機密キーが redact される。"""
         nested = [("password", "secret"), ("safe", "ok"), ("token", "abc")]
         result = sentry_module._scrub_tags_item(nested)
         assert result[0] == ("password", "[REDACTED]")
@@ -1746,7 +1700,6 @@ class TestBeforeSend:
         assert result[2] == ("token", "[REDACTED]")
 
     def test_scrub_tags_item_nonsensitive_value_nested_dict_scrubbed(self) -> None:
-        """非機密タグペアの value が dict の場合、内部の機密キーが redact される。"""
         tag = ("user_metadata", {"password": "secret", "safe": "ok"})
         result = sentry_module._scrub_tags_item(tag)
         # キーは保持、value 内の機密キーは redact
@@ -1788,13 +1741,13 @@ class TestBeforeSend:
     def test_scrub_exception_value_item_list_tuple_redacts_nested_sensitive(
         self, container_type: type
     ) -> None:
+        # ネストdictに機密キー「token」と非機密キー「safe」を混在させる
         """_scrub_exception_value_item の list/tuple分岐: ネストした機密データを再帰スクラブする。
 
         value_item が list/tuple の場合、各要素を _scrub_list_item(_depth=0) で再帰スクラブする。
         dict要素内の機密キー値は [REDACTED] 化され、非機密値は保持される。
         (sentry_init.py L181: isinstance(value_item,(list,tuple)) 分岐)
         """
-        # ネストdictに機密キー「token」と非機密キー「safe」を混在させる
         sensitive_item = {"token": "secret_value", "safe": "keep_this"}
         value_item = container_type([sensitive_item])
 
@@ -1866,8 +1819,8 @@ class TestBeforeSend:
 class TestBeforeSendTransaction:
     """transaction イベント（before_send_transaction 経路）の scrub テスト。
 
-    transaction は error と異なり top-level ``spans`` (list[dict]) を持つ
-    (Sentry transaction payload spec)。``before_send_transaction=_before_send``
+    transaction は error と異なり top-level `spans` (list[dict]) を持つ
+    (Sentry transaction payload spec)。`before_send_transaction=_before_send`
     配線により error と同一 scrub 経路を通り、span 内の機密キーが REDACT される
     ことを検証する。
     """
@@ -1878,7 +1831,6 @@ class TestBeforeSendTransaction:
         return cast(dict[str, Any], result)
 
     def test_transaction_spans_sensitive_keys_redacted(self) -> None:
-        """transaction の span data 内の機密キーが REDACT される。"""
         event = cast(
             Event,
             {
@@ -1939,8 +1891,8 @@ class TestBeforeSendTransaction:
     def test_transaction_internal_tag_skips_scrub_no_recursion(self) -> None:
         """内部通知タグ付き transaction は scrub をスキップ通過する（再帰防止）。
 
-        ``tags`` は base Event の top-level 属性であり transaction にも継承されるため
-        (Sentry event payload spec)、``_has_internal_tag`` が transaction-shaped event
+        `tags` は base Event の top-level 属性であり transaction にも継承されるため
+        (Sentry event payload spec)、`_has_internal_tag` が transaction-shaped event
         でも発火し、before_send_transaction 経由の無限再帰を遮断する。
         """
         event = cast(
@@ -1968,9 +1920,9 @@ class TestBeforeSendTransaction:
         assert result_dict["request"]["headers"]["Cookie"] == "[REDACTED]"
 
     def test_transaction_request_field_scrubbed_via_transaction_path(self) -> None:
-        """transaction の top-level ``request`` も before_send_transaction 経路で scrub される。
+        """transaction の top-level `request` も before_send_transaction 経路で scrub される。
 
-        WSGI/ASGI 統合では transaction イベントにも ``request`` (headers/query_string/url)
+        WSGI/ASGI 統合では transaction イベントにも `request` (headers/query_string/url)
         が付与される (Sentry公式)。span data より auth header 等の実 PII を含みやすいため、
         新規配線した before_send_transaction=_before_send 経路で request 既存 scrub ロジック
         (L745-770) が transaction-shaped event でも発火することを経験的に検証する。
@@ -2001,10 +1953,10 @@ class TestBeforeSendTransaction:
     def test_transaction_structurally_valid_after_scrub(self) -> None:
         """scrub 後も transaction が構造的に有効なまま（Relay の silent drop 防止）。
 
-        ``_before_send`` は ``contexts`` / ``spans`` を in-place scrub するため、
-        transaction 必須フィールド（``type`` / ``start_timestamp`` /
-        ``contexts.trace`` の ``trace_id`` / ``span_id``）が破壊されないことを保証する。
-        これらは ``_is_sensitive_key`` 非該当のため REDACT されず原形を保つべき。
+        `_before_send` は `contexts` / `spans` を in-place scrub するため、
+        transaction 必須フィールド（`type` / `start_timestamp` /
+        `contexts.trace` の `trace_id` / `span_id`）が破壊されないことを保証する。
+        これらは `_is_sensitive_key` 非該当のため REDACT されず原形を保つべき。
         破壊されると Relay が transaction を無言ドロップし、性能監視が機能しなくなる。
         """
         event = cast(
@@ -2064,13 +2016,11 @@ class TestInitSentry:
 
     @patch("utils.sentry_init.get_settings")
     def test_init_when_disabled(self, mock_settings: MagicMock) -> None:
-        """enabled=Falseの場合はFalseを返す"""
         mock_settings.return_value.sentry.enabled = False
         assert init_sentry() is False
 
     @patch("utils.sentry_init.get_settings")
     def test_init_with_empty_dsn(self, mock_settings: MagicMock) -> None:
-        """空DSNの場合はFalseを返す"""
         mock_settings.return_value.sentry.enabled = True
         mock_settings.return_value.sentry.dsn = SecretStr("")
         assert init_sentry() is False
@@ -2086,7 +2036,6 @@ class TestInitSentry:
     @patch("utils.sentry_init.get_settings")
     @patch("sentry_sdk.init")
     def test_init_with_valid_dsn(self, mock_sdk_init: MagicMock, mock_settings: MagicMock) -> None:
-        """有効なDSNで初期化成功"""
         mock_settings.return_value.sentry.enabled = True
         mock_settings.return_value.sentry.dsn = SecretStr(
             "https://abc123@o456.ingest.us.sentry.io/789",
@@ -2147,12 +2096,9 @@ class TestInitSentry:
         mock_settings.return_value.sentry.send_default_pii = False
         mock_settings.return_value.environment.value = "testing"
 
-        # 1回目の初期化
         assert init_sentry() is True
-        # 2回目の初期化（既に初期化済み）
         assert init_sentry() is True
 
-        # sentry_sdk.initは1回のみ呼ばれる
         assert mock_sdk_init.call_count == 1
 
     @patch("utils.sentry_init.get_settings")
@@ -2197,11 +2143,9 @@ class TestSentryState:
         reset_sentry_state()
 
     def test_is_initialized_default_false(self) -> None:
-        """デフォルトでは未初期化"""
         assert is_sentry_initialized() is False
 
     def test_reset_state_works(self) -> None:
-        """状態リセットが機能する"""
         # 状態を手動で変更（通常は非推奨だが、テスト用）
         import utils.sentry_init as sentry_module
 
@@ -2218,7 +2162,6 @@ class TestSentryState:
         mock_sdk_init: MagicMock,
         mock_settings: MagicMock,
     ) -> None:
-        """初期化後は状態が維持される"""
         mock_settings.return_value.sentry.enabled = True
         mock_settings.return_value.sentry.dsn = SecretStr(
             "https://abc123@o456.ingest.us.sentry.io/789",
@@ -2407,8 +2350,8 @@ class TestSdkExceptionHandling:
         mock_settings: MagicMock,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """非本番環境でSDK初期化失敗後、_logger.warning自体が例外を出した場合にstderrへフォールバックする"""
         # 非本番環境・有効なDSN設定で except Exception 経路に誘導
+        """非本番環境でSDK初期化失敗後、_logger.warning自体が例外を出した場合にstderrへフォールバックする"""
         mock_settings.return_value.sentry.enabled = True
         mock_settings.return_value.sentry.dsn = SecretStr(
             "https://abc123@o456.ingest.us.sentry.io/789",
@@ -2474,7 +2417,6 @@ class TestSdkExceptionHandling:
 
     @patch("utils.sentry_init.get_settings")
     def test_import_error_returns_false_in_dev(self, mock_settings: MagicMock) -> None:
-        """開発環境でsentry-sdk未インストールの場合はFalseを返す"""
         mock_settings.return_value.sentry.enabled = True
         mock_settings.return_value.sentry.dsn = SecretStr(
             "https://abc123@o456.ingest.us.sentry.io/789",
@@ -2548,7 +2490,6 @@ class TestSentryProcessorBeforeSendChain:
     """
 
     def test_sensitive_extra_keys_are_redacted(self) -> None:
-        """email/password 等の機密フィールドが [REDACTED] に置換される"""
         event: Event = cast(
             Event,
             {
@@ -2571,7 +2512,6 @@ class TestSentryProcessorBeforeSendChain:
         assert extra["request_id"] == "req-001"
 
     def test_non_sensitive_extra_preserved(self) -> None:
-        """機密キー以外の extra フィールドはそのまま保持される"""
         event: Event = cast(
             Event,
             {
@@ -2588,7 +2528,6 @@ class TestSentryProcessorBeforeSendChain:
         assert extra["status_code"] == 500
 
     def test_multiple_sensitive_keys_all_redacted(self) -> None:
-        """複数の機密キーが同時に存在する場合、全て [REDACTED] になる"""
         event: Event = cast(
             Event,
             {
@@ -2611,7 +2550,6 @@ class TestSentryProcessorBeforeSendChain:
         assert extra["passwd"] == "[REDACTED]"  # noqa: S105
 
     def test_user_and_contexts_sensitive_keys_are_redacted(self) -> None:
-        """user/contexts 内の機密フィールドも _before_send で除去される"""
         event: Event = cast(
             Event,
             {
@@ -2644,7 +2582,6 @@ class TestSentryProcessorBeforeSendChain:
 
 
 def test_internal_tag_value_is_valid_hex() -> None:
-    """_INTERNAL_TAG_VALUE が secrets.token_hex(16) で生成された有効な32文字 hex か検証"""
     import re
 
     from utils.sentry_init import _INTERNAL_TAG_VALUE
@@ -2695,7 +2632,6 @@ class TestScrubUrlPathParams:
     """RFC 2396 path params のPII/secretスクラブ回帰テスト。"""
 
     def test_percent_encoded_sensitive_key_is_redacted(self) -> None:
-        """キー分類前に percent-encoded key を decode して判定する。"""
         url = "https://example.com/path;%73ession_id=secret"
 
         result = _scrub_url(url)
@@ -2736,7 +2672,6 @@ class TestScrubUrlPathParams:
 
 
 def test_exception_value_item_redacts_dict_bytes_value() -> None:
-    """exception value dict 内の bytes value も文字列同様に隠す。"""
     result = _scrub_exception_value_item({"value": b"password=secret"})
 
     assert result == {"value": "[REDACTED]"}
@@ -2757,14 +2692,13 @@ class TestIsSensitiveKeyPatternContract:
     """_SENSITIVE_KEY_PATTERN / _is_sensitive_key の仕様契約テスト (#13-GC-2)"""
 
     def test_is_sensitive_key_token_standalone_not_matched_by_pattern(self) -> None:
+        # compact fallback により True — パターン非一致だが compact 一致
         """ "token" 単独は _SENSITIVE_KEY_PATTERN の suffix lookahead で非一致。
         ただし _COMPACT_SENSITIVE_KEYS の完全一致 fallback で True になる（設計意図）。
         """
-        # compact fallback により True — パターン非一致だが compact 一致
         assert _is_sensitive_key("token") is True
 
     def test_is_sensitive_key_access_token_matched(self) -> None:
-        """ "access_token" は _SENSITIVE_KEY_PATTERN の単語境界で一致する。"""
         assert _is_sensitive_key("access_token") is True
 
     @pytest.mark.parametrize("key", ["authtoken", "usertoken", "userpassword"])
@@ -2797,7 +2731,7 @@ class TestIsSensitiveKeyPatternContract:
         ["x-auth-token", "X-Auth-Token", "x-access-token", "x-csrf-token", "x-refresh-token"],
     )
     def test_is_sensitive_key_http_auth_header_variants_matched(self, key: str) -> None:
-        """実在する ``X-*`` 認証系 HTTP ヘッダーは大小・ハイフン正規化後に redact される。
+        """実在する `X-*` 認証系 HTTP ヘッダーは大小・ハイフン正規化後に redact される。
 
         SENSITIVE_KEYS には標準 HTTP 認証ヘッダーのみ登録する方針。これらが
         正規化（lower 化 + ハイフン→アンダースコア）後に確実に一致する契約を固定する。
@@ -2821,7 +2755,6 @@ class TestScrubSpanItem:
         assert result == ["foo", "bar"]
 
     def test_non_dict_scalar_delegates_to_scrub_list_item(self) -> None:
-        """(a) 非dict入力（scalar）は _scrub_list_item に委譲され、そのまま返る。"""
         result = sentry_module._scrub_span_item("plain-string", _depth=0)
         assert result == "plain-string"
 
@@ -2984,7 +2917,6 @@ class TestSetInternalExtras:
         assert mock_scope.set_extra.call_count == 4
 
     def test_empty_dict_is_accepted(self) -> None:
-        """空 dict は許可リスト違反なし・scope への書き込みなしで正常終了する。"""
         mock_scope = MagicMock()
         sentry_module._set_internal_extras(mock_scope, {})
         mock_scope.set_extra.assert_not_called()
