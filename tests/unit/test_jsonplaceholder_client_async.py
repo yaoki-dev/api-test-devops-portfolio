@@ -527,7 +527,7 @@ async def test_async_bulk_create_users_partial_failure_4xx_returns_only_successf
     """
     return_exceptions=True で 4xx の APIHTTPError を吸収し、成功分だけ返す契約を固定する。
 
-    side_effect の到着順は retry_count=0 で決定論的にする。
+    4xx は即時失敗しリトライしないため、side_effect は到着順に 1:1 で消費され決定論的。
     """
     users_to_create = [
         {"name": "User 1", "email": "user1@test.com"},
@@ -960,8 +960,6 @@ async def test_get_user_data_user_not_found():
             await client.get_user_data(user_id)
 
     assert exc_info.value.status_code == 404
-
-    # 失敗タスク（user）は必ず1回呼ばれる。兄弟タスクは TaskGroup のキャンセルに
 
     assert route_user.call_count == 1
     assert route_posts.call_count <= 1
