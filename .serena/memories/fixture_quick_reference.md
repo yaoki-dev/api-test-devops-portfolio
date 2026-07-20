@@ -143,6 +143,6 @@ conftest.py `pytest_configure()` で登録:
 
 ## 5. 関連リソース
 
-- **conftest.py**: `tests/conftest.py`（203行）
+- **conftest.py**: `tests/conftest.py`
 - **テスト戦略**: @memory:test_strategy_details
 - **実装品質ゲート**: @memory:implementation_quality_gates
