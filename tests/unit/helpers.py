@@ -13,27 +13,11 @@ import respx
 
 
 def mock_get_route(url: str, params: dict[str, Any] | None, json_data: Any) -> respx.Route:
-    """respx GETルートのparams有無対応ヘルパー
+    """respx GET ルートを、クエリ有無で正しいマッチ方式に分けて登録する。
 
-    respxのparams=はcontains match（サブセットマッチ）。
-    paramsがNoneの場合はparams__eq={}を使用する（等価マッチ、クエリパラメータなしのリクエストのみにマッチ）。
-
-    前提条件:
-        必ず @respx.mock デコレータまたは with respx.mock: ブロック内から
-        呼び出すこと。コンテキスト外でもルート登録自体は成功するが、
-        モックは機能しない。モックされていないリクエストが発行された場合、
-        respxは AllMockedAssertionError を発生させる。
-
-    Args:
-        url: モック対象のURL
-        params: クエリパラメータ（Noneの場合はparams__eq={}を使用 - クエリパラメータなしのみマッチ）
-        json_data: レスポンスとして返すJSONデータ
-
-    Returns:
-        respx.Route: call_count等の検証に使用可能なルートオブジェクト
-
-    Raises:
-        なし（この関数自体は例外を発生させない）
+    respx の params= は subset match なので、params=None は params__eq={} にして
+    クエリなしリクエストだけに一致させる。@respx.mock/with respx.mock 外では
+    ルート登録できてもモックが効かず、未モック通信は AllMockedAssertionError になる。
     """
     if params is not None:
         return respx.get(url, params=params).respond(json=json_data)
@@ -41,16 +25,7 @@ def mock_get_route(url: str, params: dict[str, Any] | None, json_data: Any) -> r
 
 
 def assert_warning_log_count(log_output: list, event_name: str, expected_count: int) -> None:
-    """警告ログの発生回数を検証するヘルパー関数
-
-    structlog の capture_logs() が収集したログエントリから、
-    指定したイベント名の警告ログが期待回数発生していることを検証する。
-
-    Args:
-        log_output: capture_logs() が収集したログエントリのリスト
-        event_name: 検証対象のイベント名
-        expected_count: 期待する警告ログの発生回数
-    """
+    """structlog capture_logs() から指定 warning event の発生回数を検証する。"""
     warning_events = [log["event"] for log in log_output if log.get("log_level") == "warning"]
     assert warning_events.count(event_name) == expected_count, (
         f"Expected {expected_count} '{event_name}' warnings, got: {warning_events}"
@@ -58,18 +33,7 @@ def assert_warning_log_count(log_output: list, event_name: str, expected_count: 
 
 
 def make_mock_user(uid: int, **overrides: Any) -> dict[str, Any]:
-    """テスト用ユーザーデータのモック生成ファクトリ
-
-    DRY原則に基づき、テストコード間でのモックデータ重複を排除する。
-    デフォルトで完全なユーザー構造を生成し、**overridesで特定フィールドを上書き可能。
-
-    Args:
-        uid: ユーザーID
-        **overrides: 上書きするフィールド名と値
-
-    Returns:
-        dict[str, Any]: 生成されたユーザーデータ辞書
-    """
+    """完全な User 形状を生成し、overrides でフィールド単位の差分だけ表現する。"""
     user = {
         "id": uid,
         "name": f"User {uid}",
@@ -101,22 +65,7 @@ def make_canonical_user(
     email: str = "Sincere@april.biz",
     website: str = "https://hildegard.org",
 ) -> dict[str, Any]:
-    """正準（JSONPlaceholder準拠）の User ペイロードを生成するヘルパー関数
-
-    `make_mock_user`（uid連動の合成データ）とは別用途で、JSONPlaceholder実APIに
-    近い実在風データを返す。Pydantic User モデルへ検証可能な完全構造を提供し、
-    name/username/email/website は部分的に上書き可能。
-
-    Args:
-        user_id: ユーザーID
-        name: ユーザー名
-        username: ユーザー名（ハンドル）
-        email: メールアドレス
-        website: WebサイトURL
-
-    Returns:
-        完全な User ペイロード辞書
-    """
+    """JSONPlaceholder 実APIに近い正準 User 形状で、Pydantic 検証用の完全構造を返す。"""
     return {
         "id": user_id,
         "name": name,
