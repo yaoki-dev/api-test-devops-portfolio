@@ -30,7 +30,7 @@ dependencies = [
     "pydantic-settings>=2.14.2",     # 設定管理
     "psutil>=6.1.1",                # システムメトリクス
     "pyyaml>=6.0",                  # YAML設定ファイル読み込み
-    "sentry-sdk[httpx]>=2.64.0,<3.0.0", # エラー監視（httpx統合）
+    "sentry-sdk[httpx]>=2.66.0,<3.0.0", # エラー監視（httpx統合）
 ]
 
 [project.urls]
@@ -51,8 +51,8 @@ dev = [
     "respx>=0.23.1",            # httpx用モックライブラリ
     "socksio>=1.0.0",           # SOCKS5 proxy support for httpx
     # 品質管理
-    "ruff>=0.15.21,<0.16",       # pre-commit frozen: v0.15.11（.pre-commit-config.yaml参照）
-    "mypy>=2.2.0,<3.0.0",
+    "ruff>=0.15.22,<0.16",       # pre-commit frozen: v0.15.11（.pre-commit-config.yaml参照）
+    "mypy>=2.3.0,<3.0.0",
     "bandit>=1.8.6",
     "safety>=3.8.1",
     # 開発サポート
