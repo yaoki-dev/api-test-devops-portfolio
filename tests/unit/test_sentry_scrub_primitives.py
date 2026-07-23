@@ -194,11 +194,9 @@ class TestSensitiveKeysCompleteness:
             ("otp", True),
             ("mfa", True),
             ("totp", True),
-            # prefix/suffix 非対称設計の契約化
-            # `token` 単独は _SENSITIVE_KEY_PATTERN (prefix `(?:^|[_\d])`,
-            # suffix `(?=[^a-z]|$)`) では match しないが、_COMPACT_SENSITIVE_KEYS
-            # (utils/sentry_init.py:210-212) のアンダースコア除去後完全一致 fallback で
-            # True 判定される。設計意図契約化。
+            # `token` 単独は _SENSITIVE_KEY_PATTERN に直接マッチする:
+            # prefix `(?:^|[_\d])` の `^` と suffix `(?=[^a-z]|$)` の `$` は
+            # ともにゼロ幅アンカーのため、文字列全体が "token" でも境界を満たす。
             ("token", True),
             # True positives: アンダースコア境界で区切られた複合キー → True
             ("otp_count", True),  # noqa: S105
@@ -387,10 +385,11 @@ class TestSafeLogWarning:
 class TestIsSensitiveKeyPatternContract:
     """_SENSITIVE_KEY_PATTERN / _is_sensitive_key の仕様契約テスト (#13-GC-2)"""
 
-    def test_is_sensitive_key_token_standalone_not_matched_by_pattern(self) -> None:
-        # compact fallback により True — パターン非一致だが compact 一致
-        """ "token" 単独は _SENSITIVE_KEY_PATTERN の suffix lookahead で非一致。
-        ただし _COMPACT_SENSITIVE_KEYS の完全一致 fallback で True になる（設計意図）。
+    def test_is_sensitive_key_token_standalone_matched_by_pattern(self) -> None:
+        """ "token" 単独は _SENSITIVE_KEY_PATTERN に直接マッチして True
+
+        prefix `(?:^|[_\\d])` の `^` と suffix `(?=[^a-z]|$)` の `$` はともに
+        ゼロ幅アンカーのため、文字列全体が "token" でも境界を満たす。
         """
         assert _is_sensitive_key("token") is True
 
