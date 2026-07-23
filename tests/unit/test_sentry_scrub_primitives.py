@@ -6,16 +6,13 @@
 
 from __future__ import annotations
 
-from typing import cast
 from unittest.mock import patch
 
 import pytest
-from sentry_sdk.types import Event
 
 import utils.sentry_init as sentry_module
 from utils.sentry_init import (
     SENSITIVE_KEYS,
-    _before_send,
     _is_sensitive_key,
     _scrub_sensitive_data,
 )
@@ -30,11 +27,12 @@ class TestSensitiveKeysCompleteness:
         assert isinstance(SENSITIVE_KEYS, frozenset)
 
     def test_sensitive_keys_count(self) -> None:
-        """40 sensitive keys defined (sentinel test).
+        """機密キーが44個定義されていることを検証するセンチネルテスト
 
-        The hardcoded count is intentional: it serves as a sentinel to detect
-        unintended additions/removals to SENSITIVE_KEYS. When adding keys,
-        update the count in this test as well.
+        Note:
+        件数のハードコードは意図的であり、SENSITIVE_KEYS への意図しない
+        キーの追加・削除を検知するセンチネルとして機能する。
+        キーを追加・削除する場合は、このテストの件数も更新する。
         """
         assert len(SENSITIVE_KEYS) == 44  # SENSITIVE_KEYS 変更時はここの数値も更新
 
@@ -99,7 +97,7 @@ class TestSensitiveKeysCompleteness:
         assert key in SENSITIVE_KEYS
 
     def test_sensitive_key_match_uses_word_boundaries_with_hyphen_normalization(self) -> None:
-        """機密キー判定は単語境界一致 + ハイフン/アンダースコア正規化。
+        """機密キー判定は単語境界一致 + ハイフン/アンダースコア正規化
 
         composite key (接頭辞/接尾辞付き)、ハイフン variant、case 違いの全てを redact する。
         SENSITIVE_KEYS に含まれない word や unrelated substring は redact しない。
@@ -435,44 +433,3 @@ class TestIsSensitiveKeyPatternContract:
         正規化（lower 化 + ハイフン→アンダースコア）後に確実に一致する契約を固定する。
         """
         assert _is_sensitive_key(key) is True
-
-
-def test_before_send_logger_error_receives_event_id() -> None:
-    """_before_send の scrub 失敗時に _logger.error へ event_id kwarg が正しく渡される検証（T-3）。
-
-    既存テスト test_before_send_passes_event_id_to_scrub_failure_notification は
-    _emit_scrub_failure_to_sentry への event_id 渡しを検証するが、
-    _logger.error への event_id 渡しは未検証。本テストはその空白を埋める。
-
-    既存テスト (L916) と同一の失敗誘発方法（_scrub_url を RuntimeError で差し替え）を
-    使用し、_logger.error の call_args_list から "sentry_before_send_drop_event"
-    エントリを特定して event_id kwarg を検証する。
-    """
-    event = cast(
-        Event,
-        {
-            "event_id": "evt-logger-check-001",
-            "request": {"url": "https://example.com/path?token=abc"},
-        },
-    )
-
-    with (
-        patch.object(sentry_module, "_scrub_url", side_effect=RuntimeError("scrub-boom")),
-        patch.object(sentry_module, "_emit_scrub_failure_to_sentry"),
-        patch.object(sentry_module, "_logger") as mock_logger,
-    ):
-        result = _before_send(event, {})
-
-    assert result is None
-
-    # _logger.error の呼び出しから "sentry_before_send_drop_event" エントリを特定
-    drop_event_calls = [
-        call
-        for call in mock_logger.error.call_args_list
-        if call.args and call.args[0] == "sentry_before_send_drop_event"
-    ]
-    assert len(drop_event_calls) == 1, (
-        f"'sentry_before_send_drop_event' の _logger.error 呼び出しが1件期待されるが "
-        f"{len(drop_event_calls)} 件: {mock_logger.error.call_args_list}"
-    )
-    assert drop_event_calls[0].kwargs.get("event_id") == "evt-logger-check-001"

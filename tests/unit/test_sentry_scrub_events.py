@@ -1686,3 +1686,44 @@ class TestSetInternalExtras:
         mock_scope = MagicMock()
         sentry_module._set_internal_extras(mock_scope, {})
         mock_scope.set_extra.assert_not_called()
+
+
+def test_before_send_logger_error_receives_event_id() -> None:
+    """_before_send の scrub 失敗時に _logger.error へ event_id kwarg が正しく渡される検証（T-3）。
+
+    既存テスト test_before_send_passes_event_id_to_scrub_failure_notification は
+    _emit_scrub_failure_to_sentry への event_id 渡しを検証するが、
+    _logger.error への event_id 渡しは未検証。本テストはその空白を埋める。
+
+    _scrub_url を RuntimeError で差し替えて失敗を誘発し、_logger.error の
+    call_args_list から "sentry_before_send_drop_event" エントリを特定して
+    event_id kwarg を検証する。
+    """
+    event = cast(
+        Event,
+        {
+            "event_id": "evt-logger-check-001",
+            "request": {"url": "https://example.com/path?token=abc"},
+        },
+    )
+
+    with (
+        patch.object(sentry_module, "_scrub_url", side_effect=RuntimeError("scrub-boom")),
+        patch.object(sentry_module, "_emit_scrub_failure_to_sentry"),
+        patch.object(sentry_module, "_logger") as mock_logger,
+    ):
+        result = _before_send(event, {})
+
+    assert result is None
+
+    # _logger.error の呼び出しから "sentry_before_send_drop_event" エントリを特定
+    drop_event_calls = [
+        call
+        for call in mock_logger.error.call_args_list
+        if call.args and call.args[0] == "sentry_before_send_drop_event"
+    ]
+    assert len(drop_event_calls) == 1, (
+        f"'sentry_before_send_drop_event' の _logger.error 呼び出しが1件期待されるが "
+        f"{len(drop_event_calls)} 件: {mock_logger.error.call_args_list}"
+    )
+    assert drop_event_calls[0].kwargs.get("event_id") == "evt-logger-check-001"
