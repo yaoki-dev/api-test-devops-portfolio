@@ -86,3 +86,17 @@ def make_canonical_user(
             "bs": "harness real-time e-markets",
         },
     }
+
+
+def _make_fake_validation_error(raise_exc: BaseException) -> type[Exception]:
+    """Pydantic ValidationError 互換のテスト用 Exception クラスを生成
+
+    `errors(include_input=False)` 呼出時に指定 exception を raise する。
+    test_logger.py 内で 6 箇所重複していたインライン定義を 1 つのファクトリに統合。
+    """
+
+    class _FakeValidationError(Exception):
+        def errors(self, *, include_input: bool) -> list[dict[str, object]]:  # noqa: ARG002
+            raise raise_exc
+
+    return _FakeValidationError
