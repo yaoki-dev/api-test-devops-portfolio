@@ -1724,6 +1724,6 @@ def test_before_send_logger_error_receives_event_id() -> None:
     ]
     assert len(drop_event_calls) == 1, (
         f"'sentry_before_send_drop_event' の _logger.error 呼び出しが1件期待されるが "
-        f"{len(drop_event_calls)} 件: {mock_logger.error.call_args_list}"
+        f"{len(drop_event_calls)} 件"
     )
     assert drop_event_calls[0].kwargs.get("event_id") == "evt-logger-check-001"
