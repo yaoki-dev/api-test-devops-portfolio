@@ -12,14 +12,16 @@ from unittest.mock import MagicMock, patch
 import pytest
 from sentry_sdk.types import Event
 
-import utils.sentry_init as sentry_module
-from utils.sentry_init import (
+import utils.sentry_scrub_events as sentry_events
+import utils.sentry_scrub_primitives as sentry_primitives
+import utils.sentry_scrub_values as sentry_values
+from utils.sentry_scrub_events import (
     _SCRUBBED_EVENT_FIELDS,
-    MAX_SCRUB_DEPTH,
     _before_send,
     _scrub_exception_field,
     _scrub_exception_value_item,
 )
+from utils.sentry_scrub_values import MAX_SCRUB_DEPTH
 
 pytestmark = pytest.mark.unit
 
@@ -58,7 +60,7 @@ class TestScrubExceptionField:
             ],
         }
 
-        with patch.object(sentry_module._logger, "warning") as mock_warning:
+        with patch.object(sentry_primitives._logger, "warning") as mock_warning:
             result = _scrub_exception_field(exception_value)
 
         frames = result["values"][0]["stacktrace"]["frames"]
@@ -125,7 +127,7 @@ class TestScrubExceptionField:
         """
         exception_value: dict[str, Any] = {"type": "ValueError", "token": "secret_xyz"}  # noqa: S106
 
-        with patch("utils.sentry_init._safe_log_warning") as mock_warn:
+        with patch("utils.sentry_scrub_events._safe_log_warning") as mock_warn:
             result = _scrub_exception_field(exception_value)
 
         # "values" キー未存在は正常構造のため WARNING は出力されない
@@ -148,15 +150,15 @@ class TestHasInternalTag:
     """
 
     def test_dict_form_with_internal_tag_returns_true(self) -> None:
-        tags = {sentry_module._INTERNAL_TAG_KEY: sentry_module._INTERNAL_TAG_VALUE}
-        assert sentry_module._has_internal_tag(tags) is True
+        tags = {sentry_events._INTERNAL_TAG_KEY: sentry_events._INTERNAL_TAG_VALUE}
+        assert sentry_events._has_internal_tag(tags) is True
 
     def test_list_form_with_internal_tag_returns_true(self) -> None:
         tags = [
             ("env", "prod"),
-            (sentry_module._INTERNAL_TAG_KEY, sentry_module._INTERNAL_TAG_VALUE),
+            (sentry_events._INTERNAL_TAG_KEY, sentry_events._INTERNAL_TAG_VALUE),
         ]
-        assert sentry_module._has_internal_tag(tags) is True
+        assert sentry_events._has_internal_tag(tags) is True
 
     @pytest.mark.parametrize(
         "non_match_value",
@@ -169,9 +171,9 @@ class TestHasInternalTag:
             {},  # 空 dict
             [],  # 空 list
             {"other_key": "other_value"},  # dict 形式だが内部 key 不在
-            {sentry_module._INTERNAL_TAG_KEY: "wrong_value"},  # dict 形式 + value mismatch
+            {sentry_events._INTERNAL_TAG_KEY: "wrong_value"},  # dict 形式 + value mismatch
             [("env", "prod"), ("other_key", "other_value")],  # list 形式だが内部 tag 不在
-            [(sentry_module._INTERNAL_TAG_KEY, "wrong_value")],  # list 形式 + value mismatch
+            [(sentry_events._INTERNAL_TAG_KEY, "wrong_value")],  # list 形式 + value mismatch
             [("not-a-tuple-with-2-elements",)],  # list 内 malformed item
         ],
     )
@@ -182,7 +184,7 @@ class TestHasInternalTag:
         unintended True 返却 (recursion guard 誤発火 → 通常 event の
         scrub スキップ = PII 漏洩経路) を回帰防止する。
         """
-        assert sentry_module._has_internal_tag(non_match_value) is False
+        assert sentry_events._has_internal_tag(non_match_value) is False
 
 
 class TestScrubExceptionFailOpenBranches:
@@ -195,8 +197,8 @@ class TestScrubExceptionFailOpenBranches:
 
     def test_frame_not_dict_returns_input_and_warns_high_risk(self) -> None:
         """frame が dict でない場合: 入力を破壊せず返し、HIGH リスク警告を出す (fail-open)。"""
-        with patch.object(sentry_module, "_safe_log_warning") as mock_warn:
-            result = sentry_module._scrub_exception_frame("not-a-frame")
+        with patch.object(sentry_events, "_safe_log_warning") as mock_warn:
+            result = sentry_events._scrub_exception_frame("not-a-frame")
 
         assert result == "not-a-frame"
         mock_warn.assert_called_once()
@@ -206,8 +208,8 @@ class TestScrubExceptionFailOpenBranches:
     def test_frame_vars_unexpected_type_skips_scrub_and_warns(self) -> None:
         """frame['vars'] が dict/None 以外: vars を素通しし警告を出す (scrub スキップ)。"""
         frame = {"function": "handler", "vars": "not-a-dict"}
-        with patch.object(sentry_module, "_safe_log_warning") as mock_warn:
-            result = sentry_module._scrub_exception_frame(frame)
+        with patch.object(sentry_events, "_safe_log_warning") as mock_warn:
+            result = sentry_events._scrub_exception_frame(frame)
 
         assert result["vars"] == "not-a-dict"
         mock_warn.assert_called_once()
@@ -216,15 +218,15 @@ class TestScrubExceptionFailOpenBranches:
     def test_frame_vars_none_no_warning(self) -> None:
         """frame['vars'] が None (正常: vars 欠如): 警告を出さず frame を返す (誤検知防止)。"""
         frame = {"function": "handler"}
-        with patch.object(sentry_module, "_safe_log_warning") as mock_warn:
-            result = sentry_module._scrub_exception_frame(frame)
+        with patch.object(sentry_events, "_safe_log_warning") as mock_warn:
+            result = sentry_events._scrub_exception_frame(frame)
 
         assert result == {"function": "handler"}
         mock_warn.assert_not_called()
 
     def test_frame_vars_dict_is_scrubbed(self) -> None:
         frame = {"vars": {"password": "secret", "user_input": "safe_value"}}
-        result = sentry_module._scrub_exception_frame(frame)
+        result = sentry_events._scrub_exception_frame(frame)
 
         assert result["vars"]["password"] == "[REDACTED]"  # noqa: S105
         assert result["vars"]["user_input"] == "safe_value"
@@ -237,7 +239,7 @@ class TestScrubExceptionFailOpenBranches:
             "vars": {"password": "secret", "user_input": "safe_value"},
         }
 
-        result = sentry_module._scrub_exception_frame(frame)
+        result = sentry_events._scrub_exception_frame(frame)
 
         assert "pre_context" not in result
         assert "context_line" not in result
@@ -248,8 +250,8 @@ class TestScrubExceptionFailOpenBranches:
     def test_frames_unexpected_type_returns_input_and_warns(self) -> None:
         """stacktrace['frames'] が list/None 以外: stacktrace を素通しし警告を出す (fail-open)。"""
         stacktrace = {"frames": "not-a-list"}
-        with patch.object(sentry_module, "_safe_log_warning") as mock_warn:
-            result = sentry_module._scrub_exception_stacktrace(stacktrace)
+        with patch.object(sentry_events, "_safe_log_warning") as mock_warn:
+            result = sentry_events._scrub_exception_stacktrace(stacktrace)
 
         assert result == {"frames": "not-a-list"}
         mock_warn.assert_called_once()
@@ -257,8 +259,8 @@ class TestScrubExceptionFailOpenBranches:
 
     def test_frames_none_no_warning(self) -> None:
         stacktrace = {"registers": {"rax": "0x0"}}
-        with patch.object(sentry_module, "_safe_log_warning") as mock_warn:
-            result = sentry_module._scrub_exception_stacktrace(stacktrace)
+        with patch.object(sentry_events, "_safe_log_warning") as mock_warn:
+            result = sentry_events._scrub_exception_stacktrace(stacktrace)
 
         assert result == {"registers": {"rax": "0x0"}}
         mock_warn.assert_not_called()
@@ -311,7 +313,7 @@ class TestBeforeSend:
         """request.data が非dict/listの場合、PII素通りを防ぐため fail-closed にする。"""
         event = cast(Event, {"request": {"data": "password=secret&token=abc"}})
 
-        with patch.object(sentry_module._logger, "warning") as mock_warning:
+        with patch.object(sentry_primitives._logger, "warning") as mock_warning:
             result_dict = self._call_before_send(event)
 
         assert result_dict["request"]["data"] == "[REDACTED]"
@@ -441,11 +443,11 @@ class TestBeforeSend:
 
         with (
             patch.object(
-                sentry_module,
+                sentry_values,
                 "_scrub_sensitive_data",
                 side_effect=[{"Authorization": "[REDACTED]"}, RuntimeError("boom")],
             ),
-            patch.object(sentry_module, "_emit_scrub_failure_to_sentry") as mock_emit,
+            patch.object(sentry_events, "_emit_scrub_failure_to_sentry") as mock_emit,
         ):
             result = _before_send(event, {})
 
@@ -472,11 +474,11 @@ class TestBeforeSend:
 
         with (
             patch.object(
-                sentry_module,
+                sentry_events,
                 "_scrub_exception_field",
                 side_effect=RuntimeError("exception-scrub-boom"),
             ),
-            patch.object(sentry_module, "_emit_scrub_failure_to_sentry") as mock_emit,
+            patch.object(sentry_events, "_emit_scrub_failure_to_sentry") as mock_emit,
         ):
             result = _before_send(event, {})
 
@@ -492,10 +494,10 @@ class TestBeforeSend:
         event = cast(Event, {"request": {"url": "https://example.com/path?token=abc"}})
 
         with (
-            patch.object(sentry_module, "_scrub_url", side_effect=RuntimeError("url-scrub-boom")),
-            patch.object(sentry_module, "_emit_scrub_failure_to_sentry") as mock_emit,
-            patch.object(sentry_module, "_logger") as mock_logger,
-            patch.object(sentry_module, "_safe_log_warning") as mock_warning,
+            patch.object(sentry_events, "_scrub_url", side_effect=RuntimeError("url-scrub-boom")),
+            patch.object(sentry_events, "_emit_scrub_failure_to_sentry") as mock_emit,
+            patch.object(sentry_events, "_logger") as mock_logger,
+            patch.object(sentry_events, "_safe_log_warning") as mock_warning,
         ):
             result = _before_send(event, {})
 
@@ -520,8 +522,8 @@ class TestBeforeSend:
         )
 
         with (
-            patch.object(sentry_module, "_scrub_url", side_effect=RuntimeError("boom")),
-            patch.object(sentry_module, "_emit_scrub_failure_to_sentry") as mock_emit,
+            patch.object(sentry_events, "_scrub_url", side_effect=RuntimeError("boom")),
+            patch.object(sentry_events, "_emit_scrub_failure_to_sentry") as mock_emit,
         ):
             result = _before_send(event, {})
 
@@ -549,9 +551,9 @@ class TestBeforeSend:
         event = cast(Event, {"request": {"url": "https://example.com/path?token=abc"}})
 
         with (
-            patch.object(sentry_module, "_scrub_url", side_effect=RuntimeError("url-scrub-boom")),
+            patch.object(sentry_events, "_scrub_url", side_effect=RuntimeError("url-scrub-boom")),
             patch.object(
-                sentry_module,
+                sentry_events,
                 "_emit_scrub_failure_to_sentry",
                 side_effect=emit_error,
             ),
@@ -574,10 +576,10 @@ class TestBeforeSend:
         event = cast(Event, {"request": {"url": "https://example.com/path?token=abc"}})
 
         with (
-            patch.object(sentry_module, "_scrub_url", side_effect=RuntimeError("url-scrub-boom")),
-            patch.object(sentry_module, "_emit_scrub_failure_to_sentry") as mock_emit,
-            patch.object(sentry_module, "_logger") as mock_logger,
-            patch.object(sentry_module, "_safe_log_warning") as mock_warning,
+            patch.object(sentry_events, "_scrub_url", side_effect=RuntimeError("url-scrub-boom")),
+            patch.object(sentry_events, "_emit_scrub_failure_to_sentry") as mock_emit,
+            patch.object(sentry_events, "_logger") as mock_logger,
+            patch.object(sentry_events, "_safe_log_warning") as mock_warning,
         ):
             mock_logger.error.side_effect = RuntimeError("logger-error-boom")
             result = _before_send(event, {})
@@ -604,8 +606,8 @@ class TestBeforeSend:
         """
         event = cast(Event, {"request": {"headers": {}}})
         with (
-            patch.object(sentry_module, "_scrub_sensitive_data", side_effect=MemoryError()),
-            patch.object(sentry_module, "_emit_scrub_failure_to_sentry") as mock_emit,
+            patch.object(sentry_values, "_scrub_sensitive_data", side_effect=MemoryError()),
+            patch.object(sentry_events, "_emit_scrub_failure_to_sentry") as mock_emit,
         ):
             result = _before_send(event, {})
 
@@ -624,8 +626,8 @@ class TestBeforeSend:
         """
         event = cast(Event, {"extra": {"key": "value"}})
         with (
-            patch.object(sentry_module, "_scrub_sentry_field", side_effect=RecursionError()),
-            patch.object(sentry_module, "_emit_scrub_failure_to_sentry") as mock_emit,
+            patch.object(sentry_events, "_scrub_sentry_field", side_effect=RecursionError()),
+            patch.object(sentry_events, "_emit_scrub_failure_to_sentry") as mock_emit,
         ):
             result = _before_send(event, {})
 
@@ -639,7 +641,7 @@ class TestBeforeSend:
         """scalar exception は Sentry 仕様準拠の安全な placeholder に置換する。"""
         event = cast(Event, {"event_id": "evt-exc", "exception": "raw secret token=abc"})
 
-        with patch.object(sentry_module._logger, "warning") as mock_warning:
+        with patch.object(sentry_primitives._logger, "warning") as mock_warning:
             result_dict = self._call_before_send(event)
 
         assert result_dict["exception"] == {
@@ -664,13 +666,13 @@ class TestBeforeSend:
             Event,
             {
                 "tags": {
-                    sentry_module._INTERNAL_TAG_KEY: sentry_module._INTERNAL_TAG_VALUE,
+                    sentry_events._INTERNAL_TAG_KEY: sentry_events._INTERNAL_TAG_VALUE,
                 },
                 "request": {"headers": {"Authorization": "Bearer SECRET"}},
             },
         )
 
-        with patch.object(sentry_module, "_scrub_sensitive_data") as mock_scrub:
+        with patch.object(sentry_events, "_scrub_sensitive_data") as mock_scrub:
             result = _before_send(event, {})
 
         assert result is not None
@@ -691,15 +693,15 @@ class TestBeforeSend:
                 "tags": [
                     ("env", "prod"),
                     (
-                        sentry_module._INTERNAL_TAG_KEY,
-                        sentry_module._INTERNAL_TAG_VALUE,
+                        sentry_events._INTERNAL_TAG_KEY,
+                        sentry_events._INTERNAL_TAG_VALUE,
                     ),
                 ],
                 "request": {"headers": {"Authorization": "Bearer SECRET"}},
             },
         )
 
-        with patch.object(sentry_module, "_scrub_sensitive_data") as mock_scrub:
+        with patch.object(sentry_events, "_scrub_sensitive_data") as mock_scrub:
             result = _before_send(event, {})
 
         assert result is not None
@@ -715,11 +717,11 @@ class TestBeforeSend:
         mock_sdk.new_scope = MagicMock(return_value=mock_scope)
 
         with patch.dict(sys.modules, {"sentry_sdk": mock_sdk}):
-            sentry_module._emit_scrub_failure_to_sentry(RuntimeError("scrub-boom"))
+            sentry_events._emit_scrub_failure_to_sentry(RuntimeError("scrub-boom"))
 
         mock_scope.set_tag.assert_any_call(
-            sentry_module._INTERNAL_TAG_KEY,
-            sentry_module._INTERNAL_TAG_VALUE,
+            sentry_events._INTERNAL_TAG_KEY,
+            sentry_events._INTERNAL_TAG_VALUE,
         )
         mock_scope.set_level.assert_called_once_with("error")
         mock_scope.capture_message.assert_called_once_with("sentry_scrub_failed", level="error")
@@ -733,7 +735,7 @@ class TestBeforeSend:
         mock_sdk.new_scope = MagicMock(return_value=mock_scope)
 
         with patch.dict(sys.modules, {"sentry_sdk": mock_sdk}):
-            sentry_module._emit_scrub_failure_to_sentry(
+            sentry_events._emit_scrub_failure_to_sentry(
                 RuntimeError("scrub-boom"),
                 event_id="evt-789",
             )
@@ -748,7 +750,7 @@ class TestBeforeSend:
         mock_sdk.new_scope = MagicMock(side_effect=RuntimeError("sdk-broken"))
 
         with patch.dict(sys.modules, {"sentry_sdk": mock_sdk}):
-            sentry_module._emit_scrub_failure_to_sentry(ValueError("orig-error"))
+            sentry_events._emit_scrub_failure_to_sentry(ValueError("orig-error"))
 
         captured = capsys.readouterr()
         assert "[SENTRY_SCRUB_FAILED]" in captured.err
@@ -761,7 +763,7 @@ class TestBeforeSend:
         """sentry_sdk が未ロードの場合も stderr へフォールバックする"""
         original = sys.modules.pop("sentry_sdk", None)
         try:
-            sentry_module._emit_scrub_failure_to_sentry(KeyError("missing"))
+            sentry_events._emit_scrub_failure_to_sentry(KeyError("missing"))
         finally:
             if original is not None:
                 sys.modules["sentry_sdk"] = original
@@ -783,7 +785,7 @@ class TestBeforeSend:
         mock_sdk.new_scope = MagicMock(side_effect=RecursionError())
         with patch.dict(sys.modules, {"sentry_sdk": mock_sdk}):
             with pytest.raises(RecursionError):
-                sentry_module._emit_scrub_failure_to_sentry(ValueError("orig"))
+                sentry_events._emit_scrub_failure_to_sentry(ValueError("orig"))
 
     def test_emit_scrub_failure_reraises_memory_error_fail_fast(self) -> None:
         """内部 SDK 呼び出しが MemoryError を投げた場合 fail-fast で再 raise する。"""
@@ -791,7 +793,7 @@ class TestBeforeSend:
         mock_sdk.new_scope = MagicMock(side_effect=MemoryError())
         with patch.dict(sys.modules, {"sentry_sdk": mock_sdk}):
             with pytest.raises(MemoryError):
-                sentry_module._emit_scrub_failure_to_sentry(ValueError("orig"))
+                sentry_events._emit_scrub_failure_to_sentry(ValueError("orig"))
 
     def test_returns_event(self) -> None:
         event = cast(Event, {"message": "test"})
@@ -845,19 +847,19 @@ class TestBeforeSend:
 
     def test_scrub_list_item_respects_max_depth(self) -> None:
         """_scrub_list_item も最大深さ上限で再帰を停止する"""
-        result = sentry_module._scrub_list_item({"token": "secret"}, MAX_SCRUB_DEPTH)
+        result = sentry_events._scrub_list_item({"token": "secret"}, MAX_SCRUB_DEPTH)
         assert result == "[MAX_DEPTH_EXCEEDED]"
 
     def test_scrub_tags_item_respects_max_depth(self) -> None:
         """_scrub_tags_item も MAX_SCRUB_DEPTH 到達時に "[MAX_DEPTH_EXCEEDED]" を返す"""
-        result = sentry_module._scrub_tags_item(("token", "secret"), _depth=MAX_SCRUB_DEPTH)
+        result = sentry_events._scrub_tags_item(("token", "secret"), _depth=MAX_SCRUB_DEPTH)
         assert result == "[MAX_DEPTH_EXCEEDED]"
 
     def test_scrub_sentry_field_non_dict_logs_warning(self) -> None:
         """非dict型フィールドは空dict置換 + logger.warning を常時出力."""
         event = cast(Event, {"extra": "not-a-dict"})
 
-        with patch.object(sentry_module._logger, "warning") as mock_warning:
+        with patch.object(sentry_primitives._logger, "warning") as mock_warning:
             result = _before_send(event, {})
 
         assert result is not None
@@ -873,7 +875,7 @@ class TestBeforeSend:
         """非dict型 contexts フィールドも空dict置換 + logger.warning を常時出力（本番監視対応）."""
         event = cast(Event, {"contexts": 123})
 
-        with patch.object(sentry_module._logger, "warning") as mock_warning:
+        with patch.object(sentry_primitives._logger, "warning") as mock_warning:
             result = _before_send(event, {})
 
         assert result is not None
@@ -889,7 +891,7 @@ class TestBeforeSend:
         """非dict/listフィールドの警告には event_id を含める。"""
         event = cast(Event, {"event_id": "evt-123", "extra": "not-a-dict"})
 
-        with patch.object(sentry_module._logger, "warning") as mock_warning:
+        with patch.object(sentry_primitives._logger, "warning") as mock_warning:
             result = _before_send(event, {})
 
         assert result is not None
@@ -901,7 +903,7 @@ class TestBeforeSend:
         """request が非dict型の場合、空dictに置換し event_id 付きで警告する。"""
         event = cast(Event, {"event_id": "evt-456", "request": "raw-request"})
 
-        with patch.object(sentry_module._logger, "warning") as mock_warning:
+        with patch.object(sentry_primitives._logger, "warning") as mock_warning:
             result = _before_send(event, {})
 
         assert result is not None
@@ -925,7 +927,7 @@ class TestBeforeSend:
         event = cast(Event, {"extra": "not-a-dict"})
 
         with patch.object(
-            sentry_module._logger,
+            sentry_primitives._logger,
             "warning",
             side_effect=RuntimeError("logger broken"),
         ):
@@ -980,7 +982,7 @@ class TestBeforeSend:
                 "values": "not_a_list",  # 不正な型: list 期待だが str
             },
         }
-        with patch.object(sentry_module, "_safe_log_warning") as mock_warning:
+        with patch.object(sentry_events, "_safe_log_warning") as mock_warning:
             result = _before_send(event, {})
         assert result is not None, "fail-open: 異常構造でもイベントdropしない"
         result_dict = cast(dict[str, Any], result)
@@ -1125,14 +1127,14 @@ class TestBeforeSend:
 
     def test_scrub_tags_item_nested_list_redacts_sensitive(self) -> None:
         nested = [("password", "secret"), ("safe", "ok"), ("token", "abc")]
-        result = sentry_module._scrub_tags_item(nested)
+        result = sentry_events._scrub_tags_item(nested)
         assert result[0] == ("password", "[REDACTED]")
         assert result[1] == ("safe", "ok")
         assert result[2] == ("token", "[REDACTED]")
 
     def test_scrub_tags_item_nonsensitive_value_nested_dict_scrubbed(self) -> None:
         tag = ("user_metadata", {"password": "secret", "safe": "ok"})
-        result = sentry_module._scrub_tags_item(tag)
+        result = sentry_events._scrub_tags_item(tag)
         # キーは保持、value 内の機密キーは redact
         assert result[0] == "user_metadata"
         assert result[1]["password"] == "[REDACTED]"  # noqa: S105
@@ -1145,7 +1147,7 @@ class TestBeforeSend:
         tag pair ではなく単なる配列値。_scrub_list_item を使うことで過剰 redact を防ぐ）
         """
         tag = ("user_metadata", ["email", "user@example.com"])
-        result = sentry_module._scrub_tags_item(tag)
+        result = sentry_events._scrub_tags_item(tag)
         assert result[0] == "user_metadata"
         # value の2要素リストはタグペアと誤認されず保持される
         assert result[1] == ["email", "user@example.com"]
@@ -1157,7 +1159,7 @@ class TestBeforeSend:
         ネストされた機密キーも適切にスクラブされる。
         """
         tag = ("meta", [("password", "s1"), ("token", "s2"), ("safe", "ok")])
-        result = sentry_module._scrub_tags_item(tag)
+        result = sentry_events._scrub_tags_item(tag)
         assert result[0] == "meta"
         # _scrub_list_item が tuple の tag pair を判定し redact
         assert result[1][0] == ("password", "[REDACTED]")
@@ -1182,7 +1184,7 @@ class TestBeforeSend:
         sensitive_item = {"token": "secret_value", "safe": "keep_this"}
         value_item = container_type([sensitive_item])
 
-        result = sentry_module._scrub_exception_value_item(value_item)
+        result = sentry_events._scrub_exception_value_item(value_item)
 
         # 戻り値は同じ型 (list → list, tuple → tuple)
         assert type(result) is container_type
@@ -1207,7 +1209,7 @@ class TestBeforeSend:
         non_sensitive_item = {"user_id": 42, "name": "Alice"}
         value_item = container_type([non_sensitive_item])
 
-        result = sentry_module._scrub_exception_value_item(value_item)
+        result = sentry_events._scrub_exception_value_item(value_item)
 
         assert type(result) is container_type
         assert result[0]["user_id"] == 42
@@ -1217,8 +1219,8 @@ class TestBeforeSend:
         """_scrub_exception_value_item: 非 container 型は警告後に fail-open する。"""
         value_item = 42
 
-        with patch.object(sentry_module, "_safe_log_warning") as mock_warning:
-            result = sentry_module._scrub_exception_value_item(value_item)
+        with patch.object(sentry_events, "_safe_log_warning") as mock_warning:
+            result = sentry_events._scrub_exception_value_item(value_item)
 
         assert result == value_item
         mock_warning.assert_called_once_with(
@@ -1239,7 +1241,7 @@ class TestBeforeSend:
             "safe": "keep_this",
         }
 
-        result = sentry_module._scrub_exception_value_item(value_item)
+        result = sentry_events._scrub_exception_value_item(value_item)
 
         assert result["token"] == "[REDACTED]"  # noqa: S105  # カスタム機密キーは redact
         assert result["type"] == "ValueError"  # type は観測性のため保持（S-1 方針）
@@ -1331,7 +1333,7 @@ class TestBeforeSendTransaction:
             {
                 "type": "transaction",
                 "tags": {
-                    sentry_module._INTERNAL_TAG_KEY: sentry_module._INTERNAL_TAG_VALUE,
+                    sentry_events._INTERNAL_TAG_KEY: sentry_events._INTERNAL_TAG_VALUE,
                 },
                 "spans": [{"op": "db", "data": {"password": "not-scrubbed"}}],  # noqa: S106
             },
@@ -1435,7 +1437,7 @@ class TestBeforeSendTransaction:
 
 
 class TestSentryProcessorBeforeSendChain:
-    """logger._sentry_processor → sentry_init._before_send PII フィルター連鎖テスト
+    """logger._sentry_processor → sentry_scrub_events._before_send PII フィルター連鎖テスト
 
     _sentry_processor は scope.set_extra() で extra フィールドを設定し、
     Sentry SDK は _before_send フックを介してイベントを送信する。
@@ -1537,7 +1539,7 @@ class TestSentryProcessorBeforeSendChain:
 def test_internal_tag_value_is_valid_hex() -> None:
     import re
 
-    from utils.sentry_init import _INTERNAL_TAG_VALUE
+    from utils.sentry_scrub_events import _INTERNAL_TAG_VALUE
 
     assert re.fullmatch(r"[0-9a-f]{32}", _INTERNAL_TAG_VALUE) is not None
     assert len(_INTERNAL_TAG_VALUE) <= 200  # Sentry SDK tag value 上限 200文字以内
@@ -1561,16 +1563,16 @@ class TestScrubSpanItem:
 
         平坦な文字列リストは機密キーコンテキストを持たないためそのまま保持される。
         """
-        result = sentry_module._scrub_span_item(["foo", "bar"], _depth=0)
+        result = sentry_events._scrub_span_item(["foo", "bar"], _depth=0)
         assert result == ["foo", "bar"]
 
     def test_non_dict_scalar_delegates_to_scrub_list_item(self) -> None:
-        result = sentry_module._scrub_span_item("plain-string", _depth=0)
+        result = sentry_events._scrub_span_item("plain-string", _depth=0)
         assert result == "plain-string"
 
     def test_max_depth_exceeded_returns_sentinel(self) -> None:
         """(b) _depth >= MAX_SCRUB_DEPTH のとき "[MAX_DEPTH_EXCEEDED]" を返す。"""
-        result = sentry_module._scrub_span_item(
+        result = sentry_events._scrub_span_item(
             {"description": "GET /path"}, _depth=MAX_SCRUB_DEPTH
         )
         assert result == "[MAX_DEPTH_EXCEEDED]"
@@ -1583,7 +1585,7 @@ class TestScrubSpanItem:
         クエリの token 値が除去され、スキームとホストは保持される。
         """
         item = {"description": "https://api.example.com/users?token=x"}
-        result = sentry_module._scrub_span_item(item, _depth=0)
+        result = sentry_events._scrub_span_item(item, _depth=0)
 
         result_description = result["description"]
         assert result_description.startswith("https://")
@@ -1597,7 +1599,7 @@ class TestScrubSpanItem:
         "GET " プレフィックスは保持される。
         """
         item = {"description": "GET /path?token=secret"}
-        result = sentry_module._scrub_span_item(item, _depth=0)
+        result = sentry_events._scrub_span_item(item, _depth=0)
 
         result_description = result["description"]
         assert result_description.startswith("GET ")
@@ -1612,7 +1614,7 @@ class TestScrubSpanItem:
         メールアドレスが [REDACTED] に置換され、"GET " プレフィックスと残りのパスは保持。
         """
         item = {"description": "GET /users/foo@example.com/profile"}
-        result = sentry_module._scrub_span_item(item, _depth=0)
+        result = sentry_events._scrub_span_item(item, _depth=0)
 
         result_description = result["description"]
         assert result_description.startswith("GET ")
@@ -1637,7 +1639,7 @@ class TestSetInternalExtras:
             ValueError,
             match=r"Unauthorized key in internal event extra: 'user_email'",
         ):
-            sentry_module._set_internal_extras(mock_scope, {"user_email": "x@example.com"})
+            sentry_events._set_internal_extras(mock_scope, {"user_email": "x@example.com"})
 
         # 拒否時は部分書き込みが起きない（原子性）
         mock_scope.set_extra.assert_not_called()
@@ -1650,7 +1652,7 @@ class TestSetInternalExtras:
             ValueError,
             match=r"Unauthorized key in internal event extra: 'user_email'",
         ):
-            sentry_module._set_internal_extras(
+            sentry_events._set_internal_extras(
                 mock_scope,
                 {"error_type": "ValueError", "user_email": "x@example.com"},
             )
@@ -1665,7 +1667,7 @@ class TestSetInternalExtras:
         """
         mock_scope = MagicMock()
 
-        sentry_module._set_internal_extras(
+        sentry_events._set_internal_extras(
             mock_scope,
             {
                 "error_type": "ValueError",
@@ -1684,7 +1686,7 @@ class TestSetInternalExtras:
 
     def test_empty_dict_is_accepted(self) -> None:
         mock_scope = MagicMock()
-        sentry_module._set_internal_extras(mock_scope, {})
+        sentry_events._set_internal_extras(mock_scope, {})
         mock_scope.set_extra.assert_not_called()
 
 
@@ -1708,9 +1710,9 @@ def test_before_send_logger_error_receives_event_id() -> None:
     )
 
     with (
-        patch.object(sentry_module, "_scrub_url", side_effect=RuntimeError("scrub-boom")),
-        patch.object(sentry_module, "_emit_scrub_failure_to_sentry"),
-        patch.object(sentry_module, "_logger") as mock_logger,
+        patch.object(sentry_events, "_scrub_url", side_effect=RuntimeError("scrub-boom")),
+        patch.object(sentry_events, "_emit_scrub_failure_to_sentry"),
+        patch.object(sentry_events, "_logger") as mock_logger,
     ):
         result = _before_send(event, {})
 

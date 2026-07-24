@@ -10,8 +10,10 @@ from unittest.mock import patch
 
 import pytest
 
-import utils.sentry_init as sentry_module
-from utils.sentry_init import (
+import utils.sentry_scrub_events as sentry_events
+import utils.sentry_scrub_primitives as sentry_primitives
+import utils.sentry_scrub_values as sentry_values
+from utils.sentry_scrub_values import (
     MAX_SCRUB_DEPTH,
     _scrub_query_string,
     _scrub_sensitive_data,
@@ -75,7 +77,7 @@ class TestScrubSensitiveData:
 
     def test_scrub_non_dict_triggers_fail_open_warning(self) -> None:
         """非dict入力時にfail-open警告がログ出力され、データはそのまま返る。"""
-        with patch.object(sentry_module._logger, "warning") as mock_warning:
+        with patch.object(sentry_primitives._logger, "warning") as mock_warning:
             result = _scrub_sensitive_data("not_a_dict")
         assert result == "not_a_dict"
         mock_warning.assert_called_once()
@@ -127,7 +129,7 @@ class TestScrubQueryStringAndUrl:
         assert result == "token=%5BREDACTED%5D&safe=1&token=%5BREDACTED%5D&empty="
 
     def test_scrub_request_query_string_accepts_bytes(self) -> None:
-        result = sentry_module._scrub_request_query_string(b"token=a&safe=1")
+        result = sentry_values._scrub_request_query_string(b"token=a&safe=1")
         assert result == "token=%5BREDACTED%5D&safe=1"
 
     def test_scrub_url_removes_userinfo_and_fragment(self) -> None:
@@ -211,7 +213,7 @@ class TestScrubSentryFieldExceptionAsList:
                 }
             ]
         }
-        sentry_module._scrub_sentry_field(event_dict, "exception")
+        sentry_events._scrub_sentry_field(event_dict, "exception")
 
         item = event_dict["exception"][0]
         assert item["value"] == "[REDACTED]"  # 例外メッセージ全体を redact
@@ -226,7 +228,7 @@ class TestScrubSentryFieldExceptionAsList:
         汎用スクラバを通過した結果の不変であることを担保する。
         """
         event_dict: dict[str, Any] = {"exception": ["not-a-dict", 42]}
-        sentry_module._scrub_sentry_field(event_dict, "exception")
+        sentry_events._scrub_sentry_field(event_dict, "exception")
 
         assert event_dict["exception"] == ["not-a-dict", 42]
 
@@ -242,7 +244,7 @@ class TestScrubSentryFieldExceptionAsList:
         event_dict: dict[str, Any] = {
             "exception": [["context", {"password": "hunter2"}]],  # noqa: S106
         }
-        sentry_module._scrub_sentry_field(event_dict, "exception")
+        sentry_events._scrub_sentry_field(event_dict, "exception")
 
         nested = event_dict["exception"][0]
         assert nested[0] == "context"  # 非機密 scalar は保持

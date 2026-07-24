@@ -29,7 +29,8 @@ api-test-devops-portfolio/
 │   ├── jsonplaceholder_client_async.py # AsyncJSONPlaceholderClient
 │   ├── github_client.py   # GitHub API 専用クライアント
 │   ├── logger.py          # 構造化ログ（structlog）
-│   └── sentry_init.py     # エラー監視（Sentry SDK）
+│   ├── sentry_init.py     # エラー監視（Sentry SDK 初期化）
+│   └── sentry_scrub_*.py  # PIIスクラブ（events / values / primitives）
 ├── tests/                  # テストスイート（全22 test files）
 │   ├── unit/              # ユニットテスト（16 files）
 │   ├── integration/       # 統合テスト（4 files）
@@ -81,8 +82,13 @@ api-test-devops-portfolio/
 
 ### Module: utils.sentry_init
 - **Path**: `utils/sentry_init.py`
-- **Exports**: `init_sentry()`
-- **Purpose**: Sentry SDK初期化。44種類の機密キー自動スクラブ。httpx統合。
+- **Exports**: `init_sentry()`, `is_sentry_initialized()`, `reset_sentry_state()`
+- **Purpose**: Sentry SDK初期化。httpx統合。スクラブ処理は `utils/sentry_scrub_*.py` に委譲。
+
+### Module: utils.sentry_scrub_*
+- **Path**: `utils/sentry_scrub_events.py` / `utils/sentry_scrub_values.py` / `utils/sentry_scrub_primitives.py`
+- **Purpose**: `before_send` フックによるPII保護。44種類の機密キーを自動スクラブ。
+  依存は events → values → primitives の一方向。
 
 ### Module: models.responses
 - **Path**: `models/responses.py`

@@ -393,13 +393,13 @@ if init_sentry():
 
 | 機能 | 実装 |
 |------|------|
-| 機密キー定義（44種） | [`SENSITIVE_KEYS`](utils/sentry_init.py#L247) |
-| PIIスクラブフック | [`_before_send()`](utils/sentry_init.py#L935) |
-| 再帰スクラブ処理 | [`_scrub_sensitive_data()`](utils/sentry_init.py#L478) |
-| 起動エントリ | [`init_sentry()`](utils/sentry_init.py#L1060) |
-| 設定モデル（PII送信 既定無効） | [`SentryConfig`](config/settings.py#L425) |
+| 機密キー定義（44種） | [`SENSITIVE_KEYS`](utils/sentry_scrub_primitives.py) |
+| PIIスクラブフック | [`_before_send()`](utils/sentry_scrub_events.py) |
+| 再帰スクラブ処理 | [`_scrub_sensitive_data()`](utils/sentry_scrub_values.py) |
+| 起動エントリ | [`init_sentry()`](utils/sentry_init.py) |
+| 設定モデル（PII送信 既定無効） | [`SentryConfig`](config/settings.py) |
 
-> 行番号はコード変更でズレます。ポートフォリオ提出時はコミットSHA固定のpermalink化を推奨。
+> リンクは行番号アンカーを持たない。行番号はリファクタで無言のうちにズレ、CI のリンクチェックも検出できないため、ファイル単位のリンクに統一している。
 
 **テスト方針**: Sentry連携は `tests/unit/test_sentry_init.py` の boot-up 検証と、`tests/integration/test_sentry_logging.py` の結合検証でカバーする。実 Sentry DSN への送信は外部依存・ダッシュボードノイズを招くため、capturing transport でネットワーク非依存に保つ。
 

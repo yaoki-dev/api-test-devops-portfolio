@@ -236,7 +236,7 @@ def log_error_with_stderr_fallback(
     except (MemoryError, RecursionError):  # fmt: skip
         # 致命例外は握りつぶさず再raise（fail-fast）。両者は Exception 派生のため、
         # 下の except Exception より先に明示的に先取りする
-        # （sentry_init._safe_log_warning / _close_async_client と同一方針）。
+        # （sentry_scrub_primitives._safe_log_warning / _close_async_client と同一方針）。
         raise
     except Exception:  # noqa: BLE001
         # ロガー例外が握りつぶした exc を再露出させない保険。
