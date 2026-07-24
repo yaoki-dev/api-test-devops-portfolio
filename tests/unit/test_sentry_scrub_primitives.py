@@ -10,12 +10,9 @@ from unittest.mock import patch
 
 import pytest
 
-import utils.sentry_init as sentry_module
-from utils.sentry_init import (
-    SENSITIVE_KEYS,
-    _is_sensitive_key,
-    _scrub_sensitive_data,
-)
+import utils.sentry_scrub_primitives as sentry_primitives
+from utils.sentry_scrub_primitives import SENSITIVE_KEYS, _is_sensitive_key, _safe_log_warning
+from utils.sentry_scrub_values import _scrub_sensitive_data
 
 pytestmark = pytest.mark.unit
 
@@ -349,23 +346,25 @@ class TestSafeLogWarning:
 
     def test_recursion_error_is_reraised(self) -> None:
         """RecursionError は fail-fast で再 raise される。"""
-        with patch.object(sentry_module._logger, "warning", side_effect=RecursionError()):
+        with patch.object(sentry_primitives._logger, "warning", side_effect=RecursionError()):
             with pytest.raises(RecursionError):
-                sentry_module._safe_log_warning("test_event")
+                _safe_log_warning("test_event")
 
     def test_memory_error_is_reraised(self) -> None:
         """MemoryError は fail-fast で再 raise される。"""
-        with patch.object(sentry_module._logger, "warning", side_effect=MemoryError()):
+        with patch.object(sentry_primitives._logger, "warning", side_effect=MemoryError()):
             with pytest.raises(MemoryError):
-                sentry_module._safe_log_warning("test_event")
+                _safe_log_warning("test_event")
 
     def test_regular_exception_is_suppressed_with_stderr_fallback(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """RuntimeError 等の通常例外は抑止され、stderr にフォールバック出力される。"""
-        with patch.object(sentry_module._logger, "warning", side_effect=RuntimeError("log fail")):
+        with patch.object(
+            sentry_primitives._logger, "warning", side_effect=RuntimeError("log fail")
+        ):
             # raise されない（fail-open）
-            sentry_module._safe_log_warning("test_event")
+            _safe_log_warning("test_event")
         captured = capsys.readouterr()
         assert "_safe_log_warning failed" in captured.err
         assert "RuntimeError" in captured.err
@@ -375,10 +374,12 @@ class TestSafeLogWarning:
     ) -> None:
         """logger.warning 失敗かつ stderr (print) も失敗する二重障害パスで例外が伝播しない。"""
         with (
-            patch.object(sentry_module._logger, "warning", side_effect=RuntimeError("log fail")),
+            patch.object(
+                sentry_primitives._logger, "warning", side_effect=RuntimeError("log fail")
+            ),
             patch("builtins.print", side_effect=OSError("stderr closed")),
         ):
-            sentry_module._safe_log_warning("test_event")  # 例外伝播しないことを確認
+            _safe_log_warning("test_event")  # 例外伝播しないことを確認
         assert capsys.readouterr().err == ""
 
 
