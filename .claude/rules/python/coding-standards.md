@@ -143,6 +143,8 @@ def sample_user_data() -> dict[str, Any]:
 
 - docstring/インラインコメント: 日本語推奨（学習プロジェクト）
 - 変数・関数名: 英語必須
+- `raise` / `assert` のメッセージ: 英語必須（ログ・Sentry・外部利用者に露出するため）
+  - 適用範囲は本番ソース（`utils/` `config/` `models/`）。テストコードの `assert` メッセージは開発者のみが読み外部露出しないため対象外（日本語可）
 
 ---
 
