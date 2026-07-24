@@ -2,7 +2,7 @@
 
 utils/sentry_init.py の初期化ライフサイクル（init / state / SDK例外 / 無効DSN警告）の単体テスト
 
-Note:機密データスクラブ関連テスト: test_sentry_scrub_events.py /
+Note: 機密データスクラブ関連テスト: test_sentry_scrub_events.py /
 test_sentry_scrub_primitives.py / test_sentry_scrub_values.py へ分割済み。
 
 """
@@ -18,7 +18,8 @@ import pytest
 from pydantic import SecretStr
 
 import utils.sentry_init as sentry_module
-from utils.sentry_init import _before_send, init_sentry, is_sentry_initialized, reset_sentry_state
+from utils.sentry_init import init_sentry, is_sentry_initialized, reset_sentry_state
+from utils.sentry_scrub_events import _before_send
 
 pytestmark = pytest.mark.unit
 

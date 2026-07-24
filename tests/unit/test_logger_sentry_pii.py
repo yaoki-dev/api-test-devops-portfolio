@@ -253,7 +253,7 @@ class TestSentryProcessorPIIIntegration:
 
     def test_sensitive_keys_in_event_dict_are_redacted_by_before_send(self) -> None:
         """logger.error(password=X) → set_extra → _before_send で機密値が REDACTED されること"""
-        from utils.sentry_init import _before_send
+        from utils.sentry_scrub_events import _before_send
 
         # _sentry_processor が scope.set_extra に渡したキー/値を採取する
         captured_extra: dict[str, object] = {}

@@ -81,6 +81,9 @@ api-test-devops-portfolio/
 │   ├── response_parsing.py     # JSONパース + Pydanticモデル変換
 │   ├── retry.py                # 指数バックオフ + ジッター
 │   ├── sentry_init.py          # Sentry SDK初期化
+│   ├── sentry_scrub_events.py  # Sentryイベント単位のスクラブ (_before_send)
+│   ├── sentry_scrub_values.py  # 値の再帰スクラブ (URL / クエリ文字列)
+│   ├── sentry_scrub_primitives.py  # 機密キー判定 + 共通ログヘルパー
 │   └── __init__.py
 │
 ├── config/                    # 設定管理

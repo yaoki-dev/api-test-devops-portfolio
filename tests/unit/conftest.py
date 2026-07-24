@@ -5,7 +5,7 @@ from collections.abc import Generator
 import pytest
 from pytest_socket import disable_socket, enable_socket
 
-from utils.sentry_init import _is_sensitive_key
+from utils.sentry_scrub_primitives import _is_sensitive_key
 
 
 @pytest.fixture(autouse=True)
