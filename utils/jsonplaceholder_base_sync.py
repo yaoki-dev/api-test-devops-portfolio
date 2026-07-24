@@ -1,4 +1,4 @@
-"""Base synchronous JSONPlaceholder HTTP client."""
+"""JSONPlaceholder 同期HTTP基底クライアント"""
 
 import time
 from types import TracebackType
@@ -14,8 +14,6 @@ from utils.retry import exponential_backoff_with_jitter
 
 
 class SyncAPIClient:
-    """基本的な同期HTTPクライアント"""
-
     def __init__(
         self,
         base_url: str | None = None,
@@ -116,7 +114,7 @@ class SyncAPIClient:
             APIClientError: 非リトライエラー（TooManyRedirects / InvalidURL）
 
         Note:
-            TooManyRedirects/InvalidURL は _map_request_error() 内で即 raise されるため、
+            TooManyRedirects/InvalidURL は map_request_error() 内で即 raise されるため、
             APIRetryError ではなく APIClientError として呼び出し元に届く。
             呼び出し元は APIClientError で捕捉すること。
 
@@ -156,7 +154,7 @@ class SyncAPIClient:
                 response = self._client.request(method, endpoint, **kwargs)
             except (httpx.RequestError, httpx.InvalidURL) as e:
                 # 全ネットワーク層エラーをキャッチ（TimeoutException, ConnectError, etc.）
-                # TooManyRedirects/InvalidURL は classify_error → _map_request_error 内で即 raise
+                # TooManyRedirects/InvalidURL は classify_error → map_request_error 内で即 raise
                 last_exception = classify_error(
                     e,
                     self.logger,

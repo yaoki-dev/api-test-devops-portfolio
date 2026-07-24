@@ -8,7 +8,7 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
 **Tech Stack:** Python 3.14 + httpx + pytest + Pydantic Settings | ruff + mypy | uv | GitHub Actions
 
 **Priority Hierarchy:**
-1. **CLAUDE.md** (project root) - highest priority
+1. **`.claude/CLAUDE.md`** (CRITICAL RULES の実体) - highest priority ※ルート直下の `CLAUDE.md` は軽量インデックス
 2. **This RULES.md** - behavioral patterns
 3. **PRINCIPLES.md** - foundational principles
 
@@ -34,7 +34,6 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
 - This applies to task delegation; reflexion retry logic in CLAUDE.md governs implementation quality checks.
 - Within a single agent turn, parallel *tool calls* (Read, Grep, Bash, Task etc.) remain encouraged (see "Batch independent operations" above); this is distinct from delegating multiple unrelated tasks to a single subagent.
 - Session pattern: Load → Work → Checkpoint (30 min) → Save
-- Use `/sc:load` and `/sc:save` if superclaude available
 - **Parallel Dispatch Rule** (extension of "One task per subagent invocation" above — each agent still handles exactly one task): When 2+ independent TodoList tasks exist, dispatch each as a separate Task tool invocation (parallel recommended)
   - Independence criteria (all must be satisfied):
     1. No output dependency between tasks (no A→B ordering constraint)
@@ -46,7 +45,7 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
 
     **Subagent context disambiguation（簡素化版）**:
     - 各サブエージェントは独立した TodoWrite を持つ（親と共有しない）
-    - 完了報告は `Skill(superpowers:verification-before-completion)` 実行後に実施（失敗時は即座に親へエラー報告・親は STOP）
+    - 完了報告は `Skill(fable:fable-judge)` 実行後に実施（失敗時は即座に親へエラー報告・親は STOP）
     - 親エージェントは **成果物の実在確認のみ** 行う（内容検証はサブエージェントの verification に委譲）
   - On failure: if **any** agent reports failure or partial completion, the parent agent must (1) allow already-running invocations to complete (Task tool has no cancel API), (2) collect and log agent statuses (success/failure/unknown), and (3) report full status summary to user before further action
   - Silent continuation after ambiguous/empty results is prohibited
@@ -83,13 +82,34 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
 | Review | `code-review:*`, `pr-review-toolkit:*` (parallel) |
 | Design | `system-architect`, `backend-architect`, `devops-architect` |
 
-**Dispatch Automation**: When 2+ independent tasks exist post-classification, invoke `Skill(superpowers:subagent-driven-development)` skill via Skill tool. After all agents complete and all TodoWrite tasks are marked done, `Skill(superpowers:verification-before-completion)` → `Skill(reflexion:reflect)` runs per CLAUDE.md Rule 11 ("ALWAYS after completing all tasks in `todowrite`, Use Skill tool to run `Skill(superpowers:verification-before-completion)` → then `Skill(reflexion:reflect)`") (this dispatch context already satisfies Rule 11 at the parent agent level — no duplicate call needed within subagents). On verification failure (i.e., `Skill(superpowers:verification-before-completion)` reports incomplete work): apply CLAUDE.md Step 4 retry policy (max 3 retries; report to user and stop on 4th consecutive failure — counter resets on success).
+**Dispatch Automation**: After classifying and decomposing the request, consider dispatching
+subagents when two or more tasks are genuinely independent and can be
+executed concurrently.
+Dispatch only when the expected benefit of parallel execution exceeds
+the delegation, context-transfer, coordination, and integration costs.
+Do not dispatch merely because two tasks exist. Keep tasks in the parent
+agent when they are small, sequentially dependent, require shared global
+context, or may cause overlapping file modifications.
+Assign each subagent a distinct scope, explicit completion criteria, and
+clear read/write permissions. The parent agent remains responsible for
+validating, reconciling, and integrating all results. After all agents complete and all TodoWrite tasks are marked done, `Skill(fable:fable-judge)` → `Skill(reflexion:reflect)` runs per CLAUDE.md Rule 11 ("ALWAYS after completing all tasks in `todowrite`, Use Skill tool to run `Skill(fable:fable-judge)` → then `Skill(reflexion:reflect)`") (this dispatch context already satisfies Rule 11 at the parent agent level — no duplicate call needed within subagents). On verification failure (i.e., `Skill(fable:fable-judge)` reports incomplete work): apply CLAUDE.md Step 4 retry policy (max 3 retries; report to user and stop on 4th consecutive failure — counter resets on success).
 
 **Good:** Plan → TodoWrite → Execute → Verify | **Bad:** Jump to implementation
 
 **Reference:** `api-specification-check.md`, `execution-efficiency.md`
 
 ---
+## Category: Analysis-Only Request Boundary
+**Trigger:** Requests whose primary instruction is to judge, evaluate, analyze, review, inspect, compare, or recommend | **Priority:** Critical
+
+- Treat these requests as read-only unless the user explicitly requests implementation or file modification.
+- Analysis, investigation, command execution that does not modify project files, and presentation of findings are allowed.
+- Do NOT use Edit, Write, MultiEdit, file deletion, formatting tools that rewrite files, or commands that modify tracked files.
+- Identifying a recommended fix does not authorize implementing it.
+- After presenting the judgment and recommended changes, wait for an explicit user instruction to implement them.
+- An existing implementation plan, suggested patch, or obvious fix is not equivalent to implementation authorization.
+- **Mixed-message scope**: when a single message mixes judgment-only and implementation instructions, implementation authorization applies ONLY to the items that message explicitly names; every other item remains read-only. A shared rationale, an adjacent finding, or a "twin" discovered while implementing an authorized item does NOT extend the authorization to it.
+- **Relation to CLAUDE.md Rule 16 (lex specialis)**: Rule 16's autonomous-fix mandate is the general case; an analysis-only request is the specific case, and the specific governs. Inside such a request Rule 16 does not fire — a bug discovered while judging is reported, not fixed, until the user authorizes the fix, regardless of the bug's ✅/⚠️ file classification. This narrows Rule 16's scope by context; it does not claim to override a higher-priority document.
 
 ## Category: Task Management (Persistent Layer)
 **Trigger:** Multi-session or large-scale tasks | **Priority:** Important
@@ -110,7 +130,7 @@ TodoWrite remains the in-session UI tool.
 ## Category: Task Completion Self-Review
 **Trigger:** TodoWrite task completion | **Priority:** Important
 
-**Learning Phase:** Self-review after each task: `Skill(superpowers:verification-before-completion)` → `Skill(reflexion:reflect)`. Fix issues before proceeding.
+**Learning Phase:** Self-review after each task: `Skill(fable:fable-judge)` → `Skill(reflexion:reflect)`. Fix issues before proceeding.
 
 **Production Phase:** Review only when: 3+ files changed, security/API changes, confidence < 90%, new patterns.
 

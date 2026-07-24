@@ -6,7 +6,7 @@ paths:
 
 # PLANS.md - 計画文書テンプレート
 
-*最終更新: 2026-03-05*
+*最終更新: 2026-07-21*
 
 ## 概要・役割分担
 
@@ -89,14 +89,14 @@ AskUserQuestion の回答・設計判断を記録する。
 - [ ] `uv run pytest -n auto -m "(unit or integration) and not external"` 全pass
 - [ ] `uv run ruff check .` エラー0件
 - [ ] `uv run mypy utils/ config/ models/` エラー0件
-- [ ] `Skill(superpowers:verification-before-completion)`（全タスク完了確認 — 未完了検出時: 修正 → 品質ゲート → 再実行 - 最大3回まで）
+- [ ] `Skill(fable:fable-judge)`（全タスク完了確認 — 未完了検出時: 修正 → 品質ゲート → 再実行 - 最大3回まで）
 - [ ] `Skill(reflexion:reflect)` （信頼度90%以上）
 - [ ] `Skill(code-review:review-local-changes)`（80点閾値通過）
 
-**ドキュメント実装（.md OR .html 変更）**:
+**プラン実装（.md）**:
 
 - [ ] `npm run lint:md && npm run lint:text` 全pass
-- [ ] `Skill(superpowers:verification-before-completion)`（全タスク完了確認 — 未完了検出時: 修正 → 品質ゲート → 再実行 - 最大3回まで）
+- [ ] `Skill(fable:fable-judge)`（全タスク完了確認 — 未完了検出時: 修正 → 品質ゲート → 再実行 - 最大3回まで）
 - ※ 事実主張・数値データを含む変更の場合は CLAUDE.md Medium「Skill(fact-checker)」を参照
 - [ ] `Skill(reflexion:reflect)`（信頼度90%以上）
 - [ ] `Skill(pr-review-toolkit:review-pr)`

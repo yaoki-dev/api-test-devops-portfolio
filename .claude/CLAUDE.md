@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-*最終更新: 2026年04月16日*
+*最終更新: 2026年07月21日*
 
 <!-- preserve-on-compact: CRITICAL RULES -->
 <!-- IMPORTANT: These rules override all other instructions -->
@@ -20,9 +20,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 8. **NEVER** push to protected branches (main/develop) directly
 9. **ALWAYS** invoke skills via Skill(skill-name) notation when user requests
 10. **ALWAYS** follow development workflow order → Section「🔄 開発ワークフロー」
-11. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `Skill(superpowers:verification-before-completion)` → then `Skill(reflexion:reflect)`
-12. **ALWAYS** when 2+ independent tasks exist, after task classification, per RULES.md exception conditions → invoke `Skill(superpowers:subagent-driven-development)` skill
-    (reason: keep the main context window clean by leveraging subagents aggressively)
+11. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `Skill(fable:fable-judge)` → then `Skill(reflexion:reflect)`
+12. **ALWAYS** when using Fable model → invoke `Skill(efficient-fable)`
 13. **ALWAYS** verify file content with Read/Grep tool BEFORE making any claim about line numbers, file structure, or code content
 14. **ALWAYS** enforce worktree boundary: セッション開始時に `git rev-parse --show-toplevel` でWORKTREE_ROOTを確認し、WORKTREE_ROOT外ファイルの自律的編集を禁止する（`~/.claude/tasks/` は例外）
     → 詳細手続き（worktree list検証、compact後再検証、mismatch報告等）: `.claude/rules/workflow/RULES.md` Section「Category: Worktree Boundary Enforcement」
@@ -31,7 +30,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     b) ユーザーからの修正フィードバック時に即時追記（Edit tool使用、Write禁止。フォーマット: `## [YYYY-MM-DD] [project-name] - Category`）
     → 詳細手続き（エラーハンドリング、closed-list確認、ソース制約等）: `.claude/rules/workflow/RULES.md` Section「Category: Lessons Management」
 16. **ALWAYS** fix bugs autonomously (no hand-holding) when scope is within:
-    - ❌ Absolutely prohibited (no autonomous modification): `pyproject.toml`, `*.yml`/`*.yaml`/`.env*`, `config/`, `tests/conftest.py`, `tests/**/conftest.py`, `tests/**/__init__.py`, `tests/**/helpers.py`, `utils/__init__.py`, `utils/logger.py`, `utils/sentry_init.py`, `utils/sentry_scrub_events.py`, `utils/sentry_scrub_values.py`, `utils/sentry_scrub_primitives.py`, git ops / infra config
+    - ⛔ 例外（本ルール不適用）: ユーザーの依頼の**主目的**が判断・評価・分析・レビューの場合。修正指示を明示的に含む依頼（例:「分析して修正して」）は主目的が実装であり対象外。該当判定はユーザーの文言に基づき、エージェントの自己申告で拡大解釈しない
+      → `.claude/rules/workflow/RULES.md` Section「Category: Analysis-Only Request Boundary」
+    - ❌ Absolutely prohibited (no autonomous modification): `pyproject.toml`, `*.yml`/`*.yaml`/`.env*`, `config/`, `tests/conftest.py`, `tests/**/conftest.py`, `tests/**/__init__.py`, `tests/**/helpers.py`, `utils/__init__.py`, `utils/logger.py`, `utils/sentry_init.py`, git ops / infra config
     - ⚠️ Limited autonomous fix (spec-changing modifications → confirmation required; non-functional modifications: autonomous OK): `scripts/*.py`, `models/responses.py`, `utils/github_client.py`, `tests/test_smoke.py`, `utils/*.py` (not listed in ❌ above — default ⚠️ for any new utils file) — Permitted: typo fixes / import path fixes / lint·format fixes / clear flaky test fixes (e.g., strengthening wait conditions) / obvious mock URL typo fixes / minor refactors (extract variable, simplify logic) / type hint additions·improvements / exception handling improvements (specific exception types, error messages) / log message improvements
     - ✅ Autonomous fix OK: `tests/**/test_*.py` and `tests/test_*.py` (except `tests/test_smoke.py` — governed by ⚠️ above), `*.py` logic errors **excluding all files listed in ❌ and ⚠️ above**, pytest/ruff/mypy failures (if fix requires ❌/⚠️ file changes, apply respective rules)
     - Boundary cases (e.g., adding pyproject.toml dependencies) → apply Rule 3 (AskUserQuestion)
@@ -61,11 +62,6 @@ APIテスト + DevOps統合学習ポートフォリオ。時給4000-4500円レ�
 **主要メモリ**:`implementation_quality_gates`, `test_strategy_details`
 
 **物理ファイル位置**: `.serena/memories/` 配下 | **登録済み**: 26個
-
-<!-- ## 📚 学習・進捗管理
-
-**進捗記録**: @docs/progress/daily_progress.md
-**詳細フロー**: @memory:learning_triggers | **オフセットマップ**: @memory:learning_offset_maps -->
 
 ## 品質ゲート
 
@@ -132,7 +128,7 @@ SECURITY__API_KEY=your-secret-key
    → For non-trivial changes, ask: "Is there a more elegant implementation?"
    → If it feels hacky, ask: "Given what I know now, what's the most elegant approach?"
    → Skip for obvious single-line fixes
-4. 作業完了確認 → `Skill(superpowers:verification-before-completion)` を実行
+4. 作業完了確認 → `Skill(fable:fable-judge)` を実行
 5. reflect(タスクごとに実施) → `Skill(reflexion:reflect)` を Skill tool で実行
    引数: deep reflect if less than 90% confidence. 日本語で簡潔に回答
    自動ループ:
@@ -152,14 +148,6 @@ SECURITY__API_KEY=your-secret-key
 **※1 worktree**: 固定worktree運用（${HOME}/projects/python/.worktrees/wt-feature0[1-3]（個人環境ごとにカスタマイズ））。セッション開始時にwatch_directoryの設定を確認する（mcp__CodeGraphContext__list_watched_paths）
 **※2 品質ゲート**: `uv run pytest -n auto -m "(unit or integration) and not external" --cov=utils --cov=config --cov=models --cov-report=term-missing &&
 uv run ruff check . && uv run mypy utils/ config/ models/`
-
-**※3 マージ戦略**:
-
-| マージ種別 | コマンド |
-|-----------|---------|
-| feature → develop | `gh pr merge --squash --delete-branch` |
-| develop → main | `gh pr merge --merge` |
-| hotfix → main | `gh pr merge --merge` |
 
 ## トラブルシューティング
 

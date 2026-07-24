@@ -253,7 +253,7 @@ def test_sync_client_base_url_validation_raises_value_error(base_url: str) -> No
 
         タブ・改行: URL設定時の見えない制御文字バイパスを防ぐ。
     """
-    with pytest.raises(ValueError, match="base_url が空です"):
+    with pytest.raises(ValueError, match="base_url is empty"):
         SyncAPIClient(base_url=base_url)
 
 

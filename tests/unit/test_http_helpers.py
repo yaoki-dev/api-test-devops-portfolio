@@ -257,7 +257,7 @@ def test_resolve_client_config_invalid_base_url_raises(
     invalid_base_url: str,
 ) -> None:
     with patch("utils.http_helpers.settings", mock_settings):
-        with pytest.raises(ValueError, match="base_url が空です"):
+        with pytest.raises(ValueError, match="base_url is empty"):
             _resolve_client_config(invalid_base_url, None, None, None, None)
 
 
