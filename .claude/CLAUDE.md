@@ -128,7 +128,7 @@ SECURITY__API_KEY=your-secret-key
    → For non-trivial changes, ask: "Is there a more elegant implementation?"
    → If it feels hacky, ask: "Given what I know now, what's the most elegant approach?"
    → Skip for obvious single-line fixes
-4. 作業完了確認 → `Skill(fable:fable-judge)` を実行 （when using Opus or Sonnet model）
+4. 作業完了確認 → `Skill(fable:fable-judge)` を実行
 5. reflect(タスクごとに実施) → `Skill(reflexion:reflect)` を Skill tool で実行
    引数: deep reflect if less than 90% confidence. 日本語で簡潔に回答
    自動ループ:

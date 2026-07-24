@@ -82,7 +82,17 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
 | Review | `code-review:*`, `pr-review-toolkit:*` (parallel) |
 | Design | `system-architect`, `backend-architect`, `devops-architect` |
 
-**Dispatch Automation**: When 2+ independent tasks exist post-classification, invoke `Skill(fable:fable-judge)` skill via Skill tool. After all agents complete and all TodoWrite tasks are marked done, `Skill(fable:fable-judge)` → `Skill(reflexion:reflect)` runs per CLAUDE.md Rule 11 ("ALWAYS after completing all tasks in `todowrite`, Use Skill tool to run `Skill(fable:fable-judge)` → then `Skill(reflexion:reflect)`") (this dispatch context already satisfies Rule 11 at the parent agent level — no duplicate call needed within subagents). On verification failure (i.e., `Skill(fable:fable-judge)` reports incomplete work): apply CLAUDE.md Step 4 retry policy (max 3 retries; report to user and stop on 4th consecutive failure — counter resets on success).
+**Dispatch Automation**: After classifying and decomposing the request, consider dispatching
+subagents when two or more tasks are genuinely independent and can be
+executed concurrently.
+Dispatch only when the expected benefit of parallel execution exceeds
+the delegation, context-transfer, coordination, and integration costs.
+Do not dispatch merely because two tasks exist. Keep tasks in the parent
+agent when they are small, sequentially dependent, require shared global
+context, or may cause overlapping file modifications.
+Assign each subagent a distinct scope, explicit completion criteria, and
+clear read/write permissions. The parent agent remains responsible for
+validating, reconciling, and integrating all results. After all agents complete and all TodoWrite tasks are marked done, `Skill(fable:fable-judge)` → `Skill(reflexion:reflect)` runs per CLAUDE.md Rule 11 ("ALWAYS after completing all tasks in `todowrite`, Use Skill tool to run `Skill(fable:fable-judge)` → then `Skill(reflexion:reflect)`") (this dispatch context already satisfies Rule 11 at the parent agent level — no duplicate call needed within subagents). On verification failure (i.e., `Skill(fable:fable-judge)` reports incomplete work): apply CLAUDE.md Step 4 retry policy (max 3 retries; report to user and stop on 4th consecutive failure — counter resets on success).
 
 **Good:** Plan → TodoWrite → Execute → Verify | **Bad:** Jump to implementation
 
