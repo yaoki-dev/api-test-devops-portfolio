@@ -8,8 +8,11 @@
 
 Sentry SDKを統合し、ERROR以上のログを自動でSentryに送信。エラー調査→修正サイクルを加速。
 
-**コアモジュール**:
-- `utils/sentry_init.py`: SDK初期化・機密データスクラブ
+**コアモジュール**（PR#534 で責務別に4分割。依存は上から下への一方向）:
+- `utils/sentry_init.py`: SDK初期化のみ（`init_sentry` / `is_sentry_initialized` / `reset_sentry_state`）
+- `utils/sentry_scrub_events.py`: イベント単位のスクラブ（`_before_send` / exception / tags / spans）
+- `utils/sentry_scrub_values.py`: 値の再帰スクラブ（`_scrub_sensitive_data` / URL・クエリ文字列）
+- `utils/sentry_scrub_primitives.py`: 機密キー判定（`SENSITIVE_KEYS` / `_is_sensitive_key`）と共通ログヘルパー
 - `utils/logger.py`: structlog連携プロセッサー
 - `config/settings.py`: SentryConfig設定クラス
 
@@ -90,9 +93,9 @@ if init_sentry():
     `csrf_token`, `x-csrf-token`, `x-refresh-token`, `x-access-token`
   - 複合語バリアント 3 件: `authtoken`, `usertoken`, `userpassword`
   - 個人情報 1 件: `username`（PR#347 review follow-up で追加）
-- 最終状態は **44 件**（`utils/sentry_init.py` 実装・`test_sentry_init.py::assert len(SENSITIVE_KEYS) == 44` と一致）。
+- 最終状態は **44 件**（`utils/sentry_scrub_primitives.py` 実装・`test_sentry_scrub_primitives.py::assert len(SENSITIVE_KEYS) == 44` と一致）。
 
-**確認元**: `utils/sentry_init.py` (`SENSITIVE_KEYS` frozenset)
+**確認元**: `utils/sentry_scrub_primitives.py` (`SENSITIVE_KEYS` frozenset)
 **マッチング方式**: `_is_sensitive_key` は **単語境界マッチ + ハイフン/アンダースコア
 正規化** で判定する (`_SENSITIVE_KEY_PATTERN = (?:^|[_\d])(?:KEY)(?=[^a-z]|$)`)。
 これにより composite key (例: `user_password`, `email_address`, `X-Auth-Token`)
@@ -105,9 +108,9 @@ if init_sentry():
 - PR#347 fix #1: substring → exact 一致で composite key 漏洩 regression 発生 → 修正
 - PR#347 fix #2: 末尾境界に `\d` 追加 (`password2` 系を補足)
 
-詳細は `utils/sentry_init.py` の `_NORMALIZED_SENSITIVE_KEYS` / `_SENSITIVE_KEY_PATTERN`
-周辺コメント、契約テストは `tests/unit/test_sentry_init.py::TestSensitiveKeysCompleteness`
-を参照。
+詳細は `utils/sentry_scrub_primitives.py` の `_NORMALIZED_SENSITIVE_KEYS` /
+`_SENSITIVE_KEY_PATTERN` 周辺コメント、契約テストは
+`tests/unit/test_sentry_scrub_primitives.py::TestSensitiveKeysCompleteness` を参照。
 
 ---
 
@@ -130,8 +133,9 @@ Sentry MCPサーバーでClaude Codeからエラー調査可能:
 ## テスト
 
 ```bash
-# Sentry統合テスト（151 test functions / 291 collected cases）
-uv run pytest tests/unit/test_sentry_init.py -v
+# Sentry統合テスト（4ファイル / 315 collected cases）
+uv run pytest tests/unit/test_sentry_init.py tests/unit/test_sentry_scrub_primitives.py \
+    tests/unit/test_sentry_scrub_values.py tests/unit/test_sentry_scrub_events.py -v
 ```
 
 ---
@@ -154,6 +158,6 @@ export SENTRY_DEBUG=true
 
 ```python
 # スクラブ対象キーの確認
-from utils.sentry_init import SENSITIVE_KEYS
+from utils.sentry_scrub_primitives import SENSITIVE_KEYS
 print(len(SENSITIVE_KEYS))  # 44
 ```

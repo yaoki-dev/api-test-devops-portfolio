@@ -28,7 +28,10 @@
 | utils/github_error_handler.py | 254 | GitHub exception hierarchy + 403/5xx/JSON error handlers (PII-safe) |
 | utils/github_rate_limit.py | 92 | GitHub rate-limit helpers (RATE_LIMIT_WARNING_THRESHOLD) |
 | utils/logger.py | 152 | structlog統合 + Sentry連携 |
-| utils/sentry_init.py | 184 | Sentry SDK初期化 + 機密データスクラブ |
+| utils/sentry_init.py | 196 | Sentry SDK初期化 |
+| utils/sentry_scrub_events.py | 658 | Sentryイベント単位のスクラブ (_before_send) |
+| utils/sentry_scrub_values.py | 193 | 値の再帰スクラブ (URL / クエリ文字列) |
+| utils/sentry_scrub_primitives.py | 200 | 機密キー判定 (SENSITIVE_KEYS) + 共通ログヘルパー |
 | config/settings.py | 447 | Type-safe Pydantic Settings |
 | models/responses.py | 350 | 7 Pydantic response models |
 
@@ -61,7 +64,7 @@
 - **Usage**: `from utils.logger import get_logger`
 
 ### Observability (Sentry統合)
-- **Module**: utils/sentry_init.py
+- **Modules**: utils/sentry_init.py（初期化）+ utils/sentry_scrub_{events,values,primitives}.py（PIIスクラブ）
 - **Features**:
   - DSN設定による初期化
   - 機密データスクラブ (PII保護)
