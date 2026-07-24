@@ -17,6 +17,8 @@ from utils.sentry_scrub_values import (
     _scrub_url,
 )
 
+__all__: list[str] = []
+
 _logger = get_logger(__name__)
 
 # 再帰防止用の内部識別子。scrub 失敗を Sentry に通知する際にこの tag を付与し、

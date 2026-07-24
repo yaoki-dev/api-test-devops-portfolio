@@ -9,6 +9,8 @@ from typing import Any
 
 from utils.logger import get_logger
 
+__all__ = ["SENSITIVE_KEYS"]
+
 _logger = get_logger(__name__)
 
 # 機密データキーのパターン（Security Auditor推奨を反映）

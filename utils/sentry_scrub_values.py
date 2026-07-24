@@ -7,6 +7,8 @@ from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlunparse
 
 from utils.sentry_scrub_primitives import _PATH_PII_PATTERN, _is_sensitive_key, _safe_log_warning
 
+__all__ = ["MAX_SCRUB_DEPTH"]
+
 # 再帰制限のデフォルト値
 MAX_SCRUB_DEPTH: int = 10  # 実測値 2-4、余裕値 10 は infinite recursion 防止用
 
