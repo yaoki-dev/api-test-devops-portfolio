@@ -86,7 +86,7 @@ api-test-devops-portfolio/
 - **Purpose**: Sentry SDK初期化。httpx統合。スクラブ処理は `utils/sentry_scrub_*.py` に委譲。
 
 ### Module: utils.sentry_scrub_*
-- **Path**: `utils/sentry_scrub_events.py` / `sentry_scrub_values.py` / `sentry_scrub_primitives.py`
+- **Path**: `utils/sentry_scrub_events.py` / `utils/sentry_scrub_values.py` / `utils/sentry_scrub_primitives.py`
 - **Purpose**: `before_send` フックによるPII保護。44種類の機密キーを自動スクラブ。
   依存は events → values → primitives の一方向。
 
