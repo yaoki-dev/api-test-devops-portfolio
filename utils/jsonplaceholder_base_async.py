@@ -1,4 +1,4 @@
-"""Base asynchronous JSONPlaceholder HTTP client."""
+"""JSONPlaceholder 非同期HTTP基底クライアント"""
 
 import asyncio
 from types import TracebackType
@@ -14,8 +14,6 @@ from utils.retry import exponential_backoff_with_jitter
 
 
 class AsyncAPIClient:
-    """非同期HTTPクライアント"""
-
     _client: httpx.AsyncClient | None  # aclose() 後に None を代入するため明示宣言
 
     def __init__(
@@ -226,12 +224,11 @@ class AsyncAPIClient:
             APIClientError: 非リトライエラー（TooManyRedirects / InvalidURL）
 
         Note:
-            TooManyRedirects/InvalidURL は _map_request_error() 内で即 raise されるため、
+            - TooManyRedirects/InvalidURL は _map_request_error() 内で即 raise されるため、
             APIRetryError ではなく APIClientError として呼び出し元に届く。
             呼び出し元は APIClientError で捕捉すること。
 
-        Note:
-            リトライは HTTP メソッドを問わず 5xx / ネットワークエラーで発生する。
+            - リトライは HTTP メソッドを問わず 5xx / ネットワークエラーで発生する。
             POST/PATCH 等の非冪等な書き込みでは、サーバー側で処理が確定した後に
             レスポンスが失われた場合（例: 送信後の ReadTimeout）、同一リクエストの
             再送により実バックエンドでは重複リソースが生成されうる。対象 API

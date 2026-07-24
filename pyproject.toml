@@ -150,7 +150,7 @@ ignore = [
 unfixable = ["F841"]  # unused variables
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101", "D"]  # Allow assert in tests, ignore docstring rules
+"tests/**/*.py" = ["S101", "D"]  # Allow assert in tests; "D" is a pre-emptive exemption (not in select)
 
 [tool.ruff.lint.isort]
 known-first-party = ["utils", "config", "tests"]

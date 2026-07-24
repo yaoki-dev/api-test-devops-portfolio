@@ -1,4 +1,4 @@
-"""HTTP client shared helper functions."""
+"""HTTPクライアントの共有ヘルパー関数"""
 
 import sys
 from typing import Any
@@ -65,7 +65,7 @@ def map_request_error(e: httpx.RequestError | httpx.InvalidURL) -> APIClientErro
         参照: ``main()`` の ``traceback.print_exception(e, chain=False)`` 実装。
 
     """
-    # Non-retryable errors - raise immediately (no point in retrying)
+    # 非リトライエラーは即座に raise する（リトライしても解消しないため）
     if isinstance(e, httpx.TooManyRedirects | httpx.InvalidURL):
         raise APIClientError(f"Non-retryable request error: {type(e).__name__}") from e
 
@@ -80,7 +80,7 @@ def map_request_error(e: httpx.RequestError | httpx.InvalidURL) -> APIClientErro
         connect_exc = APIConnectionError(f"Connection failed: {type(e).__name__}")
         connect_exc.__cause__ = e
         return connect_exc
-    # NetworkError, etc. - retryable network issues
+    # NetworkError 等はリトライ可能なネットワークエラー
     network_exc = APIConnectionError(f"Network error: {type(e).__name__}")
     network_exc.__cause__ = e
     return network_exc
@@ -116,7 +116,9 @@ def resolve_client_config(
     active_settings = settings
     base_url = base_url if base_url is not None else active_settings.api.base_url
     if not base_url.strip():
-        raise ValueError("base_url が空です。引数または API__BASE_URL 環境変数を確認してください。")
+        raise ValueError(
+            "base_url is empty. Check the argument or the API__BASE_URL environment variable."
+        )
     timeout = timeout if timeout is not None else active_settings.api.timeout
     retry_count = retry_count if retry_count is not None else active_settings.api.retry_count
     retry_delay = retry_delay if retry_delay is not None else active_settings.api.retry_delay

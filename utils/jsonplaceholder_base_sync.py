@@ -1,4 +1,4 @@
-"""Base synchronous JSONPlaceholder HTTP client."""
+"""JSONPlaceholder 同期HTTP基底クライアント"""
 
 import time
 from types import TracebackType
@@ -14,8 +14,6 @@ from utils.retry import exponential_backoff_with_jitter
 
 
 class SyncAPIClient:
-    """基本的な同期HTTPクライアント"""
-
     def __init__(
         self,
         base_url: str | None = None,

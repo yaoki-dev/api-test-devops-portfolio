@@ -1,4 +1,4 @@
-"""Synchronous JSONPlaceholder resource client."""
+"""JSONPlaceholder 同期リソースクライアント"""
 
 from typing import Any
 

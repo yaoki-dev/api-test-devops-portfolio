@@ -287,7 +287,7 @@ class TestSettingsEnvironmentValidation:
             Settings(environment="producton")  # type: ignore[arg-type]
         # エラーメッセージに有効値リストが含まれることを検証（契約の明示的保護）
         # Pydantic非依存: validate_environment のカスタムメッセージを .errors() で検証
-        assert any("有効な値" in str(e["msg"]) for e in exc_info.value.errors())
+        assert any("Valid values" in str(e["msg"]) for e in exc_info.value.errors())
 
     def test_environment_validation_invalid_type_raises(self) -> None:
         with pytest.raises(ValidationError):

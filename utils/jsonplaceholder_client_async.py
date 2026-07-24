@@ -1,4 +1,4 @@
-"""Asynchronous JSONPlaceholder resource client."""
+"""JSONPlaceholder 非同期リソースクライアント"""
 
 import asyncio
 from typing import Any, Final, TypedDict, cast
@@ -17,7 +17,7 @@ MAX_LOGGED_FAILURE_DETAILS: Final[int] = 5
 
 
 class UserDataDict(TypedDict):
-    """get_user_data() return type."""
+    """get_user_data() の戻り値型"""
 
     user: User
     posts: list[Post]
