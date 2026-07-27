@@ -17,7 +17,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import utils.sentry_scrub_events as sentry_events
-import utils.sentry_scrub_primitives as sentry_primitives
 from utils.sentry_scrub_events import (
     _scrub_exception_field,
     _scrub_exception_value_item,
@@ -44,7 +43,7 @@ class TestScrubExceptionField:
             ],
         }
 
-        with patch.object(sentry_primitives._logger, "warning") as mock_warning:
+        with patch.object(sentry_events, "_safe_log_warning") as mock_warning:
             result = _scrub_exception_field(exception_value)
 
         frames = result["values"][0]["stacktrace"]["frames"]
@@ -52,7 +51,8 @@ class TestScrubExceptionField:
         assert frames[1]["vars"] == {"password": "[REDACTED]", "safe": "ok"}
 
         mock_warning.assert_called_once()
-        call_kwargs = mock_warning.call_args[1]
+        assert mock_warning.call_args.args[0] == "sentry_exception_frame_unexpected_type"
+        call_kwargs = mock_warning.call_args.kwargs
         assert call_kwargs["actual_type"] == "str"
         assert call_kwargs["action"] == "skip_frame_scrub"
 
