@@ -3,7 +3,8 @@
 utils/sentry_init.py の初期化ライフサイクル（init / state / SDK例外 / 無効DSN警告）の単体テスト
 
 Note: 機密データスクラブ関連テスト: test_sentry_scrub_events.py /
-test_sentry_scrub_primitives.py / test_sentry_scrub_values.py へ分割済み。
+test_sentry_scrub_primitives.py / test_sentry_scrub_values.py /
+test_sentry_transaction_span.py / test_sentry_scrub_event_helpers.py へ分割済み。
 
 """
 
