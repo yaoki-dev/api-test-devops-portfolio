@@ -83,7 +83,7 @@ async def test_retry_on_server_error(mock_sleep: AsyncMock, mock_backoff: Mock) 
 async def test_timeout_handling(
     timeout_exception: httpx.TimeoutException,
     expected_message: str,
-):
+) -> None:
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(side_effect=timeout_exception)
 
     with patch(
@@ -124,7 +124,7 @@ async def test_timeout_handling(
 
 
 @respx.mock
-async def test_timeout_logging_no_pii_leak():
+async def test_timeout_logging_no_pii_leak() -> None:
     """タイムアウト詳細をログと例外チェーンから除外し、PII漏洩を防止する。"""
     sensitive_detail = "https://api.example.com/internal?token=SECRET_API_KEY_12345"  # noqa: S105
     timeout_exception = httpx.ConnectTimeout(sensitive_detail)
@@ -415,7 +415,7 @@ async def test_request_http_status_error_is_saved_before_safe_handler_call() -> 
 
 
 @respx.mock
-async def test_httpx_status_error_4xx():
+async def test_httpx_status_error_4xx() -> None:
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=401,
         headers={"X-RateLimit-Remaining": "60"},
@@ -573,7 +573,7 @@ async def test_httpx_status_error_403_auth_error_with_message() -> None:
 
 
 @respx.mock
-async def test_unexpected_exception():
+async def test_unexpected_exception() -> None:
     sensitive_detail = "secret connection string"
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").mock(
         side_effect=ValueError(sensitive_detail)
@@ -604,7 +604,7 @@ async def test_unexpected_exception():
 
 
 @respx.mock
-async def test_response_not_read_propagates_without_unexpected_wrapper():
+async def test_response_not_read_propagates_without_unexpected_wrapper() -> None:
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
     route.side_effect = [httpx.ResponseNotRead()]
     async with AsyncGitHubClient() as client:
@@ -614,7 +614,7 @@ async def test_response_not_read_propagates_without_unexpected_wrapper():
 
 
 @respx.mock
-async def test_json_decode_error():
+async def test_json_decode_error() -> None:
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=200,
         content=b"invalid json content",

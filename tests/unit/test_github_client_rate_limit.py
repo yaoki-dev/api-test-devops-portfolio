@@ -6,7 +6,6 @@ reset / retry-after ヘッダーの解釈と不正値のフォールバック、
 """
 
 from datetime import UTC, datetime
-from unittest.mock import ANY, patch
 
 import httpx
 import pytest
@@ -29,7 +28,7 @@ SECONDARY_RATE_LIMIT_MESSAGE = (
 
 
 @respx.mock
-async def test_rate_limit_exceeded():
+async def test_rate_limit_exceeded() -> None:
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=403,
         headers={
@@ -48,7 +47,7 @@ async def test_rate_limit_exceeded():
 
 
 @respx.mock
-async def test_rate_limit_warning_log():
+async def test_rate_limit_warning_log() -> None:
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=200,
         json={"login": "octocat"},
@@ -58,47 +57,40 @@ async def test_rate_limit_warning_log():
         },
     )
 
-    async with AsyncGitHubClient() as client:
-        with patch.object(client.logger, "warning") as mock_warning:
+    with capture_logs() as log_output:
+        async with AsyncGitHubClient() as client:
             await client.get_user("octocat")
 
-            # 警告ログ呼び出し確認（引数順序変更に強い形式）
-            mock_warning.assert_called_once_with(
-                "rate_limit_low",
-                remaining=5,
-                reset_time=ANY,
-            )
-
+    rate_limit_low_logs = [log for log in log_output if log.get("event") == "rate_limit_low"]
+    assert len(rate_limit_low_logs) == 1
+    assert rate_limit_low_logs[0]["log_level"] == "warning"
+    assert rate_limit_low_logs[0]["remaining"] == 5
+    expected_reset_time = datetime.fromtimestamp(1640000000, tz=UTC).isoformat()
+    assert rate_limit_low_logs[0]["reset_time"] == expected_reset_time
+    # フィールド集合を固定し、レスポンスヘッダー等の PII が後から混入するのを検出する
+    assert set(rate_limit_low_logs[0]) == {"event", "log_level", "remaining", "reset_time"}
     assert route.call_count == 1
 
 
 @respx.mock
-async def test_403_non_rate_limit():
-    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
-    route.side_effect = [
-        httpx.Response(
-            403,
-            json={"message": "Repository access blocked"},
-            headers={"X-RateLimit-Remaining": "50"},
-        ),
-        httpx.Response(
-            403,
-            json={"message": "Repository access blocked"},
-            headers={"X-RateLimit-Remaining": "50"},
-        ),
-    ]
+async def test_403_non_rate_limit() -> None:
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
+        403,
+        json={"message": "Repository access blocked"},
+        headers={"X-RateLimit-Remaining": "50"},
+    )
 
     async with AsyncGitHubClient() as client:
-        with pytest.raises(GitHubAPIError, match="Access forbidden"):
-            await client.get_user("octocat")
-
         with pytest.raises(GitHubAPIError, match="Access forbidden") as exc_info:
             await client.get_user("octocat")
-        assert not isinstance(exc_info.value, RateLimitError)
+
+    # remaining が枯渇していない 403 は RateLimitError へ昇格させない
+    assert not isinstance(exc_info.value, RateLimitError)
+    assert route.call_count == 1
 
 
 @respx.mock
-async def test_invalid_rate_limit_header_remaining():
+async def test_invalid_rate_limit_header_remaining() -> None:
     """不正なレート制限ヘッダーで外部例外を出さず、安全なフォールバックへ進む。"""
     respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=200,
@@ -119,7 +111,7 @@ async def test_invalid_rate_limit_header_remaining():
 
 
 @respx.mock
-async def test_invalid_rate_limit_header_403():
+async def test_invalid_rate_limit_header_403() -> None:
     """403経路でも不正ヘッダーを再解析せず、warning後に安全なAPIエラーへ落とす。"""
     respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=403,
@@ -141,7 +133,7 @@ async def test_invalid_rate_limit_header_403():
 
 
 @respx.mock
-async def test_invalid_rate_limit_header_429_secondary_logs_warning_once():
+async def test_invalid_rate_limit_header_429_secondary_logs_warning_once() -> None:
     """429の secondary 判定でも X-RateLimit-Remaining を二重パースしない。
 
     403 は _handle_403_response にパース済みの値を渡して重複を避けており
@@ -167,7 +159,7 @@ async def test_invalid_rate_limit_header_429_secondary_logs_warning_once():
 
 
 @respx.mock
-async def test_invalid_rate_limit_reset_header_low_remaining():
+async def test_invalid_rate_limit_reset_header_low_remaining() -> None:
     """レート制限ヘッダーの一部が壊れても、警告と処理継続を両立する。"""
     respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=200,
@@ -204,7 +196,7 @@ async def test_invalid_rate_limit_reset_header_low_remaining():
 
 
 @respx.mock
-async def test_invalid_rate_limit_reset_header_rate_limit_exceeded():
+async def test_invalid_rate_limit_reset_header_rate_limit_exceeded() -> None:
     """remaining=0ではreset解析失敗後もRateLimitErrorによる待機制御を維持する。"""
     respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=403,
@@ -264,10 +256,20 @@ async def test_429_response_raises_rate_limit_error() -> None:
 
 @respx.mock
 async def test_httpx_status_error_429_defensive_path() -> None:
-    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
-        429,
-        headers={"X-RateLimit-Reset": "1640000000"},
+    """防御的パス（_handle_http_status_error）の429でも reset ヘッダーを解釈する。
+
+    通常パスの429は _request 内で先行処理されるため、side_effect に HTTPStatusError を
+    積んで防御的パスを通す。同じ検証を respond(429) で書くと通常パスに落ち、
+    test_429_response_raises_rate_limit_error と重複して本経路が未固定になる。
+    """
+    request = httpx.Request("GET", f"{GITHUB_API_BASE_URL}/users/octocat")
+    response_429 = httpx.Response(429, request=request, headers={"X-RateLimit-Reset": "1640000000"})
+    error_429 = httpx.HTTPStatusError(
+        "429 Too Many Requests", request=request, response=response_429
     )
+
+    route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
+    route.side_effect = [error_429]
 
     async with AsyncGitHubClient() as client:
         with pytest.raises(RateLimitError) as exc_info:

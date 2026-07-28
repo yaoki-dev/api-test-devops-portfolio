@@ -6,7 +6,7 @@ close 時例外の抑制・再送出・本体例外との優先順位、aclose()
 """
 
 import asyncio
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -17,7 +17,7 @@ from utils.github_client import AsyncGitHubClient
 pytestmark = pytest.mark.unit
 
 
-async def test_context_manager_initialization():
+async def test_context_manager_initialization() -> None:
     client = AsyncGitHubClient()
     managed_client: httpx.AsyncClient | None = None
     assert client._client is None
@@ -181,13 +181,17 @@ async def test_aexit_body_exception_not_overridden_by_close_exception() -> None:
     """body例外とaclose例外の併発時に原因情報を失わないため、close例外をre-raiseせず
     body例外を優先伝播させることを検証する（CWE-755例外マスク回避）。"""
     client = AsyncGitHubClient()
+    # __aenter__ が生成するクライアント自体を差し替える。ブロック内で _client を代入すると
+    # __aenter__ が生成した実クライアントが閉じられないまま破棄される。
+    mock_async_client = AsyncMock()
+    mock_async_client.aclose = AsyncMock(side_effect=RuntimeError("close-failed"))
 
-    with pytest.raises(ValueError, match="body-error"), capture_logs() as log_output:
+    with (
+        patch("utils.github_client.httpx.AsyncClient", return_value=mock_async_client),
+        pytest.raises(ValueError, match="body-error"),
+        capture_logs() as log_output,
+    ):
         async with client:
-            # __aenter__ で初期化された _client を AsyncMock に差し替えて
-            # aclose() を例外化する。
-            client._client = AsyncMock()
-            client._client.aclose = AsyncMock(side_effect=RuntimeError("close-failed"))
             raise ValueError("body-error")
 
     # close 例外は re-raise しない。body 例外は ValueError として外側に伝播
@@ -221,12 +225,16 @@ async def test_aexit_fatal_close_exception_propagates_even_with_body_exception(
     専用except句で先取りしbody例外併発時もfail-fastで伝播させる
     （api_client._close_async_client/sentry_initと同一方針の回帰防止）。"""
     client = AsyncGitHubClient()
+    # __aenter__ が生成するクライアント自体を差し替える（実クライアントの取り残しを防ぐ）。
+    mock_async_client = AsyncMock()
+    mock_async_client.aclose = AsyncMock(side_effect=fatal_exc)
 
-    with pytest.raises(type(fatal_exc)), capture_logs() as log_output:
+    with (
+        patch("utils.github_client.httpx.AsyncClient", return_value=mock_async_client),
+        pytest.raises(type(fatal_exc)),
+        capture_logs() as log_output,
+    ):
         async with client:
-            # __aenter__ で初期化された _client を AsyncMock に差し替えて aclose() を fatal 化。
-            client._client = AsyncMock()
-            client._client.aclose = AsyncMock(side_effect=fatal_exc)
             raise ValueError("body-error")
 
     # 専用 except 句が except Exception より先に re-raise するため、
@@ -242,7 +250,7 @@ async def test_aexit_fatal_close_exception_propagates_even_with_body_exception(
     assert len(closed_logs) == 0
 
 
-async def test_request_without_context_manager():
+async def test_request_without_context_manager() -> None:
     client = AsyncGitHubClient()
     # async withを使わずに直接_requestを呼ぶ
     with pytest.raises(RuntimeError) as exc_info:
