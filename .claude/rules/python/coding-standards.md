@@ -42,7 +42,11 @@ paths: ["**/*.py"]
 
 ```python
 def __init__(self, base_url: str | None = None) -> None: ...  # Python 3.10+ Union
+
+
 type JSONResponse = dict[str, Any]  # Python 3.12+ 型エイリアス
+
+
 async def __aenter__(self) -> Self: ...  # Python 3.11+ Self型
 ```
 
@@ -117,7 +121,7 @@ async with asyncio.TaskGroup() as tg:  # Python 3.11+ 推奨
 ## 7. パフォーマンス
 
 ```python
-squares = [x**2 for x in range(100)]         # リスト内包表記（小規模）
+squares = [x**2 for x in range(100)]  # リスト内包表記（小規模）
 total = sum(x**2 for x in range(1_000_000))  # ジェネレータ式（大規模）
 result = "".join(str(item) for item in items)  # 文字列結合 O(n)
 ```
@@ -129,6 +133,7 @@ result = "".join(str(item) for item in items)  # 文字列結合 O(n)
 ```python
 # pytest-asyncio が async テストを自動検出する (asyncio_mode = "auto")
 async def test_async_get_user(sample_user_data, mock_response): ...
+
 
 @pytest.fixture
 def sample_user_data() -> dict[str, Any]:
@@ -167,8 +172,10 @@ uv run pre-commit install                          # pre-commit（ruffのみ）
 @dataclass(slots=True, frozen=True)  # メモリ効率+不変
 class UserResponse: ...
 
+
 from config.settings import settings  # 設定管理
-from utils.logger import get_logger   # structlogログ
+from utils.logger import get_logger  # structlogログ
+
 logger.info("処理開始", user_id=123)  # 構造化ログ
 ```
 
