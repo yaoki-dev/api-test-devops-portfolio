@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from utils.exceptions import APIClientError
 from utils.github_error_handler import (
     GitHubAPIError,
     GitHubServerError,
@@ -26,6 +27,65 @@ from utils.github_error_handler import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_github_api_error_uses_shared_api_client_error() -> None:
+    assert issubclass(GitHubAPIError, APIClientError)
+
+
+def test_sanitized_jsondecodeerror_str_contains_no_response_body() -> None:
+    """SanitizedJSONDecodeError.__str__() は型・位置情報のみで body を含まない
+
+    現状の PII 漏洩防止は __cause__ チェーン切断（__context__=None）に依存するが、
+    __str__ 出力自体が response body を構造的に保持しないことを直接検証し、
+    将来のフォーマット変更による回帰を検出する。
+    """
+    cause = SanitizedJSONDecodeError(
+        "json.JSONDecodeError",
+        msg="Expecting value",
+        pos=42,
+        lineno=3,
+        colno=7,
+    )
+
+    rendered = str(cause)
+    # msg は json.JSONDecodeError.msg（静的パーサ診断文字列）で PII 非含有
+    assert rendered == "json.JSONDecodeError: Expecting value pos=42, lineno=3, colno=7"
+    assert cause.msg == "Expecting value"  # 破損種別識別用 msg を保持
+    assert cause.pos == 42
+    assert cause.lineno == 3
+    assert cause.colno == 7  # 診断用 colno を保持
+    # 仮にレスポンス body 由来の機密文字列があっても __str__ には現れない
+    assert "password" not in rendered
+    assert "token" not in rendered
+
+
+def test_sanitized_jsondecodeerror_reduce_roundtrip_preserves_fields() -> None:
+    """SanitizedJSONDecodeError は __reduce__ で全フィールドを復元可能
+
+    非標準 __init__ シグネチャ（5 引数）のため __reduce__ を実装。pytest-xdist の
+    worker→controller 例外転送や Sentry SDK シリアライズが依存する pickle プロトコル
+    の契約（``cls(*args)`` で再構築可能）を直接検証する。pickle.loads は CWE-502 回避の
+    ため使わず、__reduce__ の戻り値から手動で再構築して TypeError にならないことを保証する。
+    """
+    original = SanitizedJSONDecodeError(
+        "json.JSONDecodeError",
+        msg="Expecting value",
+        pos=42,
+        lineno=3,
+        colno=7,
+    )
+
+    cls, args = original.__reduce__()
+    restored = cls(*args)
+
+    assert isinstance(restored, SanitizedJSONDecodeError)
+    assert restored.error_type == "json.JSONDecodeError"
+    assert restored.msg == "Expecting value"
+    assert restored.pos == 42
+    assert restored.lineno == 3
+    assert restored.colno == 7
+    assert str(restored) == str(original)
 
 
 def test_redact_body_preview_different_inputs_produce_different_hashes() -> None:
