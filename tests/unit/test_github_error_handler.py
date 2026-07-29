@@ -1,6 +1,6 @@
 """github_error_handler モジュールの独立ユニットテスト。
 
-GW1 で抽出された純粋関数（redact_body_preview）、例外クラス
+github_client.py から抽出された純粋関数（redact_body_preview）、例外クラス
 （SanitizedJSONDecodeError, GitHubAPIError 他）、ハンドラ関数の振る舞いを
 facade 非依存で検証する。
 """

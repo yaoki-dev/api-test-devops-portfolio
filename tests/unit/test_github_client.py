@@ -21,7 +21,7 @@ pytestmark = pytest.mark.unit
 GITHUB_API_BASE_URL = "https://api.github.com"
 
 
-def test_gw1_public_contract_symbols_are_promoted() -> None:
+def test_public_contract_symbols_are_promoted() -> None:
     cause = SanitizedJSONDecodeError("json.JSONDecodeError", "Expecting value", 0, 1, 1)
 
     assert RATE_LIMIT_WARNING_THRESHOLD == 10

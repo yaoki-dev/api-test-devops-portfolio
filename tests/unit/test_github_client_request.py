@@ -381,7 +381,7 @@ async def test_local_protocol_error_is_not_retried() -> None:
 
 @respx.mock
 async def test_request_http_status_error_is_saved_before_safe_handler_call() -> None:
-    """GW3: HTTPStatusError は except 外へ退避後にPII-safe handlerへ渡す。"""
+    """HTTPStatusError は except 外へ退避後にPII-safe handlerへ渡す。"""
     request = httpx.Request("GET", f"{GITHUB_API_BASE_URL}/users/octocat?token=secret")
     response = httpx.Response(401, request=request, content=b"token=secret")
     status_error = httpx.HTTPStatusError("401 secret", request=request, response=response)
