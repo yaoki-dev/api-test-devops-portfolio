@@ -15,7 +15,7 @@ GITHUB_API_BASE_URL = "https://api.github.com"
 
 
 @respx.mock
-async def test_etag_cache_hit():
+async def test_etag_cache_hit() -> None:
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat")
     route.side_effect = [
         httpx.Response(

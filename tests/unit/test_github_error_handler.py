@@ -6,6 +6,7 @@ facade 非依存で検証する。
 """
 
 import json
+import pickle
 import re
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -33,7 +34,7 @@ def test_github_api_error_uses_shared_api_client_error() -> None:
     assert issubclass(GitHubAPIError, APIClientError)
 
 
-def test_sanitized_jsondecodeerror_str_contains_no_response_body() -> None:
+def test_sanitized_json_decode_error_str_contains_no_response_body() -> None:
     """SanitizedJSONDecodeError.__str__() は型・位置情報のみで body を含まない
 
     現状の PII 漏洩防止は __cause__ チェーン切断（__context__=None）に依存するが、
@@ -60,13 +61,13 @@ def test_sanitized_jsondecodeerror_str_contains_no_response_body() -> None:
     assert "token" not in rendered
 
 
-def test_sanitized_jsondecodeerror_reduce_roundtrip_preserves_fields() -> None:
-    """SanitizedJSONDecodeError は __reduce__ で全フィールドを復元可能
+def test_sanitized_json_decode_error_reduce_roundtrip_preserves_fields() -> None:
+    """__reduce__ の戻り値だけから全フィールドを復元できる
 
-    非標準 __init__ シグネチャ（5 引数）のため __reduce__ を実装。pytest-xdist の
-    worker→controller 例外転送や Sentry SDK シリアライズが依存する pickle プロトコル
-    の契約（``cls(*args)`` で再構築可能）を直接検証する。pickle.loads は CWE-502 回避の
-    ため使わず、__reduce__ の戻り値から手動で再構築して TypeError にならないことを保証する。
+    非標準 __init__ シグネチャ（5 引数）に対し Exception 既定の __reduce__
+    （args=単一メッセージ文字列）では復元時に TypeError になるため上書きしている。
+    本テストが見るのは戻り値の「形」のみで、pickler は経由しない。実プロトコル経由の
+    往復は test_sanitized_json_decode_error_pickle_roundtrip_preserves_fields が担当する。
     """
     original = SanitizedJSONDecodeError(
         "json.JSONDecodeError",
@@ -78,6 +79,34 @@ def test_sanitized_jsondecodeerror_reduce_roundtrip_preserves_fields() -> None:
 
     cls, args = original.__reduce__()
     restored = cls(*args)
+
+    assert isinstance(restored, SanitizedJSONDecodeError)
+    assert restored.error_type == "json.JSONDecodeError"
+    assert restored.msg == "Expecting value"
+    assert restored.pos == 42
+    assert restored.lineno == 3
+    assert restored.colno == 7
+    assert str(restored) == str(original)
+
+
+def test_sanitized_json_decode_error_pickle_roundtrip_preserves_fields() -> None:
+    """実 pickle プロトコル経由でも全フィールドを復元できる
+
+    __reduce__ の戻り値の形が正しくても、クラスがモジュールトップレベルで参照解決
+    できなければ pickler 自体が失敗する。cls(*args) を直接呼ぶ上のテストはこの経路を
+    通らないため、pytest-xdist の worker→controller 例外転送と Sentry SDK
+    シリアライズが実際に依存する経路を別テストとして検証する。
+    """
+    original = SanitizedJSONDecodeError(
+        "json.JSONDecodeError",
+        msg="Expecting value",
+        pos=42,
+        lineno=3,
+        colno=7,
+    )
+
+    # 直前に自身で生成したバイト列のみを扱い信頼境界を跨がないため CWE-502 非該当
+    restored = pickle.loads(pickle.dumps(original))  # noqa: S301
 
     assert isinstance(restored, SanitizedJSONDecodeError)
     assert restored.error_type == "json.JSONDecodeError"
