@@ -164,7 +164,7 @@ TodoWrite remains the in-session UI tool.
 | 3: Types | 0 errors, all hints present | `.claude/CLAUDE.md`「統合コマンド」の mypy 部分 |
 | 4: VCS | Committed with conventional message | `git add` + `Skill(commit)` |
 
-**Verification:** `.claude/CLAUDE.md` Section「品質ゲート」→「統合コマンド」 + `git status`
+**Verification:** `.claude/CLAUDE.md` Section「品質ゲート」→「統合コマンド」 + Gate 4 check (`.claude/rules/testing/quality-gates.md` Section「統合検証コマンド」)
 
 **Reference:** `@memory:implementation_quality_gates`, `@memory:api-specification-check`
 

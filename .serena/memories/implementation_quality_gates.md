@@ -80,11 +80,7 @@ uv run mypy utils/ config/ models/
 
 ### ✅ Gate 4: git commit実行済み
 
-**検証コマンド**:
-```bash
-git status
-git log -1 --oneline
-```
+**検証コマンド**: `.claude/rules/testing/quality-gates.md` Section「統合検証コマンド」の Gate 4 チェックを使用する（本メモリには複製しない）。`git status` / `git log --oneline` は状態の目視確認用であり、合格判定には使えない（終了コードで形式違反を検出できない）。
 
 **合格基準**:
 - 変更がgit commitされている
@@ -112,13 +108,7 @@ security: セキュリティ修正
 
 ## 統合検証コマンド（全ゲート一括実行）
 
-**ワンライナー**:
-```bash
-uv run pytest -n auto --cov-fail-under=[目標] && \
-uv run ruff check . && \
-uv run mypy utils/ config/ models/ && \
-git status
-```
+**ワンライナー**: `.claude/CLAUDE.md` Section「品質ゲート」→「統合コマンド」を使用する（本メモリには複製しない）。
 
 **成功例**（※数値は実行時点の例）:
 ```
