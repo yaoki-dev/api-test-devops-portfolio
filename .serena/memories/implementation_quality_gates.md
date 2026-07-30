@@ -85,7 +85,9 @@ uv run mypy utils/ config/ models/ tests/conftest.py
 **合格基準**:
 - 変更がgit commitされている
 - コミットメッセージが意味を持つ（`feat:`, `fix:`, `test:` 等のprefix使用）
-- Untracked filesが実装成果物のみ（一時ファイルは除外）— **目視確認基準**。成果物か一時ファイルかの判別は自動化できないため、Gate 4 検証コマンドの判定対象外とする（列挙は `git ls-files --others --exclude-standard`）
+
+**補足（合格判定に含めない目視確認）**:
+- Untracked filesが実装成果物のみか（一時ファイルは除外）。成果物か一時ファイルかの判別は自動化できないため合格基準には含めず、混入時は下記「不合格時の対応」で除外する。列挙: `git ls-files --others --exclude-standard`
 
 **Conventional Commits形式**:
 ```

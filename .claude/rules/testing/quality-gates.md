@@ -62,7 +62,7 @@ uv run mypy utils/ config/ models/ tests/conftest.py
 
 `.claude/CLAUDE.md` Section「品質ゲート」→「統合コマンド」を使用する（本ファイルには複製しない）。
 
-Gate 4 の確認は以下を使用する。`git status` 単体では未コミット変更の有無を終了コードで表現できず、コミットメッセージの形式も判別できない。未追跡ファイルは `@memory:implementation_quality_gates` の合格基準に従い本チェックの対象外とする。
+Gate 4 の確認は以下を使用する。`git status` 単体では未コミット変更の有無を終了コードで表現できず、コミットメッセージの形式も判別できない。未追跡ファイルは自動判定できないため合格基準に含めず、本チェックの対象外とする（目視確認の手順は `@memory:implementation_quality_gates` Gate 4 の「補足」を参照）。
 
 ```bash
 git diff --quiet && git diff --cached --quiet && \
