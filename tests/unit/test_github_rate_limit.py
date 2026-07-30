@@ -1,6 +1,6 @@
 """github_rate_limit モジュールの独立ユニットテスト。
 
-GW1 で抽出された純粋関数（_parse_rate_limit_header, _check_rate_limit_warning）と
+github_client.py から抽出された純粋関数（_parse_rate_limit_header, _check_rate_limit_warning）と
 公開定数（RATE_LIMIT_WARNING_THRESHOLD）の振る舞いを facade 非依存で検証する。
 """
 

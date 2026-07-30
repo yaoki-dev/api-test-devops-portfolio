@@ -1,17 +1,19 @@
 """github_error_handler モジュールの独立ユニットテスト。
 
-GW1 で抽出された純粋関数（redact_body_preview）、例外クラス
+github_client.py から抽出された純粋関数（redact_body_preview）、例外クラス
 （SanitizedJSONDecodeError, GitHubAPIError 他）、ハンドラ関数の振る舞いを
 facade 非依存で検証する。
 """
 
 import json
+import pickle
 import re
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
+from utils.exceptions import APIClientError
 from utils.github_error_handler import (
     GitHubAPIError,
     GitHubServerError,
@@ -26,6 +28,93 @@ from utils.github_error_handler import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_github_api_error_uses_shared_api_client_error() -> None:
+    assert issubclass(GitHubAPIError, APIClientError)
+
+
+def test_sanitized_json_decode_error_str_contains_no_response_body() -> None:
+    """SanitizedJSONDecodeError.__str__() は型・位置情報のみで body を含まない
+
+    現状の PII 漏洩防止は __cause__ チェーン切断（__context__=None）に依存するが、
+    __str__ 出力自体が response body を構造的に保持しないことを直接検証し、
+    将来のフォーマット変更による回帰を検出する。
+    """
+    cause = SanitizedJSONDecodeError(
+        "json.JSONDecodeError",
+        msg="Expecting value",
+        pos=42,
+        lineno=3,
+        colno=7,
+    )
+
+    rendered = str(cause)
+    # msg は json.JSONDecodeError.msg（静的パーサ診断文字列）で PII 非含有
+    assert rendered == "json.JSONDecodeError: Expecting value pos=42, lineno=3, colno=7"
+    assert cause.msg == "Expecting value"  # 破損種別識別用 msg を保持
+    assert cause.pos == 42
+    assert cause.lineno == 3
+    assert cause.colno == 7  # 診断用 colno を保持
+    # 仮にレスポンス body 由来の機密文字列があっても __str__ には現れない
+    assert "password" not in rendered
+    assert "token" not in rendered
+
+
+def test_sanitized_json_decode_error_reduce_roundtrip_preserves_fields() -> None:
+    """__reduce__ の戻り値だけから全フィールドを復元できる
+
+    非標準 __init__ シグネチャ（5 引数）に対し Exception 既定の __reduce__
+    （args=単一メッセージ文字列）では復元時に TypeError になるため上書きしている。
+    本テストが見るのは戻り値の「形」のみで、pickler は経由しない。実プロトコル経由の
+    往復は test_sanitized_json_decode_error_pickle_roundtrip_preserves_fields が担当する。
+    """
+    original = SanitizedJSONDecodeError(
+        "json.JSONDecodeError",
+        msg="Expecting value",
+        pos=42,
+        lineno=3,
+        colno=7,
+    )
+
+    cls, args = original.__reduce__()
+    restored = cls(*args)
+
+    assert isinstance(restored, SanitizedJSONDecodeError)
+    assert restored.error_type == "json.JSONDecodeError"
+    assert restored.msg == "Expecting value"
+    assert restored.pos == 42
+    assert restored.lineno == 3
+    assert restored.colno == 7
+    assert str(restored) == str(original)
+
+
+def test_sanitized_json_decode_error_pickle_roundtrip_preserves_fields() -> None:
+    """実 pickle プロトコル経由でも全フィールドを復元できる
+
+    __reduce__ の戻り値の形が正しくても、クラスがモジュールトップレベルで参照解決
+    できなければ pickler 自体が失敗する。cls(*args) を直接呼ぶ上のテストはこの経路を
+    通らないため、pytest-xdist の worker→controller 例外転送と Sentry SDK
+    シリアライズが実際に依存する経路を別テストとして検証する。
+    """
+    original = SanitizedJSONDecodeError(
+        "json.JSONDecodeError",
+        msg="Expecting value",
+        pos=42,
+        lineno=3,
+        colno=7,
+    )
+
+    # 直前に自身で生成したバイト列のみを扱い信頼境界を跨がないため CWE-502 非該当
+    restored = pickle.loads(pickle.dumps(original))  # noqa: S301
+
+    assert isinstance(restored, SanitizedJSONDecodeError)
+    assert restored.error_type == "json.JSONDecodeError"
+    assert restored.msg == "Expecting value"
+    assert restored.pos == 42
+    assert restored.lineno == 3
+    assert restored.colno == 7
+    assert str(restored) == str(original)
 
 
 def test_redact_body_preview_different_inputs_produce_different_hashes() -> None:
