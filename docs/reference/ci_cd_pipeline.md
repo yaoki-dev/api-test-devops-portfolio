@@ -1,6 +1,6 @@
 # CI/CD Pipeline
 
-*最終更新: 2026年02月13日*
+*最終更新: 2026-07-30*
 
 ## 🚀 CI/CDパイプライン概要
 
@@ -185,7 +185,7 @@ uv run pytest -n auto -m "(unit or integration) and not external" \
 |---------|-------|-------|------------|
 | カバレッジ | 85% | 93.43% | `pytest --cov-fail-under=85` |
 | ruff | 0 errors | ✅ | `ruff check .` |
-| mypy | 0 errors | ✅ | `mypy utils/ config/ models/` |
+| mypy | 0 errors | ✅ | `mypy utils/ config/ models/ tests/conftest.py` |
 | セキュリティ | 0 Critical/High | ✅ | Trivy SARIF |
 
 ### CD（実装済み）

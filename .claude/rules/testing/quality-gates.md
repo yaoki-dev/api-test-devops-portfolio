@@ -1,6 +1,11 @@
+---
+paths:
+  - "**/*.py"
+---
+
 # プロジェクト品質ゲート基準
 
-*最終更新: 2026年02月10日*
+*最終更新: 2026-07-30*
 
 ## 目的
 
@@ -17,7 +22,7 @@ uv run pytest --cov=utils --cov=config --cov=models --cov-fail-under=[Phase別�
 ```
 
 - 全テストケース合格（0 failed）
-- カバレッジ目標達成（Phase別）
+- カバレッジ下限達成（下限値は `pyproject.toml` の `--cov-fail-under`）
 - 不合格時: `--cov-report=term-missing`で未カバー箇所特定
 
 ---
@@ -37,7 +42,7 @@ uv run ruff check --fix .
 ### Gate 3: mypy合格
 
 ```bash
-uv run mypy utils/ config/ models/
+uv run mypy utils/ config/ models/ tests/conftest.py
 ```
 
 - 型エラー: 0件
@@ -55,9 +60,7 @@ uv run mypy utils/ config/ models/
 
 ## 統合検証コマンド
 
-```bash
-uv run pytest -n auto --cov-fail-under=[目標] && uv run ruff check . && uv run mypy utils/ config/ models/ && git status
-```
+`.claude/CLAUDE.md` Section「品質ゲート」→「統合コマンド」を使用する（本ファイルには複製しない）。Gate 4 の確認は `git status` で行う。
 
 ---
 
@@ -72,14 +75,6 @@ uv run pytest -n auto --cov-fail-under=[目標] && uv run ruff check . && uv run
 
 ---
 
-## 実装活動記録
-
-品質ゲート合格後、`docs/progress/daily_progress.md`に記録。
-
-**記録フォーマット**: @memory:learning_triggers 参照
-
----
-
 ## 変更履歴
 
 | 日付 | 変更内容 |
@@ -88,6 +83,7 @@ uv run pytest -n auto --cov-fail-under=[目標] && uv run ruff check . && uv run
 | 2025-12-27 | 参照更新 |
 | 2026-02-05 | Gate 4: /commit必須化 |
 | 2026-02-10 | 簡潔化（221行→90行） |
+| 2026-07-30 | paths frontmatter追加（遅延ロード化）、コマンドを `.claude/CLAUDE.md`「統合コマンド」参照に統一、削除済みの日次進捗ファイルへの参照を除去 |
 
 ---
 

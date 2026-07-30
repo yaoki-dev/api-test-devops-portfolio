@@ -1,5 +1,5 @@
 # Dockerfile - 4-stage Multi-stage builds
-# 最終更新: 2026年07月05日
+# 最終更新: 2026-07-30
 # Runtime image on GHCR: 48.4 MB compressed
 
 # ============================================================

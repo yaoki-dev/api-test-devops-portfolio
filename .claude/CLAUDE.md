@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-*最終更新: 2026年07月21日*
+*最終更新: 2026-07-30*
 
 <!-- preserve-on-compact: CRITICAL RULES -->
 <!-- IMPORTANT: These rules override all other instructions -->
@@ -47,7 +47,7 @@ APIテスト + DevOps統合学習ポートフォリオ。時給4000-4500円レ�
 
 - Python 3.14
 - httpx (Sync + Async HTTP client)
-- pytest (1,358件テスト (CI条件)、カバレッジ目標: 85% / 実績: 96.15%)
+- pytest（カバレッジ下限は `pyproject.toml` の `--cov-fail-under`）
 - Pydantic Settings (型安全な設定管理)
 - structlog (構造化ログ)
 - Docker (Multi-stage builds)
@@ -61,9 +61,22 @@ APIテスト + DevOps統合学習ポートフォリオ。時給4000-4500円レ�
 
 **主要メモリ**:`implementation_quality_gates`, `test_strategy_details`
 
-**物理ファイル位置**: `.serena/memories/` 配下 | **登録済み**: 26個
+**物理ファイル位置**: `.serena/memories/` 配下
 
 ## 品質ゲート
+
+<!-- 品質ゲートコマンドの単一真実源。他ファイルは本節を参照し、コマンドを複製しない -->
+
+### 統合コマンド（コミット前必須）
+
+```bash
+uv run pytest -n auto -m "(unit or integration) and not external" \
+  --cov=utils --cov=config --cov=models --cov-report=term-missing && \
+uv run ruff check . && \
+uv run mypy utils/ config/ models/ tests/conftest.py
+```
+
+カバレッジ下限は `pyproject.toml` の `--cov-fail-under`（pytest の `addopts` 経由で自動適用）。個別に指定しない。
 
 ### リンター・フォーマッター
 
@@ -73,9 +86,9 @@ APIテスト + DevOps統合学習ポートフォリオ。時給4000-4500円レ�
 # 基本チェック（開発時）
 uv run ruff check --fix .           # スタイル + 自動修正
 uv run ruff format .                # フォーマット適用
-uv run mypy utils/ config/ models/  # 型チェック
+uv run mypy utils/ config/ models/ tests/conftest.py # 型チェック
 
-# セキュリティ（週次）
+# セキュリティ（手動実行・CI未統合。CIでは ruff S-rules + gitleaks が代替）
 uv run bandit -r utils/ config/ models/
 uv run safety scan
 ```
@@ -146,33 +159,11 @@ SECURITY__API_KEY=your-secret-key
 
 <!-- preserve-on-compact: Quality Gates -->
 **※1 worktree**: 固定worktree運用（${HOME}/projects/python/.worktrees/wt-feature0[1-3]（個人環境ごとにカスタマイズ））。セッション開始時にwatch_directoryの設定を確認する（mcp__CodeGraphContext__list_watched_paths）
-**※2 品質ゲート**: `uv run pytest -n auto -m "(unit or integration) and not external" --cov=utils --cov=config --cov=models --cov-report=term-missing &&
-uv run ruff check . && uv run mypy utils/ config/ models/`
+**※2 品質ゲート**: 本ファイル Section「品質ゲート」→「統合コマンド」を使用する
 
 ## トラブルシューティング
 
 **詳細**: @memory:test_strategy_details トラブルシューティングFAQ参照
-
-### テスト失敗時
-
-```bash
-uv run pytest -vv --tb=long          # 詳細ログ
-uv run pytest -x                      # 最初の失敗で停止
-uv run pytest tests/unit/test_async_client.py::test_name -vv --log-cli-level=DEBUG
-```
-
-### カバレッジ不足時
-
-```bash
-uv run pytest --cov-report=term-missing
-uv run pytest --cov-report=html && open reports/htmlcov/index.html
-```
-
-### 型チェックエラー時
-
-```bash
-uv run mypy --show-error-codes --pretty utils/ config/ models/
-```
 
 ### 複数回修正で解決しない場合
 

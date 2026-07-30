@@ -1,10 +1,11 @@
 ---
-paths: ["**/*.py"]
+paths:
+  - "**/*.py"
 ---
 
 # api-test-devops-portfolio コーディング規約
 
-*最終更新: 2026年02月10日*
+*最終更新: 2026-07-30*
 
 **Python バージョン**: 3.14 | **実装方針**: Python 3.14
 
@@ -38,7 +39,7 @@ paths: ["**/*.py"]
 
 全関数・メソッドに型ヒント必須（mypy: `disallow_untyped_defs = true`）
 
-**適用範囲**: `utils/`, `config/`, `models/`, `tests/conftest.py`, `tests/**/__init__.py` は強制対象。`tests/unit/test_*.py` 等のテスト本体は推奨（CI mypy invocation 対象外、漸次型付与方針）
+**適用範囲**: `utils/`, `config/`, `models/`, `tests/conftest.py` は強制対象（CI mypy invocation と同一）。`tests/unit/test_*.py` 等のテスト本体は推奨（対象外、漸次型付与方針）。`tests/**/__init__.py` はパッケージマーカー（docstring のみで型付け対象の定義を持たないため強制対象外）
 
 ```python
 def __init__(self, base_url: str | None = None) -> None: ...  # Python 3.10+ Union
@@ -50,7 +51,7 @@ type JSONResponse = dict[str, Any]  # Python 3.12+ 型エイリアス
 async def __aenter__(self) -> Self: ...  # Python 3.11+ Self型
 ```
 
-自動検証: `uv run mypy utils/ config/ models/ tests/conftest.py`
+自動検証: `.claude/CLAUDE.md`「統合コマンド」の mypy 部分（CI も同一コマンドで強制）
 
 ---
 
@@ -157,7 +158,7 @@ def sample_user_data() -> dict[str, Any]:
 
 ```bash
 uv run ruff check --fix . && uv run ruff format .  # リンター
-uv run mypy utils/ config/ models/                 # 型チェック
+# 型チェック: `.claude/CLAUDE.md`「統合コマンド」の mypy 部分を使う
 uv run bandit -r utils/ config/ models/            # セキュリティ
 uv run pre-commit install                          # pre-commit（ruffのみ）
 ```
