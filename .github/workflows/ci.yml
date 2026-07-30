@@ -61,7 +61,7 @@ jobs:
       # 設計決定: runner起動コスト~60秒削減 > 並列フィードバック喪失
       # 根拠: mypy失敗頻度低
       - name: Run mypy check
-        run: uv run mypy utils/ config/ models/
+        run: uv run mypy utils/ config/ models/ tests/conftest.py
 
       - name: Set test markers
         id: markers
@@ -864,7 +864,7 @@ jobs:
       # 設計決定: runner起動コスト~60秒削減 > 並列フィードバック喪失
       # 根拠: mypy失敗頻度低
       - name: Run mypy check
-        run: uv run mypy utils/ config/ models/
+        run: uv run mypy utils/ config/ models/ tests/conftest.py
 
       - name: Run smoke tests
         id: smoke-tests

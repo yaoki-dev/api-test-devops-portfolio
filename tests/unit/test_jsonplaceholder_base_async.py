@@ -85,7 +85,7 @@ async def test_async_context_manager_cleanup_on_success():
         mock_client_class.return_value = mock_client_instance
 
         async with AsyncAPIClient():
-            pass  # 何もしない
+            pass
 
         # aclose() が呼び出されることを確認
         mock_client_instance.aclose.assert_called_once()

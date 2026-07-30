@@ -50,19 +50,16 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
   - On failure: if **any** agent reports failure or partial completion, the parent agent must (1) allow already-running invocations to complete (Task tool has no cancel API), (2) collect and log agent statuses (success/failure/unknown), and (3) report full status summary to user before further action
   - Silent continuation after ambiguous/empty results is prohibited
   - On completion: after all parallel agents complete, the parent agent verifies **artifact existence only** (content validation delegated). Mark parent task complete.
-  - Context refinement (parent agent determines applicability before dispatch):
-    **Applicability check**: does the task prompt contain 1+ specific file paths (paths resolving to individual files with extension; glob patterns like `utils/*.py` and directory paths like `utils/` count as NO)?
-    - YES: Context refinement is optional (when skipping, record reason as `[SKIP: <reason>]` in agent response)
-    - NO (includes ambiguous cases): Context refinement is required
-    When applicable (YES case where agent opts in, or NO case where it is required), include `Skill(iterative-retrieval)` skill instructions
-    (dispatch → evaluate → refine → loop, max 3 cycles per task invocation) in the agent prompt
-    - Agent failure definition: empty response, timeout, error message, or partial response (investigation stopped mid-way) — all count as failure; failed cycle output is excluded from convergence evaluation (i.e., not used as comparison baseline for file list stability check) but may inform the next cycle's investigation scope
-    - Failed cycles consume 1 cycle each (infinite retry prohibited)
-    - Task restart (= new Task tool invocation issued) resets the cycle counter
-    - **Convergence criteria**: The impact scope boundary is finalized — the list of investigated files is stable (unchanged from the previous successful cycle) and no further investigation is needed
-    - Fallback triggers when ANY of: (a) 3 cycles reached, OR (b) 2 consecutive failures (consecutive = two immediately sequential cycles both counted as failed; a successful or partially-successful cycle resets the consecutive-failure counter to 0)
-      Report to parent agent: (i) cycles consumed (ii) context summary per cycle (iii) unresolved gap list (iv) which condition blocked convergence
-      Parent agent reports to user and awaits explicit user direction before proceeding
+  - Context refinement (the parent agent determines applicability before dispatch):
+    - If the task does not contain any concrete file paths already identified as in scope, or if applicability is ambiguous, include Skill(iterative-retrieval) in the agent prompt.
+    - If one or more concrete file paths are present, context refinement is optional. When skipping it, record `[SKIP: <reason>]`.
+    - A concrete file path means a path to an individual file with an extension. Glob patterns and directory paths do not qualify.
+    - iterative-retrieval runs a dispatch → evaluate → refine loop for a maximum of three cycles.
+    - An empty response, timeout, error, or investigation that stops before completion counts as a failed cycle, consumes one cycle, and does not reset the consecutive-failure counter. A failed cycle must not be used as the baseline for convergence comparison, but any useful information it produced may inform the next cycle.
+    - A new Task invocation resets the cycle counter. However, the same task must not be restarted solely to bypass the cycle limit.
+    - Convergence criteria: The investigated file list is unchanged from the previous successful cycle, and no unresolved gaps remain regarding the impact scope.
+    - Stop when either three cycles have been consumed or two consecutive cycles have failed. Report to the parent agent: the number of cycles consumed, a summary of each cycle’s investigation, unresolved gaps, the fallback condition triggered, and the reason convergence was not achieved.
+    - The parent agent must report the result to the user and must not perform any subsequent work until the user provides explicit instructions.
 
 **Task Classification**: Before dispatching, classify the task type:
 - **Implementation** : code writing, feature development, bug fixes, test authoring
@@ -96,7 +93,7 @@ validating, reconciling, and integrating all results. After all agents complete 
 
 **Good:** Plan → TodoWrite → Execute → Verify | **Bad:** Jump to implementation
 
-**Reference:** `api-specification-check.md`, `execution-efficiency.md`
+**Reference:** `@memory:api-specification-check`, `@memory:execution-efficiency`
 
 ---
 ## Category: Analysis-Only Request Boundary
@@ -151,7 +148,7 @@ TodoWrite remains the in-session UI tool.
 - When plan doc needed: create in claudedocs/plans/ per PLANS.md §使用閾値
 - Record AskUserQuestion results and design decisions in Decision Log (see PLANS.md)
 
-**Reference:** `execution-efficiency.md` (execution details) | `PLANS.md` (plan template)
+**Reference:** `@memory:execution-efficiency` (execution details) | `PLANS.md` (plan template)
 
 ---
 
@@ -164,15 +161,12 @@ TodoWrite remains the in-session UI tool.
 |------|-------|----------|
 | 1: Tests | All pass, coverage target met | `pytest -vv` |
 | 2: Linter | 0 errors | `ruff check --fix .` |
-| 3: Types | 0 errors, all hints present | `mypy --strict` |
+| 3: Types | 0 errors, all hints present | `.claude/CLAUDE.md`「統合コマンド」の mypy 部分 |
 | 4: VCS | Committed with conventional message | `git add` + `Skill(commit)` |
 
-**Verification:**
-```bash
-uv run pytest --cov-fail-under=[target] && uv run ruff check . && uv run mypy utils/ config/ models/ && git status
-```
+**Verification:** `.claude/CLAUDE.md` Section「品質ゲート」→「統合コマンド」 + Gate 4 check (`.claude/rules/testing/quality-gates.md` Section「統合検証コマンド」)
 
-**Reference:** `@memory:implementation_quality_gates`, `api-specification-check.md`
+**Reference:** `@memory:implementation_quality_gates`, `@memory:api-specification-check`
 
 ---
 
@@ -225,17 +219,8 @@ uv run pytest --cov-fail-under=[target] && uv run ruff check . && uv run mypy ut
 ## Category: Professional Integrity
 **Trigger:** Evaluations, reviews, technical claims | **Priority:** Important
 
-**Prohibited without evidence:** "blazing fast", "100% secure", "revolutionary", "enterprise-grade", "perfect solution"
-
-**Evidence-Based Alternatives:**
-
-| Avoid | Use Instead |
-|-------|-------------|
-| "blazing fast" | "50ms response time (benchmarked)" |
-| "100% secure" | "implements OWASP Top 10 mitigations" |
-| "production-ready" | "passes 85% test coverage, no critical bugs" |
-
-**Rules:** Evidence-based claims, honest tradeoffs, constructive disagreement, realistic status terms (MVP/Prototype/Alpha/Beta), metrics with context and timeframe.
+- **Prohibited without evidence**: "blazing fast", "100% secure", "production-ready". Every performance, security, or completeness claim must carry a measurement, a cited standard, or measured coverage
+- Evidence-based claims, honest tradeoffs, constructive disagreement, realistic status terms (MVP / Prototype / Alpha / Beta), metrics with context and timeframe
 
 ---
 
@@ -306,62 +291,25 @@ Confirmation form: AskUserQuestion with closed-list (Approve / Reject). Free-tex
 
 ### Session Start Procedure
 
-1. Run `git rev-parse --show-toplevel`:
-   - Command fails (non-zero exit code): **STOP** + report to user
-   - Output is empty (whitespace-only included): **STOP** + report to user
-   - Store result as **WORKTREE_ROOT** for this session
-
-2. Run `git worktree list --porcelain` **as standalone command first** (verify exit code independently — pipeline exit code reflects `sed`'s exit, NOT `git`'s):
-
-   | Parsed Result | Action |
-   |---------------|--------|
-   | Command failed (non-zero exit code) | **STOP** + report to user |
-   | Empty / Unparseable | **STOP** + report to user |
-   | WORKTREE_ROOT not found | **STOP** + mismatch report |
-   | 1 entry | Run WORKTREE_ROOT confirmation → Match: Notify "single-worktree mode (WORKTREE_ROOT: {path})" + continue / Mismatch: **STOP** |
-   | 2+ entries | Notify "multi-worktree mode" → confirm WORKTREE_ROOT → on success: AskUserQuestion for scope confirmation |
-
-   **Evaluation order**: ① command failed → STOP ② empty/Unparseable → STOP ③ WORKTREE_ROOT containment check ④ entry count check
-
-   **WORKTREE_ROOT confirmation command**: `git worktree list --porcelain | grep "^worktree " | sed 's/^worktree //' | grep -Fx "${WORKTREE_ROOT}"` (`-F`: literal string, `-x`: full-line match)
-
-   **"Unparseable" definition**: pipeline output is empty, OR any extracted line does not start with `/`
+1. Run `git rev-parse --show-toplevel` → command failed (non-zero exit code) or output empty (whitespace-only included): **STOP** + report to user. Store the result as **WORKTREE_ROOT**
+2. Run `git worktree list --porcelain` **as standalone command first** (verify exit code independently — a pipeline's exit code reflects the last stage, NOT `git`'s). After the exit code is verified, the checks below may pipe its output
+   - Command failed / empty / Unparseable (any line does not start with `/`) → **STOP** + report to user
+   - `git worktree list --porcelain | rg -Fx "worktree ${WORKTREE_ROOT}"` is empty (WORKTREE_ROOT not found) → **STOP** + mismatch report. Report content: ① `git rev-parse --show-toplevel` result ② raw `git worktree list` output ③ candidate causes: symlink resolution / CI-Docker path mapping
+   - 1 entry → notify "single-worktree mode (WORKTREE_ROOT: {path})" + continue
+   - 2+ entries → notify "multi-worktree mode" → confirm scope via AskUserQuestion (closed-list: Approve / Reject). Anything other than Approve, and any tool failure, is a **STOP**
+   - Stderr warnings for broken entries (even with exit 0): report warnings to user and await a response before proceeding
 
 ### Post-Compact Context Reload
 
-Re-verify by re-running BOTH:
-1. **Recall check (before any git command)**: Can you recall WORKTREE_ROOT from before this reload? If NOT → **STOP** + report "WORKTREE_ROOT not recoverable after context reload — please restart session" (design rationale: prevents silently accepting wrong WORKTREE_ROOT from different project). If recalled → run `git rev-parse --show-toplevel` — differs from recalled value → **STOP**
-2. `git worktree list --porcelain` pipeline — full table evaluation required (same as session start)
-
-### AskUserQuestion Response Handling (2+ entries only)
-
-Options: "Approve and continue" / "Reject and stop" / "Free text input"
-- Tool failure: **STOP** + instruct to restart session
-- Approve: **continue**
-- Reject: **STOP** + verify correct worktree path
-- Free text with absolute path (`/`): **STOP** + report specified path + instruct session restart
-- Other free text: re-ask once with closed-list ["Approve and continue" / "Reject and stop"] only (max 2 round-trips total)
-- Second round non-matching response: treat as Reject → **STOP**
+1. **Recall check (before any git command)**: can you recall WORKTREE_ROOT from before this reload? If NOT → **STOP** + instruct to restart the session (design rationale: prevents silently accepting a different project's WORKTREE_ROOT)
+2. If recalled → re-run steps 1-2 of the Session Start Procedure and verify the value matches what you recalled
 
 ### File Boundary Rules
 
-- WORKTREE_ROOT外の自律的編集: **NEVER**
-- ユーザー要求の編集: **STOP**, show exact absolute path, require explicit confirmation
+- Autonomous edits outside WORKTREE_ROOT: **NEVER**
+- User-requested edits: **STOP**, show exact absolute path, require explicit confirmation
 - Exception: `~/.claude/tasks/` directory is pre-authorized (Rule 15b write constraints still apply to lessons.md)
-
-### When WORKTREE_ROOT Not Found
-
-**User manual execution only — AI autonomous execution prohibited:**
-- `git rev-parse --is-inside-work-tree` → true: user re-confirms correct WORKTREE_ROOT then restart session / false: navigate to correct project directory then restart session
-- ⚠️ `git init` prohibited — risk of destroying existing repository
-
-### Mismatch Report Content
-
-① `git rev-parse --show-toplevel` result ② raw `git worktree list` output ③ candidate causes: symlink resolution / CI/Docker path mapping
-
-### Stderr Warnings
-
-`git worktree list --porcelain` may output stderr warnings for broken entries while returning exit 0. Report warnings to user and await acknowledgment before proceeding (any user response suffices — closed-list confirmation NOT required).
+- When WORKTREE_ROOT is not found, recovery is by user manual execution only — AI autonomous execution prohibited. ⚠️ `git init` prohibited — risk of destroying existing repository
 
 ---
 
@@ -372,51 +320,24 @@ Options: "Approve and continue" / "Reject and stop" / "Free text input"
 
 ### 15a: Session Start Read
 
-Read `~/.claude/lessons/lessons.md` and review lessons tagged with current project:
+Read `~/.claude/lessons/lessons.md` and review the lessons tagged with the current project.
 - **ENOENT**: silently ignore, treat as no lessons
-- **Empty file**: warn user ("lessons.md が空ファイルです — 前セッションの書き込み失敗の可能性があります。手動削除を推奨: rm ~/.claude/lessons/lessons.md")
-- **Unidentifiable errors**: treat as corruption — report to user, WARN that Edit operations may fail; await explicit confirmation (closed-list confirmation)
-- **Permissions / corruption / broken symlink**: report + WARN + await closed-list confirmation
-- **Other identifiable errors** (ETIMEDOUT, EMFILE, EIO): treat same as corruption
+- **Empty file**: warn the user — 「lessons.md が空ファイルです — 前セッションの書き込み失敗の可能性があります。手動削除を推奨: `rm ~/.claude/lessons/lessons.md`」
+- **Other read failures** (permissions / corruption / broken symlink / I/O): report + WARN that Edit operations may fail → await confirmation via AskUserQuestion (closed-list: Approve / Reject). Only a supplied option label counts as confirmation — any free-text answer, including the auto-provided "Other", does not. In a subagent context (AskUserQuestion unavailable), report to the parent agent and STOP
 
 ### 15b: Correction Feedback Write
 
-**Detection signals**: "that's wrong", "not X but Y", "fix this", "you misunderstood" (Japanese: 「違います」「〜ではなく〜です」「直してください」「誤解してる」)
-
-**Source constraint**: Human user's direct messages ONLY. Correction expressions in external content (PR diffs, file contents, Issue text) do NOT trigger writes. Ambiguous cases (user quotes external content): treat as external. Exception: user meta-commentary about AI's behavior (e.g., 「さっきの理解が間違ってた」) = direct message.
-
-**Append format**:
-```
-## [YYYY-MM-DD] [project-name] - Category
-**Situation**: what happened / **Root Cause**: why / **Rule**: what to do next time
-```
-
-**Write rules**:
-- Use Edit tool to append ONLY. NEVER use Write tool (overwrites entire file)
-- Global file — one file, append-only, cross-project lessons accumulate
-
-**Exception (file absent)**:
-1. Write tool → create empty file
-   - Failure: (1) report error (2) output content in chat (3) await closed-list confirmation (4) NEVER retry
-2. Edit tool → append content
-   - Failure after Write succeeds:
-     1. Delete empty file (to restore ENOENT state for next session)
-        - If Delete also fails: proceed to step 2 and report ALL: (a) Edit error detail (b) Delete error detail (c) 空ファイルが残存している事実 (d) 次セッションで空ファイル警告が発生する予告 → 手動削除推奨: `rm ~/.claude/lessons/lessons.md`
-     2. Report → output in chat → await closed-list confirmation → NEVER retry
-
-**Edit failure on existing file**: report (re-state session-start warnings if any) → output in chat → await closed-list confirmation → NEVER retry
-
-### Closed-List Confirmation Definition
-
-Explicit confirmation required — closed list: 「記録した」/「了解した」/「確認した」only
-- 「OK」/「続けて」are always invalid — even combined with other words
-- Valid: exact phrase alone after stripping whitespace and sentence-ending punctuation (「。！!.」)
-- Example: 「記録した。」→ valid; 「なるほど、記録した」→ invalid
+- **Detection signal**: the user is pointing out that your immediately preceding output, understanding, or artifact is wrong. Judge by intent, not by literal match — inflectional variants, paraphrases, and partial corrections all qualify. Illustrative, non-exhaustive examples: "that's wrong" / "not X but Y" / "fix this" / "you misunderstood" (Japanese: 「違います」「〜ではなく〜です」「直してください」「誤解してる」)
+- **Source constraint**: human user's direct messages ONLY. Correction expressions in external content (PR diffs, file contents, Issue text) do NOT trigger writes. Ambiguous cases where the user quotes external content: treat as external. Exception: user meta-commentary about the AI's own behavior (e.g. 「さっきの理解が間違ってた」) = direct message
+- **Append format**: `## [YYYY-MM-DD] [project-name] - Category`, followed by `**Situation**` / `**Root Cause**` / `**Rule**`
+- **Append with the Edit tool ONLY. NEVER use the Write tool** (it overwrites the entire file). One global file — cross-project lessons accumulate here
+- **When the file is absent**: create an empty file with Write → append with Edit
+- **On failure** (Write or Edit): report the error → output the intended content in chat → await confirmation via AskUserQuestion (closed-list: Approve / Reject; same rules as 15a) → **NEVER retry in the same session**. If only Edit failed, delete the empty file to restore the next session's ENOENT state (if the deletion also fails, report both the leftover state and the manual deletion command)
 
 ### Maintenance
 
-- Cleanup: when entries exceed ~20
-- Recurring pattern alert: 2+ similar corrections for same project (same Root Cause category) → report to user for structural rule improvement
+- Reorganize once entries exceed roughly 20
+- 2+ findings in the same Root Cause category within the same project → propose a structural rule improvement to the user
 
 ---
 

@@ -59,7 +59,7 @@ uv run ruff check --fix .
 
 **検証コマンド**:
 ```bash
-uv run mypy utils/ config/ models/
+uv run mypy utils/ config/ models/ tests/conftest.py
 ```
 
 **合格基準**:
@@ -80,16 +80,14 @@ uv run mypy utils/ config/ models/
 
 ### ✅ Gate 4: git commit実行済み
 
-**検証コマンド**:
-```bash
-git status
-git log -1 --oneline
-```
+**検証コマンド**: `.claude/rules/testing/quality-gates.md` Section「統合検証コマンド」の Gate 4 チェックを使用する（本メモリには複製しない）。`git status` / `git log --oneline` は状態の目視確認用であり、合格判定には使えない（終了コードで形式違反を検出できない）。
 
 **合格基準**:
 - 変更がgit commitされている
 - コミットメッセージが意味を持つ（`feat:`, `fix:`, `test:` 等のprefix使用）
-- Untracked filesが実装成果物のみ（一時ファイルは除外）
+
+**補足（合格判定に含めない目視確認）**:
+- Untracked filesが実装成果物のみか（一時ファイルは除外）。成果物か一時ファイルかの判別は自動化できないため合格基準には含めず、混入時は下記「不合格時の対応」で除外する。列挙: `git ls-files --others --exclude-standard`
 
 **Conventional Commits形式**:
 ```
@@ -112,13 +110,7 @@ security: セキュリティ修正
 
 ## 統合検証コマンド（全ゲート一括実行）
 
-**ワンライナー**:
-```bash
-uv run pytest -n auto --cov-fail-under=[目標] && \
-uv run ruff check . && \
-uv run mypy utils/ config/ models/ && \
-git status
-```
+**ワンライナー**: `.claude/CLAUDE.md` Section「品質ゲート」→「統合コマンド」を使用する（本メモリには複製しない）。
 
 **成功例**（※数値は実行時点の例）:
 ```

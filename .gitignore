@@ -21,6 +21,9 @@ wheels/**
 *.egg
 MANIFEST
 
+# Local tool caches
+.pre-commit-cache/
+
 # Virtual Environment
 .venv/**
 venv/**
@@ -162,9 +165,6 @@ graphify-out/**
 # Compound Engineering local config
 .compound-engineering/*.local.yaml
 .context/compound-engineering/ce-code-review/**
-
-# Understand Anything - knowledge graph artifacts (auto-generated, reproducible)
-.understand-anything/**
 
 .gitnexus/**
 .history/**

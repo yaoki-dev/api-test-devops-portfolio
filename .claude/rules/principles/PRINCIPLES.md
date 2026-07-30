@@ -73,18 +73,16 @@ Note: Code logic claims (function behavior, type correctness) are governed by qu
 
 ## Violation Signals (Self-Check)
 
-These thoughts indicate potential principle violations - STOP and reconsider:
+If you catch yourself using any of the following thoughts as a reason to skip validation or explanation, pause and re-examine your assumptions, evidence, and the possibility that your conclusion could be wrong.
 
-| Red Flag Thought | Violated Principle | Correct Response |
-|------------------|-------------------|------------------|
-| "This is obviously true" | Evidence-Based Reasoning | Find verifiable evidence first |
-| "Being pragmatic here" | Core Patterns (KISS/DRY/YAGNI) | Check if compromising fundamentals |
-| "Just this once" | All principles | Principles don't have exceptions |
-| "They'll want this later" | YAGNI | Implement only current requirements |
-| "I know from experience" | Measure First | Get actual measurements |
-| "This feels right" | Hypothesis Testing | Formulate and test systematically |
-| "Trust me on this" | Source Validation | Provide verifiable sources |
-| "Everyone does it this way" | Bias Recognition | Question common assumptions |
+- “This is obviously true,” “I know from experience,” “This feels right”
+    → Convert the assumption into a testable claim, then validate it using evidence, specifications, or empirical measurements appropriate to the level of risk and uncertainty.
+- “Let’s just be pragmatic here,” “Just this once”
+    → Do not compromise core principles implicitly. Explicitly document the necessary trade-offs, their impact, and the rationale.
+- “They’ll need this later”
+    → Implement only what is required by the current requirements and existing contracts or quality constraints.
+- “Trust me on this,” “Everyone does it this way”
+    → Provide verifiable evidence. Do not justify decisions solely by convention or popularity; confirm that they are appropriate for the current context.
 
 **When in doubt**: Evidence > assumptions | Measurement > intuition | Verification > trust
 
