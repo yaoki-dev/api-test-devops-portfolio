@@ -5,7 +5,7 @@ paths:
 
 # プロジェクト品質ゲート基準
 
-*最終更新: 2026-07-30*
+*最終更新: 2026-07-31*
 
 ## 目的
 
@@ -18,7 +18,7 @@ paths:
 ### Gate 1: pytest合格
 
 ```bash
-uv run pytest --cov=utils --cov=config --cov=models --cov-fail-under=[Phase別目標]
+uv run pytest --cov=utils --cov=config --cov=models
 ```
 
 - 全テストケース合格（0 failed）
@@ -91,6 +91,7 @@ git diff --quiet && git diff --cached --quiet && \
 | 2026-02-05 | Gate 4: /commit必須化 |
 | 2026-02-10 | 簡潔化（221行→90行） |
 | 2026-07-30 | paths frontmatter追加（遅延ロード化）、コマンドを `.claude/CLAUDE.md`「統合コマンド」参照に統一、削除済みの日次進捗ファイルへの参照を除去 |
+| 2026-07-31 | Gate 1 のコマンドから展開不能プレースホルダ `--cov-fail-under=[Phase別目標]` を除去（下限は `pyproject.toml` の `addopts` が単一真実源） |
 
 ---
 

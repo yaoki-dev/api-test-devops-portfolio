@@ -1,6 +1,6 @@
 # プロジェクト品質ゲート基準
 
-*最終更新: 2026年02月05日*
+*最終更新: 2026-07-31*
 
 ## 目的
 
@@ -16,7 +16,7 @@
 
 **検証コマンド**:
 ```bash
-uv run pytest --cov=utils --cov=config --cov=models --cov-fail-under=[Phase別目標]
+uv run pytest --cov=utils --cov=config --cov=models
 ```
 
 **合格基準**:
@@ -203,6 +203,7 @@ Gate 4 (git commit) → 未コミット?
 | 2025-11-14 | 初版作成 | RULES.md「Implementation Integrity」の具体化 |
 | 2025-12-27 | 参照更新 | test_strategy統合に伴う参照先更新 |
 | 2026-02-05 | CLAUDE.md整合性修正 | Gate 4: /commit必須化、Conventional Commits追加（perf/ci/security） |
+| 2026-07-31 | Gate 1 コマンドの修正 | 展開不能プレースホルダ `--cov-fail-under=[Phase別目標]` を除去（下限は `pyproject.toml` の `addopts` が単一真実源） |
 
 ---
 
