@@ -87,7 +87,7 @@ uv run pytest tests/unit/test_jsonplaceholder_client_sync.py --cov=utils --cov=c
 
 - **`1,457件のテストスイート`**（2026-07 実測）: Unit(1,433) / Integration(15, うちExternal 4件含む) / Performance(7, 週次のみ) / Smoke(2)
 - **`カバレッジ: 97.60%`**（2026-07 実測 / unit+integration条件）: 継続的な品質向上
-- **`CI実行テスト: 1,444件`**（unit+integration条件, external・performance・smoke除外）
+- **`CIカバレッジ対象テスト: 1,444件`**（unit+integration条件, external・performance・smoke除外。PR ValidationはこれにSmoke 2件をカバレッジ計測外で追加実行）
   - 内訳: Unit 1,433件 + Integration 11件（15件のうちexternal 4件を除外）
 - **`CI/CD自動化`**: GitHub Actions による多段階パイプライン
 - **`セキュリティ`**: CI/CD品質ゲート（pytest + ruff + mypy + Trivy）
