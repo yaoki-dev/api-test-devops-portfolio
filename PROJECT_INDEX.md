@@ -1,7 +1,6 @@
 # Project Index: api-test-devops-portfolio
 
-**Generated:** 2026-07-11 JST
-**Last Commit:** 00d5db8 (2026-07-11)
+**Generated:** 2026-07-31
 **Version:** 0.1.0
 **Python:** ==3.14.*
 
@@ -31,8 +30,8 @@ api-test-devops-portfolio/
 │   ├── logger.py          # 構造化ログ（structlog）
 │   ├── sentry_init.py     # エラー監視（Sentry SDK 初期化）
 │   └── sentry_scrub_*.py  # PIIスクラブ（events / values / primitives）
-├── tests/                  # テストスイート（全22 test files）
-│   ├── unit/              # ユニットテスト（16 files）
+├── tests/                  # テストスイート（全39 test files / 2026-07 実測）
+│   ├── unit/              # ユニットテスト（33 files）
 │   ├── integration/       # 統合テスト（4 files）
 │   ├── performance/       # パフォーマンステスト（1 file）
 │   ├── conftest.py        # pytest fixtures
@@ -141,21 +140,21 @@ api-test-devops-portfolio/
 ## 🧪 Test Coverage
 
 ### Test Statistics
-- **Total Test Files**: 23
-- **Unit Tests**: 16 files (tests/unit/)
-- **Integration Tests**: 5 files (tests/integration/)
+- **Total Test Files**: 39（2026-07 実測）
+- **Unit Tests**: 33 files (tests/unit/)
+- **Integration Tests**: 4 files (tests/integration/)
 - **Performance Tests**: 1 file (tests/performance/)
 - **Smoke Tests**: 1 file (tests/test_smoke.py)
 
 ### Coverage Metrics
-- **Current Coverage**: 96.15%（unit+integration条件）
-- **Target Coverage**: 85% (Week 5-6 goal) ✅ 達成済み
+- **Coverage**: 97.60%（2026-07 実測 / unit+integration条件）
+- **Target Coverage**: `pyproject.toml` の `--cov-fail-under` ✅ 達成済み
 - **Coverage Reports**: `reports/coverage.json`, `reports/htmlcov/`
 
 ### Test Execution
 ```bash
-# 全テスト実行（カバレッジ付き）
-uv run pytest --cov=. --cov-report=term-missing
+# 全テスト実行（カバレッジ計測は pyproject.toml の addopts で自動適用）
+uv run pytest
 
 # 並列実行（高速化）
 uv run pytest -n auto
@@ -217,18 +216,12 @@ uv run python
 
 ### 3. Test
 ```bash
-# 全テスト実行
+# 全テスト実行（カバレッジ計測・下限・HTMLレポートは pyproject.toml の addopts で自動適用）
 uv run pytest
-
-# カバレッジ付き実行
-uv run pytest --cov=. --cov-report=html
 open reports/htmlcov/index.html
 
-# 品質ゲート（4段階チェック）
-uv run pytest --cov-fail-under=85 && \
-uv run ruff check . && \
-uv run mypy utils/ config/ models/ && \
-git status
+# 品質ゲート（コミット前必須）
+# コマンド本体は .claude/CLAUDE.md「品質ゲート」→「統合コマンド」を参照（複製しない）
 ```
 
 ### 4. Development Workflow
@@ -240,8 +233,7 @@ git status
 /git:feature <task-name>
 
 # 3. 実装 + 品質ゲート
-# （コード変更後）
-uv run pytest && uv run ruff check . && uv run mypy utils/ config/ models/
+# （コード変更後）.claude/CLAUDE.md「品質ゲート」→「統合コマンド」を実行
 
 # 4. 自己改善
 /reflexion:reflect
@@ -290,8 +282,8 @@ uv run pytest && uv run ruff check . && uv run mypy utils/ config/ models/
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Test Coverage | 96.15% | 85% |
-| CI Test Files (unit+integration) | 21 | - |
+| Test Coverage | 97.60%（2026-07 実測） | `pyproject.toml` の `--cov-fail-under` |
+| CI Test Files (unit+integration) | 37（2026-07 実測） | - |
 | Python Version | 3.14 | - |
 | Code Quality | ruff + mypy | 0 errors |
 | Documentation | CLAUDE.md + README | - |

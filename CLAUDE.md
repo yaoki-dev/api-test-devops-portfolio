@@ -1,4 +1,4 @@
-# CLAUDE.md **Last Updated**: 2026-07-30
+# CLAUDE.md **Last Updated**: 2026-07-31
 
 **軽量インデックス — 詳細は `.claude/CLAUDE.md` を参照**
 
@@ -43,8 +43,7 @@ APIテスト + DevOps統合学習ポートフォリオ（Python 3.14 / httpx / p
 
 ## graphify
 
-- アーキテクチャ質問前に `graphify-out/GRAPH_REPORT.md` を読む
-- コード変更後は `graphify update .` を実行
+アーキテクチャ質問前に `graphify-out/GRAPH_REPORT.md` を読む（ローカル生成物・gitignore対象のため未コミット）。未生成時およびコード変更後は `graphify update .` を実行。
 
 <!-- code-review-graph MCP tools -->
 ## MCP Tools: code-review-graph

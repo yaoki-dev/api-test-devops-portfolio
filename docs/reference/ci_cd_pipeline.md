@@ -1,6 +1,6 @@
 # CI/CD Pipeline
 
-*最終更新: 2026-07-30*
+*最終更新: 2026-07-31*
 
 ## 🚀 CI/CDパイプライン概要
 
@@ -175,18 +175,18 @@ Composite action（`.github/actions/trivy-sarif-verify/action.yml`）内部で�
 ### CI実行テスト条件
 
 ```bash
-# CI/CD実行テストセット（575件: unit+integration, external除外）
-# Note: performanceテスト(5件)は performance マーカーのみのため、この条件から自動除外
+# CI/CD実行テストセット（unit + integration, external除外）
+# Note: performanceテスト(7件)は performance マーカーのみのため、この条件から自動除外
 uv run pytest -n auto -m "(unit or integration) and not external" \
     --cov=utils --cov=config --cov=models --cov-report=term-missing
 ```
 
-| 品質基準 | 目標値 | 現在値 | 検証コマンド |
-|---------|-------|-------|------------|
-| カバレッジ | 85% | 93.43% | `pytest --cov-fail-under=85` |
-| ruff | 0 errors | ✅ | `ruff check .` |
-| mypy | 0 errors | ✅ | `mypy utils/ config/ models/ tests/conftest.py` |
-| セキュリティ | 0 Critical/High | ✅ | Trivy SARIF |
+| 品質基準 | 目標値 | 検証コマンド |
+|---------|-------|------------|
+| カバレッジ | `pyproject.toml` の `--cov-fail-under` | 上記のCI実行コマンド（下限は addopts で自動適用） |
+| ruff | 0 errors | `ruff check .` |
+| mypy | 0 errors | `mypy utils/ config/ models/ tests/conftest.py` |
+| セキュリティ | 0 Critical/High | Trivy SARIF |
 
 ### CD（実装済み）
 

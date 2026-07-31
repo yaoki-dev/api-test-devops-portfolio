@@ -1,6 +1,6 @@
 # プロジェクト品質ゲート基準
 
-*最終更新: 2026年02月05日*
+*最終更新: 2026-07-31*
 
 ## 目的
 
@@ -16,12 +16,12 @@
 
 **検証コマンド**:
 ```bash
-uv run pytest --cov=utils --cov=config --cov=models --cov-fail-under=[Phase別目標]
+uv run pytest -m "(unit or integration) and not external" --cov=utils --cov=config --cov=models
 ```
 
 **合格基準**:
 - 全テストケース合格（0 failed）
-- カバレッジ目標達成（Phase別、下記参照）
+- カバレッジ下限達成（下限値は `pyproject.toml` の `--cov-fail-under`）
 - テストマーカー別実行も合格（unit, integration）
 
 
@@ -203,6 +203,9 @@ Gate 4 (git commit) → 未コミット?
 | 2025-11-14 | 初版作成 | RULES.md「Implementation Integrity」の具体化 |
 | 2025-12-27 | 参照更新 | test_strategy統合に伴う参照先更新 |
 | 2026-02-05 | CLAUDE.md整合性修正 | Gate 4: /commit必須化、Conventional Commits追加（perf/ci/security） |
+| 2026-07-31 | Gate 1 コマンドの修正 | 展開不能プレースホルダ `--cov-fail-under=[Phase別目標]` を除去（下限は `pyproject.toml` の `addopts` が単一真実源） |
+| 2026-07-31 | Gate 1 合格基準の修正 | 「Phase別、下記参照」が参照先の表を持たない dangling reference だったため、`pyproject.toml` の `--cov-fail-under` 参照へ統一 |
+| 2026-07-31 | Gate 1 マーカーフィルタ追加 | マーカー未指定により実GitHub API呼び出し(external 4件)とperformance 7件がコミット前ゲートで実行される問題を修正。`-m "(unit or integration) and not external"` を追加し `.claude/CLAUDE.md` 統合コマンドと整合（PR #546レビュー対応） |
 
 ---
 
