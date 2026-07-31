@@ -1,6 +1,6 @@
 # 改善効果測定チェックリスト
 
-*最終更新: 2026年02月07日*
+*最終更新: 2026-07-31*
 *用途: reflexion改善効果の実行可能な測定手順*
 *対象: Phase 1実装完了後の効果測定実施、今後の改善検証*
 *アクセス頻度: 高（改善施策実施時、毎タスク終了時）*
@@ -391,10 +391,10 @@
 
   **Gate 1: pytest合格**:
   ```bash
-  uv run pytest --cov=utils --cov=config --cov=models --cov-fail-under=83
+  uv run pytest --cov=utils --cov=config --cov=models
   ```
   - [ ] 全テストケース合格（0 failed）
-  - [ ] カバレッジ目標達成（__% / 目標83%）
+  - [ ] カバレッジ下限達成（__% / 下限値は `pyproject.toml` の `--cov-fail-under`）
 
   **Gate 2: ruff合格**:
   ```bash
@@ -651,7 +651,7 @@
   #### 🛠️ ポートフォリオ実装進捗
 
   **品質ゲート（実装活動判定）**:
-  - [ ] pytest合格（カバレッジ: __% / 目標83%）
+  - [ ] pytest合格（カバレッジ: __% / 下限値は `pyproject.toml` の `--cov-fail-under`）
   - [ ] ruff合格（0 errors）
   - [ ] mypy合格（0 errors）
   - [ ] git commit実行済み（commit: [hash]）
@@ -1075,6 +1075,7 @@ fi
 | 日付 | 変更内容 | Phase | 担当 |
 |------|---------|-------|------|
 | 2026-02-07 | 初版作成（Task #22対応） | improvement-kpi-definition.md（未作成）準拠、実行可能チェックリスト化 | QA Expert Agent |
+| 2026-07-31 | カバレッジ下限のハードコード値 `83` を除去（3箇所） | Gate 1 コマンド・完了判定・日次記録テンプレートを `pyproject.toml` の `--cov-fail-under` 参照へ統一 | Claude Code |
 
 ---
 
