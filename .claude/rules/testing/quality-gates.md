@@ -18,7 +18,7 @@ paths:
 ### Gate 1: pytest合格
 
 ```bash
-uv run pytest --cov=utils --cov=config --cov=models
+uv run pytest -m "(unit or integration) and not external" --cov=utils --cov=config --cov=models
 ```
 
 - 全テストケース合格（0 failed）
