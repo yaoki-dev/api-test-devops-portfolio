@@ -1,6 +1,6 @@
 # API Test + DevOps Portfolio
 
-*最終更新: 2026-06-07*
+*最終更新: 2026-07-31*
 
 外部API連携における堅牢性と品質保証を追求し、APIテストとDevOps技術を統合したポートフォリオです。
 SSRFやPII漏洩、不安定なリトライといった連携特有のアンチパターンを排除し、1,300件超の自動テストを品質ゲートとして構築・運用しています。
@@ -44,22 +44,22 @@ SSRFやPII漏洩、不安定なリトライといった連携特有のアンチ�
 
 ### 2. テスト実行
 
-![Test Demo - pytest実行で基本テスト19件合格（全1,360件中の抽出実行、CI環境での全体カバレッジ: 96.15%）。テスト自動化スキルを実証](assets/demo-test.gif)
+![Test Demo - pytest実行で基本テスト19件合格（全1,457件中の抽出実行、CI環境での全体カバレッジ: 97.60%）。テスト自動化スキルを実証](assets/demo-test.gif)
 
-**📝 デモ内容**: クイック実行例（基本テスト19件、デモ時間短縮のため抽出。全1,360件は約60秒）
-**🔍 全1,360件を今すぐ確認**: [GitHub Actions CI/CD](https://github.com/yaoki-dev/api-test-devops-portfolio/actions) でフルテスト結果＋カバレッジレポートを閲覧
+**📝 デモ内容**: クイック実行例（基本テスト19件、デモ時間短縮のため抽出。全1,457件は約60秒）
+**🔍 全1,457件を今すぐ確認**: [GitHub Actions CI/CD](https://github.com/yaoki-dev/api-test-devops-portfolio/actions) でフルテスト結果＋カバレッジレポートを閲覧
 
 **何がわかるか**:
 
 - pytest + pytest-covによる自動テスト実行
 - カバレッジレポートによる品質可視化
-- テスト実行: 基本19件 ~5秒、全1,360件 ~60秒
+- テスト実行: 基本19件 ~5秒、全1,457件 ~60秒
 
 <details>
-<summary>全テスト実行コマンド（1,360件、約60秒）</summary>
+<summary>全テスト実行コマンド（1,457件、約60秒）</summary>
 
 ```bash
-# 全テスト実行（1,360件）
+# 全テスト実行（1,457件）
 uv run pytest --cov=utils --cov=config --cov=models --cov-report=term -q --color=yes
 
 # クイック実行（unit tests）
@@ -85,10 +85,10 @@ uv run pytest tests/unit/test_jsonplaceholder_client_sync.py --cov=utils --cov=c
 
 ## 概要
 
-- **`1,360件のテストスイート`**: Unit(1,316) / Integration(35, うちExternal 5件含む) / Performance(7, 週次のみ) / Smoke(2)
-- **`カバレッジ: 96.15%`**（unit+integration条件）: 継続的な品質向上
-- **`CI実行テスト: 1,358件`**（unit+integration条件, external・performance・smoke除外）
-  - 内訳: Unit 1,316件 + Integration 30件（35件のうちexternal 5件を除外）
+- **`1,457件のテストスイート`**（2026-07 実測）: Unit(1,433) / Integration(15, うちExternal 4件含む) / Performance(7, 週次のみ) / Smoke(2)
+- **`カバレッジ: 97.60%`**（2026-07 実測 / unit+integration条件）: 継続的な品質向上
+- **`CI実行テスト: 1,444件`**（unit+integration条件, external・performance・smoke除外）
+  - 内訳: Unit 1,433件 + Integration 11件（15件のうちexternal 4件を除外）
 - **`CI/CD自動化`**: GitHub Actions による多段階パイプライン
 - **`セキュリティ`**: CI/CD品質ゲート（pytest + ruff + mypy + Trivy）
 - **`GitHub API統合`**: 実務的なAPI統合スキルを証明（Rate Limit管理、ETag活用、非同期処理）
