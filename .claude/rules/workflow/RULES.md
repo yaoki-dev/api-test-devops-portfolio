@@ -222,6 +222,28 @@ TodoWrite remains the in-session UI tool.
 - **Prohibited without evidence**: "blazing fast", "100% secure", "production-ready". Every performance, security, or completeness claim must carry a measurement, a cited standard, or measured coverage
 - Evidence-based claims, honest tradeoffs, constructive disagreement, realistic status terms (MVP / Prototype / Alpha / Beta), metrics with context and timeframe
 
+### Verification and Uncertainty
+
+- Before making a technical judgment, identify material facts that are
+  uncertain or not directly supported by the available evidence.
+- Verify those facts using the actual repository files, command output,
+  reproducible execution results, pinned revisions, or authoritative
+  specifications whenever verification is technically possible.
+- Do not classify an issue as requiring modification based only on a
+  possibility, general best practice, or an unverified hypothesis.
+- Clearly distinguish:
+  - **Verified fact**: directly confirmed by evidence
+  - **Inference**: a conclusion derived from verified facts
+  - **Unverified**: not yet checked
+  - **Unverifiable**: cannot be checked with the available access or tools
+- When verification is not possible, state:
+  1. what could not be verified,
+  2. why it could not be verified,
+  3. what evidence or access would be required,
+  4. how the limitation affects confidence in the conclusion.
+- An unverified or unverifiable point may be reported as a risk or open
+  question, but must not be presented as a confirmed defect or mandatory fix.
+
 ---
 
 ## Category: Git Workflow

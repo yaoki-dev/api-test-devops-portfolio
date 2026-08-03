@@ -98,7 +98,29 @@ except json.JSONDecodeError as e:
     raise APIClientError(f"Invalid JSON: {e}") from e  # チェーン維持
 ```
 
-**規則**: 階層的例外設計、`from e`でチェーン維持、4xx即失敗/5xxリトライ
+**規則**: 階層的例外設計、`from e`でチェーン維持（既定）、4xx即失敗/5xxリトライ
+
+**不変条件（PII）**: 外部の実在 API のレスポンスに由来する例外を、未サニタイズのまま
+cause にしない。Pydantic の `ValidationError` は検証失敗時の入力値を保持するため、
+`from e` で連結すると Sentry の stacktrace frame vars 経由で PII が到達しうる
+（`utils/sentry_scrub_values.py` のスクラブはキー名ベースで、機密キー集合に無い名前の値は
+素通しする）。満たし方は2通りある:
+
+1. `from None` でチェーンを切る — `utils/github_client.py`（5箇所）/
+   `utils/github_error_handler.py`（6箇所）/ `utils/github_etag_cache.py`（1箇所）
+2. サニタイズ済みの代理 cause へチェーンする — `utils/github_error_handler.py:365` は
+   `SanitizedJSONDecodeError` に `reason` と位置情報だけを詰め替えて `from` に渡し、
+   本文を捨てたうえでデバッグ性を残す
+
+合成データのみを返すモック API（JSONPlaceholder）は本不変条件の対象外で、`from e` を維持する。
+
+**PII 以外の `from None`（混同しないこと）**: 以下は上記と無関係の別理由であり、
+`from e` へ「統一」してはならない。
+
+- `utils/jsonplaceholder_client_async.py:312` — `except*` で ExceptionGroup を
+  アンラップし個別例外を再送出する際、group が自身のメンバーの cause になるのを避ける
+- `config/settings.py:513` — Pydantic が `ValidationError` でラップする前提で、
+  validator のエラーメッセージを読みやすく保つ
 
 **セキュリティ規則**: 例外クラス名には PII（個人識別情報）を連想させる語を含めないこと。
 例: `UserEmailValidationError` のようなクラス名は、`__qualname__` 経由で Sentry に
