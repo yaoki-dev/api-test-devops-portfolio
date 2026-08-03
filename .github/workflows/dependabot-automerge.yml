@@ -19,9 +19,12 @@ permissions: {}
 
 jobs:
   automerge:
+    name: Dependabot auto-merge
     runs-on: ubuntu-latest
     permissions:
+      # Required to perform the squash merge.
       contents: write
+      # Required to enable auto-merge on the pull request.
       pull-requests: write
     # Only auto-merge on develop branch (Git Flow compliance)
     # Only the immutable Dependabot user ID can reach this path.
