@@ -29,7 +29,7 @@
 
 ### 4. 可観測性 (🟡 Suggested)
 - **構造化ログ**: `structlog` を用い、`event`, `error_type`, `endpoint`, `method` 等のキーを一貫して使用すること。
-- **例外チェーン**: 例外を再ラップする際は、必ず `raise ... from e` を使用し原因を保持すること。
+- **例外チェーン**: 例外を再ラップする際は原則 `raise ... from e` で原因を保持すること。ただし外部の実在 API のレスポンス由来例外を未サニタイズのまま cause にしてはならない（§1「ログ・例外への露出禁止」(🔴 Blocking) が本項 (🟡 Suggested) に優先する）。満たし方は `from None` で切る（`utils/github_client.py` / `utils/github_error_handler.py` / `utils/github_etag_cache.py`）か、サニタイズ済み代理 cause へチェーンする（`utils/github_error_handler.py:365` の `SanitizedJSONDecodeError`）かのいずれかで、どちらも指摘対象としないこと。また `utils/jsonplaceholder_client_async.py:312`（ExceptionGroup アンラップ）と `config/settings.py:513`（Pydantic ラップ下のメッセージ整形）の `from None` は PII 判断とは別理由であり、`from e` への統一を提案しないこと。判断基準は README「設計判断」の `例外チェーン方針` を参照。
 
 ### 5. テスト品質 (🟡 Suggested)
 - **決定論**: `respx` を活用し、ネットワークに依存しない非同期テストを維持すること。
