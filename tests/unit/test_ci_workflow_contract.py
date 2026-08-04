@@ -1,6 +1,5 @@
 """Static contracts for the Issue #552 CI workflow changes."""
 
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -10,8 +9,9 @@ pytestmark = pytest.mark.unit
 
 
 @pytest.fixture
-def workflow_data() -> dict[str, Any]:
-    workflow_path = Path(__file__).parents[2] / ".github/workflows/ci.yml"
+def workflow_data(request: pytest.FixtureRequest) -> dict[str, Any]:
+    """pytest rootpath 基準で解決し、テストファイル移動によるパス破損を防ぐ。"""
+    workflow_path = request.config.rootpath / ".github/workflows/ci.yml"
     data = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
     assert isinstance(data, dict)
     return data

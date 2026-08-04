@@ -49,6 +49,8 @@ docs/
 
 # CI/CD（1MB削減）
 .github/
+# ci.yml は tests/unit/test_ci_workflow_contract.py が読み込むため test ステージへ渡す
+!.github/workflows/ci.yml
 .gitlab-ci.yml
 .circleci/
 
