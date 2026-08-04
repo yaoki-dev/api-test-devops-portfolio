@@ -8,7 +8,9 @@ import yaml
 # Module-level marker: All tests in this file are unit tests
 # 外部プロセス(Docker)を起動せずYAML構造のみを検証するため
 # pyproject.toml marker定義 「unit」 に整合
-pytestmark = pytest.mark.unit
+# repo_contract: request.config.rootpath 経由でリポジトリ全体を静的検査するため、
+# ビルドコンテキストが絞られた test コンテナでは走らせない（pyproject.toml の marker 定義参照）
+pytestmark = [pytest.mark.unit, pytest.mark.repo_contract]
 
 
 class TestDockerComposeContract:
@@ -45,7 +47,13 @@ class TestDockerComposeContract:
         assert test_service["environment"]["ENVIRONMENT"] == "testing"
         assert test_service["environment"]["COVERAGE_FILE"] == "/tmp/.coverage"  # noqa: S108
         assert test_service["user"] == "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
-        assert test_service["command"] == ["pytest", "-m", "(unit or integration) and not external"]
+        # ci.yml の test_filter と同一 + repo_contract 除外。完全一致で固定し、除外条件が
+        # 無音で増える（＝コンテナのテスト範囲が黙って狭まる）退行を検出する。
+        assert test_service["command"] == [
+            "pytest",
+            "-m",
+            "(unit or integration) and not external and not repo_contract",
+        ]
 
     def test_test_service_security_contract(self, compose_data: dict[str, Any]) -> None:
         """test service の権限昇格防止設定 (security_opt/init) を YAML レベルで保護する."""

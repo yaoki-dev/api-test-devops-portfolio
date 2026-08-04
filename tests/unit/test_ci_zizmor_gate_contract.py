@@ -9,7 +9,9 @@ import yaml
 # Module-level marker: 外部プロセスを起動せず ci.yml の YAML 構造のみを検証するため unit。
 # このマーカーを欠くと CI の `-m "(unit or integration) and not external"` から漏れ、
 # ゲートを守るはずの本ファイル自身が無音で実行されなくなる。
-pytestmark = pytest.mark.unit
+# repo_contract: request.config.rootpath 経由でリポジトリ全体を静的検査するため、
+# ビルドコンテキストが絞られた test コンテナでは走らせない（pyproject.toml の marker 定義参照）
+pytestmark = [pytest.mark.unit, pytest.mark.repo_contract]
 
 # zizmor の非ゼロ終了 (exit 11-14) を無効化する引数。--no-exit-codes は zizmor --help の
 # "Disable all error codes besides success and tool failure"、--format sarif は findings を

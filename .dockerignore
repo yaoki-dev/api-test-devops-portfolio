@@ -48,9 +48,9 @@ docs/
 !README.md
 
 # CI/CD（1MB削減）
+# 例外を設けない: .github/ を読む静的契約テストは repo_contract マーカーで
+# コンテナ実行から除外済み（Dockerfile test ステージのコメント参照）
 .github/
-# ci.yml は tests/unit/test_ci_workflow_contract.py が読み込むため test ステージへ渡す
-!.github/workflows/ci.yml
 .gitlab-ci.yml
 .circleci/
 

@@ -85,6 +85,7 @@ markers = [
     "slow: Slow tests (>3s, excluded from local dev)",
     "external: External API tests (weekly CI only)",
     "smoke: Smoke tests (basic functionality)",
+    "repo_contract: Repository-static contract tests (require the full repo tree; host-only)",
 ]
 asyncio_mode = "auto"            # 非同期テスト自動検出
 
