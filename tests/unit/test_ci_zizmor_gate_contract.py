@@ -22,15 +22,18 @@ EXIT_CODE_SUPPRESSING_ARGS = ("--no-exit-codes", "--fix", "--format sarif")
 # 設定ファイル実在 / --no-config 脱落 の 4 経路すべてを塞ぐ必要がある。
 CONFIG_LOADING_ARGS = ("--config", "-c")
 
-# 監査 step の run に現れてはならないシェルのコマンド区切り。GitHub Actions の既定 shell は
-# `bash -e` で pipefail を含まないため、区切りが 1 つでも入ると最終コマンドの終了コードが
-# step の結果になり、zizmor の exit 11-14 が握り潰される。実測 (bash -e):
-#   `false | cat` / `false &` / `false ; true` / 改行 + `true` はいずれも exit 0 (= fail-open)
-#   一方 `false` 単体は -e の有無に関わらず exit 1 で、単一コマンドなら終了コードは必ず伝播する
-# `|| true` のような構文を列挙する denylist では `|| echo skipped` や `| tee log` といった
-# 未知の組み合わせを取りこぼすため、「区切り文字を 1 つも含まない」という閉じた文法条件で
-# 固定する。`||` は `|` に、`&&` は `&` に含まれる。単一コマンドのゲートでは && / || を
-# 併せて禁じても実害が無く、判定を単純に保てる。
+# 監査 step の run に現れてはならないシェルのコマンド区切り。GitHub Actions 公式ドキュメント
+# の通り、既定 shell (`bash --noprofile --norc -eo pipefail {0}`) は `-e` に加え `-o pipefail`
+# も適用する。実測 (bash -e -o pipefail、GitHub Actions の既定を再現):
+#   `false | cat` / `false | tee x` / `false ; true` / 改行 + `true` はいずれも exit 1 で安全。
+#   -e がパイプライン全体・逐次実行の失敗を検知するため、後続コマンドの成功で握り潰されない。
+#   唯一の真の fail-open は `false &`（バックグラウンド実行）で exit 0 になる。`-e` はバック
+#   グラウンドジョブの失敗を検知できないため、シェルオプションに関係なく握り潰される。
+# それでも `|` / `;` / 改行を禁止に含めるのは、上記の安全性が defaults.run.shell によるシェル
+# 上書き（test_audit_step_uses_default_shell で別途禁止）に依存する前提付きの安全性だから。
+# 「区切り文字を 1 つも含まない単一コマンド」という閉じた文法条件にしておけば、シェル上書き
+# ガードが将来欠けても、あるいは `|| echo skipped` のような未知の組み合わせが来ても、この
+# 契約テスト単体で防御が成立する。`||` は `|` に、`&&` は `&` に含まれるため個別列挙は不要。
 RUN_COMMAND_SEPARATORS = ("|", "&", ";", "\n")
 
 # ゲートの挙動を外部から変える環境変数。token 系は online audit を有効化してゲート結果を
