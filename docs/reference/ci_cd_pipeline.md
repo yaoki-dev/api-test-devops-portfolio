@@ -188,6 +188,18 @@ uv run pytest -n auto -m "(unit or integration) and not external" \
 | mypy | 0 errors | `mypy utils/ config/ models/ tests/conftest.py` |
 | セキュリティ | 0 Critical/High | Trivy SARIF |
 
+### zizmor GitHub Actionsゲート
+
+ローカル再現時は、CIのsource of truthである `.github/workflows/ci.yml` と同じく、先にdev依存をlockfileどおり同期します。
+
+```bash
+uv sync --dev --frozen
+uv run --frozen --no-sync zizmor --version
+uv run --frozen --no-sync zizmor --offline --no-config --strict-collection --persona=regular --min-severity=high --format=github .github/workflows .github/actions
+```
+
+`--offline` は監査中のネットワークアクセスを禁止し、`--no-config` はリポジトリ設定によるseverity remapを無効化します。`--strict-collection` は指定対象を厳格に収集し、`--min-severity=high` は High 以上の検出をゲートにします。zizmorにはGitHubトークンを渡しません。
+
 ### CD（実装済み）
 
 main push時に以下3ジョブが実行され、Continuous Delivery（成果物の配信・検証）を完結します：

@@ -53,6 +53,12 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev --frozen
 
+      - name: Show zizmor version
+        run: uv run --frozen --no-sync zizmor --version
+
+      - name: Run zizmor High-severity gate
+        run: uv run --frozen --no-sync zizmor --offline --no-config --strict-collection --persona=regular --min-severity=high --format=github .github/workflows .github/actions
+
       # ruff を mypy より先に実行: lint 問題を先に除去し mypy の誤検知を低減（実行順設計）
       - name: Run ruff check
         run: uv run ruff check .
