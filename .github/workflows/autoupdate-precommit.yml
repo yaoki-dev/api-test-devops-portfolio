@@ -103,7 +103,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
+      # 更新ブランチへコミットを push するために必要
       contents: write
+      # PR を作成・更新するために必要
       pull-requests: write
 
     steps:
