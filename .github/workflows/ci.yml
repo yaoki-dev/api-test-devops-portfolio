@@ -2,7 +2,6 @@ name: CI/CD Pipeline
 
 # Test Pyramid Strategy (Google Testing Blog):
 #   Unit 70% / Integration 30%
-# Coverage Target: 96.15% (achieved 2026-06, CI条件: unit+integration, not external)
 # Reference: .serena/memories/test_strategy_part1_overview.md
 
 # Default permissions (least privilege principle)
@@ -76,11 +75,21 @@ jobs:
           # Step 1: unit + integration with coverage
           uv run pytest -n auto -m "${{ steps.markers.outputs.test_filter }}" \
             --cov=utils --cov=config --cov=models \
+            --junitxml=reports/junit.xml \
             --cov-report=json:coverage.json \
             --cov-report=term-missing \
             -v --tb=short
           # Step 2: smoke without coverage (using output variable)
           uv run pytest -m "${{ steps.markers.outputs.smoke_marker }}" -v --tb=short --no-cov
+
+      # Rendered here rather than in status-report: this job already has the uv
+      # environment and holds reports/junit.xml locally, so no artifact round-trip
+      # and no extra setup steps are needed.
+      - name: Render JUnit test summary
+        if: always()
+        run: |
+          uv run python scripts/render_test_summary.py reports/junit.xml \
+            >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload test results
         if: always()
@@ -1347,7 +1356,6 @@ jobs:
             echo ""
             echo "## Test Pyramid Strategy"
             echo "- Unit 70% / Integration 30%"
-            echo "- Coverage Target: 96.15% (achieved)"
             echo ""
             echo "## Stage Results"
             echo "- PR Validation: ${{ needs.pr-validation.result }}"
@@ -1366,6 +1374,29 @@ jobs:
             echo "## Triggered By: ${{ github.event_name }}"
           } > status_report.md
           cat status_report.md
+
+      - name: Append status report to Job Summary
+        if: always()
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ -f status_report.md ]; then
+            cat status_report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "CI/CD Pipeline Status Report unavailable." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          coverage_file="artifacts/pr-validation-results-py3.14/coverage.json"
+          if [ "$EVENT_NAME" = "pull_request" ] && [ -f "$coverage_file" ]; then
+            if coverage=$(jq -er '.totals.percent_covered_display // empty' "$coverage_file" 2>/dev/null); then
+              coverage="${coverage%\%}"
+              echo "Coverage: ${coverage}%" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "Coverage: n/a (not generated for this trigger)" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          else
+            echo "Coverage: n/a (not generated for this trigger)" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload status report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

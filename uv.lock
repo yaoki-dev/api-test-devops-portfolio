@@ -49,6 +49,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "bandit" },
+    { name = "defusedxml" },
     { name = "genbadge", extra = ["coverage"] },
     { name = "mypy" },
     { name = "pre-commit" },
@@ -77,6 +78,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "bandit", specifier = ">=1.8.6" },
+    { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "genbadge", extras = ["coverage"], specifier = "==1.1.3" },
     { name = "mypy", specifier = ">=2.3.0,<3.0.0" },
     { name = "pre-commit", specifier = ">=4.6.1" },
