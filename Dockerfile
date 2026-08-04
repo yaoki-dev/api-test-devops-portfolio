@@ -116,10 +116,14 @@ RUN uv sync --frozen --no-install-project
 COPY --chown=appuser:appgroup config/ ./config/
 COPY --chown=appuser:appgroup utils/ ./utils/
 COPY --chown=appuser:appgroup models/ ./models/
+COPY --chown=appuser:appgroup scripts/ ./scripts/
 COPY --chown=appuser:appgroup tests/ ./tests/
-# docker-compose.yml は tests/integration/test_docker_compose_contract.py が
-# request.config.rootdir / "docker-compose.yml" で読み込むため、test ステージへ配置する。
+# docker-compose.yml は tests/unit/test_docker_compose_contract.py が
+# request.config.rootpath / "docker-compose.yml" で読み込むため、test ステージへ配置する。
 COPY --chown=appuser:appgroup docker-compose.yml ./
+# ci.yml は tests/unit/test_ci_workflow_contract.py が
+# request.config.rootpath / ".github/workflows/ci.yml" で読み込むため、test ステージへ配置する。
+COPY --chown=appuser:appgroup .github/workflows/ci.yml ./.github/workflows/ci.yml
 
 # デフォルトコマンド: テスト実行
 # カバレッジ scope は CI 品質ゲート (--cov=utils --cov=config --cov=models) と統一
