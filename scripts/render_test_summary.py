@@ -9,6 +9,8 @@ from typing import Any
 
 from defusedxml import ElementTree  # type: ignore[import-untyped]
 
+__all__ = ["main", "render_junit_summary"]
+
 MAX_IDENTIFIER_LENGTH = 300
 MAX_IDENTIFIERS_PER_CATEGORY = 20
 MAX_SUMMARY_BYTES = 64 * 1024
@@ -173,7 +175,17 @@ def _empty_summary(message: str) -> str:
 
 
 def render_junit_summary(xml_text: str) -> str:
-    """Return bounded Markdown for valid, empty, or invalid JUnit XML."""
+    """Return bounded Markdown for valid, empty, or invalid JUnit XML.
+
+    Args:
+        xml_text: JUnit XML content, or an empty string when no report was generated.
+
+    Returns:
+        Markdown bounded to MAX_SUMMARY_BYTES, suitable for a GitHub Job Summary.
+
+    Raises:
+        None. Malformed XML falls back to an "Unable to parse" summary instead of raising.
+    """
     if not xml_text.strip():
         return _empty_summary("No JUnit XML was generated.")
 
@@ -201,7 +213,19 @@ def render_junit_summary(xml_text: str) -> str:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Render the first XML path in ``argv`` without failing the CI job."""
+    """Render the first XML path in ``argv`` without failing the CI job.
+
+    Args:
+        argv: Command-line arguments; defaults to ``sys.argv[1:]`` when None.
+            The first element is the JUnit XML file path.
+
+    Returns:
+        Always 0. Missing, unreadable, or malformed input renders a fallback
+        summary instead of raising, so the CI job never fails on this step.
+
+    Raises:
+        None.
+    """
     arguments = list(sys.argv[1:] if argv is None else argv)
     if not arguments:
         print(_empty_summary("No JUnit XML was generated."))
