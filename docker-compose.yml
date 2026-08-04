@@ -76,7 +76,10 @@ services:
       COVERAGE_FILE: /tmp/.coverage
     # Dockerfile CMD を上書き。pyproject.toml の addopts (--cov=utils --cov=config --cov=models 等)
     # および --cov-fail-under=85 は継承されるため、command 側では重複指定しない
-    command: ["pytest", "-m", "(unit or integration) and not external"]
+    # repo_contract はリポジトリ全体のツリーを前提とする静的契約テスト。test イメージは
+    # .dockerignore でツリーを絞るため、ここで除外しホスト実行 (CI: pr-validation) に一本化する
+    command:
+      ["pytest", "-m", "(unit or integration) and not external and not repo_contract"]
     # カバレッジ成果物を host に永続化（htmlcov / coverage.xml）
     volumes:
       - ./reports:/app/reports

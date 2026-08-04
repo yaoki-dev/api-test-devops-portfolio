@@ -5,7 +5,9 @@ from typing import Any
 import pytest
 import yaml  # type: ignore[import-untyped]
 
-pytestmark = pytest.mark.unit
+# repo_contract: request.config.rootpath 経由でリポジトリ全体を静的検査するため、
+# ビルドコンテキストが絞られた test コンテナでは走らせない（pyproject.toml の marker 定義参照）
+pytestmark = [pytest.mark.unit, pytest.mark.repo_contract]
 
 
 @pytest.fixture

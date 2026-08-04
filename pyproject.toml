@@ -53,6 +53,7 @@ dev = [
     "socksio>=1.0.0",           # SOCKS5 proxy support for httpx
     # 品質管理
     "ruff>=0.16.1,<0.17",       # pre-commit frozen: v0.15.11（.pre-commit-config.yaml参照）
+    "zizmor==1.29.0",
     "mypy>=2.3.0,<3.0.0",
     "bandit>=1.8.6",
     "safety>=3.8.1",
@@ -84,6 +85,7 @@ markers = [
     "slow: Slow tests (>3s, excluded from local dev)",
     "external: External API tests (weekly CI only)",
     "smoke: Smoke tests (basic functionality)",
+    "repo_contract: Repository-static contract tests (require the full repo tree; host-only)",
 ]
 asyncio_mode = "auto"            # 非同期テスト自動検出
 
