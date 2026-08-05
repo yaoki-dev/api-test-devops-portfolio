@@ -142,19 +142,20 @@ SECURITY__API_KEY=your-secret-key
    → If it feels hacky, ask: "Given what I know now, what's the most elegant approach?"
    → Skip for obvious single-line fixes
 4. 作業完了確認 → `Skill(fable:fable-judge)` を実行
-5. reflect(タスクごとに実施) → `Skill(reflexion:reflect)` を Skill tool で実行
+5. reflect(タスクごとに実施) → `Skill(reflexion:reflect)` を実行
    引数: deep reflect if less than 90% confidence. 日本語で簡潔に回答
    自動ループ:
     - 信頼度90%未満: 改善して再実行（各反復で信頼度と改善理由を簡潔に示す）/ 90%以上 → 終了 - 最大3回まで
     - 4回連続失敗時（信頼度90%未満継続）はユーザーに報告して停止
 6. コミット前レビュー → `Skill(review:review-local-changes)` (80点閾値)
-7. コミット   → `Skill(commit)`【git commit禁止】
+7. コミット前確認（重要変更の場合） → `Skill(judgment-day)`を実行
+8. コミット   → `Skill(commit)`【git commit禁止】
 
 【PUSH/PR/マージフェーズ】
-8. PR作成     → Skill(push-pr)【gh pr create禁止】
-9. レビュー対応 → 修正 → 品質ゲート → Skill(commit) → push
-10. マージ実行  → マージ戦略【※3参照】
-11. クリーンアップ → `git fetch --prune origin` + `/git:clean-gone`（worktree: 固定運用のため削除しない）
+9. PR作成     → Skill(push-pr)【gh pr create禁止】
+10. レビュー対応 → 修正 → 品質ゲート →  `Skill(fable:fable-judge)` を実行 →  `Skill(reflexion:reflect)` を実行 → `Skill(review:review-local-changes)`を実行 → `Skill(judgment-day)`を実行（重要変更の場合） → Skill(commit) → push
+11. マージ実行  → マージ戦略【※3参照】
+12. クリーンアップ → `git fetch --prune origin` + `/git:clean-gone`（worktree: 固定運用のため削除しない）
 ```
 
 <!-- preserve-on-compact: Quality Gates -->

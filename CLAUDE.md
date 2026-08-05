@@ -72,4 +72,4 @@ GitHub Issues (yaoki-dev/api-test-devops-portfolio) で管理。`gh` CLI 経由�
 
 ### Domain docs
 
-Single-context: ルートの `CONTEXT.md` + `docs/adr/`（将来作成）。詳細は `docs/agents/domain.md` 参照。
+Single-context: ルートの `CONTEXT.md` + `docs/adr/`。詳細は `docs/agents/domain.md` 参照。
