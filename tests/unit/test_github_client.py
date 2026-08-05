@@ -35,6 +35,7 @@ async def test_get_user_success():
         status_code=200,
         json={
             "login": "octocat",
+            "id": 1,
             "name": "The Octocat",
             "public_repos": 8,
         },
@@ -44,9 +45,9 @@ async def test_get_user_success():
     async with AsyncGitHubClient() as client:
         user = await client.get_user("octocat")
 
-    assert user["login"] == "octocat"
-    assert user["name"] == "The Octocat"
-    assert user["public_repos"] == 8
+    assert user.login == "octocat"
+    assert user.name == "The Octocat"
+    assert user.public_repos == 8
     assert route.call_count == 1
 
 
@@ -57,8 +58,18 @@ async def test_get_repos_success():
     ).respond(
         status_code=200,
         json=[
-            {"name": "Hello-World", "stargazers_count": 100},
-            {"name": "Spoon-Knife", "stargazers_count": 50},
+            {
+                "name": "Hello-World",
+                "id": 1,
+                "full_name": "octocat/Hello-World",
+                "stargazers_count": 100,
+            },
+            {
+                "name": "Spoon-Knife",
+                "id": 2,
+                "full_name": "octocat/Spoon-Knife",
+                "stargazers_count": 50,
+            },
         ],
         headers={"X-RateLimit-Remaining": "58"},
     )
@@ -67,8 +78,8 @@ async def test_get_repos_success():
         repos = await client.get_repos("octocat", per_page=2)
 
     assert len(repos) == 2
-    assert repos[0]["name"] == "Hello-World"
-    assert repos[1]["stargazers_count"] == 50
+    assert repos[0].name == "Hello-World"
+    assert repos[1].stargazers_count == 50
     assert route.call_count == 1
 
 
@@ -106,6 +117,7 @@ async def test_get_repo_success():
         status_code=200,
         json={
             "name": "Hello-World",
+            "id": 1,
             "full_name": "octocat/Hello-World",
             "stargazers_count": 100,
             "forks_count": 50,
@@ -116,8 +128,8 @@ async def test_get_repo_success():
     async with AsyncGitHubClient() as client:
         repo = await client.get_repo("octocat", "Hello-World")
 
-    assert repo["name"] == "Hello-World"
-    assert repo["stargazers_count"] == 100
+    assert repo.name == "Hello-World"
+    assert repo.stargazers_count == 100
     assert route.call_count == 1
 
 
@@ -173,7 +185,7 @@ async def test_get_user_type_guard_rejects_non_dict():
         headers={"X-RateLimit-Remaining": "50"},
     )
     async with AsyncGitHubClient() as client:
-        with pytest.raises(GitHubAPIError, match="Expected dict response, got list"):
+        with pytest.raises(GitHubAPIError, match="Invalid GitHubUser response schema"):
             await client.get_user("octocat")
 
 
@@ -185,7 +197,7 @@ async def test_get_repos_type_guard_rejects_non_list():
         headers={"X-RateLimit-Remaining": "50"},
     )
     async with AsyncGitHubClient() as client:
-        with pytest.raises(GitHubAPIError, match="Expected list response, got dict"):
+        with pytest.raises(GitHubAPIError, match="Invalid GitHubRepo response schema"):
             await client.get_repos("octocat")
 
 
@@ -197,7 +209,7 @@ async def test_get_repo_type_guard_rejects_non_dict():
         headers={"X-RateLimit-Remaining": "50"},
     )
     async with AsyncGitHubClient() as client:
-        with pytest.raises(GitHubAPIError, match="Expected dict response, got list"):
+        with pytest.raises(GitHubAPIError, match="Invalid GitHubRepo response schema"):
             await client.get_repo("octocat", "Hello-World")
 
 

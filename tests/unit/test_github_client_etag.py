@@ -28,10 +28,11 @@ async def test_etag_cache_hit() -> None:
 
     async with AsyncGitHubClient() as client:
         user1 = await client.get_user("octocat")
-        assert user1["login"] == "octocat"
+        assert user1.login == "octocat"
 
         user2 = await client.get_user("octocat")
-        assert user2 == {"login": "octocat", "id": 1}
+        assert user2.login == "octocat"
+        assert user2.id == 1
 
     assert route.call_count == 2
     # 1回目はIf-None-Match未送信、2回目は保存済みETagを送信（ETagキャッシュ保存の証跡）
@@ -52,7 +53,7 @@ async def test_request_etag_cache_fatal_exception_propagates(
 ) -> None:
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=200,
-        json={"login": "octocat"},
+        json={"login": "octocat", "id": 1},
         headers={"ETag": '"etag-value"'},
     )
 
@@ -70,7 +71,7 @@ async def test_request_etag_cache_fatal_exception_propagates(
 async def test_request_etag_cache_non_fatal_exception_logs_error_and_returns_response() -> None:
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=200,
-        json={"login": "octocat"},
+        json={"login": "octocat", "id": 1},
         headers={"ETag": '"etag-value"'},
     )
 
@@ -85,7 +86,7 @@ async def test_request_etag_cache_non_fatal_exception_logs_error_and_returns_res
         ):
             result = await client.get_user("octocat")
 
-    assert result == {"login": "octocat"}
+    assert result.login == "octocat"
     assert route.call_count == 1
     error_logs = [log for log in logs if log.get("event") == "etag_cache_update_failed"]
     assert len(error_logs) == 1
@@ -109,26 +110,40 @@ async def test_etag_cache_key_includes_query_params() -> None:
     updated_route.side_effect = [
         httpx.Response(
             200,
-            json=[{"name": "repo-a", "pushed_at": "2025-01-01"}],
+            json=[
+                {
+                    "name": "repo-a",
+                    "id": 1,
+                    "full_name": "octocat/repo-a",
+                    "pushed_at": "2025-01-01",
+                }
+            ],
             headers={"ETag": '"updated-etag"', "X-RateLimit-Remaining": "50"},
         ),
         httpx.Response(304, headers={"X-RateLimit-Remaining": "50"}),
     ]
     created_route.respond(
         200,
-        json=[{"name": "repo-b", "created_at": "2024-01-01"}],
+        json=[
+            {
+                "name": "repo-b",
+                "id": 2,
+                "full_name": "octocat/repo-b",
+                "created_at": "2024-01-01",
+            }
+        ],
         headers={"ETag": '"created-etag"', "X-RateLimit-Remaining": "50"},
     )
 
     async with AsyncGitHubClient() as client:
         repos1 = await client.get_repos("octocat", sort="updated", per_page=30)
-        assert repos1[0]["name"] == "repo-a"
+        assert repos1[0].name == "repo-a"
 
         repos2 = await client.get_repos("octocat", sort="created", per_page=10)
-        assert repos2[0]["name"] == "repo-b"
+        assert repos2[0].name == "repo-b"
 
         repos3 = await client.get_repos("octocat", sort="updated", per_page=30)
-        assert repos3[0]["name"] == "repo-a"
+        assert repos3[0].name == "repo-a"
 
     assert updated_route.call_count == 2  # 200 + 304
     assert created_route.call_count == 1  # 200 only
@@ -148,7 +163,7 @@ async def test_304_returns_correct_cached_data_per_params() -> None:
     updated_route.side_effect = [
         httpx.Response(
             200,
-            json=[{"name": "repo-updated"}],
+            json=[{"name": "repo-updated", "id": 1, "full_name": "octocat/repo-updated"}],
             headers={"ETag": '"updated"', "X-RateLimit-Remaining": "50"},
         ),
         httpx.Response(304, headers={"X-RateLimit-Remaining": "50"}),
@@ -156,20 +171,20 @@ async def test_304_returns_correct_cached_data_per_params() -> None:
     created_route.side_effect = [
         httpx.Response(
             200,
-            json=[{"name": "repo-created"}],
+            json=[{"name": "repo-created", "id": 2, "full_name": "octocat/repo-created"}],
             headers={"ETag": '"created"', "X-RateLimit-Remaining": "50"},
         ),
     ]
 
     async with AsyncGitHubClient() as client:
         r1 = await client.get_repos("octocat", sort="updated", per_page=30)
-        assert r1[0]["name"] == "repo-updated"
+        assert r1[0].name == "repo-updated"
 
         r2 = await client.get_repos("octocat", sort="created", per_page=30)
-        assert r2[0]["name"] == "repo-created"
+        assert r2[0].name == "repo-created"
 
         r3 = await client.get_repos("octocat", sort="updated", per_page=30)
-        assert r3[0]["name"] == "repo-updated"
+        assert r3[0].name == "repo-updated"
 
     assert updated_route.call_count == 2
     assert created_route.call_count == 1

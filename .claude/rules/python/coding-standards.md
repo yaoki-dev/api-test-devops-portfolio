@@ -106,20 +106,23 @@ cause にしない。Pydantic の `ValidationError` は検証失敗時の入力�
 （`utils/sentry_scrub_values.py` のスクラブはキー名ベースで、機密キー集合に無い名前の値は
 素通しする）。満たし方は2通りある:
 
-1. `from None` でチェーンを切る — `utils/github_client.py`（5箇所）/
-   `utils/github_error_handler.py`（6箇所）/ `utils/github_etag_cache.py`（1箇所）
-2. サニタイズ済みの代理 cause へチェーンする — `utils/github_error_handler.py:365` は
-   `SanitizedJSONDecodeError` に `reason` と位置情報だけを詰め替えて `from` に渡し、
-   本文を捨てたうえでデバッグ性を残す
+1. `from None` でチェーンを切る — `utils/github_client.py`（`AsyncGitHubClient._request`）/
+   `utils/github_error_handler.py`（`_handle_403_response`, `_handle_5xx_response`,
+   `_handle_http_status_error`）/ `utils/github_etag_cache.py`（`GitHubETagCache._cache_key`）/
+   `utils/response_parsing.py`（`validate_parsed_model`, `validate_parsed_model_list`）
+2. サニタイズ済みの代理 cause へチェーンする — `utils/github_error_handler.py`
+   （`SanitizedJSONDecodeError`）は、失敗理由（`JSONDecodeError` なら `msg`、
+   `UnicodeDecodeError` なら `reason`）と位置情報だけを詰め替えて `from` に渡し、
+   レスポンス本文（`doc` / `object`）を捨てたうえでデバッグ性を残す
 
 合成データのみを返すモック API（JSONPlaceholder）は本不変条件の対象外で、`from e` を維持する。
 
 **PII 以外の `from None`（混同しないこと）**: 以下は上記と無関係の別理由であり、
 `from e` へ「統一」してはならない。
 
-- `utils/jsonplaceholder_client_async.py:312` — `except*` で ExceptionGroup を
+- `utils/jsonplaceholder_client_async.py`（`AsyncJSONPlaceholderClient.get_user_data`） — `except*` で ExceptionGroup を
   アンラップし個別例外を再送出する際、group が自身のメンバーの cause になるのを避ける
-- `config/settings.py:513` — Pydantic が `ValidationError` でラップする前提で、
+- `config/settings.py`（`Settings.validate_environment`） — Pydantic が `ValidationError` でラップする前提で、
   validator のエラーメッセージを読みやすく保つ
 
 **セキュリティ規則**: 例外クラス名には PII（個人識別情報）を連想させる語を含めないこと。

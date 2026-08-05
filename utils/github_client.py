@@ -6,6 +6,7 @@ from typing import Any, Self
 
 import httpx
 
+from models.responses import GitHubRepo, GitHubUser
 from utils.exceptions import ASYNC_FATAL_EXCEPTIONS
 from utils.github_error_handler import (
     GitHubAPIError,
@@ -44,6 +45,7 @@ from utils.github_rate_limit import (
 )
 from utils.http_helpers import log_error_with_stderr_fallback
 from utils.logger import get_logger
+from utils.response_parsing import validate_parsed_model, validate_parsed_model_list
 
 # =============================================================================
 # 入力バリデーション（OWASP A03:2021 - Injection対策）
@@ -109,7 +111,7 @@ class AsyncGitHubClient:
     使用例:
         >>> async with AsyncGitHubClient() as client:
         ...     user = await client.get_user("octocat")
-        ...     print(user["name"])  # "The Octocat"
+        ...     print(user.name)  # "The Octocat"
     """
 
     BASE_URL = "https://api.github.com"
@@ -292,14 +294,14 @@ class AsyncGitHubClient:
         """
         await self._close_async_client(None, suppress_unexpected=True)
 
-    async def get_user(self, username: str) -> dict[str, Any]:
+    async def get_user(self, username: str) -> GitHubUser:
         """ユーザー情報取得
 
         Args:
             username: GitHubユーザー名
 
         Returns:
-            ユーザー情報（name, bio, public_repos等）
+            検証済み ``GitHubUser``（login, id, name, bio, public_repos）
 
         Raises:
             ValueError: 無効なユーザー名
@@ -307,27 +309,26 @@ class AsyncGitHubClient:
             RateLimitError: 403 Rate Limit超過 または 429 Too Many Requests
             GitHubServerError: 5xxエラー（リトライ上限後）
             GitHubAPIError: タイムアウト・NetworkError・RemoteProtocolError
-                            リトライ上限後の最終失敗、または不正なレスポンス型
+                            リトライ上限後の最終失敗、不正なレスポンス型、
+                            ``GitHubUser`` のスキーマ検証失敗、
                             パラメータシリアライズ失敗（リトライなし）
 
         Example:
             >>> async with AsyncGitHubClient() as client:
             ...     user = await client.get_user("octocat")
-            ...     print(user["name"])  # "The Octocat"
+            ...     print(user.name)  # "The Octocat"
 
         """
         validate_github_username(username)
         result = await self._request("GET", f"/users/{username}")
-        if not isinstance(result, dict):
-            raise GitHubAPIError(f"Expected dict response, got {type(result).__name__}")
-        return result
+        return validate_parsed_model(result, GitHubUser, error_factory=GitHubAPIError)
 
     async def get_repos(
         self,
         username: str,
         sort: str = "updated",
         per_page: int = 30,
-    ) -> list[dict[str, Any]]:
+    ) -> list[GitHubRepo]:
         """ユーザーのリポジトリ一覧取得
 
         Args:
@@ -336,7 +337,7 @@ class AsyncGitHubClient:
             per_page: 1ページあたりの件数（最大100）
 
         Returns:
-            リポジトリ情報リスト
+            検証済み ``GitHubRepo`` のリスト
 
         Raises:
             ValueError: 無効なユーザー名
@@ -344,12 +345,13 @@ class AsyncGitHubClient:
             NotFoundError: リソースが見つからない場合
             GitHubServerError: 5xxエラー（リトライ上限後）
             GitHubAPIError: タイムアウト・NetworkError・RemoteProtocolError
-                            リトライ上限後の最終失敗、または不正なレスポンス型
+                            リトライ上限後の最終失敗、不正なレスポンス型、
+                            ``GitHubRepo`` のスキーマ検証失敗（失敗要素の index を含む）、
                             パラメータシリアライズ失敗（リトライなし）
 
         Example:
             >>> repos = await client.get_repos("octocat", sort="updated")
-            >>> print(repos[0]["name"])  # 最新更新のリポジトリ
+            >>> print(repos[0].name)  # 最新更新のリポジトリ
 
         """
         validate_github_username(username)
@@ -359,11 +361,9 @@ class AsyncGitHubClient:
             raise ValueError("per_page must be between 1 and 100")
         params: dict[str, str | int] = {"sort": sort, "per_page": per_page}
         result = await self._request("GET", f"/users/{username}/repos", params=params)
-        if not isinstance(result, list):
-            raise GitHubAPIError(f"Expected list response, got {type(result).__name__}")
-        return result
+        return validate_parsed_model_list(result, GitHubRepo, error_factory=GitHubAPIError)
 
-    async def get_repo(self, owner: str, repo: str) -> dict[str, Any]:
+    async def get_repo(self, owner: str, repo: str) -> GitHubRepo:
         """リポジトリ詳細取得
 
         Args:
@@ -371,7 +371,7 @@ class AsyncGitHubClient:
             repo: リポジトリ名
 
         Returns:
-            リポジトリ詳細（stars, forks, open_issues等）
+            検証済み ``GitHubRepo``（stargazers_count, forks_count, open_issues_count 等）
 
         Raises:
             ValueError: 無効なオーナー名またはリポジトリ名
@@ -379,19 +379,18 @@ class AsyncGitHubClient:
             NotFoundError: リソースが見つからない場合
             GitHubServerError: 5xxエラー（リトライ上限後）
             GitHubAPIError: タイムアウト・NetworkError・RemoteProtocolError
-                            リトライ上限後の最終失敗、または不正なレスポンス型
+                            リトライ上限後の最終失敗、不正なレスポンス型、
+                            または ``GitHubRepo`` のスキーマ検証失敗
 
         Example:
             >>> repo = await client.get_repo("octocat", "Hello-World")
-            >>> print(repo["stargazers_count"])  # スター数
+            >>> print(repo.stargazers_count)  # スター数
 
         """
         validate_github_username(owner)
         validate_github_repo(repo)
         result = await self._request("GET", f"/repos/{owner}/{repo}")
-        if not isinstance(result, dict):
-            raise GitHubAPIError(f"Expected dict response, got {type(result).__name__}")
-        return result
+        return validate_parsed_model(result, GitHubRepo, error_factory=GitHubAPIError)
 
     async def _request(  # noqa: C901 - HTTPプロトコル処理の最小必要分岐（4xxステータス, 5xxリトライ, タイムアウト, キャンセル等）のため許容 CC≈12
         self,

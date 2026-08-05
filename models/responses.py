@@ -425,3 +425,60 @@ class Photo(BaseModel):
         """
         # policy 本体は sanitization.validate_strict_url に委譲（private 非依存）
         return validate_strict_url(v)
+
+
+# =============================================================================
+# GitHub API response models
+# =============================================================================
+
+
+class GitHubUser(BaseModel):
+    """GitHubユーザーモデル
+
+    GitHub API /users/{username} エンドポイントのレスポンス。
+    strict検証で既知フィールドの型ドリフトを拒否し、`extra="ignore"` により
+    将来追加されるフィールドは型境界を広げずに無視する。
+
+    Attributes:
+        login: GitHubログイン名
+        id: ユーザーID
+        name: 表示名（未設定時は None）
+        bio: 自己紹介文（未設定時は None）
+        public_repos: 公開リポジトリ数（レスポンス欠落時は None）
+
+    """
+
+    login: str
+    id: int
+    name: str | None = None
+    bio: str | None = None
+    public_repos: int | None = None
+
+    model_config = ConfigDict(strict=True, extra="ignore")
+
+
+class GitHubRepo(BaseModel):
+    """GitHubリポジトリモデル
+
+    GitHub API /users/{username}/repos および /repos/{owner}/{repo} のレスポンス。
+    strict検証で既知フィールドの型ドリフトを拒否し、`extra="ignore"` により
+    将来追加されるフィールドは型境界を広げずに無視する。
+
+    Attributes:
+        name: リポジトリ名
+        id: リポジトリID
+        full_name: `owner/repo` 形式の完全名
+        stargazers_count: スター数（レスポンス欠落時は None）
+        forks_count: フォーク数（レスポンス欠落時は None）
+        open_issues_count: オープンIssue数（レスポンス欠落時は None）
+
+    """
+
+    name: str
+    id: int
+    full_name: str
+    stargazers_count: int | None = None
+    forks_count: int | None = None
+    open_issues_count: int | None = None
+
+    model_config = ConfigDict(strict=True, extra="ignore")

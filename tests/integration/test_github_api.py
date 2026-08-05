@@ -19,14 +19,12 @@ async def test_get_user():
     async with AsyncGitHubClient() as client:
         user = await client.get_user("octocat")
 
-        assert user["login"] == "octocat"
-        assert "name" in user
-        assert "public_repos" in user
-        assert "followers" in user
-        assert "created_at" in user
+        assert user.login == "octocat"
+        assert user.name is not None
+        assert user.public_repos is not None
 
-        assert isinstance(user["login"], str)
-        assert isinstance(user["public_repos"], int)
+        assert isinstance(user.login, str)
+        assert isinstance(user.public_repos, int)
 
 
 async def test_get_repos():
@@ -36,27 +34,24 @@ async def test_get_repos():
         assert len(repos) <= 5
 
         for repo in repos:
-            assert "name" in repo
-            assert "full_name" in repo
-            assert "stargazers_count" in repo
-            assert "updated_at" in repo
-            assert isinstance(repo["name"], str)
-            assert isinstance(repo["stargazers_count"], int)
+            assert isinstance(repo.name, str)
+            assert isinstance(repo.full_name, str)
+            assert repo.stargazers_count is not None
+            assert isinstance(repo.stargazers_count, int)
 
 
 async def test_get_repo():
     async with AsyncGitHubClient() as client:
         repo = await client.get_repo("octocat", "Hello-World")
 
-        assert repo["name"] == "Hello-World"
-        assert repo["full_name"] == "octocat/Hello-World"
-        assert "stargazers_count" in repo
-        assert "forks_count" in repo
-        assert "open_issues_count" in repo
-        assert "description" in repo
+        assert repo.name == "Hello-World"
+        assert repo.full_name == "octocat/Hello-World"
+        assert repo.stargazers_count is not None
+        assert repo.forks_count is not None
+        assert repo.open_issues_count is not None
 
-        assert isinstance(repo["stargazers_count"], int)
-        assert isinstance(repo["forks_count"], int)
+        assert isinstance(repo.stargazers_count, int)
+        assert isinstance(repo.forks_count, int)
 
 
 async def test_not_found_error():
