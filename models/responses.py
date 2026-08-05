@@ -425,3 +425,41 @@ class Photo(BaseModel):
         """
         # policy 本体は sanitization.validate_strict_url に委譲（private 非依存）
         return validate_strict_url(v)
+
+
+# =============================================================================
+# GitHub API response models
+# =============================================================================
+
+
+class GitHubUser(BaseModel):
+    """GitHub user response model.
+
+    Strict validation rejects known type drift, while ``extra="ignore"`` accepts
+    future GitHub response fields without widening this typed boundary.
+    """
+
+    login: str
+    id: int
+    name: str | None = None
+    bio: str | None = None
+    public_repos: int | None = None
+
+    model_config = ConfigDict(strict=True, extra="ignore")
+
+
+class GitHubRepo(BaseModel):
+    """GitHub repository response model.
+
+    Strict validation rejects known type drift, while ``extra="ignore"`` accepts
+    future GitHub response fields without widening this typed boundary.
+    """
+
+    name: str
+    id: int
+    full_name: str
+    stargazers_count: int | None = None
+    forks_count: int | None = None
+    open_issues_count: int | None = None
+
+    model_config = ConfigDict(strict=True, extra="ignore")

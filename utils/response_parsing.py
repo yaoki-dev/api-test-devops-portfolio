@@ -1,6 +1,7 @@
 """JSON response parsing helpers for API clients."""
 
 import json
+from collections.abc import Callable
 from typing import Any, cast
 
 import httpx
@@ -52,6 +53,38 @@ def _format_validation_error(e: ValidationError) -> str:
     more = e.error_count() - 3
     suffix = f"; ... +{more} more" if more > 0 else ""
     return f"{e.error_count()} validation error(s): {details}{suffix}"
+
+
+def validate_parsed_model[M: BaseModel](
+    data: object,
+    model_type: type[M],
+    *,
+    error_factory: Callable[[str], Exception],
+) -> M:
+    """パース済みデータをPydanticモデルへ検証して変換する。"""
+    try:
+        return model_type.model_validate(data)
+    except ValidationError as e:
+        raise error_factory(
+            f"Invalid {model_type.__name__} response schema: {_format_validation_error(e)}"
+        ) from None
+
+
+def validate_parsed_model_list[M: BaseModel](
+    data: object,
+    model_type: type[M],
+    *,
+    error_factory: Callable[[str], Exception],
+) -> list[M]:
+    """パース済み配列をPydanticモデル配列へ検証して変換する。"""
+    try:
+        # TypeAdapter(list[model]) を使うと ValidationError の loc に
+        # 失敗要素の index が自動付与される。
+        return TypeAdapter(list[model_type]).validate_python(data)  # type: ignore[valid-type]
+    except ValidationError as e:
+        raise error_factory(
+            f"Invalid {model_type.__name__} response schema: {_format_validation_error(e)}"
+        ) from None
 
 
 def parse_response_model[ResponseModelT: BaseModel](

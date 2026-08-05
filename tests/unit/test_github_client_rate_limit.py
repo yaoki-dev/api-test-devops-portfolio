@@ -50,7 +50,7 @@ async def test_rate_limit_exceeded() -> None:
 async def test_rate_limit_warning_log() -> None:
     route = respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=200,
-        json={"login": "octocat"},
+        json={"login": "octocat", "id": 1},
         headers={
             "X-RateLimit-Remaining": "5",  # < 10 → 警告ログトリガー
             "X-RateLimit-Reset": "1640000000",
@@ -94,7 +94,7 @@ async def test_invalid_rate_limit_header_remaining() -> None:
     """不正なレート制限ヘッダーで外部例外を出さず、安全なフォールバックへ進む。"""
     respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=200,
-        json={"login": "octocat"},
+        json={"login": "octocat", "id": 1},
         headers={"X-RateLimit-Remaining": "N/A"},
     )
 
@@ -102,7 +102,7 @@ async def test_invalid_rate_limit_header_remaining() -> None:
         async with AsyncGitHubClient() as client:
             result = await client.get_user("octocat")
 
-    assert result["login"] == "octocat"
+    assert result.login == "octocat"
     warning_logs = [log for log in log_output if log.get("event") == "invalid_rate_limit_header"]
     assert len(warning_logs) == 1
     assert warning_logs[0]["log_level"] == "warning"
@@ -163,7 +163,7 @@ async def test_invalid_rate_limit_reset_header_low_remaining() -> None:
     """レート制限ヘッダーの一部が壊れても、警告と処理継続を両立する。"""
     respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=200,
-        json={"login": "octocat"},
+        json={"login": "octocat", "id": 1},
         headers={
             "X-RateLimit-Remaining": "5",
             "X-RateLimit-Reset": "not-a-timestamp",
@@ -174,7 +174,7 @@ async def test_invalid_rate_limit_reset_header_low_remaining() -> None:
         async with AsyncGitHubClient() as client:
             result = await client.get_user("octocat")
 
-    assert result["login"] == "octocat"
+    assert result.login == "octocat"
 
     # invalid_rate_limit_header warning（X-RateLimit-Reset不正値）
     invalid_header_logs = [
@@ -632,7 +632,7 @@ async def test_check_rate_limit_warning_overflow_reset_time() -> None:
 
     respx.get(f"{GITHUB_API_BASE_URL}/users/octocat").respond(
         status_code=200,
-        json={"login": "octocat"},
+        json={"login": "octocat", "id": 1},
         headers={
             "X-RateLimit-Remaining": "5",  # < 10 → _check_rate_limit_warning 実行
             "X-RateLimit-Reset": str(overflow_reset),
@@ -643,7 +643,7 @@ async def test_check_rate_limit_warning_overflow_reset_time() -> None:
         async with AsyncGitHubClient() as client:
             result = await client.get_user("octocat")
 
-    assert result["login"] == "octocat"
+    assert result.login == "octocat"
 
     rate_limit_low_logs = [log for log in log_output if log.get("event") == "rate_limit_low"]
     assert len(rate_limit_low_logs) == 1

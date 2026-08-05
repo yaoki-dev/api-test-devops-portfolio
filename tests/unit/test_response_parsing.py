@@ -8,6 +8,7 @@ import httpx
 import pytest
 from pydantic import BaseModel, Field
 
+from models.responses import GitHubRepo, GitHubUser
 from utils.exceptions import (
     APIJSONDecodeError,
 )
@@ -19,6 +20,12 @@ from utils.response_parsing import (
 )
 from utils.response_parsing import (
     safe_parse_json as _safe_parse_json,
+)
+from utils.response_parsing import (
+    validate_parsed_model as _validate_parsed_model,
+)
+from utils.response_parsing import (
+    validate_parsed_model_list as _validate_parsed_model_list,
 )
 
 pytestmark = pytest.mark.unit
@@ -99,6 +106,78 @@ def test_parse_response_model_list_validation_error(
 
     # index=1（2番目の要素）が失敗したことが loc 先頭に表れる
     assert "1.id" in str(exc_info.value)
+
+
+def test_validate_parsed_model_success_and_ignores_future_fields() -> None:
+    result = _validate_parsed_model(
+        {"login": "octocat", "id": 1, "future_field": "ignored"},
+        GitHubUser,
+        error_factory=ValueError,
+    )
+
+    assert result.login == "octocat"
+    assert result.id == 1
+    assert not hasattr(result, "future_field")
+
+
+def test_validate_parsed_model_list_success() -> None:
+    result = _validate_parsed_model_list(
+        [
+            {"name": "repo-a", "id": 1, "full_name": "octocat/repo-a"},
+            {"name": "repo-b", "id": 2, "full_name": "octocat/repo-b"},
+        ],
+        GitHubRepo,
+        error_factory=ValueError,
+    )
+
+    assert [repo.name for repo in result] == ["repo-a", "repo-b"]
+    assert all(isinstance(repo, GitHubRepo) for repo in result)
+
+
+def test_validate_parsed_model_rejects_strict_type_drift() -> None:
+    with pytest.raises(ValueError, match="Invalid GitHubUser response schema"):
+        _validate_parsed_model(
+            {"login": "octocat", "id": "8"},
+            GitHubUser,
+            error_factory=ValueError,
+        )
+
+
+def test_validate_parsed_model_rejects_missing_required_field() -> None:
+    with pytest.raises(ValueError, match="Invalid GitHubUser response schema"):
+        _validate_parsed_model({"id": 1}, GitHubUser, error_factory=ValueError)
+
+
+def test_validate_parsed_model_list_rejects_non_list() -> None:
+    with pytest.raises(ValueError, match="Invalid GitHubRepo response schema"):
+        _validate_parsed_model_list(
+            {"name": "repo", "id": 1, "full_name": "octocat/repo"},
+            GitHubRepo,
+            error_factory=ValueError,
+        )
+
+
+def test_validate_parsed_model_uses_error_factory() -> None:
+    def error_factory(message: str) -> Exception:
+        return RuntimeError(f"wrapped: {message}")
+
+    with pytest.raises(RuntimeError, match="wrapped: Invalid GitHubUser"):
+        _validate_parsed_model({"id": 1}, GitHubUser, error_factory=error_factory)
+
+
+def test_validate_parsed_model_error_is_private_and_chainless() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        _validate_parsed_model(
+            {"login": 123, "id": "secret-id"},
+            GitHubUser,
+            error_factory=ValueError,
+        )
+
+    message = str(exc_info.value)
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__suppress_context__ is True
+    assert "123" not in message
+    assert "secret-id" not in message
 
 
 def test_safe_parse_json_invalid_json(
