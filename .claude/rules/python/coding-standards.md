@@ -111,8 +111,9 @@ cause にしない。Pydantic の `ValidationError` は検証失敗時の入力�
    `_handle_http_status_error`）/ `utils/github_etag_cache.py`（`GitHubETagCache._cache_key`）/
    `utils/response_parsing.py`（`validate_parsed_model`, `validate_parsed_model_list`）
 2. サニタイズ済みの代理 cause へチェーンする — `utils/github_error_handler.py`
-   （`SanitizedJSONDecodeError`）は `reason` と位置情報だけを詰め替えて `from` に渡し、
-   本文を捨てたうえでデバッグ性を残す
+   （`SanitizedJSONDecodeError`）は、失敗理由（`JSONDecodeError` なら `msg`、
+   `UnicodeDecodeError` なら `reason`）と位置情報だけを詰め替えて `from` に渡し、
+   レスポンス本文（`doc` / `object`）を捨てたうえでデバッグ性を残す
 
 合成データのみを返すモック API（JSONPlaceholder）は本不変条件の対象外で、`from e` を維持する。
 

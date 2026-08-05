@@ -309,7 +309,7 @@ git checkout -b feature/<次のタスク> origin/develop
 | `security-guidance` | Hook | 編集操作時 | (Claude hook資産として存在する場合) 自動警告（Codex 自動発火は要確認） |
 | `verification-before-completion` | Skill | タスク完了時（reflect前） | 作業完了証拠確認 |
 | `reflexion:reflect` | Skill | タスク完了時・reflect | deep reflect実行（セルフレビュー） |
-| `code-review:review-local-changes` | Skill | reflect完了後 | ローカル変更レビュー（スコア閾値あり） |
+| `review:review-local-changes` | Skill | reflect完了後 | ローカル変更レビュー（スコア閾値あり） |
 
 ### High（開発標準）
 
@@ -318,7 +318,7 @@ git checkout -b feature/<次のタスク> origin/develop
 | `create-issue` | Skill | Issue作成 | Issue駆動開発支援 |
 | Git Flow（手動） | Process | ブランチ作成時 | `feature/*` / `hotfix/*` 運用に従う |
 | `commit`, `push-pr` | Skill | コミット/Push・PR作成時 | 品質チェック付きコミット+日本語PR |
-| `code-review:review-pr` | Skill | 重要PR時 | セキュリティ・バグ・API契約レビュー |
+| `review:review-pr` | Skill | 重要PR時 | セキュリティ・バグ・API契約レビュー |
 | `test-coverage`, `generate-tests` | Command | テスト関連時 | (環境にある場合) カバレッジ分析・テスト生成 |
 
 ### Medium（必要時）
@@ -354,14 +354,14 @@ git checkout -b feature/<次のタスク> origin/develop
    自動ループ:
      - 信頼度90%未満: 改善して再実行（各反復で信頼度と改善理由を簡潔に示す）/ 90%以上 → 終了 - 最大3回まで
      - 4回連続失敗時（信頼度90%未満継続）はユーザーに報告して停止
-6. コミット前レビュー → `code-review:review-local-changes` (80点閾値)
+6. コミット前レビュー → `review:review-local-changes` (80点閾値)
 7. コミット   → `commit`（ワークフローに従う）【git commit禁止。スキルが無い場合は必ず事前確認】
 
 【レビューフェーズ】
 8. IF (≥200行 OR セキュリティ OR API OR hotfix):
       → `code-review:review-pr`
     ELSE(Include doc update):
-      → `code-review:review-local-changes`（または同等のレビュー手段）
+      → `review:review-local-changes`（または同等のレビュー手段）
 
 【PUSH/PR/マージフェーズ】
 9. PR前レビュー → 規模判定ルール適用【※3参照】
@@ -387,7 +387,7 @@ uv run mypy utils/ config/ models/ tests/conftest.py
 | 条件 | レビューツール |
 |------|--------------|
 | セキュリティファイル変更 OR ≥200行 OR API契約変更 | `code-review:review-pr` |
-| <200行 AND 非セキュリティ | `code-review:review-local-changes`（または同等） |
+| <200行 AND 非セキュリティ | `review:review-local-changes`（または同等） |
 
 セキュリティ関連: `utils/sentry_init.py`, `utils/sentry_scrub_*.py`, `utils/logger.py`, `config/settings.py`, `*.env*`
 API契約変更対象: `models/responses.py`, `utils/jsonplaceholder_*.py` public methods

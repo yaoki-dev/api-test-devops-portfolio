@@ -94,7 +94,21 @@ def validate_parsed_model[M: BaseModel](
     *,
     error_factory: Callable[[str], Exception],
 ) -> M:
-    """パース済みデータをPydanticモデルへ検証して変換する。"""
+    """パース済みデータをPydanticモデルへ検証して変換する。
+
+    Args:
+        data: 検証対象のパース済みデータ
+        model_type: 変換先のPydanticモデル型
+        error_factory: 検証失敗時に送出する例外を生成する呼び出し可能オブジェクト
+
+    Returns:
+        検証済みのモデルインスタンス
+
+    Raises:
+        Exception: 検証失敗時に `error_factory` が返す例外。PII漏洩防止のため
+            `ValidationError` とのチェーンは切断する（`from None`）
+
+    """
     try:
         return model_type.model_validate(data)
     except ValidationError as e:
@@ -109,7 +123,25 @@ def validate_parsed_model_list[M: BaseModel](
     *,
     error_factory: Callable[[str], Exception],
 ) -> list[M]:
-    """パース済み配列をPydanticモデル配列へ検証して変換する。"""
+    """パース済み配列をPydanticモデル配列へ検証して変換する。
+
+    Args:
+        data: 検証対象のパース済み配列データ
+        model_type: 各要素の変換先となるPydanticモデル型
+        error_factory: 検証失敗時に送出する例外を生成する呼び出し可能オブジェクト
+
+    Returns:
+        検証済みモデルインスタンスのリスト
+
+    Raises:
+        Exception: 検証失敗時に `error_factory` が返す例外。PII漏洩防止のため
+            `ValidationError` とのチェーンは切断する（`from None`）
+
+    Notes:
+        `TypeAdapter(list[model])` を用いるため、エラーメッセージには失敗要素の
+        index が含まれる。
+
+    """
     try:
         # TypeAdapter(list[model]) を使うと ValidationError の loc に
         # 失敗要素の index が自動付与される。
@@ -123,7 +155,20 @@ def validate_parsed_model_list[M: BaseModel](
 def parse_response_model[ResponseModelT: BaseModel](
     response: httpx.Response, model_type: type[ResponseModelT]
 ) -> ResponseModelT:
-    """レスポンスJSONをPydanticモデルへ検証して変換する。"""
+    """レスポンスJSONをPydanticモデルへ検証して変換する。
+
+    Args:
+        response: パース対象のHTTPレスポンス
+        model_type: 変換先のPydanticモデル型
+
+    Returns:
+        検証済みのモデルインスタンス
+
+    Raises:
+        APIJSONDecodeError: JSONパース失敗時、JSONがオブジェクトでない場合、
+            またはスキーマ検証に失敗した場合
+
+    """
     data = safe_parse_json(response)
     if not isinstance(data, dict):
         raise APIJSONDecodeError(
@@ -142,7 +187,24 @@ def parse_response_model[ResponseModelT: BaseModel](
 def parse_response_model_list[ResponseModelT: BaseModel](
     response: httpx.Response, model_type: type[ResponseModelT]
 ) -> list[ResponseModelT]:
-    """レスポンスJSON配列をPydanticモデル配列へ検証して変換する。"""
+    """レスポンスJSON配列をPydanticモデル配列へ検証して変換する。
+
+    Args:
+        response: パース対象のHTTPレスポンス
+        model_type: 各要素の変換先となるPydanticモデル型
+
+    Returns:
+        検証済みモデルインスタンスのリスト
+
+    Raises:
+        APIJSONDecodeError: JSONパース失敗時、JSONが配列でない場合、
+            またはスキーマ検証に失敗した場合
+
+    Notes:
+        `TypeAdapter(list[model])` を用いるため、エラーメッセージには失敗要素の
+        index が含まれる（例: `0.user_id: ...`）。
+
+    """
     data = safe_parse_json(response)
     if not isinstance(data, list):
         raise APIJSONDecodeError(

@@ -433,10 +433,19 @@ class Photo(BaseModel):
 
 
 class GitHubUser(BaseModel):
-    """GitHub user response model.
+    """GitHubユーザーモデル
 
-    Strict validation rejects known type drift, while ``extra="ignore"`` accepts
-    future GitHub response fields without widening this typed boundary.
+    GitHub API /users/{username} エンドポイントのレスポンス。
+    strict検証で既知フィールドの型ドリフトを拒否し、`extra="ignore"` により
+    将来追加されるフィールドは型境界を広げずに無視する。
+
+    Attributes:
+        login: GitHubログイン名
+        id: ユーザーID
+        name: 表示名（未設定時は None）
+        bio: 自己紹介文（未設定時は None）
+        public_repos: 公開リポジトリ数（レスポンス欠落時は None）
+
     """
 
     login: str
@@ -449,10 +458,20 @@ class GitHubUser(BaseModel):
 
 
 class GitHubRepo(BaseModel):
-    """GitHub repository response model.
+    """GitHubリポジトリモデル
 
-    Strict validation rejects known type drift, while ``extra="ignore"`` accepts
-    future GitHub response fields without widening this typed boundary.
+    GitHub API /users/{username}/repos および /repos/{owner}/{repo} のレスポンス。
+    strict検証で既知フィールドの型ドリフトを拒否し、`extra="ignore"` により
+    将来追加されるフィールドは型境界を広げずに無視する。
+
+    Attributes:
+        name: リポジトリ名
+        id: リポジトリID
+        full_name: `owner/repo` 形式の完全名
+        stargazers_count: スター数（レスポンス欠落時は None）
+        forks_count: フォーク数（レスポンス欠落時は None）
+        open_issues_count: オープンIssue数（レスポンス欠落時は None）
+
     """
 
     name: str

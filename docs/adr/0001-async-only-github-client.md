@@ -2,7 +2,7 @@
 
 **Status**: Accepted
 **Date**: 2026-05-08
-**Last verified**: 2026-08-05 — 決定は有効。実装位置のみ変更 (「実装位置の変遷」参照)
+**Last verified**: 2026-08-05 — 決定は有効。実装位置の変更 (「実装位置の変遷」参照) に加え、公開メソッドの戻り値が parsed JSON から検証済み Pydantic モデルへ変わった (「AsyncAPIClient との契約差異」参照)。継承しない判断はこの変更で論拠がむしろ強まっている
 **Context tags**: API client design, Async/Sync paradigm, GitHub API integration, inheritance vs composition
 
 ## Context
@@ -20,13 +20,17 @@ GitHub API クライアント (`utils/github_client.py`) の実装パラダイ�
 
 | 項目 | AsyncAPIClient | AsyncGitHubClient |
 |---|---|---|
-| 戻り値型 | `httpx.Response` | parsed JSON (`dict \| list[dict]`) |
+| 戻り値型 | `httpx.Response` | 検証済み Pydantic モデル (`GitHubUser` / `list[GitHubRepo]` / `GitHubRepo`) |
 | リトライ対象例外 | `httpx.RequestError` + 5xx (`raise_for_status`) | 5xx + `TimeoutException` + `NetworkError` + `RemoteProtocolError` |
 | 4xx 分類 | 一律 `APIHTTPError` | 403→Rate Limit vs Forbidden、404→`NotFoundError`、429→`RateLimitError` |
 | キャッシュ層 | なし | ETag + data 二重キャッシュ (304対応) |
 | ヘッダー戦略 | 汎用 (`Content-Type: application/json`) | GitHub特化 (`Accept: application/vnd.github+json`) |
 | 例外チェーン方針 | `from e` (チェーン維持) | `from None` (PII漏洩防止) |
 | クライアント生成 | `__init__` 内 | `__aenter__` 内 (lazy) |
+
+304 Not Modified でキャッシュから復元した場合も、公開メソッドは同じ検証パス
+(`validate_parsed_model` / `validate_parsed_model_list`) を通すため、200 応答時と同一の
+Pydantic モデル型を返す。
 
 ### 同期 caller の存在検証
 
@@ -56,7 +60,7 @@ GitHub API クライアント (`utils/github_client.py`) の実装パラダイ�
 
 #### 2. 継承しない正当化 (LSP / SRP / ISP の観点)
 
-- **LSP 違反回避**: 同名メソッドで戻り値契約が異なる (`Response` vs `dict`) ため、継承して override すると Liskov 置換原則違反
+- **LSP 違反回避**: 同名メソッドで戻り値契約が異なる (`httpx.Response` vs `GitHubUser` / `list[GitHubRepo]` / `GitHubRepo`) ため、継承して override すると Liskov 置換原則違反
 - **SRP 確保**: `AsyncAPIClient` は「汎用retry付きHTTPラッパー」、`AsyncGitHubClient` は「GitHub API契約 + ETag/RateLimit運用」— 別責務
 - **ISP 確保**: GitHub クライアント利用者は `_make_request_with_retry` 等の低レベルAPIを必要としない
 - **Override コスト過大**: 継承後に共通残部ゼロ (リトライロジック・4xx分類・キャッシュ層・ライフサイクル全て GitHub固有要件)
