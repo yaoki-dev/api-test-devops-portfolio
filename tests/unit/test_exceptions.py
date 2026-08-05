@@ -1,6 +1,6 @@
 """例外階層の契約テスト。"""
 
-from collections.abc import Callable
+from typing import Protocol
 from unittest.mock import Mock
 
 import httpx
@@ -18,7 +18,14 @@ from utils.exceptions import (
 pytestmark = pytest.mark.unit
 
 
-MockResponseFactory = Callable[[object | None], Mock]
+class MockResponseFactory(Protocol):
+    """payload 省略呼び出しを型に表現するための fixture 呼び出し規約。
+
+    ``Callable[[object | None], Mock]`` は引数をちょうど1個要求し既定値を表現できないため、
+    payload なしの呼び出しが mypy で ``[call-arg]`` になる。
+    """
+
+    def __call__(self, payload: object | None = None) -> Mock: ...
 
 
 @pytest.fixture()

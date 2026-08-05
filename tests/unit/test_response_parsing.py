@@ -1,16 +1,20 @@
 """utils.response_parsing のJSON変換エラー契約テスト"""
 
 import json
-from collections.abc import Callable
+from typing import Protocol
 from unittest.mock import Mock
 
 import httpx
 import pytest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from models.responses import GitHubRepo, GitHubUser
 from utils.exceptions import (
     APIJSONDecodeError,
+)
+from utils.response_parsing import (
+    _build_list_adapter,
+    _list_adapter,
 )
 from utils.response_parsing import (
     parse_response_model as _parse_response_model,
@@ -31,7 +35,14 @@ from utils.response_parsing import (
 pytestmark = pytest.mark.unit
 
 
-MockResponseFactory = Callable[[object | None], Mock]
+class MockResponseFactory(Protocol):
+    """payload 省略呼び出しを型に表現するための fixture 呼び出し規約。
+
+    ``Callable[[object | None], Mock]`` は引数をちょうど1個要求し既定値を表現できないため、
+    payload なしの呼び出しが mypy で ``[call-arg]`` になる。
+    """
+
+    def __call__(self, payload: object | None = None) -> Mock: ...
 
 
 @pytest.fixture()
@@ -132,6 +143,40 @@ def test_validate_parsed_model_list_success() -> None:
 
     assert [repo.name for repo in result] == ["repo-a", "repo-b"]
     assert all(isinstance(repo, GitHubRepo) for repo in result)
+
+
+def test_list_adapter_is_cached_per_model_type() -> None:
+    """TypeAdapter の再構築を防ぐキャッシュが、モデル型ごとに正しく分離されることを検証する。
+
+    キャッシュが壊れると呼び出しごとに pydantic-core スキーマが再構築され、
+    型を跨いで共有されると誤ったモデルで検証してしまう。
+    """
+    assert _list_adapter(GitHubRepo) is _list_adapter(GitHubRepo)
+    # mypy は両辺の宣言型が別なので比較が自明と判定するが、ここで確かめたいのは
+    # 「キャッシュが実行時に型ごとのオブジェクトを返す」という宣言型の裏付けそのもの。
+    assert _list_adapter(GitHubRepo) is not _list_adapter(GitHubUser)  # type: ignore[comparison-overlap]
+
+    # identity だけでは「キャッシュされた adapter が正しいモデルで検証するか」を
+    # 保証できないため、型ごとの検証挙動まで確認する。
+    repos = _list_adapter(GitHubRepo).validate_python(
+        [{"name": "repo-a", "id": 1, "full_name": "octocat/repo-a"}]
+    )
+    assert isinstance(repos[0], GitHubRepo)
+
+    users = _list_adapter(GitHubUser).validate_python([{"login": "octocat", "id": 1}])
+    assert isinstance(users[0], GitHubUser)
+
+    # GitHubUser の payload を GitHubRepo の adapter へ通すと失敗する
+    # （= キャッシュが型を跨いで共有されていない）
+    with pytest.raises(ValidationError):
+        _list_adapter(GitHubRepo).validate_python([{"login": "octocat", "id": 1}])
+
+    # @cache をジェネリックな _list_adapter 側へ戻すと戻り値と引数制約が Any へ
+    # 退化するが、退化版も mypy を通るため型検査では検出できない。キャッシュが
+    # どちらの層にあるかを構造的に固定して、この無音な後退を防ぐ。
+    # 型保持の手段を別機構（overload 等）へ変える場合はこの assert も更新する。
+    assert not hasattr(_list_adapter, "cache_info")
+    assert hasattr(_build_list_adapter, "cache_info")
 
 
 def test_validate_parsed_model_rejects_strict_type_drift() -> None:
