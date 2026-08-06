@@ -125,7 +125,7 @@ class AsyncGitHubClient:
         user_agent: str = "AsyncGitHubClient/1.0",
         max_cache_entries: int = 256,
         max_connections: int = 10,
-    ):
+    ) -> None:
         """AsyncGitHubClientの初期化
 
         Args:
