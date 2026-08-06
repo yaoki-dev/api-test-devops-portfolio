@@ -2,7 +2,8 @@
 
 **Status**: Accepted
 **Date**: 2026-05-08
-**Last verified**: 2026-08-05 — 決定は有効。実装位置の変更 (「実装位置の変遷」参照) に加え、公開メソッドの戻り値が parsed JSON から検証済み Pydantic モデルへ変わった (「AsyncAPIClient との契約差異」参照)。継承しない判断はこの変更で論拠がむしろ強まっている
+**Last verified**: 2026-08-06 — 決定は有効。実装位置の変更 (「実装位置の変遷」参照) に加え、公開メソッドの戻り値が parsed JSON から検証済み Pydantic モデルへ変わった (「AsyncAPIClient との契約差異」参照)。継承しない判断はこの変更で論拠がむしろ強まっている。
+補足 (2026-08-06 実測): 採用理由 1 が挙げる並行 fetch は**現時点で未行使**。`AsyncGitHubClient` を `asyncio.gather` / `TaskGroup` / `Semaphore` へ渡す fan-out 経路は本番・テストとも 0 件。Async-only の判断自体は「同期 caller 不在」と SRP/LSP の論拠から独立に成立するため決定は変わらないが、並行 fetch は実現済みの便益ではなく設計上の余地にとどまる。あわせて、将来の fan-out に備えて接続プール上限を `AsyncGitHubClient(max_connections=10)` として明示化した (「GitHub API の特性」参照)。受け付ける範囲は 1..100 で、上限は GitHub の同時リクエスト制限そのものに一致させている
 **Context tags**: API client design, Async/Sync paradigm, GitHub API integration, inheritance vs composition
 
 ## Context
@@ -13,6 +14,9 @@ GitHub API クライアント (`utils/github_client.py`) の実装パラダイ�
 
 - **認証あり**: Personal Access Token / OAuth
 - **Rate Limit**: 認証なし 60 req/h、認証あり 5000 req/h
+- **同時接続の上限**: 同時 100 リクエスト (REST/GraphQL 共有) を超えないことが secondary
+  rate limit として文書化されている。httpx の既定 `max_connections` も偶然 100 のため、
+  未設定だとプール飽和と API 拒否が同時に起き、マージンが残らない
 - **ETag による Conditional Requests**: 304 Not Modified でレスポンスボディ省略・帯域節約
 - **想定ユースケース**: CI/CD での複数リポジトリ状態取得、Dashboard 集計クエリ、Rate Limit 内で多数リクエストを効率消化
 

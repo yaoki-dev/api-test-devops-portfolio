@@ -32,6 +32,42 @@ async def test_context_manager_initialization() -> None:
     assert managed_client.is_closed
 
 
+async def test_aenter_caps_connection_pool() -> None:
+    """__aenter__ が接続プール上限を明示的に httpx へ渡すことを固定する。
+
+    未指定だと httpx 既定の max_connections=100 が効くが、これは GitHub が強制する
+    同時100リクエスト上限と偶然一致し、プール飽和と API 拒否が同時に起きてマージンが
+    ゼロになる。この暗黙の一致へ戻る回帰を防ぐ。
+    """
+    target = "utils.github_client.httpx.AsyncClient"
+    with patch(target, return_value=AsyncMock()) as async_client_cls:
+        async with AsyncGitHubClient():
+            pass
+        assert async_client_cls.call_args.kwargs["limits"].max_connections == 10
+
+        async with AsyncGitHubClient(max_connections=3):
+            pass
+        assert async_client_cls.call_args.kwargs["limits"].max_connections == 3
+
+
+@pytest.mark.parametrize("invalid", [0, -1, 101])
+async def test_init_rejects_out_of_range_max_connections(invalid: int) -> None:
+    """max_connections を 1..100 に制限する（settings.api.max_connections と同一契約）。
+
+    下限: 0 以下ではプールが接続を確保できず全リクエストが PoolTimeout になる。
+    上限: 100 は GitHub の同時リクエスト制限そのもので、超えても API 側で拒否される。
+    どちらも即座の ValueError で呼び出し側の設定ミスを表面化させる。
+    """
+    with pytest.raises(ValueError, match="max_connections must be between 1 and 100"):
+        AsyncGitHubClient(max_connections=invalid)
+
+
+@pytest.mark.parametrize("valid", [1, 100])
+async def test_init_accepts_max_connections_boundaries(valid: int) -> None:
+    """境界値 1 / 100 は許容する（off-by-one で有効値を弾かないことの固定）。"""
+    assert AsyncGitHubClient(max_connections=valid).max_connections == valid
+
+
 @pytest.mark.parametrize(
     ("close_exception", "expected_type", "expected_module"),
     [

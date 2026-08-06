@@ -115,6 +115,8 @@ class AsyncGitHubClient:
     """
 
     BASE_URL = "https://api.github.com"
+    # GitHub が secondary rate limit として文書化する同時リクエスト上限（REST/GraphQL 共有）。
+    MAX_CONNECTIONS_LIMIT = 100
 
     def __init__(
         self,
@@ -122,7 +124,8 @@ class AsyncGitHubClient:
         max_retries: int = 3,
         user_agent: str = "AsyncGitHubClient/1.0",
         max_cache_entries: int = 256,
-    ):
+        max_connections: int = 10,
+    ) -> None:
         """AsyncGitHubClientの初期化
 
         Args:
@@ -132,11 +135,25 @@ class AsyncGitHubClient:
                 デフォルト設定(timeout=30, max_retries=3)での最悪ケース: 約96秒。
             user_agent: User-Agentヘッダー（GitHub要求事項）
             max_cache_entries: ETag/dataキャッシュの最大エントリ数（デフォルト256）
+            max_connections: 接続プールの同時接続上限（デフォルト10 — JSONPlaceholder
+                クライアント群の `settings.api.max_connections` と同値）。未設定だと
+                httpx 既定の100が効くが、これは GitHub が文書化する同時100リクエスト上限と
+                一致するため、プール飽和と API 拒否が同時に起きマージンが残らない。
+                上限到達時は接続を待機し、`timeout` 経過で `httpx.PoolTimeout`
+                （`_request` のリトライ対象）。有効範囲は 1..100 で、上限は上記の
+                GitHub 制限そのもの、下限は 0 以下だと接続を確保できないため
+                （`settings.api.max_connections` の `ge=1, le=100` と同一契約）。
+
+        Raises:
+            ValueError: max_connections が 1..100 の範囲外（理由は Args を参照）
 
         """
+        if not 1 <= max_connections <= self.MAX_CONNECTIONS_LIMIT:
+            raise ValueError(f"max_connections must be between 1 and {self.MAX_CONNECTIONS_LIMIT}")
         self.timeout = timeout
         self.max_retries = max_retries
         self.user_agent = user_agent
+        self.max_connections = max_connections
         self._client: httpx.AsyncClient | None = None
         self.logger = get_logger(__name__)
         # ETag/data キャッシュは GitHubETagCache が排他所有する（facade は保持と委譲のみ）。
@@ -157,6 +174,7 @@ class AsyncGitHubClient:
                 "Accept": "application/vnd.github+json",
                 "User-Agent": self.user_agent,
             },
+            limits=httpx.Limits(max_connections=self.max_connections),
         )
         return self
 
