@@ -1,6 +1,6 @@
 # API Test + DevOps Portfolio
 
-*最終更新: 2026-07-31*
+*最終更新: 2026-08-07*
 
 外部API連携における堅牢性と品質保証を追求し、APIテストとDevOps技術を統合したポートフォリオです。
 SSRFやPII漏洩、不安定なリトライといった連携特有のアンチパターンを排除し、1,300件超の自動テストを品質ゲートとして構築・運用しています。
@@ -24,65 +24,6 @@ SSRFやPII漏洩、不安定なリトライといった連携特有のアンチ�
 
 目的は、手動確認に依存しやすい品質保証を、再現可能・継続実行可能・レビュー可能な仕組みに置き換えることです。
 
-## Demo
-
-3つのGIFで主要機能を視覚的に確認できます（合計35秒）
-
-<!-- ### 1. CI/CD自動化
-
-![CI/CD Demo - git pushでGitHub Actions自動起動、多段階パイプラインで品質保証。CI/CDスキルを実証](assets/demo-cicd.gif)
-
-**📝 デモ内容**: git push後GitHub Actionsで自動テスト・デプロイ
-
-**何がわかるか**:
-
-- GitHub Actionsによる自動化パイプライン
-- コード変更時の自動テスト実行
-- 多段階パイプライン
-
-ー see details: [CI/CD Pipeline & Quality Gates](docs/reference/ci_cd_pipeline.md)
-
-### 2. テスト実行
-
-![Test Demo - pytest実行で基本テスト19件合格（全1,457件中の抽出実行、CI環境での全体カバレッジ: 97.60%）。テスト自動化スキルを実証](assets/demo-test.gif)
-
-**📝 デモ内容**: クイック実行例（基本テスト19件、デモ時間短縮のため抽出。全1,457件は約60秒）
-**🔍 全1,457件を今すぐ確認**: [GitHub Actions CI/CD](https://github.com/yaoki-dev/api-test-devops-portfolio/actions) でフルテスト結果＋カバレッジレポートを閲覧
-
-**何がわかるか**:
-
-- pytest + pytest-covによる自動テスト実行
-- カバレッジレポートによる品質可視化
-- テスト実行: 基本19件 ~5秒、全1,457件 ~60秒
-
-<details>
-<summary>全テスト実行コマンド（1,457件、約60秒）</summary>
-
-```bash
-# 全テスト実行（1,457件）
-uv run pytest --cov=utils --cov=config --cov=models --cov-report=term -q --color=yes
-
-# クイック実行（unit tests）
-uv run pytest tests/unit/test_jsonplaceholder_client_sync.py --cov=utils --cov=config --cov=models --cov-report=term -q --color=yes
-```
-
-</details>
-
-### 3. Docker操作
-
-![Docker Demo - 4-stage Multi-stage buildでコンテナビルド。DevOpsスキルを実証](assets/demo-docker.gif)
-
- **📝 デモ内容**: Docker Multi-stage buildによるコンテナビルド
- **✅ Docker Compose**: 4環境（development / testing / staging / production）オーケストレーション
-
-**何がわかるか**:
-
-- Docker Multi-stage builds（4段階: base/dependencies/runtime/test）
-- 非rootユーザーでのセキュアな実行
-- 本番イメージサイズ最適化（runtime ~46 MiB pull / ~146 MiB 展開後・linux/amd64）
-
-ー see details:  [Docker Multi-Stage Runtime Strategy](docs/reference/docker.md) -->
-
 ## 概要
 
 - **`1,457件のテストスイート`**（2026-07 実測）: Unit(1,433) / Integration(15, うちExternal 4件含む) / Performance(7, 週次のみ) / Smoke(2)
@@ -105,8 +46,7 @@ uv run pytest tests/unit/test_jsonplaceholder_client_sync.py --cov=utils --cov=c
 | **`型チェック`** | mypy（strict mode） |
 | **`パッケージ管理`** | uv（高速、Rust製） |
 | **`CI/CD`** | GitHub Actions（多段階パイプライン） |
-| **`エラー監視`** | Sentry SDK + MCP統合 |
-| **`ログ`** | structlog（構造化ログ） |
+| **`ログ・可観測性`** | structlog + Sentry SDK（任意、既定無効） |
 
 ## アーキテクチャ
 
@@ -114,24 +54,24 @@ uv run pytest tests/unit/test_jsonplaceholder_client_sync.py --cov=utils --cov=c
 
 ```mermaid
 graph TB
-    subgraph "APIクライアント設計"
-        SC[SyncAPIClient<br/>同期クライアント]
-        SC --> JP[SyncJSONPlaceholderClient]
-        AC[AsyncAPIClient<br/>非同期クライアント]
-        AC --> AJP[AsyncJSONPlaceholderClient]
-        AGC[AsyncGitHubClient<br/>GitHub API統合]
+    R[Request] --> AC[API Clients<br/>Sync + Async]
+    AC -- "Retry / HTTP errors" --> EA[External APIs<br/>JSONPlaceholder / GitHub]
+    EA --> VM[Validated Models]
+
+    subgraph "Supporting Components"
+        CFG[Config]
+        LOG[Logging]
+        SEN[Optional Sentry]
     end
 
-    subgraph "設定管理"
-        PS[Pydantic Settings] --> ENV[.env]
-    end
+    CFG -.-> AC
+    LOG -.-> AC
+    SEN -.-> LOG
 
-    subgraph "品質保証"
-        UT[Unit Tests] --> IT[Integration Tests]
-        IT --> SEC[Security Tests]
-        SEC --> PERF[Performance Tests]
-    end
+    classDef default fill:#F7F3EA,stroke:#111,stroke-width:1.5px,color:#111;
 ```
+
+> この図は、リクエストが同期・非同期APIクライアントを経由して外部APIへ到達し、検証済みモデルとして返る主要な処理経路を示します。
 
 ### 運用・デプロイフロー
 
@@ -215,6 +155,8 @@ flowchart TD
     class D,E,F support;
     class H metric;
 ```
+
+> この図は、unit・integration・smoke・週次テストをCI品質ゲートとカバレッジへ接続する検証戦略を示します。
 
 ### Docker multi-stage
 
@@ -349,65 +291,9 @@ docker compose up -d
 
 ### Sentry統合
 
-本プロジェクトでは、Sentry SDKを統合し、ERROR以上のログを自動でSentryに送信します。
+Sentry SDK標準のスクラブに加えて、44種の機密キーパターンを基準とした防御的スクラブを`before_send`フックへ自前実装しています。初期化失敗時は本番相当環境でfail-fast、開発・テスト環境では警告して継続します。既定無効のopt-inで、テストはネットワーク非依存です。
 
-**主な機能**:
-
-- 🛡️ **機密データ保護**: 44種類の機密キーを自動スクラブ（password, token, api_key等）
-
-- 🔄 **structlog連携**: ERROR/CRITICAL/EXCEPTIONレベルを自動送信
-- ⚡ **サイレント失敗**: Sentry障害時もアプリケーション継続
-- 🔐 **SecretStr保護**: DSNの平文出力防止
-
-**設定方法**:
-
-Sentry連携は既定で無効（`SENTRY__ENABLED=false`）です。デモ・CI はネットワーク非依存で自己完結します。有効化する場合のみ、以下を設定してください。
-
-```bash
-# DSN は機密のため .env に書かず、OS 環境変数で注入する
-#   （DSN は write-only の ingest キー。コミット対象ファイルには置かない）
-export SENTRY__DSN=<your-dsn>   # 例: https://xxx@oNNN.ingest.us.sentry.io/NNN
-
-# 有効化してローカル実行（uv run は OS 環境変数を読み込む。
-#   pydantic-settings の優先順位: OS env > .env のため、.env の false を上書きできる）
-# init_sentry() は成功時も内部ログを出さない設計のため、戻り値を明示的に表示する
-SENTRY__ENABLED=true uv run python -c "from utils.sentry_init import init_sentry; print('Sentry initialized:', init_sentry())"
-```
-
-**補足**:
-
-- 実 DSN はコミット対象ファイルに書かない（`.env.example` はプレースホルダのみ）。
-- Docker コンテナはホストの `SENTRY__DSN` を継承しない。コンテナで有効化する場合は
-  `docker-compose.yml` の該当サービスに `environment: SENTRY__DSN: ${SENTRY__DSN:-}` を明示する。
-- 任意の調整項目: `SENTRY__ENVIRONMENT`（未設定時は `settings.environment` を使用）、
-  `SENTRY__TRACES_SAMPLE_RATE=0.1`、`SENTRY__SEND_DEFAULT_PII=false`（PII 送信は既定で無効）。
-
-**初期化（アプリケーション起動時）**:
-
-```python
-from utils.sentry_init import init_sentry
-
-if init_sentry():
-    logger.info("Sentry monitoring enabled")
-```
-
-**コードで見る（実装）**:
-
-| 機能 | 実装 |
-|------|------|
-| 機密キー定義（44種） | [`SENSITIVE_KEYS`](utils/sentry_scrub_primitives.py) |
-| PIIスクラブフック | [`_before_send()`](utils/sentry_scrub_events.py) |
-| 再帰スクラブ処理 | [`_scrub_sensitive_data()`](utils/sentry_scrub_values.py) |
-| 起動エントリ | [`init_sentry()`](utils/sentry_init.py) |
-| 設定モデル（PII送信 既定無効） | [`SentryConfig`](config/settings.py) |
-
-> リンクは行番号アンカーを持たない。行番号はリファクタで無言のうちにズレ、CI のリンクチェックも検出できないため、ファイル単位のリンクに統一している。
-
-**テスト方針**: Sentry連携は `tests/unit/test_sentry_init.py` の boot-up 検証と、`tests/integration/test_sentry_logging.py` の結合検証でカバーする。実 Sentry DSN への送信は外部依存・ダッシュボードノイズを招くため、capturing transport でネットワーク非依存に保つ。
-
- 📚 詳細は `.serena/memories/sentry_integration.md` を参照
-
-## ドキュメント
+本番デプロイ、実DSNによる継続監視、アラート運用、release/deploy連携は未実施です。詳細は [Sentry統合リファレンス](docs/reference/sentry.md) を参照してください。
 
 ## ライセンス
 
