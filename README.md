@@ -156,7 +156,7 @@ flowchart TD
     class H metric;
 ```
 
-> この図は、unit・integration・smoke・週次テストをCI品質ゲートとカバレッジへ接続する検証戦略を示します。
+> この図は、unit・integration・smoke を CI品質ゲートへ、external・performance を週次の Scheduled Checks へ振り分ける検証戦略を示します。カバレッジ計測の対象は unit+integration 条件（external・performance・smoke を除外）です。
 
 ### Docker multi-stage
 
