@@ -116,15 +116,9 @@ if init_sentry():
 
 ## MCP統合
 
-Sentry MCPサーバーでClaude Codeからエラー調査可能:
+このポートフォリオでは、開発時のエラー調査に Sentry MCP サーバーを利用できます。これは開発者が使うツールであり、アプリケーションが実行時にエラーを送信する Sentry SDK 統合とは別のレイヤーです。
 
-```json
-// .mcp.json
-"sentry": {
-  "type": "http",
-  "url": "https://mcp.sentry.dev/mcp"
-}
-```
+接続設定は利用するAIコーディングツールのローカル設定が保持するため、本リポジトリには含めません。
 
 **参照**: [Sentry MCP Docs](https://docs.sentry.io/product/sentry-mcp/)
 
@@ -133,10 +127,7 @@ Sentry MCPサーバーでClaude Codeからエラー調査可能:
 ## テスト
 
 ```bash
-# Sentry統合テスト（6ファイル）
-uv run pytest tests/unit/test_sentry_init.py tests/unit/test_sentry_scrub_primitives.py \
-    tests/unit/test_sentry_scrub_values.py tests/unit/test_sentry_scrub_events.py \
-    tests/unit/test_sentry_transaction_span.py tests/unit/test_sentry_scrub_event_helpers.py -v
+uv run pytest -k sentry -v --no-cov
 ```
 
 ---

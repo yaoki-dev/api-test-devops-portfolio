@@ -1,6 +1,6 @@
 # Documentation Index
 
-*最終更新: 2026-07-10*
+*最終更新: 2026-08-07*
 
 このリポジトリで公開しているドキュメントの一覧です。
 
@@ -25,3 +25,4 @@
 |---------|------|
 | [ci_cd_pipeline.md](reference/ci_cd_pipeline.md) | CI/CD パイプライン リファレンス |
 | [docker.md](reference/docker.md) | Docker リファレンス |
+| [sentry.md](reference/sentry.md) | Sentry 統合リファレンス |
