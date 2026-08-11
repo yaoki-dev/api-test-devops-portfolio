@@ -12,7 +12,7 @@
 #   2026-02-17: Python 3.12→3.13 (セキュリティサポート延長)
 #   2026-03-07: Python 3.13→3.14 (プロジェクト全体統一移行 PR#228)
 #   2026-06-13: digest更新 (CVE-2026-45447 openssl-provider-legacy HIGH / 修正版 3.5.6-1~deb13u2 取込)
-FROM python:3.14-slim@sha256:cea0e6040540fb2b965b6e7fb5ffa00871e632eef63719f0ea54bca189ce14a6 AS base
+FROM python:3.14-slim@sha256:a7fb1e634c4a578f9e0bd6327f11a3cde11b7a9395f48e24360c0988bcc5c2bc AS base
 
 WORKDIR /app
 
@@ -53,6 +53,10 @@ RUN uv sync --frozen --no-dev --no-install-project
 # Stage 3: Runtime - 本番実行環境
 # ============================================================
 FROM base AS runtime
+
+# セキュリティ: runtime に pip は不要（実行は仮想環境の python のみ）。
+# pip 同梱の vendored ライブラリを含めて攻撃面から除去する。
+RUN python -m pip uninstall -y pip
 
 # 仮想環境をコピー
 COPY --from=dependencies /app/.venv /app/.venv
