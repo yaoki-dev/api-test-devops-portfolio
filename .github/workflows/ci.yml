@@ -1158,7 +1158,7 @@ jobs:
   # ============================================================
   # Stage 4: Weekly Extended Tests (< 30 min)
   # Triggers: schedule (Sunday 00:00 UTC)
-  # Tests: Performance + External API + Full Coverage
+  # Tests: Performance + External API + Coverage（Performance + Externalを除く）
   # Note: Security は PR 毎の静的解析（gitleaks, ruff(S)）で代用
   #       Python SAST: ruff S-rulesでbandit主要ルールを概ね網羅（B1-3xx, B310-315含む）
   #       高セキュリティ要件時はbanditを別途実行推奨（ruff S-rulesはbanditの完全な代替ではない）

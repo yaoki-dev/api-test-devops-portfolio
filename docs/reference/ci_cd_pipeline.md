@@ -28,7 +28,7 @@ flowchart TD
     T --> PMQ["<h4>pr-md-quality-check</h4><u>markdownlint · textlint<br/>Markdown quality gate</u>
     <br/>"]
 
-    T --> PS["<h4>pr-trivy-scan</h4><u>filesystem + image SARIF<br/>CRITICAL / HIGH gate</u>
+    T --> PS["<h4>pr-trivy-scan</h4><u>filesystem SARIF · image: main/docker<br/>CRITICAL / HIGH gate</u>
     <br/>"]
 
     T --> CT["<h4>compose-test</h4><u>pytest in test container<br/>coverage + badge SVG</u>
@@ -102,10 +102,10 @@ flowchart TD
     T["<h4>Schedule</h4><u>cron: 0 0 * * 0<br/>Weekly (Sunday 00:00 UTC)</u>
     <br/>"]
 
-    T --> WE["<h4>weekly-extended-test</h4><u>performance · external API<br/>full coverage report</u>
+    T --> WE["<h4>weekly-extended-test</h4><u>performance · external API<br/>coverage: all packages</u>
     <br/>"]
 
-    T --> WL["<h4>weekly-link-check</h4><u>markdown-link-check<br/>all Markdown files</u>
+    T --> WL["<h4>weekly-link-check</h4><u>markdown-link-check<br/>Markdown files (excl. paths)</u>
     <br/>"]
 
     classDef default fill:#F7F3EA,stroke:#111,stroke-width:1.5px,color:#111;
@@ -129,12 +129,12 @@ flowchart TD
 |-------|---------|---------|---------|
 | **pr-validation** | `pull_request` | lockfile 検証 + zizmor High ゲート + ruff + mypy + (Unit + Integration + Smoke) Tests | 20分 |
 | **pr-md-quality-check** | `pull_request` | markdownlint + textlint | 5分 |
-| **pr-trivy-scan** | `pull_request` | Trivy scan（Filesystem + Image）+ Docker Build | 20分 |
+| **pr-trivy-scan** | `pull_request` | Trivy scan（Filesystem は常時）+ Docker Build と Image scan（main 宛 PR または `docker` ラベル時のみ） | 20分 |
 | **compose-test** | `pull_request` / `push to develop/main` | Compose test profile（pytest + coverage）+ coverage badge 生成 | 15分 |
 | **compose-healthcheck** | 同上（`needs: compose-test`） | `docker compose up --wait` + `docker inspect` によるヘルス確認 | 15分 |
 | **post-validation** | `push to develop/main` | lockfile 検証 + ruff + mypy + Smoke Tests | 10分 |
 | **post-trivy-scan** | `push to develop/main` | Trivy scan（Filesystem + Image）+ Docker Build | 20分 |
-| **weekly-extended-test** | `schedule` (週次) | (Performance + External) Tests + フルカバレッジ | 30分 |
+| **weekly-extended-test** | `schedule` (週次) | (Performance + External) Tests + 全パッケージ カバレッジ（計測対象は `--cov=.`。Performance / External は個別実行済みのため計測から除外） | 30分 |
 | **weekly-link-check** | `schedule` (週次) | Markdown link check | 15分 |
 | **status-report** | 全トリガー | パイプラインサマリー生成（`if: !cancelled()`） | 5分 |
 
@@ -209,11 +209,15 @@ Composite action（`.github/actions/trivy-sarif-verify/action.yml`）内部で�
   uses: github/codeql-action/upload-sarif@v4
   with:
     sarif_file: 'trivy-fs-scan.sarif'
+
+# 上記は Stage 1a（全 severity を SARIF 収集）のみの抜粋。
+# CRITICAL / HIGH ゲートは後段の Stage 1b（exit-code: "1" の gate ステップ +
+# 失敗を明示的にジョブ失敗へ昇格させるステップ）が担う。実装は ci.yml を参照。
 ```
 
 **設計ポイント**:
 
-1. **`continue-on-error: true`**: Trivyスキャン失敗（脆弱性検出含む）でもパイプライン停止させない
+1. **`continue-on-error: true`**: Stage 1a（SARIF 収集）ではスキャン結果に関わらずジョブを止めず、後続の検証・アップロードを必ず通す。脆弱性による合否判定は Stage 1b の CRITICAL / HIGH ゲートが担い、ゲート失敗時はジョブを失敗させる（fail-closed）
 2. **`if: "!cancelled()"`**: スキャン失敗時も検証ステップを実行（失敗検出のため）。`always()` と異なりワークフローキャンセル時は実行しないため、キャンセルが即座に効く
 3. **`steps.verify-fs-scan.outcome == 'success'`**: 検証成功時のみGitHub Security Tabにアップロード
 4. **Composite Action活用**: 4箇所（pr-trivy-scan/post-trivy-scan各2）で同一ロジック共有
