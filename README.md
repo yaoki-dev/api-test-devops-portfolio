@@ -77,7 +77,7 @@ graph TB
 
 ```mermaid
 flowchart TD
-    A["<h4>Code Change</h4><u>Pull Request / Push</u>
+    A["<h4>Code Change</h4><u>PR / Push</u>
     <br/>"]
 
     A --> B["<h4>Quality & Security Checks</h4><u>lint / type check / tests / security scan</u>

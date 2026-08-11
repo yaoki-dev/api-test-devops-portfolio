@@ -2,7 +2,7 @@
 
 *最終更新: 2026-07-06*
 
-## 🐳 Docker環境概要
+## Docker環境概要
 
 ### 環境構成
 
@@ -11,7 +11,7 @@
 - **最適化**: レイヤーキャッシュ、サイズ削減
 - **セキュリティ**: 非rootユーザー、脆弱性対策
 
-## 🏗️ Multi-stage Build設計
+## Multi-stage Build設計
 
 ### Build Stages
 
@@ -20,7 +20,7 @@
 3. **runtime**: 開発/ステージング/本番 環境
 4. **test**: テスト環境
 
-## 🔧 docker compose設定
+## docker compose設定
 
 ### 利用可能な設定
 
@@ -31,7 +31,7 @@
 ENVIRONMENT と環境別 env ファイルで設定と検証ポリシーを環境別に切り替える。
 テスト実行は専用 test image に分離し、本番 runtime image にテスト依存を含めない。
 
-## 📦 イメージ最適化
+## イメージ最適化
 
 ### イメージサイズ（実測 2026-07-04）
 
@@ -55,7 +55,7 @@ ENVIRONMENT と環境別 env ファイルで設定と検証ポリシーを環境
 - **Trivy** の CVE スキャン統合（CRITICAL/HIGH グリーン時のみ GHCR publish）
 - **マルチアーキ publish**（linux/amd64 + linux/arm64）で GHCR runtime を manifest list として公開し、Apple Silicon 等 arm64 ホストでもエミュレーションなしにネイティブ pull/run できる。publish 後に両 arch の manifest 存在と arm64 実行を CI で検証する
 
-## 🚀 実行方法
+## 実行方法
 
 本プロジェクトは「**Build Once, Run Anywhere**」の原則に基づき、コードを内包した1つの不変な共通ランタイム（`runtime` ステージ）を、環境変数（`ENVIRONMENT`）で制御する設計を採用しています。
 
@@ -88,7 +88,7 @@ docker compose ps
 docker compose logs app
 ```
 
-## 🔍 トラブルシューティング
+## トラブルシューティング
 
 ### 一般的な問題と解決法
 
