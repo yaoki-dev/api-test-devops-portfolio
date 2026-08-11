@@ -54,6 +54,10 @@ RUN uv sync --frozen --no-dev --no-install-project
 # ============================================================
 FROM base AS runtime
 
+# セキュリティ: runtime に pip は不要（実行は仮想環境の python のみ）。
+# pip 同梱の vendored ライブラリを含めて攻撃面から除去する。
+RUN python -m pip uninstall -y pip
+
 # 仮想環境をコピー
 COPY --from=dependencies /app/.venv /app/.venv
 
