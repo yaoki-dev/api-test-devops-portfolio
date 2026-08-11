@@ -1,96 +1,148 @@
 # CI/CD Pipeline
 
-*最終更新: 2026-07-31*
+*最終更新: 2026-08-11*
 
-## 🚀 CI/CDパイプライン概要
+## CI/CDパイプライン概要
 
 > **Source of truth**: CI 設定の正確な依存は [.github/workflows/ci.yml](../../.github/workflows/ci.yml) が唯一の真実源。本書の図・表は派生表現であり、ci.yml 変更時に追従すること。
 
-### CI/CD 多段階パイプライン構成 (exact DAG)
+### CI/CD パイプライン構成（トリガー別）
+
+13 ジョブを 1 枚に収めるとトリガー分類と `needs` 依存が同一平面に混在し可読性が落ちるため、トリガー単位で 3 つの DAG に分割している。
+
+#### 1. `pull_request`（main / develop 宛）
 
 ```mermaid
-graph TB
-    subgraph "Pull Request (並列実行)"
-        PR[Pull Request] -.-> PV[pr-validation]
-        PR -.-> PS[pr-trivy-scan]
-        PR -.-> PMQ[pr-md-quality-check]
-    end
+---
+config:
+  flowchart:
+    wrappingWidth: 420
+---
+flowchart TD
+    T["<h4>Pull Request</h4><u>on: pull_request<br/>branches: main · develop</u>
+    <br/>"]
 
-    subgraph "Main/Develop Push (独立並列起動)"
-        CTEST[compose-test<br/>pytest + coverage]
-        PVAL[post-validation<br/>mypy + Smoke]
-        PTRIVY[post-trivy-scan<br/>Trivy FS + Image]
-    end
+    T --> PV["<h4>pr-validation</h4><u>zizmor High gate · ruff · mypy<br/>unit + integration + smoke</u>
+    <br/>"]
 
-    subgraph "Container Health"
-        CHEALTH[compose-healthcheck]
-    end
+    T --> PMQ["<h4>pr-md-quality-check</h4><u>markdownlint · textlint<br/>Markdown quality gate</u>
+    <br/>"]
 
-    subgraph "Publish & Verify (実装済み: Continuous Delivery, main push)"
-        DP[deploy-pages<br/>GitHub Pages: coverage]
-        PI[publish-image<br/>GHCR: runtime image]
-        VI[verify-published-image<br/>pull & run verify]
-    end
+    T --> PS["<h4>pr-trivy-scan</h4><u>filesystem SARIF · image: main/docker<br/>CRITICAL / HIGH gate</u>
+    <br/>"]
 
-    subgraph "Weekly Schedule"
-        WS[Weekly Schedule] -.-> WC[weekly-extended-test]
-        WS -.-> WL[weekly-link-check]
-    end
+    T --> CT["<h4>compose-test</h4><u>pytest in test container<br/>coverage + badge SVG</u>
+    <br/>"]
 
-    subgraph "Status Report"
-        SR[status-report<br/>全ジョブ結果を集約]
-    end
+    CT --> CH["<h4>compose-healthcheck</h4><u>needs: compose-test<br/>compose up --wait · inspect</u>
+    <br/>"]
 
-    CTEST --> CHEALTH
-    CTEST --> DP
-    CTEST --> PI
-    CHEALTH --> PI
-    PTRIVY --> PI
-    PI --> VI
+    classDef default fill:#F7F3EA,stroke:#111,stroke-width:1.5px,color:#111;
+    classDef trigger fill:#F7F3EA,stroke:#111,stroke-width:2px,color:#111;
+    classDef job fill:#FFFDF7,stroke:#111,stroke-width:2px,color:#111;
 
-    PV -.-> SR
-    PS -.-> SR
-    PMQ -.-> SR
-    PVAL -.-> SR
-    PTRIVY -.-> SR
-    WC -.-> SR
-    WL -.-> SR
-    CTEST -.-> SR
-    CHEALTH -.-> SR
-    DP -.-> SR
-    PI -.-> SR
-    VI -.-> SR
-
-    style PV fill:#1e90ff,color:#fff
-    style PS fill:#ff6b6b,color:#fff
-    style PMQ fill:#9b59b6,color:#fff
-    style CTEST fill:#4caf50,color:#fff
-    style CHEALTH fill:#8bc34a,color:#fff
-    style PVAL fill:#2ed573,color:#fff
-    style PTRIVY fill:#ff9800,color:#fff
-    style DP fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
-    style PI fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
-    style VI fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
-    style WC fill:#ffa502,color:#fff
-    style WL fill:#f39c12,color:#fff
-    style SR fill:#34495e,color:#fff
+    class T trigger;
+    class PV,PMQ,PS,CT,CH job;
 ```
 
-**凡例**: 実線 = 明示的 `needs` 依存、破線 = 並列起動 / `status-report` 集約依存。緑背景 = CD 実装済みジョブ。
+#### 2. `push`（main / develop）と Continuous Delivery
 
-| Stage | トリガー | 実行内容 | Timeout | 並列実行 |
-|-------|---------|---------|---------|---------|
-| **pr-validation** | `pull_request` | mypy+ (Unit + Integration + smoke) Tests | 15分 | ○ |
-| **pr-trivy-scan** | `pull_request` | Trivy scan（Filesystem + Image）+ Docker Build  | 20分 | ○ |
-| **post-validation** | `push to develop/main` | mypy + Smoke Tests | 15分 | × |
-| **post-trivy-scan** | `push to develop/main` | Trivy scan（Filesystem + Image）+ Docker Build | 20分 | × |
-| **weekly-extended-test** | `schedule` (週次) | (Performance + External) Tests | 30分 | × |
-| **weekly-link-check** | `schedule` (週次) | Markdown link check | 15分 | × |
-| **status-report** | 全トリガー | パイプラインサマリー生成（`if: !cancelled()`） | 5分 | × |
+```mermaid
+---
+config:
+  flowchart:
+    wrappingWidth: 420
+---
+flowchart TD
+    T["<h4>Push</h4><u>on: push<br/>branches: main · develop</u>
+    <br/>"]
+
+    T --> PVAL["<h4>post-validation</h4><u>lockfile sync · ruff · mypy<br/>smoke tests</u>
+    <br/>"]
+
+    T --> PT["<h4>post-trivy-scan</h4><u>filesystem + image SARIF<br/>CRITICAL / HIGH gate</u>
+    <br/>"]
+
+    T --> CT["<h4>compose-test</h4><u>pytest in test container<br/>coverage + badge SVG</u>
+    <br/>"]
+
+    CT --> CH["<h4>compose-healthcheck</h4><u>needs: compose-test<br/>compose up --wait · inspect</u>
+    <br/>"]
+
+    CT --> DP["<h4>deploy-pages</h4><u>main only · needs: compose-test<br/>coverage + badge to Pages</u>
+    <br/>"]
+
+    CT --> PI
+    CH --> PI
+    PT --> PI["<h4>publish-image</h4><u>main only · needs: 3 jobs<br/>GHCR runtime amd64 + arm64</u>
+    <br/>"]
+
+    PI --> VI["<h4>verify-published-image</h4><u>main only · needs: publish-image<br/>multi-arch manifest · anon pull</u>
+    <br/>"]
+
+    classDef default fill:#F7F3EA,stroke:#111,stroke-width:1.5px,color:#111;
+    classDef trigger fill:#F7F3EA,stroke:#111,stroke-width:2px,color:#111;
+    classDef job fill:#FFFDF7,stroke:#111,stroke-width:2px,color:#111;
+    classDef cd fill:#EAF7EA,stroke:#111,stroke-width:2px,color:#111;
+
+    class T trigger;
+    class PVAL,PT,CT,CH job;
+    class DP,PI,VI cd;
+```
+
+#### 3. `schedule`（Weekly）
+
+```mermaid
+---
+config:
+  flowchart:
+    wrappingWidth: 420
+---
+flowchart TD
+    T["<h4>Schedule</h4><u>cron: 0 0 * * 0<br/>Weekly (Sunday 00:00 UTC)</u>
+    <br/>"]
+
+    T --> WE["<h4>weekly-extended-test</h4><u>performance · external API<br/>coverage: all packages</u>
+    <br/>"]
+
+    T --> WL["<h4>weekly-link-check</h4><u>markdown-link-check<br/>Markdown files (excl. paths)</u>
+    <br/>"]
+
+    classDef default fill:#F7F3EA,stroke:#111,stroke-width:1.5px,color:#111;
+    classDef trigger fill:#F7F3EA,stroke:#111,stroke-width:2px,color:#111;
+    classDef weekly fill:#EEF4FF,stroke:#111,stroke-width:1.5px,color:#111;
+
+    class T trigger;
+    class WE,WL weekly;
+```
+
+**図の読み方**
+
+- 矢印はジョブの起動順序を示す。トリガーノードから伸びる矢印は「そのトリガーで起動する」ことを表し、`needs` 依存ではない
+- ノード内に `needs:` 表記があるジョブのみが `needs` を持つ。表記が無いジョブは `needs` を持たず、トリガー直後に並列起動する
+- 縦位置は依存の深さを表すが、同一トリガーで起動するジョブは GitHub Actions により並列実行される。たとえば `post-trivy-scan` は `compose-test` の完了を待たず push 直後に起動する
+- `compose-test` と `compose-healthcheck` は `pull_request` と `push` の両方をトリガーとするため、図 1 と図 2 の双方に登場する（同一ジョブ）
+- 緑 = main への push 限定で実行される CD ジョブ、青 = `schedule` 限定ジョブ。配色は [README](../../README.md) のアーキテクチャ図と共通パレット
+- 全ジョブ結果を集約する `status-report` は 3 図すべてに関わるため図からは省略した。実体は `needs: [12 ジョブ全て]` / `if: "!cancelled()"` / Timeout 5分
+
+| Stage | トリガー | 実行内容 | Timeout |
+|-------|---------|---------|---------|
+| **pr-validation** | `pull_request` | lockfile 検証 + zizmor High ゲート + ruff + mypy + (Unit + Integration + Smoke) Tests | 20分 |
+| **pr-md-quality-check** | `pull_request` | markdownlint + textlint | 5分 |
+| **pr-trivy-scan** | `pull_request` | Trivy scan（Filesystem は常時）+ Docker Build と Image scan（main 宛 PR または `docker` ラベル時のみ） | 20分 |
+| **compose-test** | `pull_request` / `push to develop/main` | Compose test profile（pytest + coverage）+ coverage badge 生成 | 15分 |
+| **compose-healthcheck** | 同上（`needs: compose-test`） | `docker compose up --wait` + `docker inspect` によるヘルス確認 | 15分 |
+| **post-validation** | `push to develop/main` | lockfile 検証 + ruff + mypy + Smoke Tests | 10分 |
+| **post-trivy-scan** | `push to develop/main` | Trivy scan（Filesystem + Image）+ Docker Build | 20分 |
+| **weekly-extended-test** | `schedule` (週次) | (Performance + External) Tests + 全パッケージ カバレッジ（計測対象は `--cov=.`。Performance / External は個別実行済みのため計測から除外） | 30分 |
+| **weekly-link-check** | `schedule` (週次) | Markdown link check | 15分 |
+| **status-report** | 全トリガー | パイプラインサマリー生成（`if: !cancelled()`） | 5分 |
+
+CD 3ジョブ（`deploy-pages` / `publish-image` / `verify-published-image`）は main push 限定のため、後述の「CD（Continuous Delivery）」節の表を参照してください。同一トリガーで起動するジョブは GitHub Actions により並列実行され、直列関係はトリガー別 DAG の 3 図でノード内に `needs:` として明示されたものだけです。
 
 ---
 
-## 🔒 Trivy Security Scan（SARIF形式）
+## Trivy Security Scan（SARIF形式）
 
 ### SARIF形式採用理由
 
@@ -108,7 +160,7 @@ graph TB
 # .github/workflows/ci.yml実装例
 - name: Verify filesystem scan execution
   id: verify-fs-scan
-  if: always()
+  if: "!cancelled()"
   uses: ./.github/actions/trivy-sarif-verify
   with:
     sarif-file: 'trivy-fs-scan.sarif'
@@ -134,7 +186,7 @@ Composite action（`.github/actions/trivy-sarif-verify/action.yml`）内部で�
 ### エラーハンドリング戦略
 
 ```yaml
-# 概念説明用コード例（実装はaquasecurity/trivy-action@0.35.0 Actionを使用）
+# 概念説明用コード例（実装はaquasecurity/trivy-action@0.36.0 Actionをcommit SHAでpinして使用）
 # Trivyスキャン本体
 - name: Run Trivy filesystem scan (SARIF)
   id: fs-scan
@@ -145,7 +197,7 @@ Composite action（`.github/actions/trivy-sarif-verify/action.yml`）内部で�
 # 検証ステップ（Composite Action使用）
 - name: Verify filesystem scan execution
   id: verify-fs-scan
-  if: always()  # スキャン成否に関わらず実行
+  if: "!cancelled()"  # スキャン成否に関わらず実行（キャンセル時は実行しない）
   uses: ./.github/actions/trivy-sarif-verify
   with:
     sarif-file: 'trivy-fs-scan.sarif'
@@ -157,12 +209,16 @@ Composite action（`.github/actions/trivy-sarif-verify/action.yml`）内部で�
   uses: github/codeql-action/upload-sarif@v4
   with:
     sarif_file: 'trivy-fs-scan.sarif'
+
+# 上記は Stage 1a（全 severity を SARIF 収集）のみの抜粋。
+# CRITICAL / HIGH ゲートは後段の Stage 1b（exit-code: "1" の gate ステップ +
+# 失敗を明示的にジョブ失敗へ昇格させるステップ）が担う。実装は ci.yml を参照。
 ```
 
 **設計ポイント**:
 
-1. **`continue-on-error: true`**: Trivyスキャン失敗（脆弱性検出含む）でもパイプライン停止させない
-2. **`if: always()`**: 検証ステップを必ず実行（失敗検出のため）
+1. **`continue-on-error: true`**: Stage 1a（SARIF 収集）ではスキャン結果に関わらずジョブを止めず、後続の検証・アップロードを必ず通す。脆弱性による合否判定は Stage 1b の CRITICAL / HIGH ゲートが担い、ゲート失敗時はジョブを失敗させる（fail-closed）
+2. **`if: "!cancelled()"`**: スキャン失敗時も検証ステップを実行（失敗検出のため）。`always()` と異なりワークフローキャンセル時は実行しないため、キャンセルが即座に効く
 3. **`steps.verify-fs-scan.outcome == 'success'`**: 検証成功時のみGitHub Security Tabにアップロード
 4. **Composite Action活用**: 4箇所（pr-trivy-scan/post-trivy-scan各2）で同一ロジック共有
 5. **Composite Actionを活用した厳格な品質ゲート**:Composite Actionを活用し、テスト成果物欠落時の即時エラー（Hard fail）と、CI/CD間の厳格な責務分離をカプセル化しました。
@@ -170,7 +226,7 @@ Composite action（`.github/actions/trivy-sarif-verify/action.yml`）内部で�
 
 ---
 
-## 🎯 品質ゲート設定
+## 品質ゲート設定
 
 ### CI実行テスト条件
 
@@ -198,13 +254,13 @@ uv run --frozen --no-sync zizmor --version
 uv run --frozen --no-sync zizmor --offline --no-config --strict-collection --persona=regular --min-severity=high --format=github .github/workflows .github/actions
 ```
 
-`--offline` は監査中のネットワークアクセスを禁止し、`--no-config` はリポジトリ設定によるseverity remapを無効化します。`--strict-collection` は指定対象を厳格に収集し、`--min-severity=high` は High 以上の検出をゲートにします。zizmorにはGitHubトークンを渡しません。
+`--offline` は監査中のネットワークアクセスを禁止し、`--no-config` はリポジトリ設定によるseverity remapを無効化します。<br/>`--strict-collection` は指定対象を厳格に収集し、`--min-severity=high` は High 以上の検出をゲートにします。<br/>zizmorにはGitHubトークンを渡しません。
 
-### CD（実装済み）
+### CD（Continuous Delivery）
 
 main push時に以下3ジョブが実行され、Continuous Delivery（成果物の配信・検証）を完結します：
 
-> **precise needs の参照先**: この CD 3ジョブの正確な `needs` 依存はこの表に集約（mermaid 図は同じ依存を矢印で可視化）。`status-report` / `compose-healthcheck` を含む全ジョブの依存は真実源 [ci.yml](../../.github/workflows/ci.yml) を参照。本表はその派生。
+> **precise needs の参照先**: この CD 3ジョブの正確な `needs` 依存はこの表に集約（mermaid 図は同じ依存を矢印で可視化）。<br/>`status-report` / `compose-healthcheck` を含む全ジョブの依存は真実源 [ci.yml](../../.github/workflows/ci.yml) を参照。本表はその派生。
 
 | ジョブ | 概要 | needs 依存関係 |
 |--------|------|----------------|
@@ -214,12 +270,12 @@ main push時に以下3ジョブが実行され、Continuous Delivery（成果物
 
 **補足**:
 - `compose-healthcheck` は `compose-test` のみに依存
-- `post-trivy-scan` は main/develop push で並列実行（CD ジョブの依存には含まれないが、`publish-image` は `post-trivy-scan` 完了を待つ）
+- `post-trivy-scan` は main/develop push で他ジョブと並列に起動するが、`publish-image` の `needs` に含まれる（= CVE スキャン成功を GHCR publish のゲートとして機能させている）
 - 稼働環境への実デプロイ（Continuous Deployment: Cloud Run / ECS / K8s 等）は未実装
 
 #### multi-arch 検証（`verify-published-image`）
 
-`publish-image` は runtime を **linux/amd64 + linux/arm64** の manifest list として GHCR に公開します。`verify-published-image` は「公開したが未検証」を排除するため、`GITHUB_TOKEN` を使わない匿名 public pull（利用者と同じ取得経路）で以下を検証します：
+`publish-image` は runtime を **linux/amd64 + linux/arm64** の manifest list として GHCR に公開します。<br/>`verify-published-image` は「公開したが未検証」を排除するため、`GITHUB_TOKEN` を使わない匿名 public pull（利用者と同じ取得経路）で以下を検証します：
 
 | 検証 | 手段 | 目的 |
 |------|------|------|
@@ -233,14 +289,14 @@ publish 直後の GHCR 伝播遅延（一過性の 404/429/5xx）に対し、最
 
 ---
 
-## 📋 ブランチ戦略（Git Flow）
+## ブランチ戦略（Git Flow）
 
-| ブランチ | 用途 | CI実行 | マージ先 |
+| ブランチ | 用途 | CI実行（PR = PR 起票時 / push = 当ブランチへの push 時） | マージ先 |
 |---------|------|--------|---------|
-| `feature/*` | 新機能開発 | pr-validation + pr-trivy-scan + pr-md-quality-check | `develop` |
-| `develop` | 統合ブランチ | pr-validation + pr-trivy-scan + pr-md-quality-check | `main` |
-| `main` | 本番環境 | post-validation (mypy + Smoke) + post-trivy-scan (Docker + Trivy) | - |
-| `hotfix/*` | 緊急修正 | pr-validation + pr-trivy-scan + pr-md-quality-check | `main` + `develop` |
+| `feature/*` | 新機能開発 | PR: pr-validation + pr-md-quality-check + pr-trivy-scan + compose-test → compose-healthcheck（push トリガーなし） | `develop` |
+| `develop` | 統合ブランチ | PR: 同上 / push: post-validation + post-trivy-scan + compose-test → compose-healthcheck | `main` |
+| `main` | 本番環境 | PR: 同上 / push: post-validation + post-trivy-scan + compose-test → compose-healthcheck + CD 3ジョブ | - |
+| `hotfix/*` | 緊急修正 | PR: 同上（`main` / `develop` 双方へ起票） | `main` + `develop` |
 
 **マージ戦略**:
 
@@ -250,7 +306,7 @@ publish 直後の GHCR 伝播遅延（一過性の 404/429/5xx）に対し、最
 
 ---
 
-## 🔧 Troubleshooting
+## Troubleshooting
 
 ### Trivy SARIF検証失敗時
 
@@ -344,7 +400,7 @@ status-report:
 
 ---
 
-## 📊 監視・アラート
+## 監視・アラート
 
 ### GitHub Actions Insights
 
@@ -355,11 +411,3 @@ status-report:
 - Trivyスキャン検出脆弱性件数
 
 **アクセス**: Repository → Insights → Actions
-
----
-
-## 🔗 関連ドキュメント
-
-- [CLAUDE.md](../../.claude/CLAUDE.md): 開発ワークフロー全体
-- [test-strategy.md](../../.claude/rules/testing/test-strategy.md): テスト戦略詳細
-- [quality-gates.md](../../.claude/rules/testing/quality-gates.md): 品質ゲート定義
