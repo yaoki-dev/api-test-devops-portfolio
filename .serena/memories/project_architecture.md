@@ -16,10 +16,22 @@
 ### Core Layer
 | Module | Lines | Description |
 |--------|-------|-------------|
-| utils/api_client.py | 972 | Sync/Async HTTP clients with retry logic |
-| utils/github_client.py | 395 | GitHub API integration + input validation |
+| utils/jsonplaceholder_base_sync.py | 350 | Sync base HTTP client (SyncAPIClient) |
+| utils/jsonplaceholder_base_async.py | 570 | Async base HTTP client (AsyncAPIClient) |
+| utils/jsonplaceholder_client_sync.py | 220 | Sync JSONPlaceholder API client |
+| utils/jsonplaceholder_client_async.py | 480 | Async JSONPlaceholder API client |
+| utils/retry.py | 30 | Exponential backoff with jitter |
+| utils/exceptions.py | 50 | API exception hierarchy |
+| utils/http_helpers.py | 340 | Error handling, config, validation |
+| utils/response_parsing.py | 120 | JSON parse + Pydantic model transform |
+| utils/github_client.py | 913 | GitHub API facade (AsyncGitHubClient) + input validation |
+| utils/github_error_handler.py | 254 | GitHub exception hierarchy + 403/5xx/JSON error handlers (PII-safe) |
+| utils/github_rate_limit.py | 92 | GitHub rate-limit helpers (RATE_LIMIT_WARNING_THRESHOLD) |
 | utils/logger.py | 152 | structlog統合 + Sentry連携 |
-| utils/sentry_init.py | 184 | Sentry SDK初期化 + 機密データスクラブ |
+| utils/sentry_init.py | 196 | Sentry SDK初期化 |
+| utils/sentry_scrub_events.py | 658 | Sentryイベント単位のスクラブ (_before_send) |
+| utils/sentry_scrub_values.py | 193 | 値の再帰スクラブ (URL / クエリ文字列) |
+| utils/sentry_scrub_primitives.py | 200 | 機密キー判定 (SENSITIVE_KEYS) + 共通ログヘルパー |
 | config/settings.py | 447 | Type-safe Pydantic Settings |
 | models/responses.py | 350 | 7 Pydantic response models |
 
@@ -36,7 +48,7 @@
 
 ### Retry Logic
 - Exponential backoff with 30% jitter
-- `exponential_backoff_with_jitter()` in api_client.py
+- `exponential_backoff_with_jitter()` in utils/retry.py
 
 ### Error Handling Hierarchy
 - 4xx: Immediate fail (client error)
@@ -52,7 +64,7 @@
 - **Usage**: `from utils.logger import get_logger`
 
 ### Observability (Sentry統合)
-- **Module**: utils/sentry_init.py
+- **Modules**: utils/sentry_init.py（初期化）+ utils/sentry_scrub_{events,values,primitives}.py（PIIスクラブ）
 - **Features**:
   - DSN設定による初期化
   - 機密データスクラブ (PII保護)
@@ -64,15 +76,15 @@
 - Nested config with `__` separator
 - SecretStr for sensitive values
 
-### API Clients
-| Class | Type | Purpose |
-|-------|------|---------|
-| BaseAPIClient | Sync | Base HTTP client |
-| JSONPlaceholderClient | Sync | JSONPlaceholder API |
-| AsyncAPIClient | Async | Async HTTP client |
-| AsyncJSONPlaceholderClient | Async | Async JSONPlaceholder |
-| AsyncGitHubClient | Async | GitHub API integration |
-| create_client() | Factory | Client instantiation |
+### API Clients (フラットモジュール構造)
+| Class | Module | Type | Purpose |
+|-------|--------|------|---------|
+| SyncAPIClient | jsonplaceholder_base_sync | Sync | Base HTTP client with retry |
+| AsyncAPIClient | jsonplaceholder_base_async | Async | Async HTTP client with retry |
+| SyncJSONPlaceholderClient | jsonplaceholder_client_sync | Sync | JSONPlaceholder API (sync) |
+| AsyncJSONPlaceholderClient | jsonplaceholder_client_async | Async | JSONPlaceholder API (async) |
+| AsyncGitHubClient | github_client | Async | GitHub API integration |
+| create_client() | jsonplaceholder_client_sync | Factory | Client instantiation |
 
 ## Response Models (models/responses.py)
 - Post / Comment / Company / User / Todo / Album / Photo

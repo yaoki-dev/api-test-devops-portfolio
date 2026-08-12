@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-*最終更新: 2026年04月16日*
+*最終更新: 2026-07-30*
 
 <!-- preserve-on-compact: CRITICAL RULES -->
 <!-- IMPORTANT: These rules override all other instructions -->
@@ -20,10 +20,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 8. **NEVER** push to protected branches (main/develop) directly
 9. **ALWAYS** invoke skills via Skill(skill-name) notation when user requests
 10. **ALWAYS** follow development workflow order → Section「🔄 開発ワークフロー」
-11. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `Skill(superpowers:verification-before-completion)` → then `Skill(reflexion:reflect)`
-12. **ALWAYS** when 2+ independent tasks exist, after task classification, per RULES.md exception conditions → invoke `Skill(superpowers:subagent-driven-development)` skill
-    (reason: keep the main context window clean by leveraging subagents aggressively)
-    **例外**: GSD active check positive（定義: RULES.md **GSD exception** 表参照）時、wave内部タスクに限りスキップ。compact後はRule 14 worktree境界確認成功時のみSTOP（Row 1）（Rule 14がSTOPを要求した場合はRow 1を評価せず）。全分岐条件: RULES.md「Parallel Dispatch Rule」内 **GSD exception** 表参照。
+11. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `Skill(fable:fable-judge)` → then `Skill(reflexion:reflect)`
+12. **ALWAYS** when using Fable model → invoke `Skill(efficient-fable)`
 13. **ALWAYS** verify file content with Read/Grep tool BEFORE making any claim about line numbers, file structure, or code content
 14. **ALWAYS** enforce worktree boundary: セッション開始時に `git rev-parse --show-toplevel` でWORKTREE_ROOTを確認し、WORKTREE_ROOT外ファイルの自律的編集を禁止する（`~/.claude/tasks/` は例外）
     → 詳細手続き（worktree list検証、compact後再検証、mismatch報告等）: `.claude/rules/workflow/RULES.md` Section「Category: Worktree Boundary Enforcement」
@@ -32,8 +30,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     b) ユーザーからの修正フィードバック時に即時追記（Edit tool使用、Write禁止。フォーマット: `## [YYYY-MM-DD] [project-name] - Category`）
     → 詳細手続き（エラーハンドリング、closed-list確認、ソース制約等）: `.claude/rules/workflow/RULES.md` Section「Category: Lessons Management」
 16. **ALWAYS** fix bugs autonomously (no hand-holding) when scope is within:
+    - ⛔ 例外（本ルール不適用）: ユーザーの依頼の**主目的**が判断・評価・分析・レビューの場合。修正指示を明示的に含む依頼（例:「分析して修正して」）は主目的が実装であり対象外。該当判定はユーザーの文言に基づき、エージェントの自己申告で拡大解釈しない
+      → `.claude/rules/workflow/RULES.md` Section「Category: Analysis-Only Request Boundary」
     - ❌ Absolutely prohibited (no autonomous modification): `pyproject.toml`, `*.yml`/`*.yaml`/`.env*`, `config/`, `tests/conftest.py`, `tests/**/conftest.py`, `tests/**/__init__.py`, `tests/**/helpers.py`, `utils/__init__.py`, `utils/logger.py`, `utils/sentry_init.py`, git ops / infra config
-    - ⚠️ Limited autonomous fix (spec-changing modifications → confirmation required; non-functional modifications: autonomous OK): `scripts/*.py`, `models/responses.py`, `utils/api_client.py`, `utils/github_client.py`, `tests/test_smoke.py`, `utils/*.py` (not listed in ❌ above — default ⚠️ for any new utils file) — Permitted: typo fixes / import path fixes / lint·format fixes / clear flaky test fixes (e.g., strengthening wait conditions) / obvious mock URL typo fixes / minor refactors (extract variable, simplify logic) / type hint additions·improvements / exception handling improvements (specific exception types, error messages) / log message improvements
+    - ⚠️ Limited autonomous fix (spec-changing modifications → confirmation required; non-functional modifications: autonomous OK): `scripts/*.py`, `models/responses.py`, `utils/github_client.py`, `tests/test_smoke.py`, `utils/*.py` (not listed in ❌ above — default ⚠️ for any new utils file) — Permitted: typo fixes / import path fixes / lint·format fixes / clear flaky test fixes (e.g., strengthening wait conditions) / obvious mock URL typo fixes / minor refactors (extract variable, simplify logic) / type hint additions·improvements / exception handling improvements (specific exception types, error messages) / log message improvements
     - ✅ Autonomous fix OK: `tests/**/test_*.py` and `tests/test_*.py` (except `tests/test_smoke.py` — governed by ⚠️ above), `*.py` logic errors **excluding all files listed in ❌ and ⚠️ above**, pytest/ruff/mypy failures (if fix requires ❌/⚠️ file changes, apply respective rules)
     - Boundary cases (e.g., adding pyproject.toml dependencies) → apply Rule 3 (AskUserQuestion)
     - さらに: 変更ファイル数 3 以上 / 不可逆操作 / 既存外部契約 (公開API / 環境変数 / CI設定) 変更 を伴う場合は ⚠️ 同等扱い (= Rule 3 適用)
@@ -47,7 +47,7 @@ APIテスト + DevOps統合学習ポートフォリオ。時給4000-4500円レ�
 
 - Python 3.14
 - httpx (Sync + Async HTTP client)
-- pytest (1,358件テスト (CI条件)、カバレッジ目標: 85% / 実績: 96.15%)
+- pytest（カバレッジ下限は `pyproject.toml` の `--cov-fail-under`）
 - Pydantic Settings (型安全な設定管理)
 - structlog (構造化ログ)
 - Docker (Multi-stage builds)
@@ -61,14 +61,22 @@ APIテスト + DevOps統合学習ポートフォリオ。時給4000-4500円レ�
 
 **主要メモリ**:`implementation_quality_gates`, `test_strategy_details`
 
-**物理ファイル位置**: `.serena/memories/` 配下 | **登録済み**: 26個
-
-<!-- ## 📚 学習・進捗管理
-
-**進捗記録**: @docs/progress/daily_progress.md
-**詳細フロー**: @memory:learning_triggers | **オフセットマップ**: @memory:learning_offset_maps -->
+**物理ファイル位置**: `.serena/memories/` 配下
 
 ## 品質ゲート
+
+<!-- 品質ゲートコマンドの単一真実源。他ファイルは本節を参照し、コマンドを複製しない -->
+
+### 統合コマンド（コミット前必須）
+
+```bash
+uv run pytest -n auto -m "(unit or integration) and not external" \
+  --cov=utils --cov=config --cov=models --cov-report=term-missing && \
+uv run ruff check . && \
+uv run mypy utils/ config/ models/ tests/conftest.py
+```
+
+カバレッジ下限は `pyproject.toml` の `--cov-fail-under`（pytest の `addopts` 経由で自動適用）。個別に指定しない。
 
 ### リンター・フォーマッター
 
@@ -78,9 +86,9 @@ APIテスト + DevOps統合学習ポートフォリオ。時給4000-4500円レ�
 # 基本チェック（開発時）
 uv run ruff check --fix .           # スタイル + 自動修正
 uv run ruff format .                # フォーマット適用
-uv run mypy utils/ config/ models/  # 型チェック
+uv run mypy utils/ config/ models/ tests/conftest.py # 型チェック
 
-# セキュリティ（週次）
+# セキュリティ（手動実行・CI未統合。CIでは ruff S-rules + gitleaks が代替）
 uv run bandit -r utils/ config/ models/
 uv run safety scan
 ```
@@ -126,8 +134,6 @@ SECURITY__API_KEY=your-secret-key
 1. 固定Worktreeでブランチ作成 → /git:feature（常時※1）
    → 固定WT: ${HOME}/projects/python/.worktrees/wt-feature0[1-3]（個人環境ごとにカスタマイズ）
    → 計画ファイル作成が必要な場合: claudedocs/plans/ に作成（閾値詳細: .claude/rules/workflow/PLANS.md §使用閾値）
-   → GSD使用判断（該当時。判断結果はユーザーに明示してから実行）:
-     新規モジュール/サブシステムの追加 → /gsd:new-project → /gsd:discuss-phase → /gsd:plan-phase → /gsd:execute-phase
 
 【実装フェーズ】
 2. コード変更 → security-guidance (hook自動)
@@ -135,60 +141,30 @@ SECURITY__API_KEY=your-secret-key
    → For non-trivial changes, ask: "Is there a more elegant implementation?"
    → If it feels hacky, ask: "Given what I know now, what's the most elegant approach?"
    → Skip for obvious single-line fixes
-4. 作業完了確認 → `Skill(superpowers:verification-before-completion)` を実行（GSD使用時: RULES.md「Parallel Dispatch Rule」内 **GSD exception** 表 → **GSD実行フロー（Step 4-5詳細）** 参照）
-   → GSD未使用時、または上記GSD使用フロー外で未完了作業あり: 修正 → 3. 品質ゲートに戻る（最大3回まで。4回連続失敗時はユーザーに報告して停止）
-5. reflect(タスクごとに実施) → `Skill(reflexion:reflect)` を Skill tool で実行（GSD compact回復フロー完走後かつreflect信頼度90以上の場合のみスキップ可: RULES.md「Parallel Dispatch Rule」内 **GSD exception** 表 → **GSD実行フロー（Step 4-5詳細）** 参照）
+4. 作業完了確認 → `Skill(fable:fable-judge)` を実行
+5. reflect(タスクごとに実施) → `Skill(reflexion:reflect)` を実行
    引数: deep reflect if less than 90% confidence. 日本語で簡潔に回答
    自動ループ:
     - 信頼度90%未満: 改善して再実行（各反復で信頼度と改善理由を簡潔に示す）/ 90%以上 → 終了 - 最大3回まで
     - 4回連続失敗時（信頼度90%未満継続）はユーザーに報告して停止
 6. コミット前レビュー → `Skill(review:review-local-changes)` (80点閾値)
-7. コミット   → `Skill(commit)`【git commit禁止】
+7. コミット前確認（重要変更の場合） → `Skill(judgment-day)`を実行
+8. コミット   → `Skill(commit)`【git commit禁止】
 
 【PUSH/PR/マージフェーズ】
-8. PR作成     → Skill(push-pr)【gh pr create禁止】
-9. レビュー対応 → 修正 → 品質ゲート → Skill(commit) → push
-10. マージ実行  → マージ戦略【※3参照】
-11. クリーンアップ → `git fetch --prune origin` + `/git:clean-gone`（worktree: 固定運用のため削除しない）
+9. PR作成     → Skill(push-pr)【gh pr create禁止】
+10. レビュー対応 → 修正 → 品質ゲート →  `Skill(fable:fable-judge)` を実行 →  `Skill(reflexion:reflect)` を実行 → `Skill(review:review-local-changes)`を実行 → `Skill(judgment-day)`を実行（重要変更の場合） → Skill(commit) → push
+11. マージ実行  → マージ戦略【※3参照】
+12. クリーンアップ → `git fetch --prune origin` + `/git:clean-gone`（worktree: 固定運用のため削除しない）
 ```
 
 <!-- preserve-on-compact: Quality Gates -->
 **※1 worktree**: 固定worktree運用（${HOME}/projects/python/.worktrees/wt-feature0[1-3]（個人環境ごとにカスタマイズ））。セッション開始時にwatch_directoryの設定を確認する（mcp__CodeGraphContext__list_watched_paths）
-**※2 品質ゲート**: `uv run pytest -n auto -m "(unit or integration) and not external" --cov=utils --cov=config --cov=models --cov-report=term-missing &&
-uv run ruff check . && uv run mypy utils/ config/ models/`
-
-**※3 マージ戦略**:
-
-| マージ種別 | コマンド |
-|-----------|---------|
-| feature → develop | `gh pr merge --squash --delete-branch` |
-| develop → main | `gh pr merge --merge` |
-| hotfix → main | `gh pr merge --merge` |
+**※2 品質ゲート**: 本ファイル Section「品質ゲート」→「統合コマンド」を使用する
 
 ## トラブルシューティング
 
 **詳細**: @memory:test_strategy_details トラブルシューティングFAQ参照
-
-### テスト失敗時
-
-```bash
-uv run pytest -vv --tb=long          # 詳細ログ
-uv run pytest -x                      # 最初の失敗で停止
-uv run pytest tests/unit/test_async_client.py::test_name -vv --log-cli-level=DEBUG
-```
-
-### カバレッジ不足時
-
-```bash
-uv run pytest --cov-report=term-missing
-uv run pytest --cov-report=html && open reports/htmlcov/index.html
-```
-
-### 型チェックエラー時
-
-```bash
-uv run mypy --show-error-codes --pretty utils/ config/ models/
-```
 
 ### 複数回修正で解決しない場合
 

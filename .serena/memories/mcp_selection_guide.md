@@ -191,13 +191,13 @@ Task(subagent_type="Explore", prompt="Find all async patterns", model="sonnet")
 **✅ 単一ファイル**:
 ```python
 # Readツールで読み込み
-Read("utils/api_client.py")
+Read("utils/jsonplaceholder_base_sync.py")
 ```
 
 **✅ 大きなファイル（部分読み込み）**:
 ```python
 # offset/limitで部分読み込み
-Read("utils/api_client.py", offset=1, limit=100)
+Read("utils/jsonplaceholder_base_sync.py", offset=1, limit=100)
 → 先頭100行のみ読み込み
 ```
 

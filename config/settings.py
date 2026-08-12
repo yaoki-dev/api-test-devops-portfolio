@@ -1,11 +1,4 @@
-"""アプリケーション設定管理
-
-学習目標:
-- Pydantic Settingsを使った環境設定管理
-- 環境ごとの設定分離パターン
-- 設定値のバリデーション
-- セキュリティベストプラクティス
-"""
+"""アプリケーション設定管理"""
 
 import ipaddress
 import logging
@@ -249,15 +242,6 @@ def _validate_base_url_with_allowed_domains(v: str, allowed_domains: frozenset[s
     if not hostname:
         raise ValueError("Invalid URL: hostname not found")
 
-    # SSRF Prevention: プライベートIPチェック
-    if is_private_ip(hostname):
-        _logger.warning(
-            "SSRF Prevention: private or loopback IP blocked for hostname=%r. "
-            "If this is a valid hostname, check DNS resolution and ALLOWED_DOMAINS setting.",
-            hostname[:200],
-        )
-        raise ValueError("SSRF Prevention: Private/loopback IP addresses are not allowed.")
-
     # SSRF Prevention: 許可ドメインチェック
     if hostname not in allowed_domains:
         _logger.warning(
@@ -333,9 +317,16 @@ class APIConfig(BaseModel):
         """ベースURLのバリデーション（SSRF Prevention対応）
 
         Security:
-            - プライベートIP/ループバックアドレスをブロック
-            - 許可されたドメインのみ許可（ALLOWED_DOMAINS）
-            - AWS metadata endpoint (169.254.169.254) をブロック
+            - スキームは http:// または https:// のみ許可
+            - 許可ドメインのみ許可（ALLOWED_DOMAINS allowlist）
+            - allowlist 外のホストはすべてブロック
+
+        Note:
+            設定バリデータは allowlist-only の純粋関数（I/Oなし）として保つ。
+            DNS 解決や private-IP 判定は構成読み込み時に実行しない
+            （TOCTOU/DNS-rebinding 回避 + テスト決定性の確保）。
+            SSRF 対策の境界は許可ドメイン制限であり、egress 層の
+            private-IP guard は現時点では未実装。
         """
         return _validate_base_url_with_allowed_domains(v, ALLOWED_DOMAINS)
 
@@ -384,7 +375,7 @@ class TestConfig(BaseModel):
     """テスト関連の設定"""
 
     slow_test_threshold: float = Field(
-        default=5.0,
+        default=3.0,
         ge=0.1,
         description="スローテストの判定閾値（秒）",
     )
@@ -519,13 +510,15 @@ class Settings(BaseSettings):
                 valid = [e.value for e in Environment]
                 # from None: PydanticがValidationErrorでラップするため
                 # 元のValueErrorチェーンを隠してエラーメッセージをクリーンに保つ
-                raise ValueError(f"environment の値が無効です: {v!r}。有効な値: {valid}") from None
+                raise ValueError(
+                    f"Invalid environment value: {v!r}. Valid values: {valid}"
+                ) from None
         # NOTE: mode="before" のためPydantic型強制前に実行され、int/None等も到達可能。
         # Pydanticがmode="after"なら非str型は型強制段階で排除されるが、
         # mode="before"では生の値を受け取るため、この分岐は防御的コードとして機能する。
         raise ValueError(
-            f"environment には str または Environment を指定してください。"
-            f"受け取った型: {type(v).__name__!r}, 値: {v!r}"
+            f"environment must be a str or Environment. "
+            f"Received type: {type(v).__name__!r}, value: {v!r}"
         )
 
     @model_validator(mode="after")

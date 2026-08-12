@@ -10,36 +10,80 @@ on:
   pull_request_review:
     types: [submitted]
 
+permissions: {}
+
 jobs:
   claude:
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      (
+        github.event_name == 'issue_comment' &&
+        contains(github.event.comment.body, '@claude') &&
+        (
+          github.event.comment.author_association == 'OWNER' ||
+          github.event.comment.author_association == 'MEMBER' ||
+          github.event.comment.author_association == 'COLLABORATOR'
+        )
+      ) ||
+      (
+        github.event_name == 'pull_request_review_comment' &&
+        contains(github.event.comment.body, '@claude') &&
+        (
+          github.event.comment.author_association == 'OWNER' ||
+          github.event.comment.author_association == 'MEMBER' ||
+          github.event.comment.author_association == 'COLLABORATOR'
+        )
+      ) ||
+      (
+        github.event_name == 'pull_request_review' &&
+        contains(github.event.review.body, '@claude') &&
+        (
+          github.event.review.author_association == 'OWNER' ||
+          github.event.review.author_association == 'MEMBER' ||
+          github.event.review.author_association == 'COLLABORATOR'
+        )
+      ) ||
+      (
+        github.event_name == 'issues' &&
+        (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')) &&
+        (
+          github.event.issue.author_association == 'OWNER' ||
+          github.event.issue.author_association == 'MEMBER' ||
+          github.event.issue.author_association == 'COLLABORATOR'
+        )
+      )
     runs-on: ubuntu-latest
+    # Cap runaway Claude runs; default job timeout is 360 minutes
+    timeout-minutes: 30
     permissions:
-      contents: write
+      # Checkout and repository reads only; this scope is what stops Claude from
+      # pushing, since it runs on the GITHUB_TOKEN capped by these permissions
+      contents: read
+      # Required for Claude to post PR comments and inline review comments
       pull-requests: write
+      # Required for Claude to create issues
       issues: write
-      id-token: write
-      actions: read # Required for Claude to read CI results on PRs
+      # Required for Claude to read CI results on PRs
+      actions: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        # Pin checkout by commit SHA for supply-chain stability.
+        # Keep persist-credentials default behavior: v1.0.183 uses checkout auth before configureGitAuth replaces it.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
 
       - name: Run Claude Code
         id: claude
-        # Pin to v1.0.66 (2026-03-02) to avoid AJV schema validation crash in v1.0.67+
-        # See: https://github.com/anthropics/claude-code-action/issues/1013
-        # TODO: Update when upstream fix is released
-        uses: anthropics/claude-code-action@d5726de019ec4498aa667642bc3a80fca83aa102 # v1.0.148
+        # Pin v1.0.183 by commit SHA for supply-chain stability.
+        # See: https://github.com/anthropics/claude-code-action/issues/1013 and #1236.
+        # Checkout credential behavior is intentionally tied to this pinned SHA's source.
+        uses: anthropics/claude-code-action@1623c36729ac1cd5895198cded705a287de7db79 # v1.0.187
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          additional_permissions: |
-            actions: read
+          # Supplying github_token skips the OIDC GitHub App token exchange, whose app
+          # token would carry contents/issues/pull_requests write regardless of the job
+          # permissions above. Claude is therefore capped by this job's scopes.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           # Single-line format to avoid multiline parsing issues (see: anthropics/claude-code-action#844)
           claude_args: >-
             --allowedTools "Bash(gh issue create:*),Bash(gh pr comment:*),mcp__github_inline_comment__create_inline_comment,Skill(create-issue)"

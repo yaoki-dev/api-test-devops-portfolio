@@ -1,6 +1,6 @@
 # Dockerfile - 4-stage Multi-stage builds
-# 最終更新: 2026年03月08日
-# 品質基準: イメージサイズ < 200MB, ビルド時間 < 3分
+# 最終更新: 2026-07-30
+# Runtime image on GHCR: 48.4 MB compressed
 
 # ============================================================
 # Stage 1: Base - 共通ベースイメージ
@@ -12,7 +12,7 @@
 #   2026-02-17: Python 3.12→3.13 (セキュリティサポート延長)
 #   2026-03-07: Python 3.13→3.14 (プロジェクト全体統一移行 PR#228)
 #   2026-06-13: digest更新 (CVE-2026-45447 openssl-provider-legacy HIGH / 修正版 3.5.6-1~deb13u2 取込)
-FROM python:3.14-slim@sha256:44dd04494ee8f3b538294360e7c4b3acb87c8268e4d0a4828a6500b1eff50061 AS base
+FROM python:3.14-slim@sha256:a7fb1e634c4a578f9e0bd6327f11a3cde11b7a9395f48e24360c0988bcc5c2bc AS base
 
 WORKDIR /app
 
@@ -53,6 +53,10 @@ RUN uv sync --frozen --no-dev --no-install-project
 # Stage 3: Runtime - 本番実行環境
 # ============================================================
 FROM base AS runtime
+
+# セキュリティ: runtime に pip は不要（実行は仮想環境の python のみ）。
+# pip 同梱の vendored ライブラリを含めて攻撃面から除去する。
+RUN python -m pip uninstall -y pip
 
 # 仮想環境をコピー
 COPY --from=dependencies /app/.venv /app/.venv
@@ -116,10 +120,12 @@ RUN uv sync --frozen --no-install-project
 COPY --chown=appuser:appgroup config/ ./config/
 COPY --chown=appuser:appgroup utils/ ./utils/
 COPY --chown=appuser:appgroup models/ ./models/
+COPY --chown=appuser:appgroup scripts/ ./scripts/
 COPY --chown=appuser:appgroup tests/ ./tests/
-# docker-compose.yml は tests/integration/test_docker_compose_contract.py が
-# request.config.rootdir / "docker-compose.yml" で読み込むため、test ステージへ配置する。
-COPY --chown=appuser:appgroup docker-compose.yml ./
+# リポジトリメタデータ (docker-compose.yml / .github/) は意図的に配置しない。
+# それらを読む静的契約テストは repo_contract マーカーでコンテナ実行から除外され、
+# 全リポジトリツリーを持つホスト (CI: pr-validation) 側でのみ実行される。
+# 部分的に COPY するとフィルタ済みツリーを全体と誤認し、検査 0 件で無音合格しうる。
 
 # デフォルトコマンド: テスト実行
 # カバレッジ scope は CI 品質ゲート (--cov=utils --cov=config --cov=models) と統一

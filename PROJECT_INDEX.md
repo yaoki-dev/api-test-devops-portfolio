@@ -1,7 +1,6 @@
 # Project Index: api-test-devops-portfolio
 
-**Generated:** 2026-03-08 JST
-**Last Commit:** 94d39b9 (2026-03-08)
+**Generated:** 2026-07-31
 **Version:** 0.1.0
 **Python:** ==3.14.*
 
@@ -19,13 +18,21 @@ api-test-devops-portfolio/
 │   └── responses.py       # APIレスポンスモデル
 ├── utils/                  # コアユーティリティ
 │   ├── __init__.py
-│   ├── api_client.py      # HTTP API クライアント（同期/非同期）
+│   ├── exceptions.py      # 共有例外階層（APIClientError 等）
+│   ├── retry.py           # リトライ遅延計算ヘルパー
+│   ├── http_helpers.py    # HTTP配管ヘルパー（バリデーション/エラーマッピング）
+│   ├── response_parsing.py # レスポンス解析（Pydantic検証）
+│   ├── jsonplaceholder_base_sync.py   # SyncAPIClient（HTTP基盤・同期）
+│   ├── jsonplaceholder_base_async.py  # AsyncAPIClient（HTTP基盤・非同期）
+│   ├── jsonplaceholder_client_sync.py # SyncJSONPlaceholderClient
+│   ├── jsonplaceholder_client_async.py # AsyncJSONPlaceholderClient
 │   ├── github_client.py   # GitHub API 専用クライアント
 │   ├── logger.py          # 構造化ログ（structlog）
-│   └── sentry_init.py     # エラー監視（Sentry SDK）
-├── tests/                  # テストスイート（全23 test files）
-│   ├── unit/              # ユニットテスト（16 files）
-│   ├── integration/       # 統合テスト（5 files）
+│   ├── sentry_init.py     # エラー監視（Sentry SDK 初期化）
+│   └── sentry_scrub_*.py  # PIIスクラブ（events / values / primitives）
+├── tests/                  # テストスイート（全39 test files / 2026-07 実測）
+│   ├── unit/              # ユニットテスト（33 files）
+│   ├── integration/       # 統合テスト（4 files）
 │   ├── performance/       # パフォーマンステスト（1 file）
 │   ├── conftest.py        # pytest fixtures
 │   └── test_smoke.py      # スモークテスト（1 file）
@@ -40,7 +47,7 @@ api-test-devops-portfolio/
 ## 🚀 Entry Points
 
 ### API Clients
-- **Generic API Client**: `utils/api_client.py` - 汎用HTTP API クライアント
+- **JSONPlaceholder API Client**: `utils/jsonplaceholder_client_sync.py` / `utils/jsonplaceholder_client_async.py` - JSONPlaceholder API クライアント（同期/非同期）
 - **GitHub API Client**: `utils/github_client.py` - GitHub API 専用クライアント
 
 ### Tests
@@ -57,10 +64,10 @@ api-test-devops-portfolio/
 - **Exports**: `Settings`, `get_settings()`, `reload_settings()`
 - **Purpose**: Pydantic Settingsによる型安全な環境変数管理。ネスト構造（`__`区切り）対応。
 
-### Module: utils.api_client
-- **Path**: `utils/api_client.py`
-- **Exports**（`utils` パッケージ）: `SyncAPIClient` (同期), `AsyncAPIClient` (非同期), `SyncJSONPlaceholderClient`, `AsyncJSONPlaceholderClient`, `APIClientError`, `APIJSONDecodeError`。個別例外クラス（`APIConnectionError`, `APITimeoutError`, `APIHTTPError`, `APIRetryError`）は `utils.api_client` から直接 import
-- **Purpose**: HTTP API クライアント。リトライロジック・エラーハンドリング・コネクションプール実装。
+### Module: utils.jsonplaceholder_*（旧 api_client.py を責務別に分割）
+- **Path**: `utils/jsonplaceholder_base_sync.py` / `utils/jsonplaceholder_base_async.py` / `utils/jsonplaceholder_client_sync.py` / `utils/jsonplaceholder_client_async.py`
+- **Exports**: `SyncAPIClient` (同期), `AsyncAPIClient` (非同期), `SyncJSONPlaceholderClient`, `AsyncJSONPlaceholderClient`, `create_client()`。例外階層（`APIClientError`, `APIConnectionError`, `APITimeoutError`, `APIHTTPError`, `APIRetryError`, `APIJSONDecodeError`）は `utils.exceptions` から import
+- **Purpose**: HTTP API クライアント。リトライ（`utils/retry.py`）・HTTP配管（`utils/http_helpers.py`）・レスポンス解析（`utils/response_parsing.py`）は共有ヘルパーモジュールへ分離済み。
 
 ### Module: utils.github_client
 - **Path**: `utils/github_client.py`
@@ -74,8 +81,13 @@ api-test-devops-portfolio/
 
 ### Module: utils.sentry_init
 - **Path**: `utils/sentry_init.py`
-- **Exports**: `init_sentry()`
-- **Purpose**: Sentry SDK初期化。44種類の機密キー自動スクラブ。httpx統合。
+- **Exports**: `init_sentry()`, `is_sentry_initialized()`, `reset_sentry_state()`
+- **Purpose**: Sentry SDK初期化。httpx統合。スクラブ処理は `utils/sentry_scrub_*.py` に委譲。
+
+### Module: utils.sentry_scrub_*
+- **Path**: `utils/sentry_scrub_events.py` / `utils/sentry_scrub_values.py` / `utils/sentry_scrub_primitives.py`
+- **Purpose**: `before_send` フックによるPII保護。44種類の機密キーを自動スクラブ。
+  依存は events → values → primitives の一方向。
 
 ### Module: models.responses
 - **Path**: `models/responses.py`
@@ -114,9 +126,10 @@ api-test-devops-portfolio/
 - **CLAUDE.md**: Claude Code 向けプロジェクト指示書（開発ワークフロー、品質ゲート等）
 
 ### Development Guides
-- **docs/main/6週プラン/**: 6週間学習計画（Week 1-6詳細）
-- **docs/progress/daily_progress.md**: 日次進捗記録
-- **docs/main/interview/**: 面接準備資料
+- **docs/DOCS_INDEX.md**: 公開ドキュメントの索引
+- **docs/reference/ci_cd_pipeline.md**: CI/CD パイプライン リファレンス
+- **docs/reference/docker.md**: Docker リファレンス
+- **docs/agents/**: エージェント運用ドキュメント（issue-tracker, triage-labels, domain）
 
 ### Agent Configuration
 - **.claude/agents/**: カスタムエージェント定義（7 files: silent-failure-hunter, security-code-reviewer等）
@@ -127,21 +140,21 @@ api-test-devops-portfolio/
 ## 🧪 Test Coverage
 
 ### Test Statistics
-- **Total Test Files**: 23
-- **Unit Tests**: 16 files (tests/unit/)
-- **Integration Tests**: 5 files (tests/integration/)
+- **Total Test Files**: 39（2026-07 実測）
+- **Unit Tests**: 33 files (tests/unit/)
+- **Integration Tests**: 4 files (tests/integration/)
 - **Performance Tests**: 1 file (tests/performance/)
 - **Smoke Tests**: 1 file (tests/test_smoke.py)
 
 ### Coverage Metrics
-- **Current Coverage**: 96.15%（unit+integration条件）
-- **Target Coverage**: 85% (Week 5-6 goal) ✅ 達成済み
+- **Coverage**: 97.60%（2026-07 実測 / unit+integration条件）
+- **Target Coverage**: `pyproject.toml` の `--cov-fail-under` ✅ 達成済み
 - **Coverage Reports**: `reports/coverage.json`, `reports/htmlcov/`
 
 ### Test Execution
 ```bash
-# 全テスト実行（カバレッジ付き）
-uv run pytest --cov=. --cov-report=term-missing
+# 全テスト実行（カバレッジ計測は pyproject.toml の addopts で自動適用）
+uv run pytest
 
 # 並列実行（高速化）
 uv run pytest -n auto
@@ -195,26 +208,20 @@ cp .env.example .env
 ```bash
 # APIクライアント使用例（対話モード）
 uv run python
->>> from utils.api_client import SyncAPIClient
->>> client = SyncAPIClient()
->>> response = client.get("/todos/1")
->>> print(response)
+>>> from utils.jsonplaceholder_client_sync import SyncJSONPlaceholderClient
+>>> with SyncJSONPlaceholderClient() as client:
+...     todo = client.get_todo(1)
+...     print(todo)
 ```
 
 ### 3. Test
 ```bash
-# 全テスト実行
+# 全テスト実行（カバレッジ計測・下限・HTMLレポートは pyproject.toml の addopts で自動適用）
 uv run pytest
-
-# カバレッジ付き実行
-uv run pytest --cov=. --cov-report=html
 open reports/htmlcov/index.html
 
-# 品質ゲート（4段階チェック）
-uv run pytest --cov-fail-under=85 && \
-uv run ruff check . && \
-uv run mypy utils/ config/ models/ && \
-git status
+# 品質ゲート（コミット前必須）
+# コマンド本体は .claude/CLAUDE.md「品質ゲート」→「統合コマンド」を参照（複製しない）
 ```
 
 ### 4. Development Workflow
@@ -226,8 +233,7 @@ git status
 /git:feature <task-name>
 
 # 3. 実装 + 品質ゲート
-# （コード変更後）
-uv run pytest && uv run ruff check . && uv run mypy utils/ config/ models/
+# （コード変更後）.claude/CLAUDE.md「品質ゲート」→「統合コマンド」を実行
 
 # 4. 自己改善
 /reflexion:reflect
@@ -276,8 +282,8 @@ uv run pytest && uv run ruff check . && uv run mypy utils/ config/ models/
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Test Coverage | 96.15% | 85% |
-| CI Test Files (unit+integration) | 21 | - |
+| Test Coverage | 97.60%（2026-07 実測） | `pyproject.toml` の `--cov-fail-under` |
+| CI Test Files (unit+integration) | 37（2026-07 実測） | - |
 | Python Version | 3.14 | - |
 | Code Quality | ruff + mypy | 0 errors |
 | Documentation | CLAUDE.md + README | - |

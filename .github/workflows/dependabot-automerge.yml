@@ -15,17 +15,22 @@ name: Dependabot auto-merge
 
 on: pull_request
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
 
 jobs:
   automerge:
+    name: Dependabot auto-merge
     runs-on: ubuntu-latest
+    permissions:
+      # Required to perform the squash merge.
+      contents: write
+      # Required to enable auto-merge on the pull request.
+      pull-requests: write
     # Only auto-merge on develop branch (Git Flow compliance)
+    # Only the immutable Dependabot user ID can reach this path.
     # main branch PRs require manual review for security
     if: |
-      github.actor == 'dependabot[bot]' &&
+      github.event.pull_request.user.id == 49699333 &&
       github.event.pull_request.base.ref == 'develop'
     steps:
       - name: Fetch Dependabot metadata
@@ -34,10 +39,29 @@ jobs:
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: Auto-merge (patch/minor/docker)
-        # NOTE: fetch-metadata returns null update-type for uv group updates (upstream limitation)
-        # See: https://github.com/dependabot/fetch-metadata/issues/499
-        # Workaround: Allow indirect dependencies in groups, but explicitly block major updates
+      - name: Auto-merge (fail-closed allowlist)
+        # This workflow is fail-closed: an update is auto-merged only when every
+        # allowlisted attribute matches explicitly. Empty, null, and unknown
+        # metadata values match nothing and are therefore rejected.
+        #
+        # ⚠️ package-ecosystem uses the fetch-metadata OUTPUT namespace, which is
+        # NOT the package-ecosystem KEY namespace used in .github/dependabot.yml.
+        # dependabot-core maps config key -> internal name in
+        # common/lib/dependabot/config/file.rb (PACKAGE_MANAGER_LOOKUP):
+        #   npm            -> npm_and_yarn
+        #   github-actions -> github_actions
+        #   uv             -> uv       (identical)
+        #   docker         -> docker   (identical)
+        # Using the dependabot.yml spelling here silently rejects every npm and
+        # github-actions PR while uv and docker keep working, so the mistake is
+        # easy to miss. See https://github.com/dependabot/fetch-metadata/issues/76
+        # and https://github.com/dependabot/fetch-metadata/issues/310.
+        #
+        # Observed fetch-metadata outputs (GitHub Actions run logs):
+        #   uv / quality-tools : direct:development | semver-patch | uv
+        #   npm                : direct:development | semver-minor | npm_and_yarn
+        #   github-actions     : direct:production  | semver-minor | github_actions
+        #   docker digest      : direct:production  | (empty)      | docker
         #
         # Docker ecosystem support (2026-02-13追加):
         #
@@ -45,6 +69,14 @@ jobs:
         # - Dependabotがdocker ecosystemのSHA256更新を検出（週次月曜09:00 JST）
         # - dependabot.yml L103設定により'docker'ラベルを自動付与
         # - 下記条件: 'docker'ラベル AND package-ecosystem=='docker' でマッチ
+        #
+        # digest更新にはsemverレベルが存在せず update-type は空になる。分類不能な
+        # 更新を自動マージしない fail-closed 方針（Issue #549）を docker 分岐にも
+        # 適用し、patch/minor の明示一致を必須とする（2026-08-03 決定）。
+        # したがって digest のみの更新は自動マージされず手動マージとなる。
+        # Dockerfileは tag + digest 固定 (python:3.14-slim@sha256:...) のため、
+        # 自動マージ対象は tag の patch/minor 更新のみ。major のtag更新と
+        # メタデータ欠落（空 update-type）はいずれも明示一致に該当せず拒否される。
         #
         # セーフガード（4層防御）:
         # 1. Tag固定: python:3.14-slim（major変更はタグ変更必須→手動レビュー）
@@ -56,13 +88,41 @@ jobs:
         # Risk assessment: Low-Medium
         # 軽減策: develop-only（本番直撃なし）、CI必須、squash merge（1コマンドrevert可能）
         if: |
-          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
-          steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
-          (steps.metadata.outputs.dependency-type == 'indirect' &&
-           steps.metadata.outputs.dependency-group != '' &&
-           steps.metadata.outputs.update-type != 'version-update:semver-major') ||
-          (contains(github.event.pull_request.labels.*.name, 'docker') &&
-           steps.metadata.outputs.package-ecosystem == 'docker')
+          (
+            (steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+             steps.metadata.outputs.update-type == 'version-update:semver-minor') &&
+            (
+              (
+                (steps.metadata.outputs.dependency-type == 'direct:production' ||
+                 steps.metadata.outputs.dependency-type == 'direct:development') &&
+                (steps.metadata.outputs.package-ecosystem == 'uv' ||
+                 steps.metadata.outputs.package-ecosystem == 'npm_and_yarn' ||
+                 steps.metadata.outputs.package-ecosystem == 'github_actions')
+              ) ||
+              (
+                steps.metadata.outputs.dependency-type == 'indirect' &&
+                (
+                  (
+                    (steps.metadata.outputs.dependency-group == 'pytest' ||
+                     steps.metadata.outputs.dependency-group == 'quality-tools') &&
+                    steps.metadata.outputs.package-ecosystem == 'uv'
+                  ) ||
+                  (steps.metadata.outputs.dependency-group == 'npm_and_yarn' &&
+                   steps.metadata.outputs.package-ecosystem == 'npm_and_yarn') ||
+                  (steps.metadata.outputs.dependency-group == 'minor-and-patch' &&
+                   steps.metadata.outputs.package-ecosystem == 'github_actions')
+                )
+              )
+            ) &&
+            !contains(github.event.pull_request.labels.*.name, 'docker')
+          ) ||
+          (
+            steps.metadata.outputs.package-ecosystem == 'docker' &&
+            steps.metadata.outputs.dependency-type == 'direct:production' &&
+            (steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+             steps.metadata.outputs.update-type == 'version-update:semver-minor') &&
+            contains(github.event.pull_request.labels.*.name, 'docker')
+          )
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}

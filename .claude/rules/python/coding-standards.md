@@ -1,10 +1,11 @@
 ---
-paths: ["**/*.py"]
+paths:
+  - "**/*.py"
 ---
 
 # api-test-devops-portfolio コーディング規約
 
-*最終更新: 2026年02月10日*
+*最終更新: 2026-07-30*
 
 **Python バージョン**: 3.14 | **実装方針**: Python 3.14
 
@@ -38,15 +39,19 @@ paths: ["**/*.py"]
 
 全関数・メソッドに型ヒント必須（mypy: `disallow_untyped_defs = true`）
 
-**適用範囲**: `utils/`, `config/`, `models/`, `tests/conftest.py`, `tests/**/__init__.py` は強制対象。`tests/unit/test_*.py` 等のテスト本体は推奨（CI mypy invocation 対象外、漸次型付与方針）
+**適用範囲**: `utils/`, `config/`, `models/`, `tests/conftest.py` は強制対象（CI mypy invocation と同一）。`tests/unit/test_*.py` 等のテスト本体は推奨（対象外、漸次型付与方針）。`tests/**/__init__.py` はパッケージマーカー（docstring のみで型付け対象の定義を持たないため強制対象外）
 
 ```python
 def __init__(self, base_url: str | None = None) -> None: ...  # Python 3.10+ Union
+
+
 type JSONResponse = dict[str, Any]  # Python 3.12+ 型エイリアス
+
+
 async def __aenter__(self) -> Self: ...  # Python 3.11+ Self型
 ```
 
-自動検証: `uv run mypy utils/ config/ models/ tests/conftest.py`
+自動検証: `.claude/CLAUDE.md`「統合コマンド」の mypy 部分（CI も同一コマンドで強制）
 
 ---
 
@@ -66,6 +71,21 @@ def func(attempt: int) -> float:
 
 公開クラス・関数にdocstring必須、Args/Returns/Raises明記
 
+### 4.1 テストコードのdocstring/comment方針
+
+テスト関数のdocstringとインラインコメントは、テスト名・assert内容・手順を言い換えるだけなら削除する。短いdocstringを残すのは、テスト名だけでは非自明な失敗モード、複数モジュールを通る結合経路、不自然だが本質的な前提や順序、または関数名に入れると長すぎる背景を説明する場合だけにする。
+
+fixture・helper・テスト用classは、global stateの変更/復元、teardown順序、fake client/transport、network blocker、autouse fixture、環境変数上書き、後続テストへの状態リーク防止を説明するWHYを1〜3行で残す。
+
+コメント/docstringのみの整理では、実行ASTとfixture文書化契約を必ず確認する。
+
+```bash
+uv run python scripts/check_docstring_refactor.py --self-test
+uv run python scripts/check_docstring_refactor.py --fixture-gate
+BASE_REF=$(git merge-base HEAD origin/develop)
+uv run python scripts/check_docstring_refactor.py "$BASE_REF" tests/path/to/test_file.py
+```
+
 ---
 
 ## 5. エラーハンドリング
@@ -78,7 +98,32 @@ except json.JSONDecodeError as e:
     raise APIClientError(f"Invalid JSON: {e}") from e  # チェーン維持
 ```
 
-**規則**: 階層的例外設計、`from e`でチェーン維持、4xx即失敗/5xxリトライ
+**規則**: 階層的例外設計、`from e`でチェーン維持（既定）、4xx即失敗/5xxリトライ
+
+**不変条件（PII）**: 外部の実在 API のレスポンスに由来する例外を、未サニタイズのまま
+cause にしない。Pydantic の `ValidationError` は検証失敗時の入力値を保持するため、
+`from e` で連結すると Sentry の stacktrace frame vars 経由で PII が到達しうる
+（`utils/sentry_scrub_values.py` のスクラブはキー名ベースで、機密キー集合に無い名前の値は
+素通しする）。満たし方は2通りある:
+
+1. `from None` でチェーンを切る — `utils/github_client.py`（`AsyncGitHubClient._request`）/
+   `utils/github_error_handler.py`（`_handle_403_response`, `_handle_5xx_response`,
+   `_handle_http_status_error`）/ `utils/github_etag_cache.py`（`GitHubETagCache._cache_key`）/
+   `utils/response_parsing.py`（`validate_parsed_model`, `validate_parsed_model_list`）
+2. サニタイズ済みの代理 cause へチェーンする — `utils/github_error_handler.py`
+   （`SanitizedJSONDecodeError`）は、失敗理由（`JSONDecodeError` なら `msg`、
+   `UnicodeDecodeError` なら `reason`）と位置情報だけを詰め替えて `from` に渡し、
+   レスポンス本文（`doc` / `object`）を捨てたうえでデバッグ性を残す
+
+合成データのみを返すモック API（JSONPlaceholder）は本不変条件の対象外で、`from e` を維持する。
+
+**PII 以外の `from None`（混同しないこと）**: 以下は上記と無関係の別理由であり、
+`from e` へ「統一」してはならない。
+
+- `utils/jsonplaceholder_client_async.py`（`AsyncJSONPlaceholderClient.get_user_data`） — `except*` で ExceptionGroup を
+  アンラップし個別例外を再送出する際、group が自身のメンバーの cause になるのを避ける
+- `config/settings.py`（`Settings.validate_environment`） — Pydantic が `ValidationError` でラップする前提で、
+  validator のエラーメッセージを読みやすく保つ
 
 **セキュリティ規則**: 例外クラス名には PII（個人識別情報）を連想させる語を含めないこと。
 例: `UserEmailValidationError` のようなクラス名は、`__qualname__` 経由で Sentry に
@@ -102,7 +147,7 @@ async with asyncio.TaskGroup() as tg:  # Python 3.11+ 推奨
 ## 7. パフォーマンス
 
 ```python
-squares = [x**2 for x in range(100)]         # リスト内包表記（小規模）
+squares = [x**2 for x in range(100)]  # リスト内包表記（小規模）
 total = sum(x**2 for x in range(1_000_000))  # ジェネレータ式（大規模）
 result = "".join(str(item) for item in items)  # 文字列結合 O(n)
 ```
@@ -114,6 +159,7 @@ result = "".join(str(item) for item in items)  # 文字列結合 O(n)
 ```python
 # pytest-asyncio が async テストを自動検出する (asyncio_mode = "auto")
 async def test_async_get_user(sample_user_data, mock_response): ...
+
 
 @pytest.fixture
 def sample_user_data() -> dict[str, Any]:
@@ -128,6 +174,8 @@ def sample_user_data() -> dict[str, Any]:
 
 - docstring/インラインコメント: 日本語推奨（学習プロジェクト）
 - 変数・関数名: 英語必須
+- `raise` / `assert` のメッセージ: 英語必須（ログ・Sentry・外部利用者に露出するため）
+  - 適用範囲は本番ソース（`utils/` `config/` `models/`）。テストコードの `assert` メッセージは開発者のみが読み外部露出しないため対象外（日本語可）
 
 ---
 
@@ -135,7 +183,7 @@ def sample_user_data() -> dict[str, Any]:
 
 ```bash
 uv run ruff check --fix . && uv run ruff format .  # リンター
-uv run mypy utils/ config/ models/                 # 型チェック
+# 型チェック: `.claude/CLAUDE.md`「統合コマンド」の mypy 部分を使う
 uv run bandit -r utils/ config/ models/            # セキュリティ
 uv run pre-commit install                          # pre-commit（ruffのみ）
 ```
@@ -150,8 +198,10 @@ uv run pre-commit install                          # pre-commit（ruffのみ）
 @dataclass(slots=True, frozen=True)  # メモリ効率+不変
 class UserResponse: ...
 
+
 from config.settings import settings  # 設定管理
-from utils.logger import get_logger   # structlogログ
+from utils.logger import get_logger  # structlogログ
+
 logger.info("処理開始", user_id=123)  # 構造化ログ
 ```
 

@@ -9,6 +9,7 @@
 
 # Python関連（50MB削減）
 **/__pycache__/
+**/.mypy_cache/
 *.py[cod]
 *$py.class
 *.so
@@ -47,6 +48,8 @@ docs/
 !README.md
 
 # CI/CD（1MB削減）
+# 例外を設けない: .github/ を読む静的契約テストは repo_contract マーカーで
+# コンテナ実行から除外済み（Dockerfile test ステージのコメント参照）
 .github/
 .gitlab-ci.yml
 .circleci/

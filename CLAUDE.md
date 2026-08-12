@@ -1,4 +1,4 @@
-# CLAUDE.md
+# CLAUDE.md **Last Updated**: 2026-07-31
 
 **軽量インデックス — 詳細は `.claude/CLAUDE.md` を参照**
 
@@ -26,18 +26,7 @@ APIテスト + DevOps統合学習ポートフォリオ（Python 3.14 / httpx / p
 
 ## クイックコマンド
 
-```bash
-# 品質ゲート（コミット前必須）
-uv run ruff check --fix . && uv run ruff format . && \
-uv run mypy utils/ config/ models/ && \
-uv run pytest -n auto -m "(unit or integration) and not external" --cov=utils --cov=config --cov=models --cov-report=term-missing
-
-# テストのみ
-uv run pytest -n auto -m "(unit or integration) and not external" -q
-
-# デバッグ
-uv run pytest -vv --tb=long --log-cli-level=DEBUG
-```
+品質ゲートの統合コマンドは `.claude/CLAUDE.md` Section「品質ゲート」→「統合コマンド」を参照（単一真実源のため本ファイルには複製しない）。
 
 ---
 
@@ -47,22 +36,14 @@ uv run pytest -vv --tb=long --log-cli-level=DEBUG
 |---------|------|
 | `.claude/CLAUDE.md` | CRITICAL RULES + 開発フロー（単一真実源） |
 | `.claude/rules/` | 詳細ルール（必要時のみ参照） |
-| `.serena/memories/` | Serenaメモリ（26件、自動参照） |
+| `.serena/memories/` | Serenaメモリ（自動参照） |
 | `~/.claude/lessons/lessons.md` | バグパターン・教訓（全プロジェクト横断） |
 
 ---
 
 ## graphify
 
-- アーキテクチャ質問前に `graphify-out/GRAPH_REPORT.md` を読む
-- `graphify-out/wiki/index.md` がある場合は raw ファイルより優先
-- コード変更後は `graphify update .` を実行
-
-<!-- OCR:START -->
-## Open Code Review Instructions
-
-コードレビュー依頼時は `.ocr/skills/SKILL.md` を開く。
-<!-- OCR:END -->
+アーキテクチャ質問前に `graphify-out/GRAPH_REPORT.md` を読む（ローカル生成物・gitignore対象のため未コミット）。未生成時およびコード変更後は `graphify update .` を実行。
 
 <!-- code-review-graph MCP tools -->
 ## MCP Tools: code-review-graph
@@ -79,4 +60,16 @@ uv run pytest -vv --tb=long --log-cli-level=DEBUG
 
 ---
 
-**Last Updated**: 2026-05-18
+## Agent skills ([mattpocock Skills](https://github.com/mattpocock/skills))
+
+### Issue tracker
+
+GitHub Issues (yaoki-dev/api-test-devops-portfolio) で管理。`gh` CLI 経由で作成・更新。詳細は `docs/agents/issue-tracker.md` 参照。
+
+### Triage labels
+
+4ラベル運用: `needs-triage`（未評価）、`ready-for-execute`（エージェント実行可能）、`ready-for-human`（定義のみ・非使用）、`wontfix`（対応せず）。`needs-info` は不採用（コメントで代替）。詳細は `docs/agents/triage-labels.md` 参照。
+
+### Domain docs
+
+Single-context: ルートの `CONTEXT.md` + `docs/adr/`。詳細は `docs/agents/domain.md` 参照。

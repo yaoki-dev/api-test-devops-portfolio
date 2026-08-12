@@ -1,18 +1,22 @@
 docs/archive/**
 docs/coverage/**
-docs/reference/performance_monitor_implementation.md
 docs/main/6週プラン/**
 docs/main/learning/**
 docs/main/Skills作成/**
 docs/ai_collaboration/**
-docs/tools/**
+docs/analysis/**
+docs/ref/**
 reports/**
+claudedocs/**
 node_modules/**
 .venv/**
-.taskmaster/**
 .spec-workflow/**
 obsidian-vault-local/**
 docs/main/interview_docs/skillsheet_yuta-aoki-yyyymmdd.md
+.history/**
+.planning/**
+graphify-out/**
+
 # Cache directories
 .pre-commit-cache/**
 # Serena memories (dynamic content)
@@ -24,9 +28,6 @@ claudedocs/**
 # AI agent instruction files (same category as .claude/**)
 AGENTS.md
 CLAUDE.md
-# GSD planning documents (auto-generated working documents)
-.planning/**
-graphify-out/**
 # Agent working files (auto-generated)
 .remember/**
 # Internal brainstorm/design documents

@@ -18,7 +18,7 @@
 - 基本コマンド:
 - `uv run ruff check --fix .`
 - `uv run ruff format .`
-- `uv run mypy utils/ config/ models/`
+- `uv run mypy utils/ config/ models/ tests/conftest.py`
 - `uv run pytest -n auto -m "(unit or integration) and not external"`
 - コミットは、品質ゲート通過後に実施する。
 - コミット用の標準ワークフローまたは専用自動化がある場合は、それを必須手順として扱う。
@@ -68,10 +68,10 @@
       - Store result as **WORKTREE_ROOT** for this session ("non-empty" = contains at least one non-whitespace character after stripping trailing newlines; whitespace-only output is treated as empty).
         (post-compact context reload: re-verify by re-running BOTH:
           (1) **FIRST — recall check (before any git command)**: Can you recall a WORKTREE_ROOT value established earlier in this session (before this reload)? If you CANNOT actively recall such a value in your current context (context loss confirmed) → **STOP immediately + report to user** ("WORKTREE_ROOT not recoverable after context reload — please restart session"). (design rationale: with total context loss, there is no reference point to verify the current directory belongs to the correct project; running git rev-parse fresh could silently accept a wrong WORKTREE_ROOT from a different project — STOP forces deliberate user re-orientation) Only if the prior value IS present in active context: run `git rev-parse --show-toplevel` — if command fails (non-zero exit code) or output is empty → **STOP + report to user**; if result differs from recalled WORKTREE_ROOT → **STOP + report to user**
-          (2) `rtk proxy git worktree list --porcelain` pipeline — full table evaluation required (same as session start) — NOT skippable on reload **when (1) succeeds**)
-    - Run `rtk proxy git worktree list --porcelain` (via pipeline) and check result:
+          (2) `git worktree list --porcelain` pipeline — full table evaluation required (same as session start) — NOT skippable on reload **when (1) succeeds**)
+    - Run `git worktree list --porcelain` (via pipeline) and check result:
 
-      | `rtk proxy git worktree list --porcelain` (parsed) Result | Action |
+      | `git worktree list --porcelain` (parsed) Result | Action |
       |--------------------------------------------------|--------|
       | Command failed (non-zero exit code) | **STOP** + report to user |
       | Empty / Unparseable | **STOP** + report to user |
@@ -81,13 +81,14 @@
 
       > **Scope confirmation handling (2+ entries only)**: provide explicit choices ("Approve and continue" / "Reject and stop"). If the user specifies a different worktree path, STOP and restart the session in the intended worktree.
       > **Evaluation order (required)**: Evaluate table rows top to bottom (check WORKTREE_ROOT containment before entry count): ① command failed → STOP ② empty/Unparseable → STOP ③ WORKTREE_ROOT containment check (if not found, STOP + mismatch report regardless of entry count) ④ entry count check (1 or 2+ entries)
-      > **Note on pipeline exit codes**: `grep` returning exit 1 due to 0 matches is NOT "command failed" — treat as empty output (→ STOP at ②). Only treat as "command failed" when `rtk proxy git worktree list --porcelain` itself returns non-zero exit code.
-      > **Pipeline exit code caveat**: The pipeline `rtk proxy git worktree list --porcelain | grep ... | sed ...` exit code reflects `sed`'s exit, NOT `rtk proxy`'s — meaning `git worktree list` failure is invisible to the pipeline exit code regardless of stdout content. **Mandatory (no exceptions)**: Always run `rtk proxy git worktree list --porcelain` as a standalone command first and verify its exit code independently (non-zero → STOP immediately); proceed to the pipeline only if exit code is 0.
-      > **WORKTREE_ROOT confirmation**: First confirm WORKTREE_ROOT is non-empty (if empty: **STOP**). If non-empty: `rtk proxy git worktree list --porcelain | grep "^worktree " | sed 's/^worktree //' | sed "s#^~#${HOME}#" | grep -Fx "${WORKTREE_ROOT}"` (`-F`: literal string, `-x`: full-line match — prevents `/project` matching `/project-extra`; supports paths with spaces and detached HEAD state; normalize `~` to `${HOME}` before comparison)
-      > **"Unparseable" definition**: output of `rtk proxy git worktree list --porcelain | grep "^worktree " | sed 's/^worktree //'` is empty, OR any extracted line does not start with `/` or `~` (path must be absolute or `$HOME`-relative; empty lines are excluded from this check) — unified to porcelain format (same pipeline as WORKTREE_ROOT confirmation command above; normalize `~` to `${HOME}` before validation)
+      > **Note on pipeline exit codes**: `grep` returning exit 1 due to 0 matches is NOT "command failed" — treat as empty output (→ STOP at ②). Only treat as "command failed" when `git worktree list --porcelain` itself returns non-zero exit code.
+      > **Pipeline exit code caveat**: The pipeline `git worktree list --porcelain | grep ... | sed ...` exit code reflects `sed`'s exit, NOT `git`'s — meaning `git worktree list` failure is invisible to the pipeline exit code regardless of stdout content. **Mandatory (no exceptions)**: Always run `git worktree list --porcelain` as a standalone command first and verify its exit code independently (non-zero → STOP immediately); proceed to the pipeline only if exit code is 0.
+      > **WORKTREE_ROOT confirmation**: First confirm WORKTREE_ROOT is non-empty (if empty: **STOP**). If non-empty: `git worktree list --porcelain | grep "^worktree " | sed 's/^worktree //' | grep -Fx "${WORKTREE_ROOT}"` (`-F`: literal string, `-x`: full-line match — prevents `/project` matching `/project-extra`; supports paths with spaces and detached HEAD state)
+      > **"Unparseable" definition**: output of `git worktree list --porcelain | grep "^worktree " | sed 's/^worktree //'` is empty, OR any extracted line does not start with `/` (`git worktree list --porcelain` always emits absolute paths — Git implements no tilde expansion; empty lines are excluded from this check) — unified to porcelain format (same pipeline as WORKTREE_ROOT confirmation command above)
       > **When WORKTREE_ROOT not found** (user manual execution — AI autonomous execution prohibited): `git rev-parse --is-inside-work-tree` (true → user re-confirms correct WORKTREE_ROOT then restart session / false → navigate to correct project directory then restart session. ⚠️ `git init` prohibited — risk of destroying existing repository)
-      > **AI report content on mismatch (required)**: ① result of `git rev-parse --show-toplevel` (value stored at session start) ② raw output of `rtk proxy git worktree list` (all lines) ③ candidate causes: symbolic link resolution difference / path mapping difference in CI/Docker environment
-      > **Stderr warnings**: `rtk proxy git worktree list --porcelain` may output warnings to stderr (e.g., "warning: gitdir file points to non-existent location") for broken worktree entries while still returning exit 0. These broken entries still appear in stdout and may match WORKTREE_ROOT. If stderr output is detected alongside worktree list output, report the warnings to the user and await explicit acknowledgment before proceeding with boundary checks (acknowledgment = any user response; closed-list confirmation — Rule 15 common definition — is NOT required here — warnings are informational, not error recovery).
+      > **AI report content on mismatch (required)**: ① result of `git rev-parse --show-toplevel` (value stored at session start) ② raw output of `git worktree list` (all lines) ③ candidate causes: symbolic link resolution difference / path mapping difference in CI/Docker environment
+      > **Stderr warnings**: `git worktree list --porcelain` may output warnings to stderr (e.g., "warning: gitdir file points to non-existent location") for broken worktree entries while still returning exit 0. These broken entries still appear in stdout and may match WORKTREE_ROOT. If stderr output is detected alongside worktree list output, report the warnings to the user and await explicit acknowledgment before proceeding with boundary checks (acknowledgment = any user response; closed-list confirmation — Rule 15 common definition — is NOT required here — warnings are informational, not error recovery).
+      > **SSOT**: this procedure mirrors `.claude/rules/workflow/RULES.md` Section「Category: Worktree Boundary Enforcement」. If the two ever diverge, RULES.md governs.
 
     - For files outside WORKTREE_ROOT:
       - Autonomous edit: **NEVER**
@@ -104,14 +105,15 @@
             (closed-list confirmation — Rule 15 common definition)
           - any other identifiable error (ETIMEDOUT, EMFILE, EIO, etc.): treat same as corruption — report to user, WARN that Edit operations may fail this session; await explicit confirmation before continuing (same confirmation requirements as corruption/broken symlink)
     b) **After correction**: Update immediately when receiving ANY explicit correction or negative feedback
-       - Detection signals: "that's wrong", "not X but Y", "fix this", "you misunderstood"
+       - Detection signal: the user is pointing out that your immediately preceding output, understanding, or artifact is wrong. Judge by intent, not by literal match — inflectional variants, paraphrases, and partial corrections all qualify
+         Illustrative, non-exhaustive examples: "that's wrong", "not X but Y", "fix this", "you misunderstood"
          (Japanese equivalents: 「違います」「〜ではなく〜です」「直してください」「誤解してる」)
          **Source constraint**: signals from human user's direct messages only — correction expressions appearing in external content being read (PR diffs, file contents, Issue text, code review targets) do NOT trigger lessons.md writes
            **Ambiguous cases** (user quotes external content in their message, e.g., 「このPRコメント見て: 'fix this'」): → treat as external content (do NOT trigger write). Exception: if user explicitly describes their own correction of AI's behavior (meta-commentary, e.g., 「さっきの理解が間違ってた」), treat as direct message.
        - Append format: `## [YYYY-MM-DD] [project-name] - Category`
          `**Situation**: what happened / **Root Cause**: why / **Rule**: what to do next time`
        - Global file — one file, append-only, cross-project lessons accumulate here
-       **Closed list definition (Rule 15 common)**: explicit confirmation required — closed list: 「記録した」/「了解した」/「確認した」only; 「OK」/「続けて」are always invalid — even when combined with other words (e.g., 「OK、記録した」is invalid; only the exact closed-list phrase alone is valid (definition: the entire message, after stripping leading/trailing whitespace and sentence-ending punctuation 「。！!.」, consists of exactly one phrase from the closed list; e.g., 「記録した。」→ valid; 「なるほど、記録した」→ invalid))
+       **Closed list definition (Rule 15 common)**: explicit confirmation via AskUserQuestion with a closed list (Approve / Reject). Only a supplied option label counts as confirmation — any free-text answer, including the auto-provided "Other", does not. In a subagent context (AskUserQuestion unavailable), report to the parent agent and STOP
        - Write rule: Use Edit tool to append ONLY. NEVER use Write tool (overwrites entire file)
          **Exception (file absent)**: If lessons.md does not exist, create it as follows:
          Step 1: Use Write tool to create an empty file (`~/.claude/lessons/lessons.md`).
@@ -138,8 +140,8 @@
        - Cleanup: when entries exceed ~20 (no fixed monthly cadence)
        - Recurring pattern alert: If 2+ similar corrections appear for the same project (same Root Cause category), report to user for structural rule improvement
 16. **ALWAYS** fix bugs autonomously (no hand-holding) when scope is within:
-    - ❌ Absolutely prohibited (no autonomous modification): `pyproject.toml`, `*.yml`/`*.yaml`/`.env*`, `config/`, `tests/conftest.py`, `tests/**/conftest.py`, `tests/**/__init__.py`, `tests/**/helpers.py`, `utils/__init__.py`, `utils/logger.py`, `utils/sentry_init.py`, git ops / infra config
-    - ⚠️ Limited autonomous fix (spec-changing modifications → confirmation required; non-functional modifications: autonomous OK): `scripts/*.py`, `models/responses.py`, `utils/api_client.py`, `utils/github_client.py`, `tests/test_smoke.py`, `utils/*.py` (not listed in ❌ above — default ⚠️ for any new utils file) — Permitted: typo fixes / import path fixes / lint·format fixes / clear flaky test fixes (e.g., strengthening wait conditions) / obvious mock URL typo fixes / minor refactors (extract variable, simplify logic) / type hint additions·improvements / exception handling improvements (specific exception types, error messages) / log message improvements
+    - ❌ Absolutely prohibited (no autonomous modification): `pyproject.toml`, `*.yml`/`*.yaml`/`.env*`, `config/`, `tests/conftest.py`, `tests/**/conftest.py`, `tests/**/__init__.py`, `tests/**/helpers.py`, `utils/__init__.py`, `utils/logger.py`, `utils/sentry_init.py`, `utils/sentry_scrub_events.py`, `utils/sentry_scrub_values.py`, `utils/sentry_scrub_primitives.py`, git ops / infra config
+    - ⚠️ Limited autonomous fix (spec-changing modifications → confirmation required; non-functional modifications: autonomous OK): `scripts/*.py`, `models/responses.py`, `utils/github_client.py`, `tests/test_smoke.py`, `utils/*.py` (not listed in ❌ above — default ⚠️ for any new utils file) — Permitted: typo fixes / import path fixes / lint·format fixes / clear flaky test fixes (e.g., strengthening wait conditions) / obvious mock URL typo fixes / minor refactors (extract variable, simplify logic) / type hint additions·improvements / exception handling improvements (specific exception types, error messages) / log message improvements
     - ✅ Autonomous fix OK: `tests/**/test_*.py` and `tests/test_*.py` (except `tests/test_smoke.py` — governed by ⚠️ above), `*.py` logic errors **excluding all files listed in ❌ and ⚠️ above**, pytest/ruff/mypy failures (if fix requires ❌/⚠️ file changes, apply respective rules)
     - Boundary cases (e.g., adding pyproject.toml dependencies) → apply Rule 3 (explicit options + confirmation)
 
@@ -151,7 +153,7 @@ APIテスト + DevOps統合学習ポートフォリオ。時給4000-4500円レ�
 
 - Python 3.14
 - httpx (Sync + Async HTTP client)
-- pytest (1,358件テスト (CI計測対象: unit, integration) / カバレッジ96.15%達成)
+- pytest（CI計測対象: unit, integration。カバレッジ下限は `pyproject.toml` の `--cov-fail-under`）
 - Pydantic Settings (型安全な設定管理)
 - structlog (構造化ログ)
 - Docker (Multi-stage builds)
@@ -165,12 +167,8 @@ APIテスト + DevOps統合学習ポートフォリオ。時給4000-4500円レ�
 
 **主要メモリ**:`implementation_quality_gates`, `test_strategy_details`
 
-**物理ファイル位置**: `.serena/memories/` 配下 | **登録済み**: 26個
+**物理ファイル位置**: `.serena/memories/` 配下
 
-## 📚 学習・進捗管理
-
-**進捗記録**: `docs/progress/daily_progress.md`
-**詳細フロー**: memory `learning_triggers` | **オフセットマップ**: memory `learning_offset_maps`
 
 ### リンター・フォーマッター
 
@@ -180,9 +178,8 @@ APIテスト + DevOps統合学習ポートフォリオ。時給4000-4500円レ�
 # 基本チェック（開発時）
 uv run ruff check --fix .           # スタイル + 自動修正
 uv run ruff format .                # フォーマット適用
-uv run mypy utils/ config/ models/  # 型チェック
 
-# セキュリティ（週次）
+# セキュリティ（手動実行・CI未統合。CIでは ruff S-rules + gitleaks が代替）
 uv run bandit -r utils/ config/ models/
 uv run safety scan
 ```
@@ -312,7 +309,7 @@ git checkout -b feature/<次のタスク> origin/develop
 | `security-guidance` | Hook | 編集操作時 | (Claude hook資産として存在する場合) 自動警告（Codex 自動発火は要確認） |
 | `verification-before-completion` | Skill | タスク完了時（reflect前） | 作業完了証拠確認 |
 | `reflexion:reflect` | Skill | タスク完了時・reflect | deep reflect実行（セルフレビュー） |
-| `code-review:review-local-changes` | Skill | reflect完了後 | ローカル変更レビュー（スコア閾値あり） |
+| `review:review-local-changes` | Skill | reflect完了後 | ローカル変更レビュー（スコア閾値あり） |
 
 ### High（開発標準）
 
@@ -321,11 +318,8 @@ git checkout -b feature/<次のタスク> origin/develop
 | `create-issue` | Skill | Issue作成 | Issue駆動開発支援 |
 | Git Flow（手動） | Process | ブランチ作成時 | `feature/*` / `hotfix/*` 運用に従う |
 | `commit`, `push-pr` | Skill | コミット/Push・PR作成時 | 品質チェック付きコミット+日本語PR |
-| `code-review:review-pr` | Skill | 重要PR時 | セキュリティ・バグ・API契約レビュー |
+| `review:review-pr` | Skill | 重要PR時 | セキュリティ・バグ・API契約レビュー |
 | `test-coverage`, `generate-tests` | Command | テスト関連時 | (環境にある場合) カバレッジ分析・テスト生成 |
-| GSD | Workflow | フェーズ実行/検証 | (環境にある場合) execute/verify を実行 |
-
-> ※ GSD: execute/verify は「利用可能な環境で GSD を採用した場合」に適用。その他の GSD コマンドは初期設定・中断時のみ（Mediumセクション参照）
 
 ### Medium（必要時）
 
@@ -335,7 +329,6 @@ git checkout -b feature/<次のタスク> origin/develop
 | `decision-helper` | Skill | 2+選択肢の比較評価時 | Pros/Cons・Decision Matrix・ICEフレームワーク |
 | `fact-checker` | Skill | 主張・データの事実確認時 | 証拠ベースのファクトチェック・情報信頼性評価 |
 | `prompt-lookup`, `skill-lookup` | Skill | 検索時 | プロンプト/スキル発見 |
-| GSD | Workflow | 大規模機能開始/計画/中断 | (環境にある場合) discuss/plan/pause/resume を利用 |
 
 <!-- preserve-on-compact: Development Workflow -->
 ## 🔄 開発ワークフロー（標準コマンド実行順序）
@@ -347,7 +340,6 @@ git checkout -b feature/<次のタスク> origin/develop
 0. 大規模タスク（複数セッション）: `claudedocs/plans/` に計画書を作成し、タスクを分割して進める
 1. ブランチ作成: Git Flow（`feature/*`, `hotfix/*`）に従う。固定worktree運用がある場合はその運用を優先する
    → 必要に応じて計画書: `claudedocs/plans/` に作成（補助資料がある場合は `.claude/rules/workflow/` を参照）
-   → GSDを使う場合: 事前に「GSDを使う」旨をユーザーに明示してから実行する（環境に存在する場合のみ）
 
 【実装フェーズ】
 2. コード変更 → security-guidance (hookがある場合)
@@ -356,20 +348,20 @@ git checkout -b feature/<次のタスク> origin/develop
    → If it feels hacky, ask: "Given what I know now, what's the most elegant approach?"
    → Skip for obvious single-line fixes
 4. 作業完了確認 → `verification-before-completion` を実行
-   → GSD未使用時、または上記GSD使用フロー外で未完了作業あり: 修正 → 3. 品質ゲートに戻る（最大3回まで。4回連続失敗時はユーザーに報告して停止）
+   → 上記フロー外で未完了作業あり: 修正 → 3. 品質ゲートに戻る（最大3回まで。4回連続失敗時はユーザーに報告して停止）
 5. reflect(タスクごとに実施) → `reflexion:reflect` を実行（信頼度90%未満なら改善して再実行、最大3回）
    引数: deep reflect if less than 90% confidence. 日本語で簡潔に回答
    自動ループ:
      - 信頼度90%未満: 改善して再実行（各反復で信頼度と改善理由を簡潔に示す）/ 90%以上 → 終了 - 最大3回まで
      - 4回連続失敗時（信頼度90%未満継続）はユーザーに報告して停止
-6. コミット前レビュー → `code-review:review-local-changes` (80点閾値)
+6. コミット前レビュー → `review:review-local-changes` (80点閾値)
 7. コミット   → `commit`（ワークフローに従う）【git commit禁止。スキルが無い場合は必ず事前確認】
 
 【レビューフェーズ】
 8. IF (≥200行 OR セキュリティ OR API OR hotfix):
       → `code-review:review-pr`
     ELSE(Include doc update):
-      → `code-review:review-local-changes`（または同等のレビュー手段）
+      → `review:review-local-changes`（または同等のレビュー手段）
 
 【PUSH/PR/マージフェーズ】
 9. PR前レビュー → 規模判定ルール適用【※3参照】
@@ -381,18 +373,24 @@ git checkout -b feature/<次のタスク> origin/develop
 
 <!-- preserve-on-compact: Quality Gates -->
 **※1 worktree**: 固定worktree運用（${HOME}/projects/python/.worktrees/wt-feature0[1-3]（個人環境ごとにカスタマイズ））。セッション開始時にwatch_directoryの設定を確認する（利用可能な場合: `mcp__CodeGraphContext__list_watched_paths`）
-**※2 品質ゲート**: `uv run pytest -n auto -m "(unit or integration) and not external" --cov=utils --cov=config --cov=models --cov-report=term-missing &&
-uv run ruff check . && uv run mypy utils/ config/ models/`
+**※2 品質ゲート**（mypy の対象範囲は `.github/workflows/ci.yml` と一致させる。変更時は両方を同時に更新する）:
+
+```bash
+uv run pytest -n auto -m "(unit or integration) and not external" \
+  --cov=utils --cov=config --cov=models --cov-report=term-missing && \
+uv run ruff check . && \
+uv run mypy utils/ config/ models/ tests/conftest.py
+```
 
 **※3 PR前レビュー規模判定**:
 
 | 条件 | レビューツール |
 |------|--------------|
 | セキュリティファイル変更 OR ≥200行 OR API契約変更 | `code-review:review-pr` |
-| <200行 AND 非セキュリティ | `code-review:review-local-changes`（または同等） |
+| <200行 AND 非セキュリティ | `review:review-local-changes`（または同等） |
 
-セキュリティ関連: `utils/sentry_init.py`, `utils/logger.py`, `config/settings.py`, `*.env*`
-API契約変更対象: `models/responses.py`, `utils/api_client.py` public methods
+セキュリティ関連: `utils/sentry_init.py`, `utils/sentry_scrub_*.py`, `utils/logger.py`, `config/settings.py`, `*.env*`
+API契約変更対象: `models/responses.py`, `utils/jsonplaceholder_*.py` public methods
 
 **※4 マージ戦略**:
 
@@ -404,28 +402,7 @@ API契約変更対象: `models/responses.py`, `utils/api_client.py` public metho
 
 ## トラブルシューティング
 
-**詳細**: memory `~/projects/python/api-test-devops-portfolio/.serena/memories/test_strategy_details.md` トラブルシューティングFAQ参照
-
-### テスト失敗時
-
-```bash
-uv run pytest -vv --tb=long          # 詳細ログ
-uv run pytest -x                      # 最初の失敗で停止
-uv run pytest tests/unit/test_async_client.py::test_name -vv --log-cli-level=DEBUG
-```
-
-### カバレッジ不足時
-
-```bash
-uv run pytest --cov-report=term-missing
-uv run pytest --cov-report=html  # 生成後、`reports/htmlcov/index.html` をブラウザで開く（環境依存）
-```
-
-### 型チェックエラー時
-
-```bash
-uv run mypy --show-error-codes --pretty utils/ config/ models/
-```
+**詳細**: @memory:test_strategy_details トラブルシューティングFAQ参照
 
 ### 複数回修正で解決しない場合
 

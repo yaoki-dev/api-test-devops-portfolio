@@ -1,0 +1,40 @@
+# .devcontainer/docker-compose.yml
+# Dev Container 用 override レイヤ。devcontainer.json の dockerComposeFile に
+# ルート docker-compose.yml の「2本目」として読み込まれ、app サービスにマージされる。
+#
+# 役割:
+#   1. build.target を runtime → test に差し替え。
+#      runtime には uv が無く /app/.venv が root 所有だが、test ステージは uv +
+#      dev 依存 (pytest/ruff/mypy) を含み /app/.venv を appuser 所有で焼く
+#      (Dockerfile: COPY --chown=appuser + appuser 権限での uv sync)。
+#   2. /app/.venv を named volume でマスク。
+#      devcontainer.json の bind mount (localWorkspaceFolder → /app) が
+#      in-image の /app/.venv (macOS 製 host .venv) をシャドーする問題を解消する。
+#      空の named volume は初回マウント時に test イメージの /app/.venv を
+#      中身・所有権ごとコピーして起動するため (実測確認: appuser 所有・書込可)、
+#      Linux ネイティブ venv が root/chown 無しで利用でき、rebuild 間でも永続する。
+#   3. command を sleep infinity に上書きし、開発用に常駐させる
+#      (ルート app の起動時 Pydantic 検証コマンドを devcontainer では実行しない)。
+#
+# NOTE: Compose Spec のマージ規則（複数 -f ファイル）
+#   - シーケンス型（security_opt, volumes）はデフォルトで APPEND される。
+#     root と同一値を重複させないため !override タグで明示的に Replace する。
+#   - env_file は省略すると root の値を継承する（再指定不要）。
+#   - init はブール scalar。省略すれば root の true が継承されるが、意図を明示するため記載。
+
+services:
+  app:
+    security_opt: !override
+      - "no-new-privileges:true"
+    init: true
+    restart: "on-failure:3"
+    build:
+      target: test
+    # ルートの api-test-devops:runtime タグを上書きしないよう別タグにする
+    image: ${IMAGE_TAG:-api-test-devops:devcontainer}
+    volumes:
+      - devcontainer-venv:/app/.venv
+    command: ["sleep", "infinity"]
+
+volumes:
+  devcontainer-venv:

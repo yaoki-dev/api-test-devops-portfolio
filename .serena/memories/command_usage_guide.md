@@ -195,7 +195,7 @@ workflow:
 
 **参照元**:
 - グローバルCLAUDE.md 行167-218（2025年11月14日抽出）
-- docs/reference/claude-code-plugins.md（2026年1月28日更新）
+- docs/ref/claude-code-plugins.md（ローカル限定・2026年1月28日更新）
 
 ---
 

@@ -27,10 +27,10 @@ dependencies = [
     "httpx>=0.27.0",                # 非同期HTTPクライアント
     "structlog>=26.1.0",            # 構造化ログ
     "pydantic[email]>=2.13.4",      # データバリデーション
-    "pydantic-settings>=2.14.1",     # 設定管理
+    "pydantic-settings>=2.14.2",     # 設定管理
     "psutil>=6.1.1",                # システムメトリクス
     "pyyaml>=6.0",                  # YAML設定ファイル読み込み
-    "sentry-sdk[httpx]>=2.62.0,<3.0.0", # エラー監視（httpx統合）
+    "sentry-sdk[httpx]>=2.66.1,<3.0.0", # エラー監視（httpx統合）
 ]
 
 [project.urls]
@@ -42,20 +42,23 @@ Issues = "https://github.com/yourusername/api-test-devops-portfolio/issues"
 [dependency-groups]
 dev = [
     # テスト
-    "pytest>=9.1.0",
+    "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=4.1.0",
     "pytest-xdist>=3.5.0",
+    "pytest-socket>=0.8.0,<0.9",     # unit層のネットワーク構造的分離
+    "defusedxml>=0.7.1",              # CI JUnit XML parsing
     "genbadge[coverage]==1.1.3",  # Coverage badge生成（Q19 C3: uv.lock管理）
     "respx>=0.23.1",            # httpx用モックライブラリ
     "socksio>=1.0.0",           # SOCKS5 proxy support for httpx
     # 品質管理
-    "ruff>=0.15.17,<0.16",       # pre-commit frozen: v0.15.11（.pre-commit-config.yaml参照）
-    "mypy>=2.1.0,<3.0.0",
+    "ruff>=0.16.1,<0.17",       # pre-commit frozen: v0.15.11（.pre-commit-config.yaml参照）
+    "zizmor==1.29.0",
+    "mypy>=2.3.0,<3.0.0",
     "bandit>=1.8.6",
     "safety>=3.8.1",
     # 開発サポート
-    "pre-commit>=4.6.0",
+    "pre-commit>=4.6.1",
 ]
 # pytest設定
 [tool.pytest.ini_options]
@@ -82,6 +85,7 @@ markers = [
     "slow: Slow tests (>3s, excluded from local dev)",
     "external: External API tests (weekly CI only)",
     "smoke: Smoke tests (basic functionality)",
+    "repo_contract: Repository-static contract tests (require the full repo tree; host-only)",
 ]
 asyncio_mode = "auto"            # 非同期テスト自動検出
 
@@ -120,6 +124,7 @@ precision = 2
 target-version = "py314"
 line-length = 100  # DevOps軽量化: コミット時の厳密度緩和
 fix = true
+extend-exclude = [".history"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -148,7 +153,7 @@ ignore = [
 unfixable = ["F841"]  # unused variables
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101", "D"]  # Allow assert in tests, ignore docstring rules
+"tests/**/*.py" = ["S101", "D"]  # Allow assert in tests; "D" is a pre-emptive exemption (not in select)
 
 [tool.ruff.lint.isort]
 known-first-party = ["utils", "config", "tests"]
@@ -172,9 +177,6 @@ warn_no_return = true
 warn_unreachable = true
 strict_equality = true
 
-[[tool.mypy.overrides]]
-module = "utils.api_client"
-warn_return_any = false  # _safe_parse_json()がAnyを返すのは設計上妥当（JSONパースは実行時まで型不明）
 
 # bandit設定（セキュリティスキャン）
 [tool.bandit]

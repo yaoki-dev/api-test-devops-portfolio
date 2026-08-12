@@ -8,20 +8,15 @@ import yaml
 # Module-level marker: All tests in this file are unit tests
 # 外部プロセス(Docker)を起動せずYAML構造のみを検証するため
 # pyproject.toml marker定義 「unit」 に整合
-pytestmark = pytest.mark.unit
+# repo_contract: request.config.rootpath 経由でリポジトリ全体を静的検査するため、
+# ビルドコンテキストが絞られた test コンテナでは走らせない（pyproject.toml の marker 定義参照）
+pytestmark = [pytest.mark.unit, pytest.mark.repo_contract]
 
 
 class TestDockerComposeContract:
-    """docker-compose.yml の運用契約を軽量に保護する."""
-
     @pytest.fixture
     def compose_data(self, request: pytest.FixtureRequest) -> dict[str, Any]:
-        """docker-compose.yml を読み込んで parsed dict を返す共通 fixture.
-
-        pytest rootpath (pyproject.toml で確定) 基準でパス解決するため、
-        テストファイルの移動に影響されない。ファイル不在は FileNotFoundError、
-        YAML パース失敗は yaml.YAMLError として pytest が自動レポートする。
-        """
+        """pytest rootpath 基準で解決し、テストファイル移動によるパス破損を防ぐ。"""
         compose_path = request.config.rootpath / "docker-compose.yml"
         data = yaml.safe_load(compose_path.read_text(encoding="utf-8"))
         assert isinstance(data, dict) and "services" in data, (
@@ -43,21 +38,7 @@ class TestDockerComposeContract:
         assert "&& exec sleep infinity" in command_text
 
     def test_test_service_contract(self, compose_data: dict[str, Any]) -> None:
-        """test service の運用契約 (profiles/ENVIRONMENT/marker) を YAML レベルで保護する.
-
-        保護対象:
-            - build.target == "test" (pytest/cov 依存を含む test stage を使うこと)
-            - profiles: ["test"] (通常の docker compose up で起動しないこと)
-            - environment.ENVIRONMENT == "testing" (固定)
-            - command に "(unit or integration) and not external" marker が含まれること
-            - user は DOCKER_UID/DOCKER_GID で host 書込権限と同期すること
-
-        Note:
-            --cov-fail-under=85 の検証は削除した。
-            pyproject.toml [tool.pytest.ini_options] addopts に
-            --cov-fail-under が含まれており、docker compose test service の
-            command で重複 fixate する必要がないというユーザー意図に同期。
-        """
+        """PR CI marker・test stage・host書込権限同期の compose 契約をYAMLレベルで固定する。"""
         test_service = compose_data["services"]["test"]
 
         assert test_service["build"]["target"] == "test"
@@ -66,7 +47,13 @@ class TestDockerComposeContract:
         assert test_service["environment"]["ENVIRONMENT"] == "testing"
         assert test_service["environment"]["COVERAGE_FILE"] == "/tmp/.coverage"  # noqa: S108
         assert test_service["user"] == "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
-        assert test_service["command"] == ["pytest", "-m", "(unit or integration) and not external"]
+        # ci.yml の test_filter と同一 + repo_contract 除外。完全一致で固定し、除外条件が
+        # 無音で増える（＝コンテナのテスト範囲が黙って狭まる）退行を検出する。
+        assert test_service["command"] == [
+            "pytest",
+            "-m",
+            "(unit or integration) and not external and not repo_contract",
+        ]
 
     def test_test_service_security_contract(self, compose_data: dict[str, Any]) -> None:
         """test service の権限昇格防止設定 (security_opt/init) を YAML レベルで保護する."""

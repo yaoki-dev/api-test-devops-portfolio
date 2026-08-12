@@ -13,6 +13,7 @@ reviews:
     enabled: true
     drafts: false
     base_branches:
+      - "feature/*"
       - "develop"
       - "main"
   tools:

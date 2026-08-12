@@ -6,22 +6,28 @@ on:
     - cron: '0 0 1 * *'  # 毎月1日 00:00 UTC
   workflow_dispatch:      # 手動実行可能
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
 
 jobs:
-  update-precommit:
-    name: Update pre-commit hooks
+  verify:
+    name: Verify updated hooks
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      verified_base_sha: ${{ steps.checkout.outputs.commit }}
+      changed: ${{ steps.git-check.outputs.changed }}
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        id: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: develop
 
       - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.14'
 
@@ -53,15 +59,102 @@ jobs:
 
       - name: Check for changes
         id: git-check
+        shell: bash
         run: |
-          if git diff --quiet .pre-commit-config.yaml; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          changed_paths=$(git diff --name-only)
+          name_status=$(git diff --name-status)
+
+          case "$changed_paths" in
+            '')
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              ;;
+            .pre-commit-config.yaml)
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::Unexpected changed path(s): $changed_paths" >&2
+              exit 1
+              ;;
+          esac
+
+          if [[ -n "$name_status" ]]; then
+            while IFS=$'\t' read -r status path extra; do
+              if [[ "$status" != M || "$path" != .pre-commit-config.yaml || -n "$extra" || -d "$path" ]]; then
+                echo "::error::Unexpected diff entry: $status $path $extra" >&2
+                exit 1
+              fi
+            done <<< "$name_status"
           fi
 
-      # NOTE: 企業環境ではSHA pinning推奨（例: @67ccf781d68cd99b580ae25a5c18a1cc84ffff1f）
-      # ポートフォリオではメジャーバージョンタグで保守性とセキュリティをバランス
+      - name: Upload verified pre-commit config
+        if: steps.git-check.outputs.changed == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: verified-precommit-config
+          path: .pre-commit-config.yaml
+          include-hidden-files: true
+          if-no-files-found: error
+
+  write:
+    name: Create pull request
+    needs: verify
+    if: needs.verify.result == 'success' && needs.verify.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      # 更新ブランチへコミットを push するために必要
+      contents: write
+      # PR を作成・更新するために必要
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.verify.outputs.verified_base_sha }}
+
+      - name: Download verified pre-commit config
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: verified-precommit-config
+          path: .artifact/verified-precommit-config
+
+      - name: Restore verified pre-commit config
+        run: |
+          test -f .artifact/verified-precommit-config/.pre-commit-config.yaml
+          cp -- .artifact/verified-precommit-config/.pre-commit-config.yaml .pre-commit-config.yaml
+
+      - name: Check for restored changes
+        id: git-check
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed_paths=$(git diff --name-only)
+          name_status=$(git diff --name-status)
+
+          case "$changed_paths" in
+            '')
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              ;;
+            .pre-commit-config.yaml)
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::Unexpected changed path(s): $changed_paths" >&2
+              exit 1
+              ;;
+          esac
+
+          if [[ -n "$name_status" ]]; then
+            while IFS=$'\t' read -r status path extra; do
+              if [[ "$status" != M || "$path" != .pre-commit-config.yaml || -n "$extra" || -d "$path" ]]; then
+                echo "::error::Unexpected diff entry: $status $path $extra" >&2
+                exit 1
+              fi
+            done <<< "$name_status"
+          fi
+
       - name: Create Pull Request
         id: create-pr
         if: steps.git-check.outputs.changed == 'true'
@@ -80,10 +173,12 @@ jobs:
             pre-commit run --all-files
             ```
           branch: chore/update-precommit-hooks
+          base: develop
           labels: |
             dependencies
             pre-commit
           delete-branch: true
+          add-paths: .pre-commit-config.yaml
 
       - name: Verify pull request output
         if: steps.git-check.outputs.changed == 'true'

@@ -1,12 +1,15 @@
+---
+paths:
+  - "tests/**/*.py"
+---
+
 # テスト戦略・設計ドキュメント
 
-*最終更新: 2026年06月07日*
+*最終更新: 2026-07-30*
 
 ## エグゼクティブサマリー
 
-**現在のカバレッジ**: 96.15%（CI条件: unit+integration, not external） | **目標達成**: ✅
-**テスト資産**: 1,358件（CI条件）／総テスト数: 1,372件
-**最優先改善領域**: utils/api_client.py (92.22%)
+**カバレッジ下限**: `pyproject.toml` の `--cov-fail-under`（CI条件: unit+integration, not external）
 
 ---
 
@@ -58,7 +61,7 @@ uv run pytest -n auto -m "(unit or integration) and not external" \
 | Merge | push main | + smoke |
 | Weekly | schedule | + external + performance |
 
-**品質ゲート**: `uv run pytest --cov-fail-under=${TARGET} && uv run ruff check . && uv run mypy utils/ config/ models/`
+**品質ゲート**: `.claude/CLAUDE.md` Section「品質ゲート」→「統合コマンド」
 
 ---
 

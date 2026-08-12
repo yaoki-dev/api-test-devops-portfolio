@@ -1,61 +1,14 @@
 """
 pytest共通設定とフィクスチャ定義
-
-学習目標:
-- pytest fixture設計パターンの理解
-- テストデータ管理の効率化
-- respxを使ったHTTPモック戦略の分離（各テストファイルへ）
-- テスト環境分離の実現
 """
 
 import logging
-import time
-from collections.abc import AsyncGenerator, Callable, Iterator
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
 
 import pytest
-import pytest_asyncio
 
 from config.settings import _resolve_hostname_cached, reload_settings
-from tests.constants import BASE_URL
-from tests.types import _IntegrationTestData, _PostData, _TodoData, _UserData
-from utils.api_client import AsyncAPIClient
-
-
-class PerformanceTimer:
-    """PerformanceTimer fixture 用計測ヘルパー.
-
-    fixture スコープ外に抽出して `-> PerformanceTimer` 戻り型注釈を可能にする
-    （内部クラスのままだと return 型注釈で参照不可のため）.
-    """
-
-    def __init__(self) -> None:
-        self.start_time: float | None = None
-        self.end_time: float | None = None
-
-    def start(self) -> None:
-        self.start_time = time.perf_counter()
-
-    def stop(self) -> None:
-        self.end_time = time.perf_counter()
-
-    @property
-    def elapsed(self) -> float:
-        if self.start_time is None or self.end_time is None:
-            raise ValueError("Timer not properly started/stopped")
-        return self.end_time - self.start_time
-
-    def assert_faster_than(self, threshold: float, message: str = "") -> None:
-        if self.elapsed > threshold:
-            pytest.fail(
-                f"Performance test failed: {self.elapsed:.3f}s > {threshold:.3f}s. {message}",
-            )
-
-
-# =============================================================================
-# Pytest設定
-# =============================================================================
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -95,49 +48,35 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     items.sort(key=_sort_key)
 
 
-# =============================================================================
-# Infrastructure Fixtures (autouse - テストコードから直接呼び出さない)
-# =============================================================================
-
-
 @pytest.fixture(autouse=True)
 def disable_sentry_for_tests(monkeypatch: pytest.MonkeyPatch) -> None:
-    """
-    テスト実行時にSentry SDKを無効化。
-
-    Purpose:
-        テスト中のエラーがSentryに送信されるのを防止し、
-        本番ダッシュボードへの誤送信リスクを排除する。
-
-    Note:
-        - autouse=True により全テストに自動適用
-        - テストコードから明示的に呼び出す必要なし
-        - 環境変数はPydantic Settings形式（SENTRY__ENABLED）
-    """
+    """テスト中のエラーがSentry本番ダッシュボードへ誤送信されるリスクを排除する。"""
     monkeypatch.setenv("SENTRY__ENABLED", "false")
 
 
-# =============================================================================
-# 基本フィクスチャ
-# =============================================================================
+@pytest.fixture(scope="session", autouse=True)
+def isolate_proxy_env() -> Iterator[None]:
+    """httpx クライアント生成をアンビエントなプロキシ設定から隔離する。
 
-
-@pytest.fixture(scope="session")
-def test_config() -> dict[str, Any]:
-    """テスト用設定データ"""
-    return {
-        "api": {
-            "base_url": BASE_URL,
-            "timeout": 10,
-            "retry_count": 1,
-            "retry_delay": 0.5,
-        },
-        "log": {"level": "DEBUG", "format": "console"},
-        "test": {
-            "slow_test_threshold": 5.0,  # 5秒以上で"slow"マーク推奨
-            "max_concurrent_requests": 5,
-        },
-    }
+    NO_PROXY に IPv6 CIDR が入ると httpx が InvalidURL を送出するため
+    (encode/httpx#3221)、大文字/小文字の両方を除去する。
+    session スコープで class/module client fixture より先に剥離し、
+    function scope の monkeypatch ではなく直接 MonkeyPatch を undo する。
+    """
+    mp = pytest.MonkeyPatch()
+    for var in (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "no_proxy",
+    ):
+        mp.delenv(var, raising=False)
+    yield
+    mp.undo()
 
 
 @pytest.fixture
@@ -146,150 +85,10 @@ def logger() -> logging.Logger:
     return logging.getLogger("test")
 
 
-# =============================================================================
-# API関連フィクスチャ
-# =============================================================================
-
-
-@pytest_asyncio.fixture
-async def async_client(
-    test_config: dict[str, Any],
-) -> AsyncGenerator[AsyncAPIClient]:
-    """非同期HTTPクライアント（テスト用）- Phase 1統合"""
-    async with AsyncAPIClient(
-        base_url=test_config["api"]["base_url"],
-        timeout=test_config["api"]["timeout"],
-        headers={"User-Agent": "api-test-devops-portfolio/0.1.0"},
-    ) as client:
-        yield client
-
-
 @pytest.fixture
 def mock_base_url() -> str:
     """unit テスト用ダミーURL（外部通信なし）"""
     return "https://test.local"
-
-
-@pytest.fixture
-def sample_api_response() -> dict[str, Any]:
-    """JSONPlaceholder APIのサンプルレスポンス"""
-    return {"userId": 1, "id": 1, "title": "delectus aut autem", "completed": False}
-
-
-# =============================================================================
-# テストデータフィクスチャ
-# =============================================================================
-
-
-@pytest.fixture
-def todo_data_factory() -> Callable[..., _TodoData]:
-    """TODOテストデータファクトリー"""
-
-    def create_todo(
-        user_id: int = 1,
-        todo_id: int = 1,
-        title: str = "Test TODO",
-        completed: bool = False,
-    ) -> _TodoData:
-        return {
-            "userId": user_id,
-            "id": todo_id,
-            "title": title,
-            "completed": completed,
-        }
-
-    return create_todo
-
-
-@pytest.fixture
-def user_data_factory() -> Callable[..., _UserData]:
-    """ユーザーテストデータファクトリー"""
-
-    def create_user(
-        user_id: int = 1,
-        name: str = "Test User",
-        username: str = "testuser",
-        email: str = "test@example.com",
-    ) -> _UserData:
-        return {
-            "id": user_id,
-            "name": name,
-            "username": username,
-            "email": email,
-            "address": {
-                "street": "Test Street",
-                "suite": "Apt. 1",
-                "city": "Test City",
-                "zipcode": "12345-6789",
-                "geo": {"lat": "0.0000", "lng": "0.0000"},
-            },
-            "phone": "1-770-736-8031 x56442",
-            "website": "testuser.org",
-            "company": {
-                "name": "Test Company",
-                "catchPhrase": "Test catchphrase",
-                "bs": "test business",
-            },
-        }
-
-    return create_user
-
-
-@pytest.fixture
-def post_data_factory() -> Callable[..., _PostData]:
-    """投稿テストデータファクトリー"""
-
-    def create_post(
-        user_id: int = 1,
-        post_id: int = 1,
-        title: str = "Test Post",
-        body: str = "Test post body content",
-    ) -> _PostData:
-        return {"userId": user_id, "id": post_id, "title": title, "body": body}
-
-    return create_post
-
-
-# =============================================================================
-# パフォーマンステスト用フィクスチャ
-# =============================================================================
-
-
-@pytest.fixture
-def performance_timer() -> PerformanceTimer:
-    """パフォーマンス計測用タイマー"""
-    return PerformanceTimer()
-
-
-# =============================================================================
-# 統合テスト用フィクスチャ
-# =============================================================================
-
-
-@pytest.fixture
-def integration_test_data() -> _IntegrationTestData:
-    """統合テスト用の大量データセット"""
-    return {
-        "todos": [
-            {"userId": i, "id": j, "title": f"TODO {j}", "completed": j % 2 == 0}
-            for i in range(1, 4)
-            for j in range(1, 6)
-        ],
-        "users": [
-            {
-                "id": i,
-                "name": f"User {i}",
-                "username": f"user{i}",
-                "email": f"user{i}@example.com",
-            }
-            for i in range(1, 4)
-        ],
-    }
-
-
-# =============================================================================
-# クリーンアップフィクスチャ
-# =============================================================================
 
 
 @pytest.fixture(autouse=True)
@@ -305,12 +104,7 @@ def cleanup_test_files() -> Iterator[None]:
 
 @pytest.fixture(scope="function", autouse=True)
 def reset_settings() -> Iterator[None]:
-    """
-    各テスト実行前に設定をリロードしてテスト独立性を保証
-
-    同一プロセス内での逐次テスト間、
-    グローバルシングルトンsettingsのテスト間汚染（環境変数変更の残留等）を防止
-    """
+    """settings singleton と hostname cache のテスト間汚染を防ぐ。"""
     _resolve_hostname_cached.cache_clear()
     reload_settings()
     yield
@@ -320,60 +114,14 @@ def reset_settings() -> Iterator[None]:
 def reset_sentry_warning_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> Iterator[None]:
-    """utils.logger の sentry warning throttle 状態をテスト前後でリセット
+    """Sentry warning throttle/cache の module state をテスト前後で隔離する。
 
-    6 つの permanent throttle マーカー
-    ("settings"/"sdk"/"bug"/"outside_except"/"invalid_exc_info"/"safe_error_summary") を
-    保持する `_sentry_warnings_emitted: set[str]` を空集合に、
-    `_sentry_send_error_last_warned` timestamp を float("-inf") にリセットする。
-    `_is_sentry_debug_enabled` は lru_cache 削除済みのためリアルタイム取得。
-    monkeypatch.setenv/delenv との整合性は自動的に保たれる。
-
-    `_sentry_warning_lock` (threading.Lock) はリセット対象外:
-    Lock インスタンス自体を差し替えるとモジュール内の他参照と整合しなくなり、また
-    ロック状態は test 間で leak しない (各テスト内でロック取得・解放が完結する) ため
-    リセット不要。
-
-    monkeypatch.setattr は test 終了時に自動復元され、環境変数変更も即時反映される。
-    lru_cache 削除済みのため teardown での cache_clear() は不要。
-
-    autouse=True により全テストで自動適用し、TestSentryProcessor 以外のクラスでも
-    モジュールレベル throttle 状態の汚染を防止する (同一プロセス内の逐次テスト間
-    におけるフラグ汚染による偽陽性回避)。
-
-    Note: pytest-xdist は各ワーカーが別プロセスで動作するためモジュールレベルの
-    グローバル変数はプロセス間で共有されない。本 fixture の主目的は同一プロセス内
-    の逐次テスト間の汚染防止であり、xdist による並列実行は副次的な恩恵。
+    `_sentry_warning_lock` は差し替えるとモジュール内の他参照と整合しないため残す。
+    monkeypatch 復元と cache なしの debug flag により teardown の cache_clear は不要。
+    同一プロセス内の逐次テスト汚染を防ぎ、xdist は別プロセスなので副次的な保護に留まる。
     """
 
     monkeypatch.setattr("utils.logger._sentry_warnings_emitted", set())
     monkeypatch.setattr("utils.logger._sentry_send_error_last_warned", float("-inf"))
     # SENTRY_DEBUG は環境変数をリアルタイム取得するため、キャッシュリセット不要
     yield
-
-
-# =============================================================================
-# 学習ポイント:
-#
-# 1. フィクスチャスコープの使い分け:
-#    - session: テスト実行全体で1回のみ
-#    - module: モジュール単位で1回
-#    - function: テスト関数ごと（デフォルト）
-#
-# 2. ファクトリーパターン:
-#    - 動的なテストデータ生成
-#    - パラメータ化による柔軟性
-#
-# 3. モック活用:
-#    - 外部依存の排除
-#    - テスト実行速度向上
-#    - エラーシナリオの再現
-#
-# 4. 非同期テストサポート:
-#    - AsyncClient の適切な管理
-#    - イベントループの共有
-#
-# 5. 自動クリーンアップ:
-#    - autouse=True による自動実行
-#    - テスト環境の清潔性維持
-# =============================================================================
