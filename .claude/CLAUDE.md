@@ -147,13 +147,13 @@ SECURITY__API_KEY=your-secret-key
    自動ループ:
     - 信頼度90%未満: 改善して再実行（各反復で信頼度と改善理由を簡潔に示す）/ 90%以上 → 終了 - 最大3回まで
     - 4回連続失敗時（信頼度90%未満継続）はユーザーに報告して停止
-6. コミット前レビュー → `Skill(review:review-local-changes)` (80点閾値)
+6. コミット前レビュー → `Skill(code-review medium)
 7. コミット前確認（重要変更の場合） → `Skill(judgment-day)`を実行
 8. コミット   → `Skill(commit)`【git commit禁止】
 
 【PUSH/PR/マージフェーズ】
 9. PR作成     → Skill(push-pr)【gh pr create禁止】
-10. レビュー対応 → 修正 → 品質ゲート →  `Skill(fable:fable-judge)` を実行 →  `Skill(reflexion:reflect)` を実行 → `Skill(review:review-local-changes)`を実行 → `Skill(judgment-day)`を実行（重要変更の場合） → Skill(commit) → push
+10. レビュー対応 → 修正 → 品質ゲート →  `Skill(fable:fable-judge)` を実行 →  `Skill(reflexion:reflect)` を実行 → `Skill(code-review medium)`を実行 → `Skill(judgment-day)`を実行（重要変更の場合） → Skill(commit) → push
 11. マージ実行  → マージ戦略【※3参照】
 12. クリーンアップ → `git fetch --prune origin` + `/git:clean-gone`（worktree: 固定運用のため削除しない）
 ```

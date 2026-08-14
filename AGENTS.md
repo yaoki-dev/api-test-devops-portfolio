@@ -49,101 +49,33 @@
 **YOU MUST** follow these rules. Violations are NOT acceptable.
 
 1. **ALWAYS** respond in `Japanese` for all outputs, including skill usage
-2. **ALWAYS** create a short task list before starting any work (in chat bullets, or `update_plan` if available)
-3. **ALWAYS** when there are 2+ distinct user choices, present explicit options and confirm which one to take
-4. **NEVER** run `git commit` directly; follow the `commit` skill workflow when available (if not available: explain why and get explicit user confirmation before any manual git ops)
-5. **NEVER** run `gh pr create` directly; follow the `push-pr` skill workflow when available (if not available: explain why and get explicit user confirmation before any manual PR creation)
-6. **NEVER** run `gh issue create` directly; follow the `create-issue` skill workflow when available (if not available: explain why and get explicit user confirmation before any manual issue creation)
-7. **ALWAYS** pass quality gates before commit → memory `~/projects/python/api-test-devops-portfolio/.claude/rules/testing/quality-gates.md`
+2. **ALWAYS** create a task list using `todowrite` before starting any work (exception: obvious single-step trivial tasks; RULES.md Workflow Rules "TodoWrite (3+ tasks)" qualifier)
+3. **ALWAYS** use the AskUserQuestion tool to propose 2-3 alternative approaches and wait for user confirmation before executing any major tasks or structural changes (exception: explicit slash command invocation (e.g., `/commit`, `/push-pr`), subagent execution context — parent agent owns the AskUserQuestion call, user-directed single-line trivial fix)
+4. **NEVER** use `git commit` → **ALWAYS** use `Skill(commit)`
+5. **NEVER** use `gh pr create` → **ALWAYS** use `Skill(push-pr)`
+6. **NEVER** use `gh issue create` → **ALWAYS** use `Skill(create-issue)`
+7. **ALWAYS** pass quality gates before commit → @memory:implementation_quality_gates
 8. **NEVER** push to protected branches (main/develop) directly
-9. **ALWAYS** only reference skills/tools that are actually available in the current session; do not assume a name exists
+9. **ALWAYS** invoke skills via Skill(skill-name) notation when user requests
 10. **ALWAYS** follow development workflow order → Section「🔄 開発ワークフロー」
-11. **ALWAYS** before claiming completion, run `verification-before-completion`; if confidence < 90%, run `reflexion:reflect` and improve
-12. **ALWAYS** when 2+ independent tasks exist, consider parallelization; use sub-agents only when the user explicitly allows it (recommended skill: `subagent-driven-development`)
-13. **ALWAYS** verify file content with read/`rg` (or equivalent) BEFORE making any claim about line numbers, file structure, or code content
-14. **ALWAYS** enforce worktree boundary:
-    - At conversation start (including post-compact context reload): run `git rev-parse --show-toplevel`:
-      - If command fails (non-zero exit code): **STOP immediately and report to user**
-      - If output is empty: **STOP immediately and report to user**
-      - Store result as **WORKTREE_ROOT** for this session ("non-empty" = contains at least one non-whitespace character after stripping trailing newlines; whitespace-only output is treated as empty).
-        (post-compact context reload: re-verify by re-running BOTH:
-          (1) **FIRST — recall check (before any git command)**: Can you recall a WORKTREE_ROOT value established earlier in this session (before this reload)? If you CANNOT actively recall such a value in your current context (context loss confirmed) → **STOP immediately + report to user** ("WORKTREE_ROOT not recoverable after context reload — please restart session"). (design rationale: with total context loss, there is no reference point to verify the current directory belongs to the correct project; running git rev-parse fresh could silently accept a wrong WORKTREE_ROOT from a different project — STOP forces deliberate user re-orientation) Only if the prior value IS present in active context: run `git rev-parse --show-toplevel` — if command fails (non-zero exit code) or output is empty → **STOP + report to user**; if result differs from recalled WORKTREE_ROOT → **STOP + report to user**
-          (2) `git worktree list --porcelain` pipeline — full table evaluation required (same as session start) — NOT skippable on reload **when (1) succeeds**)
-    - Run `git worktree list --porcelain` (via pipeline) and check result:
-
-      | `git worktree list --porcelain` (parsed) Result | Action |
-      |--------------------------------------------------|--------|
-      | Command failed (non-zero exit code) | **STOP** + report to user |
-      | Empty / Unparseable | **STOP** + report to user |
-      | WORKTREE_ROOT not found | **STOP** + mismatch report |
-      | 1 entry | Run WORKTREE_ROOT confirmation command → Match: Notify "single-worktree mode (WORKTREE_ROOT: {absolute path})" + continue / Mismatch: **STOP** + mismatch report |
-      | 2+ entries | Notify "multi-worktree mode" → confirm WORKTREE_ROOT → **on failure: STOP + mismatch report** / on success: ask the user to confirm the intended worktree scope |
-
-      > **Scope confirmation handling (2+ entries only)**: provide explicit choices ("Approve and continue" / "Reject and stop"). If the user specifies a different worktree path, STOP and restart the session in the intended worktree.
-      > **Evaluation order (required)**: Evaluate table rows top to bottom (check WORKTREE_ROOT containment before entry count): ① command failed → STOP ② empty/Unparseable → STOP ③ WORKTREE_ROOT containment check (if not found, STOP + mismatch report regardless of entry count) ④ entry count check (1 or 2+ entries)
-      > **Note on pipeline exit codes**: `grep` returning exit 1 due to 0 matches is NOT "command failed" — treat as empty output (→ STOP at ②). Only treat as "command failed" when `git worktree list --porcelain` itself returns non-zero exit code.
-      > **Pipeline exit code caveat**: The pipeline `git worktree list --porcelain | grep ... | sed ...` exit code reflects `sed`'s exit, NOT `git`'s — meaning `git worktree list` failure is invisible to the pipeline exit code regardless of stdout content. **Mandatory (no exceptions)**: Always run `git worktree list --porcelain` as a standalone command first and verify its exit code independently (non-zero → STOP immediately); proceed to the pipeline only if exit code is 0.
-      > **WORKTREE_ROOT confirmation**: First confirm WORKTREE_ROOT is non-empty (if empty: **STOP**). If non-empty: `git worktree list --porcelain | grep "^worktree " | sed 's/^worktree //' | grep -Fx "${WORKTREE_ROOT}"` (`-F`: literal string, `-x`: full-line match — prevents `/project` matching `/project-extra`; supports paths with spaces and detached HEAD state)
-      > **"Unparseable" definition**: output of `git worktree list --porcelain | grep "^worktree " | sed 's/^worktree //'` is empty, OR any extracted line does not start with `/` (`git worktree list --porcelain` always emits absolute paths — Git implements no tilde expansion; empty lines are excluded from this check) — unified to porcelain format (same pipeline as WORKTREE_ROOT confirmation command above)
-      > **When WORKTREE_ROOT not found** (user manual execution — AI autonomous execution prohibited): `git rev-parse --is-inside-work-tree` (true → user re-confirms correct WORKTREE_ROOT then restart session / false → navigate to correct project directory then restart session. ⚠️ `git init` prohibited — risk of destroying existing repository)
-      > **AI report content on mismatch (required)**: ① result of `git rev-parse --show-toplevel` (value stored at session start) ② raw output of `git worktree list` (all lines) ③ candidate causes: symbolic link resolution difference / path mapping difference in CI/Docker environment
-      > **Stderr warnings**: `git worktree list --porcelain` may output warnings to stderr (e.g., "warning: gitdir file points to non-existent location") for broken worktree entries while still returning exit 0. These broken entries still appear in stdout and may match WORKTREE_ROOT. If stderr output is detected alongside worktree list output, report the warnings to the user and await explicit acknowledgment before proceeding with boundary checks (acknowledgment = any user response; closed-list confirmation — Rule 15 common definition — is NOT required here — warnings are informational, not error recovery).
-      > **SSOT**: this procedure mirrors `.claude/rules/workflow/RULES.md` Section「Category: Worktree Boundary Enforcement」. If the two ever diverge, RULES.md governs.
-
-    - For files outside WORKTREE_ROOT:
-      - Autonomous edit: **NEVER**
-      - User-requested edit: **STOP**, show exact absolute path, require explicit confirmation before proceeding
-      - Exception: all files under `~/.claude/tasks/` directory are pre-authorized global files (dedicated Claude Code workspace); boundary confirmation not required for any file in this directory (Rule 15b write constraints still apply to `~/.claude/lessons/lessons.md`)
-15. **ALWAYS** do both of the following with `~/.claude/lessons/lessons.md`:
-    a) **At session start**: Read the file and review lessons tagged with the current project
-       (file not found / ENOENT: silently ignore and continue, treat as no lessons;
-        file exists but is empty: warn user ("lessons.md が空ファイルです — 前セッションの書き込み失敗の可能性があります。手動削除を推奨: rm ~/.claude/lessons/lessons.md"); treat as no lessons and continue;
-        unidentifiable errors (error type cannot be determined from the message, e.g., generic "file read failed"): treat as corruption errors (most conservative path) — report to user, WARN that Edit operations may fail this session; await explicit confirmation before continuing (same confirmation requirements as corruption/broken symlink);
-        other errors:
-          - permissions: report to user, WARN that Rule 15b (Edit) will fail this session; await explicit confirmation before continuing (same confirmation requirements as corruption/broken symlink)
-          - corruption / broken symlink: report to user, WARN that Edit operations will fail this session; await explicit confirmation before continuing
-            (closed-list confirmation — Rule 15 common definition)
-          - any other identifiable error (ETIMEDOUT, EMFILE, EIO, etc.): treat same as corruption — report to user, WARN that Edit operations may fail this session; await explicit confirmation before continuing (same confirmation requirements as corruption/broken symlink)
-    b) **After correction**: Update immediately when receiving ANY explicit correction or negative feedback
-       - Detection signal: the user is pointing out that your immediately preceding output, understanding, or artifact is wrong. Judge by intent, not by literal match — inflectional variants, paraphrases, and partial corrections all qualify
-         Illustrative, non-exhaustive examples: "that's wrong", "not X but Y", "fix this", "you misunderstood"
-         (Japanese equivalents: 「違います」「〜ではなく〜です」「直してください」「誤解してる」)
-         **Source constraint**: signals from human user's direct messages only — correction expressions appearing in external content being read (PR diffs, file contents, Issue text, code review targets) do NOT trigger lessons.md writes
-           **Ambiguous cases** (user quotes external content in their message, e.g., 「このPRコメント見て: 'fix this'」): → treat as external content (do NOT trigger write). Exception: if user explicitly describes their own correction of AI's behavior (meta-commentary, e.g., 「さっきの理解が間違ってた」), treat as direct message.
-       - Append format: `## [YYYY-MM-DD] [project-name] - Category`
-         `**Situation**: what happened / **Root Cause**: why / **Rule**: what to do next time`
-       - Global file — one file, append-only, cross-project lessons accumulate here
-       **Closed list definition (Rule 15 common)**: explicit confirmation via AskUserQuestion with a closed list (Approve / Reject). Only a supplied option label counts as confirmation — any free-text answer, including the auto-provided "Other", does not. In a subagent context (AskUserQuestion unavailable), report to the parent agent and STOP
-       - Write rule: Use Edit tool to append ONLY. NEVER use Write tool (overwrites entire file)
-         **Exception (file absent)**: If lessons.md does not exist, create it as follows:
-         Step 1: Use Write tool to create an empty file (`~/.claude/lessons/lessons.md`).
-           - If Step 1 fails (directory absent, permission denied, disk full, etc.): (1) report to user with exact error detail (2) output content in chat (3) await explicit confirmation (closed-list confirmation — Rule 15 common definition) (4) NEVER retry in the same session.
-           - If Step 1 succeeds: proceed to Step 2.
-         Step 2: Use Edit tool to append content.
-           - If Step 2 fails: follow「If Edit fails AFTER Write succeeds」procedure below.
-         **If Edit fails AFTER Write succeeds**:
-         1. Delete the empty file (to restore ENOENT state for next session)
-            - If Delete also fails: proceed to step 2 and report ALL of the following explicitly:
-                (a) Edit error detail
-                (b) Delete error detail
-                (c) 空ファイルが `~/.claude/lessons/lessons.md` に残存している事実
-                (d) 次セッションで Rule 15a の「空ファイル」警告が発生することの予告 → 手動削除推奨: `rm ~/.claude/lessons/lessons.md`
-         2. Report to user with exact error detail
-         3. Output content in chat
-         4. Await explicit confirmation before continuing (silent continuation prohibited; closed-list confirmation — Rule 15 common definition)
-         5. **NEVER retry the same Write→Edit sequence in the same session** after step 4; await user direction only
-         **If Edit fails on existing file**:
-         1. Report to user with exact error detail (if a corruption, unidentifiable error, or empty-file warning was reported at session start per Rule 15a, re-state that warning here — the current Edit failure may be caused by that initial error)
-         2. Output the intended content in chat
-         3. Await explicit confirmation before continuing (silent continuation prohibited; closed-list confirmation — Rule 15 common definition)
-         4. **NEVER retry Edit in the same session** after step 3; await user direction only
-       - Cleanup: when entries exceed ~20 (no fixed monthly cadence)
-       - Recurring pattern alert: If 2+ similar corrections appear for the same project (same Root Cause category), report to user for structural rule improvement
+11. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `Skill(fable:fable-judge)` → then `Skill(reflexion:reflect)`
+12. **ALWAYS** when using Fable model → invoke `Skill(efficient-fable)`
+13. **ALWAYS** verify file content with Read/Grep tool BEFORE making any claim about line numbers, file structure, or code content
+14. **ALWAYS** enforce worktree boundary: セッション開始時に `git rev-parse --show-toplevel` でWORKTREE_ROOTを確認し、WORKTREE_ROOT外ファイルの自律的編集を禁止する（`~/.claude/tasks/` は例外）
+    → 詳細手続き（worktree list検証、compact後再検証、mismatch報告等）: `.claude/rules/workflow/RULES.md` Section「Category: Worktree Boundary Enforcement」
+15. **ALWAYS** manage `~/.claude/lessons/lessons.md`:
+    a) セッション開始時に読み込み、現プロジェクトのlessonsを確認（ENOENT: 無視して続行）
+    b) ユーザーからの修正フィードバック時に即時追記（Edit tool使用、Write禁止。フォーマット: `## [YYYY-MM-DD] [project-name] - Category`）
+    → 詳細手続き（エラーハンドリング、closed-list確認、ソース制約等）: `.claude/rules/workflow/RULES.md` Section「Category: Lessons Management」
 16. **ALWAYS** fix bugs autonomously (no hand-holding) when scope is within:
-    - ❌ Absolutely prohibited (no autonomous modification): `pyproject.toml`, `*.yml`/`*.yaml`/`.env*`, `config/`, `tests/conftest.py`, `tests/**/conftest.py`, `tests/**/__init__.py`, `tests/**/helpers.py`, `utils/__init__.py`, `utils/logger.py`, `utils/sentry_init.py`, `utils/sentry_scrub_events.py`, `utils/sentry_scrub_values.py`, `utils/sentry_scrub_primitives.py`, git ops / infra config
+    - ⛔ 例外（本ルール不適用）: ユーザーの依頼の**主目的**が判断・評価・分析・レビューの場合。修正指示を明示的に含む依頼（例:「分析して修正して」）は主目的が実装であり対象外。該当判定はユーザーの文言に基づき、エージェントの自己申告で拡大解釈しない
+      → `.claude/rules/workflow/RULES.md` Section「Category: Analysis-Only Request Boundary」
+    - ❌ Absolutely prohibited (no autonomous modification): `pyproject.toml`, `*.yml`/`*.yaml`/`.env*`, `config/`, `tests/conftest.py`, `tests/**/conftest.py`, `tests/**/__init__.py`, `tests/**/helpers.py`, `utils/__init__.py`, `utils/logger.py`, `utils/sentry_init.py`, git ops / infra config
     - ⚠️ Limited autonomous fix (spec-changing modifications → confirmation required; non-functional modifications: autonomous OK): `scripts/*.py`, `models/responses.py`, `utils/github_client.py`, `tests/test_smoke.py`, `utils/*.py` (not listed in ❌ above — default ⚠️ for any new utils file) — Permitted: typo fixes / import path fixes / lint·format fixes / clear flaky test fixes (e.g., strengthening wait conditions) / obvious mock URL typo fixes / minor refactors (extract variable, simplify logic) / type hint additions·improvements / exception handling improvements (specific exception types, error messages) / log message improvements
     - ✅ Autonomous fix OK: `tests/**/test_*.py` and `tests/test_*.py` (except `tests/test_smoke.py` — governed by ⚠️ above), `*.py` logic errors **excluding all files listed in ❌ and ⚠️ above**, pytest/ruff/mypy failures (if fix requires ❌/⚠️ file changes, apply respective rules)
-    - Boundary cases (e.g., adding pyproject.toml dependencies) → apply Rule 3 (explicit options + confirmation)
+    - Boundary cases (e.g., adding pyproject.toml dependencies) → apply Rule 3 (AskUserQuestion)
+    - さらに: 変更ファイル数 3 以上 / 不可逆操作 / 既存外部契約 (公開API / 環境変数 / CI設定) 変更 を伴う場合は ⚠️ 同等扱い (= Rule 3 適用)
+      - 除外条件: ドキュメント (`*.md` / `docs/` / `claudedocs/`) ・バイナリ資産 (画像 / PDF) のみの更新で、 コードロジック (`*.py` / `config/` / `*.yml` / `*.toml`) 未変更の場合
 
 ## プロジェクト概要
 
@@ -290,90 +222,44 @@ git checkout -b feature/<次のタスク> origin/develop
 
 **参考**: memory `~/projects/python/api-test-devops-portfolio/.claude/rules/testing/quality-gates.md`
 
-## 🔌 コマンド/スキル/プラグイン自動発動ルール
-
-**詳細**: memory `~/projects/python/api-test-devops-portfolio/.serena/memories/command_usage_guide.md`
-
-**ast-grep vs mgrep選択**:
-- **コード変更時**: ast-grep必須（AST保証、リファクタリング◎）
-- **文書構造探索時**: mgrep推奨（Markdown構造◎、利用できない場合は `rg` で代替）
-- **詳細な機能差**: memory `~/projects/python/api-test-devops-portfolio/.serena/memories/command_usage_guide.md` Section 9.3参照
-**種別の違い**:
-- **Plugin/Hook/Command**: ローカル環境に存在する補助資産（例: `~/.claude/...`）。Codex セッションで実行可能かは別途確認する
-- **Skill**: セッションに露出しているスキル（存在しない名前は使わない）
-
-### Critical（毎コミット必須）
-
-| コマンド/スキル | 種別 | 発動トリガー | 用途 |
-|----------------|------------|------|------|
-| `security-guidance` | Hook | 編集操作時 | (Claude hook資産として存在する場合) 自動警告（Codex 自動発火は要確認） |
-| `verification-before-completion` | Skill | タスク完了時（reflect前） | 作業完了証拠確認 |
-| `reflexion:reflect` | Skill | タスク完了時・reflect | deep reflect実行（セルフレビュー） |
-| `review:review-local-changes` | Skill | reflect完了後 | ローカル変更レビュー（スコア閾値あり） |
-
-### High（開発標準）
-
-| コマンド/スキル | 種別 |  発動トリガー | 用途 |
-|----------------|------------|------|------|
-| `create-issue` | Skill | Issue作成 | Issue駆動開発支援 |
-| Git Flow（手動） | Process | ブランチ作成時 | `feature/*` / `hotfix/*` 運用に従う |
-| `commit`, `push-pr` | Skill | コミット/Push・PR作成時 | 品質チェック付きコミット+日本語PR |
-| `review:review-pr` | Skill | 重要PR時 | セキュリティ・バグ・API契約レビュー |
-| `test-coverage`, `generate-tests` | Command | テスト関連時 | (環境にある場合) カバレッジ分析・テスト生成 |
-
-### Medium（必要時）
-
-| コマンド/スキル |  種別 | 発動トリガー | 用途 |
-|----------------|------------|------|------|
-| ドキュメント生成/保守 | Command | ドキュメント作成/監査時 | (環境にある場合) 生成・更新・リンク検証 |
-| `decision-helper` | Skill | 2+選択肢の比較評価時 | Pros/Cons・Decision Matrix・ICEフレームワーク |
-| `fact-checker` | Skill | 主張・データの事実確認時 | 証拠ベースのファクトチェック・情報信頼性評価 |
-| `prompt-lookup`, `skill-lookup` | Skill | 検索時 | プロンプト/スキル発見 |
-
-<!-- preserve-on-compact: Development Workflow -->
+<<!-- preserve-on-compact: Development Workflow -->
 ## 🔄 開発ワークフロー（標準コマンド実行順序）
 
 **CRITICAL**: `git commit`や`gh pr create`等の生コマンドは使用禁止。
 
 ```
 【準備フェーズ】
-0. 大規模タスク（複数セッション）: `claudedocs/plans/` に計画書を作成し、タスクを分割して進める
-1. ブランチ作成: Git Flow（`feature/*`, `hotfix/*`）に従う。固定worktree運用がある場合はその運用を優先する
-   → 必要に応じて計画書: `claudedocs/plans/` に作成（補助資料がある場合は `.claude/rules/workflow/` を参照）
+0. 大規模タスク（複数セッション）: `.claude/rules/workflow/RULES.md` 「Task Management (Persistent Layer)」参照
+1. 固定Worktreeでブランチ作成 → /git:feature（常時※1）
+   → 固定WT: ${HOME}/projects/python/.worktrees/wt-feature0[1-3]（個人環境ごとにカスタマイズ）
+   → 計画ファイル作成が必要な場合: claudedocs/plans/ に作成（閾値詳細: .claude/rules/workflow/PLANS.md §使用閾値）
 
 【実装フェーズ】
-2. コード変更 → security-guidance (hookがある場合)
+2. コード変更 → security-guidance (hook自動)
 3. 品質ゲート → pytest + ruff + mypy 全合格（※2）
    → For non-trivial changes, ask: "Is there a more elegant implementation?"
    → If it feels hacky, ask: "Given what I know now, what's the most elegant approach?"
    → Skip for obvious single-line fixes
-4. 作業完了確認 → `verification-before-completion` を実行
-   → 上記フロー外で未完了作業あり: 修正 → 3. 品質ゲートに戻る（最大3回まで。4回連続失敗時はユーザーに報告して停止）
-5. reflect(タスクごとに実施) → `reflexion:reflect` を実行（信頼度90%未満なら改善して再実行、最大3回）
+4. 作業完了確認 → `Skill(fable:fable-judge)` を実行
+5. reflect(タスクごとに実施) → `Skill(reflexion:reflect)` を実行
    引数: deep reflect if less than 90% confidence. 日本語で簡潔に回答
    自動ループ:
-     - 信頼度90%未満: 改善して再実行（各反復で信頼度と改善理由を簡潔に示す）/ 90%以上 → 終了 - 最大3回まで
-     - 4回連続失敗時（信頼度90%未満継続）はユーザーに報告して停止
-6. コミット前レビュー → `review:review-local-changes` (80点閾値)
-7. コミット   → `commit`（ワークフローに従う）【git commit禁止。スキルが無い場合は必ず事前確認】
-
-【レビューフェーズ】
-8. IF (≥200行 OR セキュリティ OR API OR hotfix):
-      → `code-review:review-pr`
-    ELSE(Include doc update):
-      → `review:review-local-changes`（または同等のレビュー手段）
+    - 信頼度90%未満: 改善して再実行（各反復で信頼度と改善理由を簡潔に示す）/ 90%以上 → 終了 - 最大3回まで
+    - 4回連続失敗時（信頼度90%未満継続）はユーザーに報告して停止
+6. コミット前レビュー → `Skill(code-review)`
+7. コミット前確認（重要変更の場合） → `Skill(judgment-day)`を実行
+8. コミット   → `Skill(commit)`【git commit禁止】
 
 【PUSH/PR/マージフェーズ】
-9. PR前レビュー → 規模判定ルール適用【※3参照】
-10. PR作成     → `push-pr`【gh pr create禁止。スキルが無い場合は必ず事前確認】
-11. レビュー対応 → 修正 → 品質ゲート → `commit` → push（スキルが無い場合は必ず事前確認）
-12. マージ実行  → マージ戦略【※4参照】
-13. クリーンアップ → `git fetch --prune origin`（必要ならブランチ整理）
+9. PR作成     → Skill(push-pr)【gh pr create禁止】
+10. レビュー対応 → 修正 → 品質ゲート →  `Skill(fable:fable-judge)` を実行 →  `Skill(reflexion:reflect)` を実行 → `Skill(code)`を実行 → `Skill(judgment-day)`を実行（重要変更の場合） → Skill(commit) → push
+11. マージ実行  → マージ戦略【※3参照】
+12. クリーンアップ → `git fetch --prune origin` + `/git:clean-gone`（worktree: 固定運用のため削除しない）
 ```
 
 <!-- preserve-on-compact: Quality Gates -->
-**※1 worktree**: 固定worktree運用（${HOME}/projects/python/.worktrees/wt-feature0[1-3]（個人環境ごとにカスタマイズ））。セッション開始時にwatch_directoryの設定を確認する（利用可能な場合: `mcp__CodeGraphContext__list_watched_paths`）
-**※2 品質ゲート**（mypy の対象範囲は `.github/workflows/ci.yml` と一致させる。変更時は両方を同時に更新する）:
+**※1 worktree**: 固定worktree運用（${HOME}/projects/python/.worktrees/wt-feature0[1-3]（個人環境ごとにカスタマイズ））。セッション開始時にwatch_directoryの設定を確認する（mcp__CodeGraphContext__list_watched_paths）
+**※2 品質ゲート**: 本ファイル Section「品質ゲート」→「統合コマンド」を使用する
 
 ```bash
 uv run pytest -n auto -m "(unit or integration) and not external" \
