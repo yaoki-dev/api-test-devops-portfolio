@@ -182,9 +182,6 @@ graphify-out/**
 .agents/**
 .agents/rules/antigravity-rtk-rules.md
 
-# OpenCode Studio distribution (tool artifacts)
-opencode-studio/
-
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 graft/**
 

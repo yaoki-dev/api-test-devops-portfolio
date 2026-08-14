@@ -35,7 +35,6 @@ docs/brainstorms/**
 # Gemini/Codex agent skill definitions (English technical specs)
 .gemini/**
 # opencode
-opencode-studio/**
 .opencode/**
 .omo/**
 
