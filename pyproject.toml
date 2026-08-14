@@ -10,7 +10,7 @@ name = "api-test-devops-portfolio"
 description = "APIテスト + DevOps統合ポートフォリオ"
 version = "0.1.0"
 authors = [
-    {name = "Yuta", email = "yuta@example.com"},
+    {name = "Yuta"},
 ]
 readme = "README.md"
 requires-python = "==3.14.*"
@@ -34,10 +34,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/api-test-devops-portfolio"
-Repository = "https://github.com/yourusername/api-test-devops-portfolio"
-Documentation = "https://yourusername.github.io/api-test-devops-portfolio"
-Issues = "https://github.com/yourusername/api-test-devops-portfolio/issues"
+Homepage = "https://github.com/yaoki-dev/api-test-devops-portfolio"
+Repository = "https://github.com/yaoki-dev/api-test-devops-portfolio"
+Documentation = "https://yaoki-dev.github.io/api-test-devops-portfolio"
+Issues = "https://github.com/yaoki-dev/api-test-devops-portfolio/issues"
 
 [dependency-groups]
 dev = [

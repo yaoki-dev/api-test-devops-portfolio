@@ -184,3 +184,9 @@ graphify-out/**
 
 # OpenCode Studio distribution (tool artifacts)
 opencode-studio/
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+graft/**
+
+# cursor
+.cursor/**
