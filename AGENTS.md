@@ -222,7 +222,7 @@ git checkout -b feature/<次のタスク> origin/develop
 
 **参考**: memory `~/projects/python/api-test-devops-portfolio/.claude/rules/testing/quality-gates.md`
 
-<<!-- preserve-on-compact: Development Workflow -->
+<!-- preserve-on-compact: Development Workflow -->
 ## 🔄 開発ワークフロー（標準コマンド実行順序）
 
 **CRITICAL**: `git commit`や`gh pr create`等の生コマンドは使用禁止。

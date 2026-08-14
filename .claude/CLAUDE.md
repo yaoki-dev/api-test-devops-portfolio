@@ -147,7 +147,7 @@ SECURITY__API_KEY=your-secret-key
    自動ループ:
     - 信頼度90%未満: 改善して再実行（各反復で信頼度と改善理由を簡潔に示す）/ 90%以上 → 終了 - 最大3回まで
     - 4回連続失敗時（信頼度90%未満継続）はユーザーに報告して停止
-6. コミット前レビュー → `Skill(code-review medium)
+6. コミット前レビュー → `Skill(code-review medium)`
 7. コミット前確認（重要変更の場合） → `Skill(judgment-day)`を実行
 8. コミット   → `Skill(commit)`【git commit禁止】
 
