@@ -252,7 +252,7 @@ git checkout -b feature/<次のタスク> origin/develop
 
 【PUSH/PR/マージフェーズ】
 9. PR作成     → Skill(push-pr)【gh pr create禁止】
-10. レビュー対応 → 修正 → 品質ゲート →  `Skill(fable:fable-judge)` を実行 →  `Skill(reflexion:reflect)` を実行 → `Skill(code)`を実行 → `Skill(judgment-day)`を実行（重要変更の場合） → Skill(commit) → push
+10. レビュー対応 → 修正 → 品質ゲート →  `Skill(fable:fable-judge)` を実行 →  `Skill(reflexion:reflect)` を実行 → `Skill(code-review)`を実行 → `Skill(judgment-day)`を実行（重要変更の場合） → Skill(commit) → push
 11. マージ実行  → マージ戦略【※3参照】
 12. クリーンアップ → `git fetch --prune origin` + `/git:clean-gone`（worktree: 固定運用のため削除しない）
 ```
