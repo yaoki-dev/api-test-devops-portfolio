@@ -3,7 +3,7 @@
 *最終更新: 2026-08-07*
 
 外部API連携における堅牢性と品質保証を追求し、APIテストとDevOps技術を統合したポートフォリオです。
-SSRFやPII漏洩、不安定なリトライといった連携特有のアンチパターンを排除し、1,300件超の自動テストを品質ゲートとして構築・運用しています。
+外部API連携の防御境界を、base URLの許可ドメインallowlist、Sentryの`before_send` / `before_send_transaction`による送信前スクラブ、exponential backoff + jitterによるリトライ間隔制御として実装・検証しています。
 
 [![CI/CD Pipeline](https://github.com/yaoki-dev/api-test-devops-portfolio/actions/workflows/ci.yml/badge.svg)](https://github.com/yaoki-dev/api-test-devops-portfolio/actions/workflows/ci.yml)
 [![Coverage](https://yaoki-dev.github.io/api-test-devops-portfolio/coverage.svg)](https://yaoki-dev.github.io/api-test-devops-portfolio/htmlcov/)
@@ -121,9 +121,9 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A["<h4>Unit Tests</h4><u>Isolated & Fast (Deterministic)<br/>{{UNIT_TESTS_COUNT}} tests</u>
+    A["<h4>Unit Tests</h4><u>Isolated & Fast (Deterministic)</u>
     <br/>"]
-    B["<h4>Integration Tests</h4><u>Actual API integration<br/>{{INTEGRATION_TESTS_COUNT}} tests</u>
+    B["<h4>Integration Tests</h4><u>Actual API integration</u>
     <br/>"]
     G["<h4>Smoke Tests</h4><u>Pull Request / Post merge</u>
     <br/>"]
@@ -142,7 +142,7 @@ flowchart TD
     <br/>"]
     F --> E
 
-    C --> H["<h4>Coverage</h4><u>{{COVERAGE_PERCENT}}<br/>target 85%+</u>
+    C --> H["<h4>Coverage</h4><u>target 85%+</u>
     <br/>"]
     E --> H
 
@@ -291,7 +291,9 @@ docker compose up -d
 
 ### Sentry統合
 
-Sentry SDK標準のスクラブに加えて、44種の機密キーパターンを基準とした防御的スクラブを`before_send`フックへ自前実装しています。初期化失敗時は本番相当環境でfail-fast、開発・テスト環境では警告して継続します。既定無効のopt-inで、テストはネットワーク非依存です。
+Sentry SDK標準のスクラブに加えて、44種の機密キーパターンを基準とした防御的スクラブを`before_send` / `before_send_transaction`フックへ自前実装しています。初期化失敗時は本番相当環境でfail-fast、開発・テスト環境では警告して継続します。既定無効のopt-inで、テストはネットワーク非依存です。
+
+対象APIが実PIIを扱わなくても、外部サービスへ送信するイベント境界には例外・ログ経由の機密情報が混入し得るため、`before_send` と `before_send_transaction` を送信前の防御層として検証しています。
 
 本番デプロイ、実DSNによる継続監視、アラート運用、release/deploy連携は未実施です。詳細は [Sentry統合リファレンス](docs/reference/sentry.md) を参照してください。
 
