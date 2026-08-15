@@ -1,0 +1,223 @@
+name: Trivy scan
+
+on:
+  workflow_call:
+    inputs:
+      scan-prefix:
+        required: true
+        type: string
+      scan-image:
+        required: true
+        type: boolean
+
+jobs:
+  trivy-scan:
+    name: Trivy scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Trivy filesystem scan (SARIF for Security tab)
+        id: fs-scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
+        env:
+          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          format: "sarif"
+          output: trivy-${{ inputs.scan-prefix }}-fs-scan.sarif
+          exit-code: "0"
+          ignore-unfixed: true
+          trivyignores: ".trivyignore"
+          cache: ${{ github.event_name != 'schedule' }}
+        continue-on-error: true
+
+      - name: Verify filesystem scan execution
+        id: verify-fs-scan
+        if: "!cancelled()"
+        uses: ./.github/actions/trivy-sarif-verify
+        with:
+          sarif-file: trivy-${{ inputs.scan-prefix }}-fs-scan.sarif
+          scan-type: "filesystem"
+
+      - name: Upload filesystem scan results to Security tab
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        if: always() && steps.verify-fs-scan.outcome == 'success' && steps.fs-scan.outcome != 'cancelled' && steps.fs-scan.outcome != 'skipped'
+        with:
+          sarif_file: trivy-${{ inputs.scan-prefix }}-fs-scan.sarif
+          category: trivy-${{ inputs.scan-prefix }}-fs-scan
+
+      - name: Trivy filesystem gate (CRITICAL,HIGH)
+        id: fs-gate
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
+        env:
+          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          format: "table"
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: "CRITICAL,HIGH"
+          trivyignores: ".trivyignore"
+          skip-setup-trivy: true
+          cache: false
+        continue-on-error: true
+
+      - name: Fail job if fs vulnerabilities found or verification failed
+        if: |
+          !cancelled() && (
+            steps.fs-scan.outcome == 'failure' ||
+            steps.fs-scan.outcome == 'skipped' ||
+            steps.fs-gate.outcome == 'failure' ||
+            steps.fs-gate.outcome == 'skipped' ||
+            steps.verify-fs-scan.outcome == 'failure'
+          )
+        run: |
+          if [ "${{ steps.fs-scan.outcome }}" == "skipped" ]; then
+            echo "::error::Trivy filesystem scan was skipped — security gate requires the scan to run"
+          fi
+
+          if [ "${{ steps.verify-fs-scan.outcome }}" == "failure" ]; then
+            echo "::error::SARIF検証が失敗しました — Trivyの異常終了または不正なSARIFの可能性があります"
+            echo "::warning::考えられる原因: DB取得失敗、タイムアウト、ディスク容量不足、SARIF出力不備"
+            echo "::notice::対処法: TrivyおよびSARIF検証ステップのログを確認してください"
+          fi
+
+          if [ "${{ steps.fs-scan.outcome }}" == "failure" ]; then
+            echo "::error::SARIFスキャンが異常終了しました — Trivy実行エラーの可能性があります"
+          fi
+
+          if [ "${{ steps.fs-gate.outcome }}" == "skipped" ]; then
+            echo "::error::Filesystem vulnerability gate was skipped because a prerequisite step did not complete successfully"
+          fi
+
+          if [ "${{ steps.fs-gate.outcome }}" == "failure" ]; then
+            echo "::error::脆弱性（CRITICAL/HIGH）がdependenciesで検出されました"
+            echo "::notice::対処法: 上記のTrivyテーブル出力を確認し、依存関係を更新してください"
+          fi
+
+          exit 1
+
+      - name: Set up Docker Build
+        if: ${{ inputs.scan-image }}
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Build production Docker image
+        if: ${{ inputs.scan-image }}
+        id: docker-build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          target: runtime
+          tags: api-test-devops:scan
+          load: true
+          # read-only: ci.yml の publish-image / compose-healthcheck が同一 scope に
+          # 書き込むため、ここは cache-to を持たない。PR での cache poisoning を防ぎ、
+          # 同一構成 (target: runtime / single-arch) の重複書き込みも避ける。
+          cache-from: type=gha,scope=api-test-runtime
+
+      - name: Fail if Docker build failed (security gate)
+        if: |
+          inputs.scan-image && !cancelled() && (
+            steps.docker-build.outcome == 'failure' ||
+            steps.docker-build.outcome == 'cancelled'
+          )
+        run: |
+          echo "::error::Docker build ${{ steps.docker-build.outcome }} — image scan skipped. Security gate requires image scan to pass."
+          exit 1
+
+      - name: Trivy image scan (SARIF for Security tab)
+        id: image-scan
+        if: inputs.scan-image && steps.docker-build.outcome == 'success'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
+        env:
+          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
+        with:
+          image-ref: api-test-devops:scan
+          format: "sarif"
+          output: trivy-${{ inputs.scan-prefix }}-image-scan.sarif
+          exit-code: "0"
+          ignore-unfixed: true
+          trivyignores: ".trivyignore"
+          cache: ${{ github.event_name != 'schedule' }}
+        continue-on-error: true
+
+      - name: Verify image scan execution
+        id: verify-image-scan
+        if: inputs.scan-image && !cancelled() && steps.image-scan.outcome != 'skipped'
+        uses: ./.github/actions/trivy-sarif-verify
+        with:
+          sarif-file: trivy-${{ inputs.scan-prefix }}-image-scan.sarif
+          scan-type: "image"
+
+      - name: Upload image scan results to Security tab
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        if: inputs.scan-image && always() && steps.verify-image-scan.outcome == 'success' && steps.image-scan.outcome != 'cancelled' && steps.image-scan.outcome != 'skipped'
+        with:
+          sarif_file: trivy-${{ inputs.scan-prefix }}-image-scan.sarif
+          category: trivy-${{ inputs.scan-prefix }}-image-scan
+
+      - name: Trivy image gate (CRITICAL,HIGH)
+        id: image-gate
+        if: inputs.scan-image && steps.docker-build.outcome == 'success'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
+        env:
+          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
+        with:
+          image-ref: api-test-devops:scan
+          format: "table"
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: "CRITICAL,HIGH"
+          trivyignores: ".trivyignore"
+          skip-setup-trivy: true
+          cache: false
+        continue-on-error: true
+
+      - name: Fail job if image vulnerabilities found or verification failed
+        if: |
+          inputs.scan-image && !cancelled() && steps.docker-build.outcome == 'success' && (
+            steps.image-scan.outcome == 'failure' ||
+            steps.image-scan.outcome == 'skipped' ||
+            steps.image-gate.outcome == 'failure' ||
+            steps.image-gate.outcome == 'skipped' ||
+            steps.verify-image-scan.outcome == 'failure'
+          )
+        run: |
+          if [ "${{ steps.image-scan.outcome }}" == "skipped" ]; then
+            echo "::error::Trivy image scan was skipped — security gate requires the scan to run"
+          fi
+
+          if [ "${{ steps.verify-image-scan.outcome }}" == "failure" ]; then
+            echo "::error::SARIF検証が失敗しました — Trivyの異常終了または不正なSARIFの可能性があります"
+            echo "::warning::考えられる原因: DB取得失敗、タイムアウト、ディスク容量不足、SARIF出力不備"
+            echo "::notice::対処法: TrivyおよびSARIF検証ステップのログを確認してください"
+          fi
+
+          if [ "${{ steps.image-scan.outcome }}" == "failure" ]; then
+            echo "::error::SARIFスキャンが異常終了しました — Trivy実行エラーの可能性があります"
+          fi
+
+          if [ "${{ steps.image-gate.outcome }}" == "skipped" ]; then
+            echo "::error::Image vulnerability gate was skipped because a prerequisite step did not complete successfully"
+          fi
+
+          if [ "${{ steps.image-gate.outcome }}" == "failure" ]; then
+            echo "::error::脆弱性（CRITICAL/HIGH）が Docker image で検出されました"
+            echo "::notice::対処法: 上記のTrivyテーブル出力を確認し、ベースイメージを更新してください"
+          fi
+
+          exit 1
+
+      - name: Clean up Docker image
+        if: always() && inputs.scan-image && steps.docker-build.outcome != 'skipped'
+        run: docker rmi api-test-devops:scan || true
