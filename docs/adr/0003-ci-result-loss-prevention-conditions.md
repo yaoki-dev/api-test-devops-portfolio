@@ -120,7 +120,7 @@ status-report:
 |---|---|
 | `always()` を維持 | GitHub 公式が critical task で非推奨。キャンセル時も実行され続け、キャンセルが即座に効かない |
 | 条件を付けず verify を常時実行 | 実行されなかったスキャンに対して verify が失敗し、原因の切り分けが困難になる |
-| upload ステップの `always()` も `!cancelled()` へ統一 | upload は `verify-*.outcome == 'success'` でガード済みでキャンセル時に走らない。統一しても実効差がなく、既存の `outcome != 'cancelled'` ガードを弱める変更を伴う |
+| upload ステップの `always()` も `!cancelled()` へ統一 | upload は `verify-*.outcome == 'success'` に依存するため、verify 到達前のキャンセルでは upload も走らない。差が出るのは verify 成功後にキャンセルが届く狭い窓だけで、そこで走るのは検証済み結果の保全であり意図した動作である（GitHub 公式も `always()` の用途として「キャンセル時でもログや結果を送る」を挙げる）。統一は既存の `outcome != 'cancelled'` ガードを弱める変更も伴う |
 | cleanup の `always()` も変更 | イメージ削除はキャンセル後にも必要な後始末であり、`always()` が正当な用途 |
 | 条件判定を Composite Action 内へ移す | Action は SARIF 検証という単一責務を持つ。実行可否の判断はワークフロー側の関心事であり、混在させると責務が不明瞭になる |
 
@@ -130,3 +130,4 @@ status-report:
 - 契約テスト: `tests/unit/test_trivy_workflow_contract.py`
 - 運用リファレンス: [CI/CD Pipeline](../reference/ci_cd_pipeline.md)
 - [GitHub Actions: Evaluate status of jobs and steps](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#status-check-functions)
+- [GitHub Actions: Workflow cancellation](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation) — キャンセル時にサーバが未完了ステップの `if` を再評価する挙動の根拠
