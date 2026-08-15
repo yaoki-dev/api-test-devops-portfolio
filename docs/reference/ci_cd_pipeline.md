@@ -401,7 +401,7 @@ ls -lh trivy-pr-fs-scan.sarif
 
 ```yaml
 - name: Verify image scan execution
-  if: always() && steps.image-scan.outcome != 'skipped'  # skip状態を正しく検出✅
+  if: "!cancelled() && steps.image-scan.outcome != 'skipped'"  # skip状態を正しく検出✅
 ```
 
 ### Status Report依存関係不足

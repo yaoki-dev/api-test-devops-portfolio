@@ -101,6 +101,25 @@ def test_reusable_trivy_scan_and_gate_contract(
     )
 
 
+def test_reusable_trivy_verify_steps_are_cancellable(trivy_workflow: dict[str, Any]) -> None:
+    # verify ステップに always() が混入すると、ワークフローキャンセル時も実行され続けて
+    # キャンセルが即座に効かなくなる（GitHub 公式が非推奨とする挙動）。過去に fs 側だけ
+    # !cancelled() へ移行して image 側が always() のまま取り残された経緯があるため、
+    # 両ステップを対称に固定して再発を防ぐ。
+    steps = {
+        step["id"]: step for step in trivy_workflow["jobs"]["trivy-scan"]["steps"] if "id" in step
+    }
+
+    for step_id in ("verify-fs-scan", "verify-image-scan"):
+        condition = steps[step_id]["if"]
+        assert "!cancelled()" in condition, (
+            f"{step_id} はキャンセル即応のため !cancelled() を使う必要がある: {condition}"
+        )
+        assert "always()" not in condition, (
+            f"{step_id} の always() はキャンセルを遅延させるため禁止: {condition}"
+        )
+
+
 def test_reusable_trivy_buildx_cache_contract(trivy_workflow: dict[str, Any]) -> None:
     steps = trivy_workflow["jobs"]["trivy-scan"]["steps"]
 

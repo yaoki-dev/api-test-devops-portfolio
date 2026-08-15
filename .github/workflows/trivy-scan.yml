@@ -153,7 +153,7 @@ jobs:
 
       - name: Verify image scan execution
         id: verify-image-scan
-        if: inputs.scan-image && always() && steps.image-scan.outcome != 'skipped'
+        if: inputs.scan-image && !cancelled() && steps.image-scan.outcome != 'skipped'
         uses: ./.github/actions/trivy-sarif-verify
         with:
           sarif-file: trivy-${{ inputs.scan-prefix }}-image-scan.sarif
