@@ -1,10 +1,10 @@
 # CI/CD Pipeline
 
-*最終更新: 2026-08-11*
+*最終更新: 2026-08-15*
 
 ## CI/CDパイプライン概要
 
-> **Source of truth**: CI 設定の正確な依存は [.github/workflows/ci.yml](../../.github/workflows/ci.yml) が唯一の真実源。本書の図・表は派生表現であり、ci.yml 変更時に追従すること。
+> **Source of truth**: CI 設定の正確な依存は [.github/workflows/ci.yml](../../.github/workflows/ci.yml) が真実源。ただし Trivy ジョブの中身は reusable workflow [.github/workflows/trivy-scan.yml](../../.github/workflows/trivy-scan.yml) に切り出されているため、そちらが真実源になる。本書の図・表は派生表現であり、両ファイル変更時に追従すること。
 
 ### CI/CD パイプライン構成（トリガー別）
 
@@ -150,20 +150,45 @@ CD 3ジョブ（`deploy-pages` / `publish-image` / `verify-published-image`）�
 - **標準化**: OASIS標準フォーマットで将来的な拡張性確保
 - **CI/CD最適化**: JSON形式で機械可読性向上
 
-### 3層検証システム（Composite Action実装）
+### 共通化の2層構造
 
-**再利用可能なComposite Action設計**:
+Trivy 関連の共通化は 2 つの粒度で行っています。
 
-全てのTrivyスキャン（pr-trivy-scan/post-trivy-scan）で共通のComposite Actionを使用することで、DRY原則を実践しメンテナンス性を向上させています（72行の重複コード→7行の呼び出しに削減）。
+| 層 | 実体 | 共有される単位 |
+|----|------|--------------|
+| ジョブ全体 | Reusable workflow `.github/workflows/trivy-scan.yml` | Trivy ジョブの全ステップ（スキャン + 検証 + ゲート + Docker build） |
+| ステップ内ロジック | Composite Action `.github/actions/trivy-sarif-verify` | SARIF の 3層検証ロジック |
+
+**Reusable workflow（ジョブ全体の共通化）**:
+
+`pr-trivy-scan` / `post-trivy-scan` は `steps` を持たず、`uses:` で `trivy-scan.yml` の `trivy-scan` ジョブを呼び出します。差分は `scan-prefix`（SARIF category の接頭辞）と `scan-image`（Image スキャン実施可否）の 2 入力のみです。
 
 ```yaml
-# .github/workflows/ci.yml実装例
+# .github/workflows/ci.yml（呼び出し側）
+pr-trivy-scan:
+  name: PR Trivy scan
+  if: github.event_name == 'pull_request'
+  permissions:
+    contents: read
+    security-events: write
+  uses: ./.github/workflows/trivy-scan.yml
+  with:
+    scan-prefix: pr
+    scan-image: ${{ github.base_ref == 'main' || contains(github.event.pull_request.labels.*.name, 'docker') }}
+```
+
+> **branch protection 注意**: reusable workflow の check 名は `<呼び出し側ジョブ名> / <呼び出され側ジョブ名>` になります。本実装では `PR Trivy scan / Trivy scan` です。required status check には呼び出し側ジョブ名（`PR Trivy scan`）単体では登録できません。
+
+**Composite Action（3層検証ロジックの共通化）**:
+
+```yaml
+# .github/workflows/trivy-scan.yml（呼び出され側）
 - name: Verify filesystem scan execution
   id: verify-fs-scan
   if: "!cancelled()"
   uses: ./.github/actions/trivy-sarif-verify
   with:
-    sarif-file: 'trivy-fs-scan.sarif'
+    sarif-file: trivy-${{ inputs.scan-prefix }}-fs-scan.sarif
     scan-type: 'filesystem'
 ```
 
@@ -192,7 +217,7 @@ Composite action（`.github/actions/trivy-sarif-verify/action.yml`）内部で�
   id: fs-scan
   continue-on-error: true  # スキャン失敗時もパイプライン継続
   run: |
-    trivy fs --format sarif --output trivy-fs-scan.sarif .
+    trivy fs --format sarif --output trivy-pr-fs-scan.sarif .
 
 # 検証ステップ（Composite Action使用）
 - name: Verify filesystem scan execution
@@ -200,7 +225,7 @@ Composite action（`.github/actions/trivy-sarif-verify/action.yml`）内部で�
   if: "!cancelled()"  # スキャン成否に関わらず実行（キャンセル時は実行しない）
   uses: ./.github/actions/trivy-sarif-verify
   with:
-    sarif-file: 'trivy-fs-scan.sarif'
+    sarif-file: trivy-${{ inputs.scan-prefix }}-fs-scan.sarif
     scan-type: 'filesystem'
 
 # アップロード（検証成功時のみ）
@@ -208,11 +233,12 @@ Composite action（`.github/actions/trivy-sarif-verify/action.yml`）内部で�
   if: always() && steps.verify-fs-scan.outcome == 'success'
   uses: github/codeql-action/upload-sarif@v4
   with:
-    sarif_file: 'trivy-fs-scan.sarif'
+    sarif_file: trivy-${{ inputs.scan-prefix }}-fs-scan.sarif
+    category: trivy-${{ inputs.scan-prefix }}-fs-scan
 
 # 上記は Stage 1a（全 severity を SARIF 収集）のみの抜粋。
 # CRITICAL / HIGH ゲートは後段の Stage 1b（exit-code: "1" の gate ステップ +
-# 失敗を明示的にジョブ失敗へ昇格させるステップ）が担う。実装は ci.yml を参照。
+# 失敗を明示的にジョブ失敗へ昇格させるステップ）が担う。実装は trivy-scan.yml を参照。
 ```
 
 **設計ポイント**:
@@ -220,7 +246,7 @@ Composite action（`.github/actions/trivy-sarif-verify/action.yml`）内部で�
 1. **`continue-on-error: true`**: Stage 1a（SARIF 収集）ではスキャン結果に関わらずジョブを止めず、後続の検証・アップロードを必ず通す。脆弱性による合否判定は Stage 1b の CRITICAL / HIGH ゲートが担い、ゲート失敗時はジョブを失敗させる（fail-closed）
 2. **`if: "!cancelled()"`**: スキャン失敗時も検証ステップを実行（失敗検出のため）。`always()` と異なりワークフローキャンセル時は実行しないため、キャンセルが即座に効く
 3. **`steps.verify-fs-scan.outcome == 'success'`**: 検証成功時のみGitHub Security Tabにアップロード
-4. **Composite Action活用**: 4箇所（pr-trivy-scan/post-trivy-scan各2）で同一ロジック共有
+4. **Composite Action活用**: reusable workflow 内の 2 箇所（filesystem / image）で同一ロジックを共有し、その reusable workflow を pr-trivy-scan / post-trivy-scan の両方が呼び出す
 5. **Composite Actionを活用した厳格な品質ゲート**:Composite Actionを活用し、テスト成果物欠落時の即時エラー（Hard fail）と、CI/CD間の厳格な責務分離をカプセル化しました。
 これにより、不完全なドキュメントの公開を構造的に防ぐ、妥協のない（Fail Fastな）パイプラインを実現しています。
 
@@ -323,14 +349,15 @@ publish 直後の GHCR 伝播遅延（一過性の 404/429/5xx）に対し、最
 **デバッグコマンド**:
 
 ```bash
-# ローカル再現
-trivy fs --format sarif --output trivy-fs-scan.sarif .
+# ローカル再現（CI 上のファイル名は trivy-<scan-prefix>-fs-scan.sarif。
+# scan-prefix は pr-trivy-scan なら pr、post-trivy-scan なら post）
+trivy fs --format sarif --output trivy-pr-fs-scan.sarif .
 
 # SARIF検証
-jq . trivy-fs-scan.sarif | head -20
+jq . trivy-pr-fs-scan.sarif | head -20
 
 # ファイルサイズ確認
-ls -lh trivy-fs-scan.sarif
+ls -lh trivy-pr-fs-scan.sarif
 ```
 
 ### Composite Action使用時の注意事項
