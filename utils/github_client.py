@@ -410,7 +410,7 @@ class AsyncGitHubClient:
         result = await self._request("GET", f"/repos/{owner}/{repo}")
         return validate_parsed_model(result, GitHubRepo, error_factory=GitHubAPIError)
 
-    async def _request(  # noqa: C901 - HTTPプロトコル処理の最小必要分岐（4xxステータス, 5xxリトライ, タイムアウト, キャンセル等）のため許容 CC≈12
+    async def _request(  # noqa: C901 - 個別ハンドラは委譲済み。PII-safeなretry/例外境界を本関数に集約
         self,
         method: str,
         endpoint: str,
