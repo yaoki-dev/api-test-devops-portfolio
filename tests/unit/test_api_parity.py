@@ -99,3 +99,12 @@ def test_sync_async_domain_method_parity() -> None:
         "definition synchronous and the async definition coroutine-based. "
         f"Coroutine-shape mismatches: {sorted(coroutine_mismatches)}"
     )
+
+    async_only_coroutine_mismatches = {
+        name for name in expected_async_only if not inspect.iscoroutinefunction(async_methods[name])
+    }
+    assert async_only_coroutine_mismatches == set(), (
+        "Allowlisted async-only methods must be coroutine-based. Convert the definition to "
+        "'async def' or drop the entry from INTENTIONALLY_ASYNC_ONLY / KNOWN_PARITY_DRIFT. "
+        f"Found: {sorted(async_only_coroutine_mismatches)}"
+    )
