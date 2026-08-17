@@ -77,7 +77,7 @@ jobs:
         # Pin v1.0.183 by commit SHA for supply-chain stability.
         # See: https://github.com/anthropics/claude-code-action/issues/1013 and #1236.
         # Checkout credential behavior is intentionally tied to this pinned SHA's source.
-        uses: anthropics/claude-code-action@1623c36729ac1cd5895198cded705a287de7db79 # v1.0.187
+        uses: anthropics/claude-code-action@9d7150bc8a3dae8149739a88019d192b579ad90c # v1.0.193
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Supplying github_token skips the OIDC GitHub App token exchange, whose app
