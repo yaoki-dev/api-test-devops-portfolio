@@ -1,7 +1,7 @@
 """JSONPlaceholder 非同期リソースクライアント"""
 
 import asyncio
-from typing import Any, Final, TypedDict, cast
+from typing import Any, Final, TypedDict
 
 from models.responses import Album, Comment, Photo, Post, Todo, User
 from utils.exceptions import ASYNC_FATAL_EXCEPTIONS, APIClientError, APIHTTPError
@@ -10,7 +10,7 @@ from utils.jsonplaceholder_base_async import AsyncAPIClient
 from utils.response_parsing import (
     parse_response_model,
     parse_response_model_list,
-    safe_parse_json,
+    safe_parse_json_object,
 )
 
 MAX_LOGGED_FAILURE_DETAILS: Final[int] = 5
@@ -73,10 +73,13 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             モデルでは検証が失敗する。``update_todo`` (PATCH) と同様、部分的な
             レスポンスを検証モデルに固定せず生の dict で返すのは意図的な設計。
 
+        Raises:
+            APIClientError: HTTPリクエストまたはレスポンスのJSONパースに失敗した場合
+                （レスポンスのトップレベルがJSONオブジェクトでない場合を含む）
         """
         data = {"title": title, "body": body}
         response = await self.put(f"/posts/{post_id}", json=data)
-        return cast("dict[str, Any]", safe_parse_json(response))
+        return safe_parse_json_object(response)
 
     async def delete_post(self, post_id: int) -> None:
         """投稿削除の非同期実行"""
@@ -148,14 +151,22 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             返すのは意図的な設計（必須フィールド欠落で ``extra="forbid"`` の
             検証が失敗するのを避けるため）。
 
+        Raises:
+            APIClientError: HTTPリクエストまたはレスポンスのJSONパースに失敗した場合
+                （レスポンスのトップレベルがJSONオブジェクトでない場合を含む）
         """
         response = await self.patch(f"/todos/{todo_id}", json=kwargs)
-        return cast("dict[str, Any]", safe_parse_json(response))
+        return safe_parse_json_object(response)
 
     async def create_user(self, user_data: dict[str, Any]) -> dict[str, Any]:
-        """新規ユーザーの非同期作成"""
+        """新規ユーザーの非同期作成
+
+        Raises:
+            APIClientError: HTTPリクエストまたはレスポンスのJSONパースに失敗した場合
+                （レスポンスのトップレベルがJSONオブジェクトでない場合を含む）
+        """
         response = await self.post("/users", json=user_data)
-        return cast("dict[str, Any]", safe_parse_json(response))
+        return safe_parse_json_object(response)
 
     async def bulk_create_users(self, users_data: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """複数ユーザーの非同期一括作成

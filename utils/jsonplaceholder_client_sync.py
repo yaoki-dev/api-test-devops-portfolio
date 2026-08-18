@@ -9,7 +9,7 @@ from utils.jsonplaceholder_base_sync import SyncAPIClient
 from utils.response_parsing import (
     parse_response_model,
     parse_response_model_list,
-    safe_parse_json,
+    safe_parse_json_object,
 )
 
 
@@ -71,12 +71,12 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
 
         Raises:
             APIClientError: HTTPリクエストまたはレスポンスのJSONパースに失敗した場合
+                （レスポンスのトップレベルがJSONオブジェクトでない場合を含む）
 
         """
         data = {"title": title, "body": body}
         response = self.put(f"/posts/{post_id}", json=data)
-        parsed: dict[str, Any] = safe_parse_json(response)
-        return parsed
+        return safe_parse_json_object(response)
 
     def delete_post(self, post_id: int) -> None:
         """投稿削除の実行
@@ -114,11 +114,11 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
 
         Raises:
             APIClientError: HTTPリクエストまたはレスポンスのJSONパースに失敗した場合
+                （レスポンスのトップレベルがJSONオブジェクトでない場合を含む）
 
         """
         response = self.post("/users", json=user_data)
-        parsed: dict[str, Any] = safe_parse_json(response)
-        return parsed
+        return safe_parse_json_object(response)
 
     def get_todos(
         self,
@@ -171,10 +171,12 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
             返すのは意図的な設計（必須フィールド欠落で ``extra="forbid"`` の
             検証が失敗するのを避けるため）。
 
+        Raises:
+            APIClientError: HTTPリクエストまたはレスポンスのJSONパースに失敗した場合
+                （レスポンスのトップレベルがJSONオブジェクトでない場合を含む）
         """
         response = self.patch(f"/todos/{todo_id}", json=kwargs)
-        parsed: dict[str, Any] = safe_parse_json(response)
-        return parsed
+        return safe_parse_json_object(response)
 
     def get_comments(self, post_id: int | None = None) -> list[Comment]:
         """コメント一覧の取得

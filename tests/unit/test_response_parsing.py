@@ -26,6 +26,9 @@ from utils.response_parsing import (
     safe_parse_json as _safe_parse_json,
 )
 from utils.response_parsing import (
+    safe_parse_json_object as _safe_parse_json_object,
+)
+from utils.response_parsing import (
     validate_parsed_model as _validate_parsed_model,
 )
 from utils.response_parsing import (
@@ -247,3 +250,54 @@ def test_safe_parse_json_unicode_decode_error_converted_to_api_json_decode_error
         _safe_parse_json(response)
 
     assert isinstance(exc_info.value.__cause__, UnicodeDecodeError)
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected_type_name"),
+    [
+        ([{"id": 1}], "list"),
+        ("plain string", "str"),
+        (42, "int"),
+        (True, "bool"),
+    ],
+)
+def test_safe_parse_json_object_rejects_non_object(
+    mock_response_factory: MockResponseFactory,
+    payload: object,
+    expected_type_name: str,
+) -> None:
+    """トップレベルが JSON オブジェクトでない場合に APIJSONDecodeError を送出する。
+
+    RFC 7159 上 JSON のトップレベルは配列・スカラーも取り得るため、``dict`` を
+    返す契約のメソッドは境界で検証しないと呼び出し側で素の ``TypeError`` が漏れる。
+    """
+    mock_response = mock_response_factory(payload)
+
+    with pytest.raises(APIJSONDecodeError) as exc_info:
+        _safe_parse_json_object(mock_response)
+
+    assert "Expected object JSON response" in str(exc_info.value)
+    assert expected_type_name in str(exc_info.value)
+    assert exc_info.value.response == mock_response
+
+
+def test_safe_parse_json_object_rejects_null(
+    mock_response_factory: MockResponseFactory,
+) -> None:
+    """``null`` ボディは fixture の payload 省略と区別して個別に検証する。"""
+    mock_response = mock_response_factory()
+    mock_response.json.return_value = None
+
+    with pytest.raises(APIJSONDecodeError) as exc_info:
+        _safe_parse_json_object(mock_response)
+
+    assert "NoneType" in str(exc_info.value)
+
+
+def test_safe_parse_json_object_returns_dict(
+    mock_response_factory: MockResponseFactory,
+) -> None:
+    payload = {"id": 1, "title": "t"}
+    mock_response = mock_response_factory(payload)
+
+    assert _safe_parse_json_object(mock_response) == payload

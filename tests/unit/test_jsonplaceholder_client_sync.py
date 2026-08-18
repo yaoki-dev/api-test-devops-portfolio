@@ -14,7 +14,7 @@ import respx
 
 from tests.constants import BASE_URL
 from tests.unit.helpers import make_mock_user, mock_get_route
-from utils.exceptions import APIHTTPError, APIRetryError
+from utils.exceptions import APIHTTPError, APIJSONDecodeError, APIRetryError
 from utils.jsonplaceholder_client_sync import SyncJSONPlaceholderClient
 
 pytestmark = pytest.mark.unit
@@ -686,3 +686,37 @@ def test_sync_delete_post_500_error(mock_backoff: Mock) -> None:
             client.delete_post(1)
 
     assert route.call_count == 4  # retry_count=3 → 初回 + リトライ3回
+
+
+@pytest.mark.parametrize(
+    ("method_name", "http_verb", "path", "call_args"),
+    [
+        ("update_post", "put", "/posts/1", (1, "Title", "Body")),
+        ("create_user", "post", "/users", ({"name": "New User"},)),
+        ("update_todo", "patch", "/todos/1", (1,)),
+    ],
+)
+@respx.mock
+def test_sync_dict_returning_methods_reject_non_object_json(
+    method_name: str,
+    http_verb: str,
+    path: str,
+    call_args: tuple[object, ...],
+) -> None:
+    """2xx でも非オブジェクト JSON なら APIJSONDecodeError を送出する。
+
+    ``dict[str, Any]`` の戻り値アノテーションは実行時に検証されないため、
+    契約違反が APIClientError 階層を迂回して呼び出し側に漏れないことを保証する。
+    """
+    route = getattr(respx, http_verb)(f"{BASE_URL}{path}").respond(
+        status_code=200,
+        json=["unexpected", "array"],
+    )
+
+    with SyncJSONPlaceholderClient() as client:
+        with pytest.raises(APIJSONDecodeError) as exc_info:
+            getattr(client, method_name)(*call_args)
+
+    assert "Expected object JSON response" in str(exc_info.value)
+    assert "list" in str(exc_info.value)
+    assert route.call_count == 1
