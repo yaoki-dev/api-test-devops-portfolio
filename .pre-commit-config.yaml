@@ -12,11 +12,15 @@ repos:
   # シークレット検出: gitleaks (system binary方式)
   # Go互換性問題回避のためソースビルドではなくシステムバイナリを使用
   # 前提: brew install gitleaks (macOS) または apt install gitleaks (Linux)
+  #
+  # `git --pre-commit --staged` はステージ済み差分のみを対象にする（実測 30〜350ms）。
+  # 旧 `detect --source .` は全履歴 448 コミット / 34MB を走査し 2分16秒かかっていた。
+  # 作業ツリー全体の secret スキャンは CI の Trivy fs gate が PR ごとに担当する。
   - repo: local
     hooks:
       - id: gitleaks
         name: gitleaks (detect secrets)
-        entry: gitleaks detect --source . --verbose --redact
+        entry: gitleaks git --pre-commit --staged --verbose --redact
         language: system
         pass_filenames: false
         stages: [pre-commit]
