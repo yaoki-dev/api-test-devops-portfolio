@@ -50,6 +50,49 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         response = self.post("/posts", json=data)
         return parse_response_model(response, Post)
 
+    def update_post(self, post_id: int, title: str, body: str) -> dict[str, Any]:
+        """投稿更新の実行
+
+        Note:
+            ``title`` と ``body`` のみ送信し ``userId`` を含めない。
+            JSONPlaceholder の PUT は送信フィールド ＋ ``id`` のみをエコーするため
+            （実測: ``PUT /posts/1`` が ``{"title", "body", "id"}`` を返し ``userId``
+            は欠落）、必須フィールド ``user_id`` ＋ ``extra="forbid"`` を持つ Post
+            モデルでは検証が失敗する。``update_todo`` (PATCH) と同様、部分的な
+            レスポンスを検証モデルに固定せず生の dict で返すのは意図的な設計。
+
+        Args:
+            post_id: 更新対象の投稿ID
+            title: 更新後のタイトル
+            body: 更新後の本文
+
+        Returns:
+            JSONPlaceholderが返した部分的な投稿データ
+
+        Raises:
+            APIClientError: HTTPリクエストまたはレスポンスのJSONパースに失敗した場合
+
+        """
+        data = {"title": title, "body": body}
+        response = self.put(f"/posts/{post_id}", json=data)
+        parsed: dict[str, Any] = safe_parse_json(response)
+        return parsed
+
+    def delete_post(self, post_id: int) -> None:
+        """投稿削除の実行
+
+        Args:
+            post_id: 削除対象の投稿ID
+
+        Returns:
+            None
+
+        Raises:
+            APIClientError: HTTPリクエストに失敗した場合
+
+        """
+        self.delete(f"/posts/{post_id}")
+
     def get_users(self) -> list[User]:
         """ユーザー一覧の取得"""
         response = self.get("/users")
@@ -59,6 +102,23 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         """特定ユーザーの取得"""
         response = self.get(f"/users/{user_id}")
         return parse_response_model(response, User)
+
+    def create_user(self, user_data: dict[str, Any]) -> dict[str, Any]:
+        """新規ユーザーの作成
+
+        Args:
+            user_data: 作成するユーザーのフィールド
+
+        Returns:
+            JSONPlaceholderが返した作成済みユーザーデータ
+
+        Raises:
+            APIClientError: HTTPリクエストまたはレスポンスのJSONパースに失敗した場合
+
+        """
+        response = self.post("/users", json=user_data)
+        parsed: dict[str, Any] = safe_parse_json(response)
+        return parsed
 
     def get_todos(
         self,

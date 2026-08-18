@@ -6,7 +6,7 @@ Note:
 """
 
 import json
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import httpx
 import pytest
@@ -14,6 +14,7 @@ import respx
 
 from tests.constants import BASE_URL
 from tests.unit.helpers import make_mock_user, mock_get_route
+from utils.exceptions import APIHTTPError, APIRetryError
 from utils.jsonplaceholder_client_sync import SyncJSONPlaceholderClient
 
 pytestmark = pytest.mark.unit
@@ -501,6 +502,52 @@ def test_sync_patch_method() -> None:
 
 
 @respx.mock
+def test_sync_update_post() -> None:
+    updated_data = {"id": 1, "title": "Updated Title", "body": "Updated Body"}
+    route = respx.put(f"{BASE_URL}/posts/1").respond(status_code=200, json=updated_data)
+
+    with SyncJSONPlaceholderClient() as client:
+        result = client.update_post(1, "Updated Title", "Updated Body")
+
+    assert result == updated_data
+    assert route.call_count == 1
+    assert route.calls[0].request.method == "PUT"
+    request_body = json.loads(route.calls[0].request.content)
+    assert request_body == {"title": "Updated Title", "body": "Updated Body"}
+
+
+@respx.mock
+def test_sync_delete_post() -> None:
+    route = respx.delete(f"{BASE_URL}/posts/1").respond(status_code=200)
+
+    with SyncJSONPlaceholderClient() as client:
+        result = client.delete_post(1)
+
+    assert result is None
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_sync_create_user() -> None:
+    user_data = {
+        "name": "New Sync User",
+        "email": "sync@example.com",
+        "phone": "123-456-7890",
+    }
+    created_user = {"id": 101, **user_data}
+    route = respx.post(f"{BASE_URL}/users").respond(status_code=201, json=created_user)
+
+    with SyncJSONPlaceholderClient() as client:
+        result = client.create_user(user_data)
+
+    assert result == created_user
+    assert route.call_count == 1
+    assert route.calls[0].request.method == "POST"
+    request_body = json.loads(route.calls[0].request.content)
+    assert request_body == user_data
+
+
+@respx.mock
 def test_sync_get_users() -> None:
     mock_users = [
         make_mock_user(
@@ -609,3 +656,33 @@ def test_sync_health_check_system_exception_propagates(
         with patch.object(client, "get", side_effect=exception_class(*exception_args)):
             with pytest.raises(exception_class):
                 client.health_check()
+
+
+@respx.mock
+def test_sync_update_post_404_error() -> None:
+    route = respx.put(f"{BASE_URL}/posts/99999").respond(
+        status_code=404,
+        json={"error": "Post not found"},
+    )
+
+    with SyncJSONPlaceholderClient() as client:
+        with pytest.raises(APIHTTPError) as exc_info:
+            client.update_post(99999, "Title", "Body")
+        assert exc_info.value.status_code == 404
+
+    assert route.call_count == 1  # 4xxはリトライせず即失敗
+
+
+@respx.mock
+@patch("utils.jsonplaceholder_base_sync.exponential_backoff_with_jitter", return_value=0.0)
+def test_sync_delete_post_500_error(mock_backoff: Mock) -> None:
+    route = respx.delete(f"{BASE_URL}/posts/1").respond(
+        status_code=500,
+        json={"error": "Internal server error"},
+    )
+
+    with SyncJSONPlaceholderClient(retry_count=3) as client:
+        with pytest.raises(APIRetryError):
+            client.delete_post(1)
+
+    assert route.call_count == 4  # retry_count=3 → 初回 + リトライ3回
