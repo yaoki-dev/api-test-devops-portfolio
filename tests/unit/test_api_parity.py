@@ -21,15 +21,6 @@ INTENTIONALLY_ASYNC_ONLY: dict[str, str] = {
     "get_user_data": "Uses asyncio.TaskGroup for concurrent related-data requests.",
 }
 
-KNOWN_PARITY_DRIFT: dict[str, str] = {
-    # Temporary drift: this operation is expected to gain a sync counterpart.
-    "update_post": "Async domain operation awaiting a future sync counterpart.",
-    # Temporary drift: this operation is expected to gain a sync counterpart.
-    "delete_post": "Async domain operation awaiting a future sync counterpart.",
-    # Temporary drift: this operation is expected to gain a sync counterpart.
-    "create_user": "Async domain operation awaiting a future sync counterpart.",
-}
-
 
 def _public_methods(client_class: type[Any]) -> dict[str, Callable[..., Any]]:
     """Return public methods defined directly on a client class."""
@@ -51,17 +42,10 @@ def test_sync_async_domain_method_parity() -> None:
     async_methods = _public_methods(AsyncJSONPlaceholderClient)
     sync_names = set(sync_methods)
     async_names = set(async_methods)
-    expected_async_only = set(INTENTIONALLY_ASYNC_ONLY) | set(KNOWN_PARITY_DRIFT)
+    expected_async_only = set(INTENTIONALLY_ASYNC_ONLY)
 
     assert all(reason.strip() for reason in INTENTIONALLY_ASYNC_ONLY.values()), (
         "Every intentional async-only method must have a non-empty reason."
-    )
-    assert all(reason.strip() for reason in KNOWN_PARITY_DRIFT.values()), (
-        "Every known parity drift method must have a non-empty reason."
-    )
-    assert set(INTENTIONALLY_ASYNC_ONLY).isdisjoint(KNOWN_PARITY_DRIFT), (
-        "Async-only allowlists must remain separate so intentional methods and parity drift "
-        "can be reviewed independently."
     )
     assert sync_names - async_names == set(), (
         "Sync-only public methods are not allowed. Add the method to both domain classes. "
@@ -105,6 +89,6 @@ def test_sync_async_domain_method_parity() -> None:
     }
     assert async_only_coroutine_mismatches == set(), (
         "Allowlisted async-only methods must be coroutine-based. Convert the definition to "
-        "'async def' or drop the entry from INTENTIONALLY_ASYNC_ONLY / KNOWN_PARITY_DRIFT. "
+        "'async def' or drop the entry from INTENTIONALLY_ASYNC_ONLY. "
         f"Found: {sorted(async_only_coroutine_mismatches)}"
     )

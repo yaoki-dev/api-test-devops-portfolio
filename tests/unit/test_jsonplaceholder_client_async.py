@@ -18,6 +18,7 @@ from tests.unit.helpers import assert_warning_log_count, make_canonical_user
 from utils.exceptions import (
     APIClientError,
     APIHTTPError,
+    APIJSONDecodeError,
     APIRetryError,
 )
 from utils.jsonplaceholder_client_async import (
@@ -1694,3 +1695,33 @@ async def test_bulk_create_users_details_truncated_true_above_max() -> None:
     detail = warn["failed_details"][0]
     assert "index" in detail
     assert "error_type" in detail
+
+
+@pytest.mark.parametrize(
+    ("method_name", "http_verb", "path", "call_args"),
+    [
+        ("update_post", "put", "/posts/1", (1, "Title", "Body")),
+        ("create_user", "post", "/users", ({"name": "New User"},)),
+        ("update_todo", "patch", "/todos/1", (1,)),
+    ],
+)
+@respx.mock
+async def test_async_dict_returning_methods_reject_non_object_json(
+    method_name: str,
+    http_verb: str,
+    path: str,
+    call_args: tuple[object, ...],
+) -> None:
+    """sync 版と同一の契約違反検出を async 側でも保証する（parity）。"""
+    route = getattr(respx, http_verb)(f"{BASE_URL}{path}").respond(
+        status_code=200,
+        json=["unexpected", "array"],
+    )
+
+    async with AsyncJSONPlaceholderClient() as client:
+        with pytest.raises(APIJSONDecodeError) as exc_info:
+            await getattr(client, method_name)(*call_args)
+
+    assert "Expected object JSON response" in str(exc_info.value)
+    assert "list" in str(exc_info.value)
+    assert route.call_count == 1

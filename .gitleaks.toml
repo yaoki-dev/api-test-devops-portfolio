@@ -4,6 +4,16 @@
 
 title = "api-test-devops-portfolio gitleaks config"
 
+# Inherit gitleaks' built-in ruleset.
+# Without this, a custom config REPLACES the default rules instead of extending
+# them, leaving zero detection rules and a scanner that always exits 0.
+# See https://github.com/gitleaks/gitleaks README: "define your own configuration,
+# default rules do not apply" vs. "extend a configuration".
+# Extending also inherits the default path allowlist (node_modules, images,
+# fonts, binaries), which reduces false positives.
+[extend]
+useDefault = true
+
 [allowlist]
 description = "Allowlisted files and patterns"
 
@@ -17,12 +27,16 @@ regexes = [
     '''(?i)mock[-_]?credential''',
 ]
 
-# Allowlist paths (files that may contain example/test secrets)
+# Allowlist paths (files that may contain example/test secrets).
+# Entries are kept as narrow as possible: a broad pattern here silently disables
+# detection for every future file that matches it.
 paths = [
-    '''\.env\.example$''',
-    '''\.env\.sample$''',
-    '''\.env\.template$''',
-    '''tests/fixtures/.*''',
-    '''tests/conftest\.py$''',
-    '''docs/.*\.md$''',
+    # Env templates, including infix forms such as .env.production.example.
+    # A bare .env is deliberately NOT allowlisted.
+    '''(^|/)\.env(\..+)?\.(example|sample|template)$''',
+    '''^tests/fixtures/.*''',
+    '''^tests/conftest\.py$''',
+    # Asserts that secrets never reach logs; holds intentional dummy tokens.
+    '''^tests/unit/test_github_client_request\.py$''',
+    '''^docs/.*\.md$''',
 ]
