@@ -34,9 +34,9 @@ paths = [
     # Env templates, including infix forms such as .env.production.example.
     # A bare .env is deliberately NOT allowlisted.
     '''(^|/)\.env(\..+)?\.(example|sample|template)$''',
-    '''tests/fixtures/.*''',
-    '''tests/conftest\.py$''',
+    '''^tests/fixtures/.*''',
+    '''^tests/conftest\.py$''',
     # Asserts that secrets never reach logs; holds intentional dummy tokens.
-    '''tests/unit/test_github_client_request\.py$''',
-    '''docs/.*\.md$''',
+    '''^tests/unit/test_github_client_request\.py$''',
+    '''^docs/.*\.md$''',
 ]
