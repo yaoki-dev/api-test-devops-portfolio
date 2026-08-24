@@ -161,9 +161,9 @@ uv run bandit -r utils/ config/ models/   # CI では実行されない
 
 - `uv.lock` を `Type=uv` として解析する
 - `severity: CRITICAL,HIGH` + `exit-code: 1`（`.github/workflows/trivy-scan.yml` の「Trivy filesystem gate」ステップ）
-- **カバー範囲は本番依存のみ 21/85 パッケージ**。`uv.lock` の残り 64 件（開発用依存）は報告されない
-- Trivy の `--include-dev-deps` フラグは **npm / yarn / gradle のみ対応**で `uv` は非対象のため、この差分はオプションで埋められない
-- 検出内訳は root 1 + direct 7 + indirect 13。`trivy fs --list-all-pkgs --format json` で再現できる
+- **カバー範囲は 85/85 パッケージ**（開発依存込み）。`fs-scan`/`fs-gate` の両ステップに `env: TRIVY_INCLUDE_DEV_DEPS: "true"` を設定し本番依存(21件)+開発依存(64件)を対象化した
+- Trivy CLI の `--include-dev-deps` フラグの `--help` 説明文は「supported: npm, yarn, gradle」とのみ記載され `uv` は明記されないが、実測では `uv.lock` にも有効（`trivy fs --scanners vuln uv.lock` で 21 パッケージ、`--include-dev-deps` 追加で 85 パッケージに増加）。ヘルプ文言と実挙動が一致しない未文書化の動作であり、trivy-action には対応する `with` 入力が無いため `env: TRIVY_INCLUDE_DEV_DEPS` で有効化する
+- 検出内訳（85件全体）は root 1 + direct 22 + indirect 62。うち開発依存分（Dev=true）は direct 15 + indirect 49 = 64 件、本番依存分（Dev=false）は root 1 + direct 7 + indirect 13 = 21 件。`trivy fs --include-dev-deps --list-all-pkgs --format json` で再現できる
 
 **手動実行・CI未統合**: safety
 
@@ -200,14 +200,16 @@ gitleaks git --pre-commit --staged --verbose --redact   # .pre-commit-config.yam
 |------|------------|--------------|--------|--------------|
 | SAST | コード脆弱性 | 毎 PR | ruff `S` ルール群 | ✅ |
 | SAST | コード脆弱性 | 手動のみ | bandit | ❌ CI未統合 |
-| SCA | 依存関係脆弱性 | 毎 PR + push(main/develop) | Trivy fs（本番依存のみ） | ✅ |
+| SCA | 依存関係脆弱性 | 毎 PR + push(main/develop) | Trivy fs（本番+開発依存 85/85） | ✅ |
 | SCA | 依存関係脆弱性 | 手動のみ | safety | ❌ CI未統合 |
 | SCA | 依存関係更新 | 週次 | Dependabot | ❌ |
 | コンテナ | image 脆弱性 | main向けPR / dockerラベルPR / push(main/develop) | Trivy image | ✅ |
 | シークレット | 平文シークレット | ローカルコミット時 | gitleaks | ❌ CI未統合 |
-| シークレット | 平文シークレット | 毎 PR | Trivy secret（既定 `vuln,secret`） | ⚠️ 有効だが未固定 |
+| シークレット | 平文シークレット | 毎 PR | Trivy secret（既定 `vuln,secret`） | ✅ ブロック中 |
 
 **補足**: 上表の「マージブロック」は各ワークフローの `exit-code: 1` 設定に基づく。実際のマージ阻止には GitHub branch protection の required status checks 登録が別途必要。
+
+**Trivy secret の設定固定状態（ブロック状態とは別軸）**: 上表の secret 行は現在 `severity: CRITICAL,HIGH` + `exit-code: 1` により実際にブロックする（`scanners` 既定値 `[vuln,secret]` が有効なため）。ただし `trivy-scan.yml` の全4ステップ（fs-scan/fs-gate/image-scan/image-gate）に `scanners:` 入力が無く、この既定値に暗黙的に依存している。trivy-action の将来的なアップデートで既定値が変更された場合、secret スキャンがサイレントに無効化されうる。恒久的に維持するなら `scanners: vuln,secret` の明示的固定を推奨する。
 
 ---
 
