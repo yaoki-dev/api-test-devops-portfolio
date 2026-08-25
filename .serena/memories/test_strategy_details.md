@@ -191,8 +191,8 @@ gitleaks git --pre-commit --staged --verbose --redact   # .pre-commit-config.yam
 ```
 
 - **CI未統合**: `ci.yml` は pre-commit を実行しない。`autoupdate-precommit.yml` は pre-commit の autoupdate 用に gitleaks バイナリを導入するのみ
-- CI 側は Trivy の secret scanner が代替する。Trivy の `--scanners` 既定値は `[vuln,secret]` のため現状は有効
-- ただし `trivy-scan.yml` の全4ステップに `scanners:` 入力が無く、既定値の変更でサイレントに無効化されうる（`scanners: vuln,secret` の明示的固定を推奨）
+- CI 側は Trivy の secret scanner が代替する
+- `trivy-scan.yml` の全4ステップ（fs-scan/fs-gate/image-scan/image-gate）に `scanners: "vuln,secret"` を明示固定し、既定値変更によるサイレントなスキャナードリフトを防止する。
 
 ### 4.5 チェック頻度（実測）
 
@@ -205,11 +205,11 @@ gitleaks git --pre-commit --staged --verbose --redact   # .pre-commit-config.yam
 | SCA | 依存関係更新 | 週次 | Dependabot | ❌ |
 | コンテナ | image 脆弱性 | main向けPR / dockerラベルPR / push(main/develop) | Trivy image | ✅ |
 | シークレット | 平文シークレット | ローカルコミット時 | gitleaks | ❌ CI未統合 |
-| シークレット | 平文シークレット | 毎 PR | Trivy secret（既定 `vuln,secret`） | ✅ ブロック中 |
+| シークレット | 平文シークレット | 毎 PR | Trivy secret（明示 `vuln,secret`） | ✅ ブロック中 |
 
 **補足**: 上表の「マージブロック」は各ワークフローの `exit-code: 1` 設定に基づく。実際のマージ阻止には GitHub branch protection の required status checks 登録が別途必要。
 
-**Trivy secret の設定固定状態（ブロック状態とは別軸）**: 上表の secret 行は現在 `severity: CRITICAL,HIGH` + `exit-code: 1` により実際にブロックする（`scanners` 既定値 `[vuln,secret]` が有効なため）。ただし `trivy-scan.yml` の全4ステップ（fs-scan/fs-gate/image-scan/image-gate）に `scanners:` 入力が無く、この既定値に暗黙的に依存している。trivy-action の将来的なアップデートで既定値が変更された場合、secret スキャンがサイレントに無効化されうる。恒久的に維持するなら `scanners: vuln,secret` の明示的固定を推奨する。
+**Trivy secret の設定固定状態（ブロック状態とは別軸）**: 上表の secret 行は現在 `severity: CRITICAL,HIGH` + `exit-code: 1` により実際にブロックする。`trivy-scan.yml` の全4ステップ（fs-scan/fs-gate/image-scan/image-gate）に `scanners: "vuln,secret"` を明示固定しているため、trivy-action の既定値変更による secret スキャンのサイレントな無効化を防止する。
 
 ---
 

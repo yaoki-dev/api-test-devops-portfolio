@@ -72,6 +72,9 @@ def test_reusable_trivy_scan_and_gate_contract(
         step["id"]: step for step in trivy_workflow["jobs"]["trivy-scan"]["steps"] if "id" in step
     }
 
+    for step_id in ("fs-scan", "fs-gate", "image-scan", "image-gate"):
+        assert steps[step_id]["with"]["scanners"] == "vuln,secret"
+
     assert steps["fs-scan"]["with"]["exit-code"] == "0"
     assert steps["fs-scan"]["with"]["format"] == "sarif"
     assert steps["verify-fs-scan"]["with"] == {

@@ -32,6 +32,7 @@ jobs:
           TRIVY_INCLUDE_DEV_DEPS: "true"
         with:
           scan-type: "fs"
+          scanners: "vuln,secret"
           scan-ref: "."
           format: "sarif"
           output: trivy-${{ inputs.scan-prefix }}-fs-scan.sarif
@@ -64,6 +65,7 @@ jobs:
           TRIVY_INCLUDE_DEV_DEPS: "true"
         with:
           scan-type: "fs"
+          scanners: "vuln,secret"
           scan-ref: "."
           format: "table"
           exit-code: "1"
@@ -145,6 +147,7 @@ jobs:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
         with:
           image-ref: api-test-devops:scan
+          scanners: "vuln,secret"
           format: "sarif"
           output: trivy-${{ inputs.scan-prefix }}-image-scan.sarif
           exit-code: "0"
@@ -176,6 +179,7 @@ jobs:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
         with:
           image-ref: api-test-devops:scan
+          scanners: "vuln,secret"
           format: "table"
           exit-code: "1"
           ignore-unfixed: true
