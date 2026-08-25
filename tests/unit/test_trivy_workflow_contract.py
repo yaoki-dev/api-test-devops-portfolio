@@ -11,6 +11,17 @@ CALLER_JOB_IDS = ("pr-trivy-scan", "post-trivy-scan")
 CALLER_PERMISSIONS = {"contents": "read", "security-events": "write"}
 IMAGE_TAG = "api-test-devops:scan"
 
+# scan/gate 4 ステップと、それぞれに期待する scan-type。ステップ ID 一覧の単一真実源で、
+# 各テストはこの dict を回す。ID を 3 箇所の literal で持つと、ステップ追加時に
+# 片方だけ更新して新ステップが無検証のまま素通りする経路が生まれるため集約する。
+TRIVY_SCAN_TYPES = {
+    "fs-scan": "fs",
+    "fs-gate": "fs",
+    "image-scan": "image",
+    "image-gate": "image",
+}
+FS_SCAN_REF = "."
+
 
 def _load_yaml(path: str, request: pytest.FixtureRequest) -> dict[str, Any]:
     data = yaml.safe_load((request.config.rootpath / path).read_text(encoding="utf-8"))
@@ -32,6 +43,18 @@ def ci_workflow(request: pytest.FixtureRequest) -> dict[str, Any]:
 @pytest.fixture
 def trivy_workflow(request: pytest.FixtureRequest) -> dict[str, Any]:
     return _load_yaml(".github/workflows/trivy-scan.yml", request)
+
+
+@pytest.fixture
+def trivy_steps(trivy_workflow: dict[str, Any]) -> dict[str, Any]:
+    """id をキーに引けるようにして、step の並び順に依存しない参照を全テストへ提供する。
+
+    id を持たない step は落とすため、必須 step から id が外れると参照側が KeyError で
+    落ちる。step の本数ではなく id の実在で契約を固定でき、step 追加では壊れない。
+    """
+    return {
+        step["id"]: step for step in trivy_workflow["jobs"]["trivy-scan"]["steps"] if "id" in step
+    }
 
 
 def test_reusable_trivy_workflow_call_contract(trivy_workflow: dict[str, Any]) -> None:
@@ -67,36 +90,33 @@ def test_reusable_trivy_job_name_permissions_and_verify_action(
 
 def test_reusable_trivy_scan_and_gate_contract(
     trivy_workflow: dict[str, Any],
+    trivy_steps: dict[str, Any],
 ) -> None:
-    steps = {
-        step["id"]: step for step in trivy_workflow["jobs"]["trivy-scan"]["steps"] if "id" in step
-    }
+    for step_id in TRIVY_SCAN_TYPES:
+        assert trivy_steps[step_id]["with"]["scanners"] == "vuln,secret"
 
-    for step_id in ("fs-scan", "fs-gate", "image-scan", "image-gate"):
-        assert steps[step_id]["with"]["scanners"] == "vuln,secret"
-
-    assert steps["fs-scan"]["with"]["exit-code"] == "0"
-    assert steps["fs-scan"]["with"]["format"] == "sarif"
-    assert steps["verify-fs-scan"]["with"] == {
+    assert trivy_steps["fs-scan"]["with"]["exit-code"] == "0"
+    assert trivy_steps["fs-scan"]["with"]["format"] == "sarif"
+    assert trivy_steps["verify-fs-scan"]["with"] == {
         "sarif-file": "trivy-${{ inputs.scan-prefix }}-fs-scan.sarif",
         "scan-type": "filesystem",
     }
-    assert steps["fs-gate"]["with"]["exit-code"] == "1"
-    assert steps["fs-gate"]["with"]["severity"] == "CRITICAL,HIGH"
+    assert trivy_steps["fs-gate"]["with"]["exit-code"] == "1"
+    assert trivy_steps["fs-gate"]["with"]["severity"] == "CRITICAL,HIGH"
     assert "exit 1" in next(
         step["run"]
         for step in trivy_workflow["jobs"]["trivy-scan"]["steps"]
         if step.get("name", "").startswith("Fail job if fs vulnerabilities")
     )
 
-    assert steps["image-scan"]["with"]["exit-code"] == "0"
-    assert steps["image-scan"]["with"]["format"] == "sarif"
-    assert steps["verify-image-scan"]["with"] == {
+    assert trivy_steps["image-scan"]["with"]["exit-code"] == "0"
+    assert trivy_steps["image-scan"]["with"]["format"] == "sarif"
+    assert trivy_steps["verify-image-scan"]["with"] == {
         "sarif-file": "trivy-${{ inputs.scan-prefix }}-image-scan.sarif",
         "scan-type": "image",
     }
-    assert steps["image-gate"]["with"]["exit-code"] == "1"
-    assert steps["image-gate"]["with"]["severity"] == "CRITICAL,HIGH"
+    assert trivy_steps["image-gate"]["with"]["exit-code"] == "1"
+    assert trivy_steps["image-gate"]["with"]["severity"] == "CRITICAL,HIGH"
     assert "exit 1" in next(
         step["run"]
         for step in trivy_workflow["jobs"]["trivy-scan"]["steps"]
@@ -104,17 +124,94 @@ def test_reusable_trivy_scan_and_gate_contract(
     )
 
 
-def test_reusable_trivy_verify_steps_are_cancellable(trivy_workflow: dict[str, Any]) -> None:
+def test_reusable_trivy_security_settings_are_pinned(trivy_steps: dict[str, Any]) -> None:
+    """走査範囲と抑制設定を固定し、ゲートが黙って弱くなる変更を検知する。
+
+    これらは `scanners` や `exit-code` と違い、緩めてもジョブは緑のまま通る。
+    prod 依存に脆弱性が無い状態では退行が永久に顕在化しないため、
+    「チェックが実行されなかった」と「合格した」を区別できるのは本テストだけになる。
+    """
+    for step_id, expected_scan_type in TRIVY_SCAN_TYPES.items():
+        with_block = trivy_steps[step_id].get("with", {})
+        env_block = trivy_steps[step_id].get("env", {})
+        assert with_block.get("scan-type") == expected_scan_type, (
+            f"{step_id}: scan-type は期待されたスキャン種別である必要がある: "
+            f"{with_block.get('scan-type')!r}"
+        )
+
+        # trivyignores はカンマ区切りで複数パスを取れる。完全一致で固定しないと
+        # `.trivyignore,.trivyignore-lax` のような追記で任意の CVE を抑制できてしまう。
+        assert with_block.get("trivyignores") == ".trivyignore", (
+            f"{step_id}: 抑制ファイルは .trivyignore 単体に限定する: "
+            f"{with_block.get('trivyignores')!r}"
+        )
+
+        # 脆弱性 DB の供給元。trivy の既定 (mirror.gcr.io / ghcr.io) ではなく ECR ミラーを
+        # 明示指定しているため、値を書き換えても既定へのフォールバックは起きない。到達可能な
+        # 攻撃者管理レジストリへ差し替えられると、空の DB を配って全スキャンを 0 件にできる。
+        assert env_block.get("TRIVY_DB_REPOSITORY") == "public.ecr.aws/aquasecurity/trivy-db", (
+            f"{step_id}: 脆弱性 DB は指定の ECR ミラーを指す必要がある: "
+            f"{env_block.get('TRIVY_DB_REPOSITORY')!r}"
+        )
+
+        # YAML の裸の true は bool になるため "true" 文字列と比較してはならない。
+        # 修正版のある脆弱性だけをゲート対象にするノイズ抑制方針を固定する。
+        assert with_block.get("ignore-unfixed") is True, (
+            f"{step_id}: ignore-unfixed は真偽値 True である必要がある: "
+            f"{with_block.get('ignore-unfixed')!r}"
+        )
+
+    # filesystem 側だけに課す契約。走査対象と走査範囲の両方を固定する。
+    for step_id in ("fs-scan", "fs-gate"):
+        # npm の devDependencies は filesystem 側だけ走査対象に含める。この env が消えるか
+        # 綴りを誤ると trivy は未知の TRIVY_* を黙って無視し、npm 走査が no-op に戻る。
+        env_block = trivy_steps[step_id].get("env", {})
+        assert env_block.get("TRIVY_INCLUDE_DEV_DEPS") == "true", (
+            f"{step_id}: npm devDependencies を走査対象に含める必要がある: "
+            f"{env_block.get('TRIVY_INCLUDE_DEV_DEPS')!r}"
+        )
+
+        # scan-ref はリポジトリ全体に固定する。狭められても trivy は成功で終わるため
+        # ジョブは緑のまま通り、package-lock.json が対象外に落ちて直上の
+        # TRIVY_INCLUDE_DEV_DEPS 契約が黙って no-op 化する。
+        assert trivy_steps[step_id].get("with", {}).get("scan-ref") == FS_SCAN_REF, (
+            f"{step_id}: filesystem の走査範囲はリポジトリ全体に固定する: "
+            f"{trivy_steps[step_id].get('with', {}).get('scan-ref')!r}"
+        )
+
+    # image 側に付けないのは意図的。Dockerfile は npm 成果物を COPY しないため no-op になる。
+    # 付いていたら「イメージにも npm 依存が入った」か「意図の取り違え」のどちらかで、
+    # どちらも本テストの前提が崩れているので気付けるようにする。
+    for step_id in ("image-scan", "image-gate"):
+        assert "TRIVY_INCLUDE_DEV_DEPS" not in trivy_steps[step_id].get("env", {}), (
+            f"{step_id}: image スキャンに npm 依存は存在しないため設定しない"
+        )
+
+
+def test_reusable_trivy_action_owner_is_pinned(trivy_steps: dict[str, Any]) -> None:
+    """スキャナ本体の供給元を固定する。
+
+    `uses` の owner を書き換えると、CI ランナー上で SARIF 書き込み権限を
+    持ったまま任意のリポジトリのコードが走る。SHA でピンされている限り
+    zizmor の unpinned-uses は通過してしまい、他に検知手段が無い。
+
+    SHA まで固定しないのは意図的。ピン形式の検査は zizmor が担っており、
+    ここで SHA を縛ると Dependabot の更新ごとに本テストが落ちる。
+    """
+    for step_id in TRIVY_SCAN_TYPES:
+        assert trivy_steps[step_id]["uses"].startswith("aquasecurity/trivy-action@"), (
+            f"{step_id}: trivy-action は公式リポジトリを指す必要がある: "
+            f"{trivy_steps[step_id]['uses']!r}"
+        )
+
+
+def test_reusable_trivy_verify_steps_are_cancellable(trivy_steps: dict[str, Any]) -> None:
     # verify ステップに always() が混入すると、ワークフローキャンセル時も実行され続けて
     # キャンセルが即座に効かなくなる（GitHub 公式が非推奨とする挙動）。過去に fs 側だけ
     # !cancelled() へ移行して image 側が always() のまま取り残された経緯があるため、
     # 両ステップを対称に固定して再発を防ぐ。
-    steps = {
-        step["id"]: step for step in trivy_workflow["jobs"]["trivy-scan"]["steps"] if "id" in step
-    }
-
     for step_id in ("verify-fs-scan", "verify-image-scan"):
-        condition = steps[step_id]["if"]
+        condition = trivy_steps[step_id]["if"]
         assert "!cancelled()" in condition, (
             f"{step_id} はキャンセル即応のため !cancelled() を使う必要がある: {condition}"
         )
@@ -140,19 +237,21 @@ def test_reusable_trivy_buildx_cache_contract(trivy_workflow: dict[str, Any]) ->
     assert "cache-to" not in build_step["with"]
 
 
-def test_reusable_trivy_image_tag_is_consistent(trivy_workflow: dict[str, Any]) -> None:
+def test_reusable_trivy_image_tag_is_consistent(
+    trivy_workflow: dict[str, Any],
+    trivy_steps: dict[str, Any],
+) -> None:
     """build / image-scan / image-gate / cleanup が同一タグを指すことを固定する。
 
     不一致は scan-image が true の実行（main 宛 PR と push）でしか露見せず、
     通常の PR では skip されるため CI が緑のまま潜伏する。
     """
     steps = trivy_workflow["jobs"]["trivy-scan"]["steps"]
-    by_id = {step["id"]: step for step in steps if "id" in step}
 
-    tag = by_id["docker-build"]["with"]["tags"]
+    tag = trivy_steps["docker-build"]["with"]["tags"]
     assert tag == IMAGE_TAG
-    assert by_id["image-scan"]["with"]["image-ref"] == IMAGE_TAG
-    assert by_id["image-gate"]["with"]["image-ref"] == IMAGE_TAG
+    assert trivy_steps["image-scan"]["with"]["image-ref"] == IMAGE_TAG
+    assert trivy_steps["image-gate"]["with"]["image-ref"] == IMAGE_TAG
 
     cleanup = next(step for step in steps if step.get("name") == "Clean up Docker image")
     assert IMAGE_TAG in cleanup["run"]
