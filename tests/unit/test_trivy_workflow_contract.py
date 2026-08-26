@@ -235,6 +235,77 @@ def test_reusable_trivy_buildx_cache_contract(trivy_workflow: dict[str, Any]) ->
     # cache-to は「未設定」であることが契約。ci.yml の publish-image / compose-healthcheck が
     # 同一 scope の唯一の writer で、ここが書くと PR 経由の cache poisoning 経路になる。
     assert "cache-to" not in build_step["with"]
+    # セキュリティゲートは常に最新の OS パッケージでスキャンする必要があるため、
+    # no-cache: true でキャッシュ再利用を止める。上の cache-from は no-cache が
+    # 外れた場合の再利用先を示すもので、no-cache と対で解釈する。
+    assert build_step["with"]["no-cache"] is True
+
+
+def test_compose_healthcheck_no_cache_targets_publish_branch_only(
+    ci_workflow: dict[str, Any],
+) -> None:
+    """no-cache は main push のみ。cache-to は push 全体で継続する（非対称の契約）。
+
+    鮮度を消費するのは main push 限定の publish-image だけなので、no-cache を
+    main に絞りビルド時間の重複を避ける。develop push の apt 層鮮度検証は
+    post-trivy-scan (no-cache: true) が別途担う。cache-to を push 全体に残す
+    のは PR 側の cache-from 読み取り元を維持するためで、両者の条件が異なる
+    ことは意図的である（詳細: docs/adr/0005-ci-cache-freshness-vs-build-time.md）。
+    """
+    steps = ci_workflow["jobs"]["compose-healthcheck"]["steps"]
+    build_step = next(step for step in steps if step.get("name") == "Build app(runtime) image")
+
+    non_pr = "github.event_name != 'pull_request'"
+    assert build_step["with"]["no-cache"] == "${{ github.ref == 'refs/heads/main' }}"
+    assert build_step["with"]["cache-to"] == (
+        f"${{{{ {non_pr} && 'type=gha,mode=max,scope=api-test-runtime' || '' }}}}"
+    )
+
+
+def test_publish_image_consumes_healthcheck_freshened_cache(ci_workflow: dict[str, Any]) -> None:
+    """公開側が「鮮度の契約」の受け手であることを固定する。
+
+    compose-healthcheck 側の no-cache/cache-to だけでは保証は閉じない。
+    publish-image が (1) compose-healthcheck の完了を待ち、(2) 同一 scope から
+    読む、の両方を満たして初めて「公開イメージが新鮮なレイヤに基づく」が成立する。
+    どちらかが欠けても既存 assert は緑のまま保証だけが失われるため、ここで固定する。
+    """
+    publish_job = ci_workflow["jobs"]["publish-image"]
+    assert "compose-healthcheck" in publish_job["needs"]
+
+    steps = publish_job["steps"]
+    build_step = next(step for step in steps if step.get("name") == "Build and push runtime image")
+    assert build_step["with"]["cache-from"] == "type=gha,scope=api-test-runtime"
+    # publish-image 自身も同一 scope の writer。ADR-0005 は writer が 2 つある前提で
+    # 保証範囲を書いているため、ここが変わると ADR の記述が実態から外れる。
+    assert build_step["with"]["cache-to"] == "type=gha,mode=max,scope=api-test-runtime"
+    # ADR-0005 が arm64 を保証対象外とするのは、公開が multi-arch なのに対し
+    # 鮮度を作る compose-healthcheck が runner ネイティブの単一 arch だけを
+    # ビルドするという非対称に依存する。ここが単一 arch になれば非保証の前提が
+    # 消え、逆に healthcheck 側が multi-arch 化すれば非保証を撤回できる。
+    assert build_step["with"]["platforms"] == "linux/amd64,linux/arm64"
+
+
+def test_api_test_runtime_scope_writers_are_exhaustive(
+    ci_workflow: dict[str, Any],
+    trivy_workflow: dict[str, Any],
+) -> None:
+    """api-test-runtime scope へ書き込む job を全列挙で固定する。
+
+    writer が増えると ADR-0005 の鮮度保証（どの job のレイヤが公開されるか）が
+    黙って崩れる。個別 job の assert は「増えた writer」を検知できないため、
+    両 workflow を走査して writer 集合そのものを契約にする。
+    """
+    scope = "scope=api-test-runtime"
+    writers = {
+        f"{workflow_name}:{job_id}"
+        for workflow_name, workflow in (("ci", ci_workflow), ("trivy-scan", trivy_workflow))
+        for job_id, job in workflow["jobs"].items()
+        if isinstance(job, dict)
+        for step in job.get("steps", [])
+        if scope in str(step.get("with", {}).get("cache-to", ""))
+    }
+    assert writers == {"ci:compose-healthcheck", "ci:publish-image"}
 
 
 def test_reusable_trivy_image_tag_is_consistent(

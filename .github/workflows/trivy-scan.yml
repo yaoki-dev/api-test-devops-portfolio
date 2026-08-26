@@ -127,7 +127,14 @@ jobs:
           # read-only: ci.yml の publish-image / compose-healthcheck が同一 scope に
           # 書き込むため、ここは cache-to を持たない。PR での cache poisoning を防ぎ、
           # 同一構成 (target: runtime / single-arch) の重複書き込みも避ける。
+          # セキュリティゲートは古い OS パッケージを GHA キャッシュから再利用しないため、
+          # no-cache: true で毎回 APT 更新を伴う再ビルドを強制する。
+          # この状態では cache-from は読み込まれない。それでも scope 指定を残すのは、
+          # 鮮度要件が緩和されて no-cache を外す場合の再利用先を、ci.yml 側の
+          # writer (compose-healthcheck / publish-image) と同一 scope として
+          # 明示しておくため。no-cache と cache-from はセットで解釈すること。
           cache-from: type=gha,scope=api-test-runtime
+          no-cache: true
 
       - name: Fail if Docker build failed (security gate)
         if: |

@@ -524,11 +524,18 @@ jobs:
           load: true
           # load: true時の manifest unknown エラー回避 (compose-test job と対称)
           provenance: false
-          # ci.yml の runtime キャッシュを読む。healthcheck job は読み取り専用にして
-          # PR時の cache poisoning と重複書き込みを避ける。
+          # PR: cache-from のみでキャッシュ再利用（高速化・書き込みなしで poisoning 回避）。
+          # main push: no-cache で最新レイヤを再ビルドし api-test-runtime scope に書き込む。
+          #   publish-image (main push 限定) が needs 経由でこの scope を読むため、ここで
+          #   新鮮化しないと Trivy ゲートと GHCR 公開イメージのレイヤが乖離しうる
+          #   (詳細: docs/adr/0005-ci-cache-freshness-vs-build-time.md)。
+          # develop push: apt 層の鮮度検証は post-trivy-scan (no-cache: true) が別途担うため、
+          #   ここではキャッシュを再利用する。cache-to は push 全体で継続し、PR の
+          #   cache-from 読み取り元を維持する（no-cache と cache-to の条件は非対称）。
           cache-from: |
             type=gha,scope=api-test-runtime
             type=gha,scope=compose-test
+          no-cache: ${{ github.ref == 'refs/heads/main' }}
           cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=max,scope=api-test-runtime' || '' }}
 
       - name: Start app and wait for healthy
