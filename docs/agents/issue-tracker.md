@@ -15,8 +15,11 @@ Use the `/create-issue` skill (or `create-issue` skill) which provides 6 templat
 - docs → label: `documentation`
 - feat → label: `enhancement`
 - ci → label: `enhancement`
-- security → label: `bug`
+- security → label: `bug`, `security`
 - chore → label: `dependencies`
+
+In addition to the type label, `/create-issue` applies the initial state label
+`needs-triage` so the issue is discoverable by `/mattpocock-skills:triage`.
 
 ## Conventions (aligned with seed template)
 
@@ -54,7 +57,7 @@ This repo uses **two separate label vocabularies**:
 
 | System | Purpose | Labels | Skill |
 |--------|---------|--------|-------|
-| **create-issue** | Issue *type* classification | `bug`, `documentation`, `enhancement`, `dependencies` | `/create-issue` |
+| **create-issue** | Issue *type* classification | `bug`, `documentation`, `enhancement`, `dependencies`, `security` | `/create-issue` |
 | **triage** | Issue *state* in workflow | `needs-triage`, `ready-for-execute`, `wontfix` | `/triage` |
 
 **Do not mix them.** Triage labels track workflow progress; create-issue labels categorize the work type. An issue has one type label and one triage state label simultaneously.
