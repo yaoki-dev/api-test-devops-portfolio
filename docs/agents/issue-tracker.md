@@ -60,6 +60,10 @@ This repo uses **two separate label vocabularies**:
 | **create-issue** | Issue *type* classification | `bug`, `documentation`, `enhancement`, `dependencies`, `security` | `/create-issue` |
 | **triage** | Issue *state* in workflow | `needs-triage`, `ready-for-execute`, `wontfix` | `/triage` |
 
-**Do not mix them.** Triage labels track workflow progress; create-issue labels categorize the work type. An issue has one type label and one triage state label simultaneously.
+**Do not mix them.** Triage labels track workflow progress; create-issue labels categorize the work type. An issue has one triage state label, plus one type label — except `security` issues, which carry two type labels (`bug` and `security`) simultaneously.
 
-See `docs/agents/triage-labels.md` for the triage state machine.
+The Issue Creation section above is the authoritative template-to-label
+mapping; the table here summarises the resulting type-label set. This file is
+the single source of truth for that vocabulary — `docs/agents/triage-labels.md`
+links here instead of duplicating it. See `docs/agents/triage-labels.md` for
+the triage state machine.

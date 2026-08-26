@@ -12,14 +12,12 @@
 
 ## Two Label Systems — Important Distinction
 
-This repo uses **two separate label vocabularies** for different purposes:
+This repo uses **two separate label vocabularies** for different purposes. The
+create-issue type-label vocabulary, and the rule for how many labels an issue
+carries, are defined in `docs/agents/issue-tracker.md` — see that file; do not
+duplicate them here.
 
-| System | Purpose | Labels | Skill |
-|--------|---------|--------|-------|
-| **create-issue** | Issue *type* classification | `bug`, `documentation`, `enhancement`, `dependencies` | `/create-issue` |
-| **triage** | Issue *state* in workflow | `needs-triage`, `ready-for-execute`, `wontfix` | `/triage` |
-
-**Do not mix them.** Triage labels track workflow progress; create-issue labels categorize the work type. An issue has one type label and one triage state label simultaneously.
+**Do not mix them.** Triage labels track workflow progress; create-issue labels categorize the work type.
 
 ## Rationale
 
@@ -45,4 +43,4 @@ gh label create "ready-for-execute" --color "0E8A16" --description "Ready for ag
 gh label create "wontfix" --color "FFFFFF" --description "Will not be addressed"
 ```
 
-> **Note**: `ready-for-human` label intentionally not created (unused). create-issue type labels (`bug`, `documentation`, `enhancement`, `dependencies`) are created separately via `/create-issue` workflow.
+> **Note**: `ready-for-human` label intentionally not created (unused). create-issue type labels (see `docs/agents/issue-tracker.md` § Issue Creation) are created separately via `/create-issue` workflow.
