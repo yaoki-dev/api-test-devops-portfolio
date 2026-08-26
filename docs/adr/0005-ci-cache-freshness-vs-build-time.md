@@ -10,6 +10,7 @@
 共有する複数ジョブで runtime イメージをビルドする。
 
 - `trivy-scan.yml`（セキュリティゲート）: `cache-from` のみ保持、書き込みなし
+  （本 ADR で `no-cache: true` を追加。詳細は後述）
 - `ci.yml` `compose-healthcheck`: PR は `cache-from` で読み取り、push は
   `api-test-runtime` scope への writer
 - `ci.yml` `publish-image`: `needs: [compose-test, compose-healthcheck, post-trivy-scan]`
@@ -24,15 +25,18 @@ GHA キャッシュはビルド時点のレイヤをそのまま再利用する�
 `apt-get update`/`upgrade` を伴うレイヤが実行されず、スキャン対象イメージが
 「その時点で最新の OS パッケージ」を反映しない場合がある。
 
-`trivy-scan.yml` は `no-cache: true` でゲート自身の鮮度を保証済みだった
-（`c912a67`／`8d85802`）。しかし `compose-healthcheck` は `no-cache` を持たず、
-push 時に `api-test-runtime` scope へ書き込むレイヤ自体が古いキャッシュから
-構築されうる状態だった。結果として:
+本 ADR 以前は `trivy-scan.yml`・`compose-healthcheck` のいずれも `no-cache` を
+持たず、双方がキャッシュ再利用のまま動作していた。そのため二段階の問題がある:
 
-- Trivy ゲート（fs/image scan）は新鮮なレイヤをスキャンして緑になる
-- しかし GHCR へ実際に公開されるイメージ（`publish-image` が読む scope）は
-  `compose-healthcheck` が書いた**古いレイヤ**のままになりうる
-- 「ゲートは緑だが公開イメージは脆弱」という偽の安全信号が発生する
+- ゲート自身の鮮度: Trivy がスキャンするイメージが `cache-from` 由来の古い
+  apt 層で構築され、その時点の OS パッケージ脆弱性を見落としうる
+- 公開イメージの鮮度: `compose-healthcheck` が push 時に `api-test-runtime`
+  scope へ書き込むレイヤ自体が古いキャッシュから構築され、`publish-image` が
+  それを読んで GHCR へ公開する
+
+前者を放置したままでは後者を直しても意味がなく、逆に前者だけを直すと
+「ゲートは緑だが公開イメージは脆弱」という偽の安全信号が発生する。
+したがってゲート側と writer 側の両方に鮮度保証を同時に入れる。
 
 鮮度を実際に消費するのは `publish-image` のみで、これは `main` push 限定
 （`github.ref == 'refs/heads/main'`）で動作する。一方 `compose-healthcheck`
