@@ -26,10 +26,10 @@
 
 ## 概要
 
-- **`1,457件のテストスイート`**（2026-07 実測）: Unit(1,433) / Integration(15, うちExternal 4件含む) / Performance(7, 週次のみ) / Smoke(2)
-- **`カバレッジ: 97.60%`**（2026-07 実測 / unit+integration条件）: 継続的な品質向上
-- **`CIカバレッジ対象テスト: 1,444件`**（unit+integration条件, external・performance・smoke除外。PR ValidationはこれにSmoke 2件をカバレッジ計測外で追加実行）
-  - 内訳: Unit 1,433件 + Integration 11件（15件のうちexternal 4件を除外）
+- **`1,525件のテストスイート`**（2026-08-25 `pytest --collect-only` 実測）: Unit(1,501) / Integration(15, うちExternal 4件含む) / Performance(7, 週次のみ) / Smoke(2)
+- **`カバレッジ: 97.64%`**（2026-08-25 `unit+integration` かつ `not external` 実測）: 継続的な品質向上
+- **`CIカバレッジ対象テスト: 1,512件`**（`unit or integration` かつ `not external`。external・performance・smoke除外。PR ValidationはこれにSmoke 2件をカバレッジ計測外で追加実行）
+  - 内訳: Unit 1,501件 + Integration 11件（15件のうちexternal 4件を除外）
 - **`CI/CD自動化`**: GitHub Actions による多段階パイプライン
 - **`セキュリティ`**: CI/CD品質ゲート（pytest + ruff + mypy + Trivy）
 - **`GitHub API統合`**: 実務的なAPI統合スキルを証明（Rate Limit管理、ETag活用、非同期処理）
@@ -212,6 +212,8 @@ flowchart TD
 | **`Multi-stage Docker`** | base/deps/runtime/test 4段階。本番 runtime 48.4 MB（pull size）・非root・ビルドキャッシュ最適化。 | 依存解決・runtime・testを分離し、最終イメージから不要なビルド/テスト依存を除外。代償として Dockerfile は複雑化し、単一 stage より理解コストが上がる。 |
 | **`多段階CIゲート`** | PR validation → Compose test/healthcheck → CD (Pages/GHCR/Verify) → Post validation + Trivy。 | PR時は品質確認、main反映後は公開物の検証まで分離し、失敗箇所を切り分けやすくする。代償としてパイプラインは長くなるため、並列化とキャッシュで実行時間を抑制。 |
 | **`Trivy 3層検証`** | PR: fs scan (develop/main)。main PR: + image scan。push: fs + image (post-trivy-scan)。 | 重複スキャンあり。キャッシュ戦略で実行時間抑制。SARIF で Security tab 統合。 |
+| **`Trivy: unfixed除外`** | `ignore-unfixed: true` で、Trivy の脆弱性 DB に修正情報が反映され、更新済み DB を使用したスキャンで検出された脆弱性をゲート対象にする。 | 修正未提供の脆弱性を合否から除外するリスク受容であり、脆弱性ゼロの証明ではない（詳細: [ADR-0004](docs/adr/0004-trivy-ignore-unfixed-policy.md)）。 |
+| **`Markdown品質ゲート`** | `.github/workflows/ci.yml` の `pr-md-quality-check` は markdownlint と textlint の結果を収集し、`Check lint results` でどちらかの失敗時にジョブを失敗させる。 | `continue-on-error` は診断の継続に限定し、品質ゲート自体は blocking とする（CI-1）。 |
 | **`GHCR + Pages 公開`** | GHCR: 匿名 pull 検証可能・OIDC 不要。Pages: カバレッジ HTML 公開・バッジ自動生成。 | GHCR は public repository 前提。Private repo は追加設定必要。 |
 
 

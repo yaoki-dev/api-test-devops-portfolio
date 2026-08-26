@@ -1,6 +1,6 @@
 # Project Index: api-test-devops-portfolio
 
-**Generated:** 2026-07-31
+**Generated:** 2026-08-25
 **Version:** 0.1.0
 **Python:** ==3.14.*
 
@@ -10,6 +10,13 @@
 
 ```
 api-test-devops-portfolio/
+├── README.md                 # プロジェクト概要・セットアップ手順
+├── PROJECT_INDEX.md          # リポジトリ構成と主要ドキュメントの索引
+├── REVIEW.md                 # コードレビュー基準と重大度定義
+├── CHANGELOG.md              # 変更履歴（Keep a Changelog / SemVer 準拠）
+├── CONTEXT.md                # ドメイン用語定義（現状は「CD実証」1項目のみ）
+├── CLAUDE.md                 # Claude Code 向けプロジェクト指示書
+├── AGENTS.md                 # エージェント向けプロジェクト指示
 ├── config/                 # 設定管理（Pydantic Settings）
 │   ├── __init__.py
 │   └── settings.py        # 型安全な環境変数管理
@@ -30,8 +37,8 @@ api-test-devops-portfolio/
 │   ├── logger.py          # 構造化ログ（structlog）
 │   ├── sentry_init.py     # エラー監視（Sentry SDK 初期化）
 │   └── sentry_scrub_*.py  # PIIスクラブ（events / values / primitives）
-├── tests/                  # テストスイート（全39 test files / 2026-07 実測）
-│   ├── unit/              # ユニットテスト（33 files）
+├── tests/                  # テストスイート（全44 test files / 2026-08-25 実測）
+│   ├── unit/              # ユニットテスト（38 files）
 │   ├── integration/       # 統合テスト（4 files）
 │   ├── performance/       # パフォーマンステスト（1 file）
 │   ├── conftest.py        # pytest fixtures
@@ -123,7 +130,12 @@ api-test-devops-portfolio/
 
 ### Core Documentation
 - **README.md**: プロジェクト概要・セットアップ手順・開発ガイド
+- **PROJECT_INDEX.md**: リポジトリ構成と主要ドキュメントの索引
+- **REVIEW.md**: コードレビュー基準と重大度定義
+- **CHANGELOG.md**: 変更履歴（Keep a Changelog / SemVer 準拠）
+- **CONTEXT.md**: ドメイン用語定義（`docs/agents/domain.md` の consumer rules が参照。現状は「CD実証」1項目のみ）
 - **CLAUDE.md**: Claude Code 向けプロジェクト指示書（開発ワークフロー、品質ゲート等）
+- **AGENTS.md**: エージェント向けプロジェクト指示（実装前提・既存パターン優先方針）
 
 ### Development Guides
 - **docs/DOCS_INDEX.md**: 公開ドキュメントの索引
@@ -140,15 +152,15 @@ api-test-devops-portfolio/
 ## 🧪 Test Coverage
 
 ### Test Statistics
-- **Total Test Files**: 39（2026-07 実測）
-- **Unit Tests**: 33 files (tests/unit/)
+- **Total Test Files**: 44（2026-08-25 実測）
+- **Unit Tests**: 38 files (tests/unit/)
 - **Integration Tests**: 4 files (tests/integration/)
 - **Performance Tests**: 1 file (tests/performance/)
 - **Smoke Tests**: 1 file (tests/test_smoke.py)
 
 ### Coverage Metrics
-- **Coverage**: 97.60%（2026-07 実測 / unit+integration条件）
-- **Target Coverage**: `pyproject.toml` の `--cov-fail-under` ✅ 達成済み
+- **Coverage**: 97.64%（2026-08-25 実測 / `unit+integration` かつ `not external`）
+- **Target Coverage**: 85%（`pyproject.toml` の `--cov-fail-under=85`）✅ 達成済み
 - **Coverage Reports**: `reports/coverage.json`, `reports/htmlcov/`
 
 ### Test Execution
@@ -282,8 +294,8 @@ open reports/htmlcov/index.html
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Test Coverage | 97.60%（2026-07 実測） | `pyproject.toml` の `--cov-fail-under` |
-| CI Test Files (unit+integration) | 37（2026-07 実測） | - |
+| Test Coverage | 97.64%（2026-08-25 実測） | `pyproject.toml` の `--cov-fail-under=85` |
+| CI Test Files (unit+integration) | 42（2026-08-25 実測） | - |
 | Python Version | 3.14 | - |
 | Code Quality | ruff + mypy | 0 errors |
 | Documentation | CLAUDE.md + README | - |

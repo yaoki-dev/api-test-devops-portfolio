@@ -9,7 +9,7 @@
 repo-root/
 ├── CONTEXT.md           # Minimal domain context (EXISTS, sparse)
 ├── docs/
-│   └── adr/             # Architecture Decision Records (TO BE CREATED)
+│   └── adr/             # Architecture Decision Records (EXISTS, see docs/adr/README.md)
 └── .claude/
     └── CLAUDE.md        # Agent instructions (includes CRITICAL RULES)
 ```
@@ -37,9 +37,10 @@ It does **not** yet contain the full domain glossary. The richer domain context 
 
 ### ADR Directory
 
-Currently **does not exist**. When created:
+**Exists.** See [`docs/adr/README.md`](../adr/README.md) for the current ADR index. When adding a new ADR:
 - Use Markdown ADR format (title, status, context, decision, consequences)
-- Number sequentially: `001-<short-title>.md`
+- Number sequentially: `NNNN-kebab-case-title.md`
+- Add a row to the ADR index in `docs/adr/README.md`
 - Reference from CONTEXT.md when relevant
 
 ## Future Migration
