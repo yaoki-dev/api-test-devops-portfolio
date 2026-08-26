@@ -19,7 +19,7 @@ Trivy の公式ドキュメントでは、`--ignore-unfixed` は修正が利用�
 
 `ignore-unfixed: true` を維持します。修正未提供の脆弱性は CI の合否判定から除外する
 リスク受容として扱い、ポートフォリオや CI の説明で「全脆弱性ゼロ」とは主張しません。
-修正が公開された時点で Trivy の結果に現れ、CRITICAL/HIGH ゲートの対象になります。
+Trivy の脆弱性 DB に修正情報が反映され、更新済み DB を使用したスキャンが実行された時点で、Trivy の結果に現れ、CRITICAL/HIGH ゲートの対象になります。
 
 ## Consequences
 
