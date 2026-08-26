@@ -91,10 +91,19 @@ cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=max,scope=ap
   本 ADR が保証するのはこの**鮮度のパリティ**であり、両者は独立したビルドのため
   レイヤの**同一性（digest 一致）は保証しない**。同一性を要求する場合は
   公開後の manifest digest を直接スキャンする設計が別途必要になる。
-- PR のビルド速度は変更なし（`no-cache` は main push 限定）。
-- develop push のビルド速度も変更なし（`no-cache` を main push 限定にした
-  ことで、鮮度に寄与しない cold build を発生させない）。develop push の
-  apt 層鮮度検証は `post-trivy-scan` が担うため、検証自体は失われない。
+- `compose-healthcheck` の `no-cache` は main push 限定のため、PR および
+  develop push の**このジョブの**ビルド速度は変更なし。鮮度を消費しない
+  cold build を増やさないという条件設計の狙いはここで達成される。
+- ただしビルド時間全体では、本 ADR がゲート側（`trivy-scan.yml`）にも
+  無条件 `no-cache: true` を入れるため、`scan-image: true` で起動する
+  経路には cold build のコストが新たに発生する:
+  - main 向け PR / `docker` ラベル付き PR（`pr-trivy-scan`）
+  - develop・main への push（`post-trivy-scan`）
+
+  これはゲート自身の鮮度と引き換えに受け入れるコストであり、
+  `compose-healthcheck` 側の条件付き `no-cache` とは独立した判断である
+  （ゲートの鮮度は分岐させず常に優先する）。develop push の apt 層鮮度検証を
+  `post-trivy-scan` が担えるのはこの無条件 `no-cache` が前提になっている。
 
 ### Negative
 
