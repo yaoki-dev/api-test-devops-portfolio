@@ -23,7 +23,7 @@ In addition to the type label, `/create-issue` applies the initial state label
 
 ## Conventions (aligned with seed template)
 
-- **Create an issue**: `gh issue create --title "..." --body "..."` (use heredoc for multi-line)
+- **Create an issue**: prefer `/create-issue`, which applies the labels for you. When calling `gh` directly, pass the type label plus `needs-triage` so the issue stays discoverable by `/mattpocock-skills:triage`: `gh issue create --title "..." --body "..." --label "bug,needs-triage"` (use heredoc for multi-line)
 - **Read an issue**: `gh issue view <number> --comments`, filter with `jq`
 - **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '...'`
 - **Comment**: `gh issue comment <number> --body "..."`
