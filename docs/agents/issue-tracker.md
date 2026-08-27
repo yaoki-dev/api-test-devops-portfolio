@@ -18,12 +18,12 @@ Use the `/create-issue` skill (or `create-issue` skill) which provides 6 templat
 - security → label: `bug`, `security`
 - chore → label: `dependencies`
 
-In addition to the type label, `/create-issue` applies the initial state label
+In addition to the type label(s), `/create-issue` applies the initial state label
 `needs-triage` so the issue is discoverable by `/mattpocock-skills:triage`.
 
 ## Conventions (aligned with seed template)
 
-- **Create an issue**: prefer `/create-issue`, which applies the labels for you. When calling `gh` directly, pass the type label plus `needs-triage` so the issue stays discoverable by `/mattpocock-skills:triage`: `gh issue create --title "..." --body "..." --label "bug,needs-triage"` (use heredoc for multi-line)
+- **Create an issue**: prefer `/create-issue`, which applies the labels for you. When calling `gh` directly, pass **all** type labels plus `needs-triage` so the issue stays discoverable by `/mattpocock-skills:triage`: `gh issue create --title "..." --body "..." --label "bug,needs-triage"` (use heredoc for multi-line). Security issues carry two type labels, so use `--label "bug,security,needs-triage"`.
 - **Read an issue**: `gh issue view <number> --comments`, filter with `jq`
 - **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '...'`
 - **Comment**: `gh issue comment <number> --body "..."`
@@ -58,7 +58,7 @@ This repo uses **two separate label vocabularies**:
 | System | Purpose | Labels | Skill |
 |--------|---------|--------|-------|
 | **create-issue** | Issue *type* classification | `bug`, `documentation`, `enhancement`, `dependencies`, `security` | `/create-issue` |
-| **triage** | Issue *state* in workflow | `needs-triage`, `ready-for-execute`, `wontfix` | `/triage` |
+| **triage** | Issue *state* in workflow | `needs-triage`, `ready-for-execute`, `wontfix` (active only — reserved labels below) | `/triage` |
 
 **Do not mix them.** Triage labels track workflow progress; create-issue labels categorize the work type. An issue has one triage state label, plus one type label — except `security` issues, which carry two type labels (`bug` and `security`) simultaneously.
 
