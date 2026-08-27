@@ -30,6 +30,7 @@
 | [ADR-0002](0002-sync-async-parity-api-client.md) | APIClient の Sync/Async Parity 設計と JSONPlaceholderClient の継承パターン | Accepted | `utils/jsonplaceholder_base_{sync,async}.py`、`utils/jsonplaceholder_client_{sync,async}.py` |
 | [ADR-0003](0003-ci-result-loss-prevention-conditions.md) | CI ジョブ結果の取りこぼしを防ぐ条件設計 | Accepted | `.github/workflows/trivy-scan.yml`、`.github/workflows/ci.yml` |
 | [ADR-0004](0004-trivy-ignore-unfixed-policy.md) | Trivy で修正未提供の脆弱性をゲート対象から除外する方針 | Accepted | `.github/workflows/trivy-scan.yml` |
+| [ADR-0005](0005-ci-cache-freshness-vs-build-time.md) | CI キャッシュ鮮度 vs ビルド時間のトレードオフ | Accepted | `.github/workflows/ci.yml`、`.github/workflows/trivy-scan.yml` |
 
 ## ADR 追加ルール
 
