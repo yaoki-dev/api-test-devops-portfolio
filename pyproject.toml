@@ -4,6 +4,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["utils", "config", "models"]
+exclude = ["/models/.vscode/**"]
 
 [project]
 name = "api-test-devops-portfolio"

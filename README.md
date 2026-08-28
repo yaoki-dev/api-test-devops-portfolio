@@ -26,10 +26,10 @@
 
 ## 概要
 
-- **`1,525件のテストスイート`**（2026-08-25 `pytest --collect-only` 実測）: Unit(1,501) / Integration(15, うちExternal 4件含む) / Performance(7, 週次のみ) / Smoke(2)
-- **`カバレッジ: 97.64%`**（2026-08-25 `unit+integration` かつ `not external` 実測）: 継続的な品質向上
-- **`CIカバレッジ対象テスト: 1,512件`**（`unit or integration` かつ `not external`。external・performance・smoke除外。PR ValidationはこれにSmoke 2件をカバレッジ計測外で追加実行）
-  - 内訳: Unit 1,501件 + Integration 11件（15件のうちexternal 4件を除外）
+- **`1,533件のテストスイート`**（2026-08-28 `pytest --collect-only --no-cov` 実測）: Unit(1,509) / Integration(15, うちExternal 4件含む) / Performance(7, 週次のみ) / Smoke(2)
+- **`カバレッジ: 97.31%`**（2026-08-28 `unit+integration` かつ `not external` 実測）: 継続的な品質向上
+- **`CIカバレッジ対象テスト: 1,520件`**（`unit or integration` かつ `not external`。external・performance・smoke除外。PR ValidationはこれにSmoke 2件をカバレッジ計測外で追加実行）
+  - 内訳: Unit 1,509件 + Integration 11件（15件のうちexternal 4件を除外）
 - **`CI/CD自動化`**: GitHub Actions による多段階パイプライン
 - **`セキュリティ`**: CI/CD品質ゲート（pytest + ruff + mypy + Trivy）
 - **`GitHub API統合`**: 実務的なAPI統合スキルを証明（Rate Limit管理、ETag活用、非同期処理）

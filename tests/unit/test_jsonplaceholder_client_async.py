@@ -338,11 +338,11 @@ async def test_async_concurrent_requests(sample_users_list):
 
 
 @respx.mock
-async def test_async_multiple_users_with_semaphore():
+async def test_async_multiple_users_with_rolling_window():
     """
     respx はリクエスト時刻を記録しないため、このテストでは戻り値だけを検証する。
 
-    max_concurrent の実測は test_semaphore_initialized_with_correct_max_concurrent で行う。
+    max_concurrent の実測は test_rolling_window_respects_max_concurrent で行う。
     """
 
     routes = {}
@@ -361,9 +361,10 @@ async def test_async_multiple_users_with_semaphore():
 
 
 @respx.mock
-async def test_semaphore_initialized_with_correct_max_concurrent():
+async def test_rolling_window_respects_max_concurrent():
     """
-    asyncio.sleep(0) で event loop に制御を返し、実行中タスク数の上限を観測する。
+    asyncio.sleep(0) で event loop に制御を返し、rolling window による
+    実行中タスク数の上限を観測する。
     """
     max_concurrent_observed = 0
     current_concurrent = 0
@@ -486,6 +487,86 @@ async def test_async_post_create_user():
     assert request_body["name"] == "New Async User"
     assert request_body["email"] == "async@example.com"
     assert request_body["phone"] == "123-456-7890"
+
+
+@pytest.mark.parametrize("invalid_max_concurrent", [0, -1])
+async def test_async_bulk_create_users_rejects_non_positive_max_concurrent(
+    invalid_max_concurrent: int,
+) -> None:
+    with patch.object(
+        AsyncJSONPlaceholderClient,
+        "create_user",
+        new_callable=AsyncMock,
+    ) as mock_create:
+        async with AsyncJSONPlaceholderClient() as client:
+            with pytest.raises(ValueError, match="max_concurrent must be >= 1"):
+                await client.bulk_create_users(
+                    [{"name": "A"}],
+                    max_concurrent=invalid_max_concurrent,
+                )
+
+    mock_create.assert_not_called()
+
+
+async def test_async_bulk_create_users_bounds_admission_window() -> None:
+    first_finished = asyncio.Event()
+    remaining_release = asyncio.Event()
+    started_second = asyncio.Event()
+    started_third = asyncio.Event()
+    started_count = 0
+
+    async def create_user(user_data: dict[str, object]) -> dict[str, object]:
+        nonlocal started_count
+        started_count += 1
+        if started_count == 2:
+            started_second.set()
+        if started_count == 3:
+            started_third.set()
+        if user_data["id"] == 0:
+            await first_finished.wait()
+        else:
+            await remaining_release.wait()
+        return user_data
+
+    users_to_create = [{"id": index} for index in range(5)]
+    with patch.object(
+        AsyncJSONPlaceholderClient,
+        "create_user",
+        new_callable=AsyncMock,
+        side_effect=create_user,
+    ):
+        async with AsyncJSONPlaceholderClient() as client:
+            operation = asyncio.create_task(
+                client.bulk_create_users(users_to_create, max_concurrent=2),
+            )
+            await asyncio.wait_for(started_second.wait(), timeout=0.05)
+            assert started_count == 2
+            first_finished.set()
+            await asyncio.wait_for(started_third.wait(), timeout=0.05)
+            assert started_count == 3
+            remaining_release.set()
+            results = await operation
+
+    assert [result["id"] for result in results] == [0, 1, 2, 3, 4]
+
+
+@pytest.mark.parametrize("invalid_max_concurrent", [0, -1])
+async def test_async_multiple_users_rejects_non_positive_max_concurrent(
+    invalid_max_concurrent: int,
+) -> None:
+    with patch.object(
+        AsyncJSONPlaceholderClient,
+        "get_user",
+        new_callable=AsyncMock,
+    ) as mock_get:
+        async with AsyncJSONPlaceholderClient() as client:
+            with pytest.raises(ValueError, match="max_concurrent must be >= 1"):
+                await client.get_multiple_users(
+                    [1],
+                    max_concurrent=invalid_max_concurrent,
+                )
+
+    mock_get.assert_not_called()
 
 
 @respx.mock
