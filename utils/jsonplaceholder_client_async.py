@@ -471,15 +471,13 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 
         successful: list[User] = []
         for index, result in enumerate(results):
-            if isinstance(result, APIClientError):
+            if isinstance(result, BaseException):
                 self.logger.warning(
                     "get_user_failed",
                     user_id=user_ids[index],
                     error_type=type(result).__name__,
                 )
                 continue
-            if isinstance(result, BaseException):
-                raise result
             successful.append(result)
 
         failed_count = len(user_ids) - len(successful)
