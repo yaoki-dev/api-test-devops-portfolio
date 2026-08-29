@@ -35,6 +35,11 @@ async def _run_rolling_window[ResultT](
         終了まで待ち切ってから例外を伝播する。呼び出し側が例外を受け取った時点で
         孤立タスクは残っていない。
 
+        同一バッチ内で複数タスクが打ち切り対象の例外を出した場合、送出されるのは
+        最小インデックスのものだけで、残りは ``gather()`` に吸収され失われる。
+        ``done`` を入力インデックス順に処理することで、どれが送出されるかを
+        ``set`` の反復順に依存させず決定的にしている。
+
         ``results`` は完了順ではなく入力順で返る。``operation`` はインデックスを
         受け取り、そのインデックスの位置へ結果が書き戻される。
 
@@ -59,7 +64,7 @@ async def _run_rolling_window[ResultT](
                 pending,
                 return_when=asyncio.FIRST_COMPLETED,
             )
-            for task in done:
+            for task in sorted(done, key=lambda completed: pending[completed]):
                 index = pending.pop(task)
                 try:
                     results[index] = task.result()
@@ -238,6 +243,8 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 
         個別失敗を許容し、成功したユーザーのみ入力順で返却する。入力件数に関係なく
         作成済みタスク数を制限し、K8s SIGTERM 等によるキャンセルは既存契約どおり再送出する。
+        fatal 例外（キャンセル・OOM 等）は収集せず即座に再送出するため、その時点で
+        未投入の残りユーザーに対する POST は発行されない。
 
         Args:
             users_data: 作成するユーザーデータのリスト（各要素は name/email を含む dict）
@@ -248,8 +255,7 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
 
         Raises:
             ValueError: max_concurrent が 1 未満の場合
-            asyncio.CancelledError: 単一タスクがキャンセルされた場合（graceful shutdown 等）
-            BaseExceptionGroup: 複数タスクが同時に fatal 例外を発生させた場合
+            asyncio.CancelledError: タスクがキャンセルされた場合（graceful shutdown 等）
             KeyboardInterrupt: 割り込みシグナルを受けた場合
             SystemExit: sys.exit() が呼び出された場合
             MemoryError: メモリ不足が発生した場合
@@ -261,22 +267,8 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             operation=lambda index: self.create_user(users_data[index]),
             item_count=len(users_data),
             max_concurrent=max_concurrent,
-            collect_exception=lambda _: True,
+            collect_exception=lambda exc: not isinstance(exc, ASYNC_FATAL_EXCEPTIONS),
         )
-
-        fatal_exceptions = [r for r in results if isinstance(r, ASYNC_FATAL_EXCEPTIONS)]
-        if fatal_exceptions:
-            if len(fatal_exceptions) > 1:
-                self.logger.error(
-                    "bulk_create_multiple_fatal_errors",
-                    count=len(fatal_exceptions),
-                    types=[type(e).__name__ for e in fatal_exceptions],
-                )
-                raise BaseExceptionGroup(
-                    "bulk_create_users: multiple fatal errors occurred",
-                    fatal_exceptions,
-                )
-            raise fatal_exceptions[0]
 
         successful: list[dict[str, Any]] = [r for r in results if isinstance(r, dict)]
         failed: list[BaseException] = [r for r in results if isinstance(r, BaseException)]
