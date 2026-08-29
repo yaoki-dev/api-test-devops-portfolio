@@ -866,6 +866,34 @@ async def test_async_bulk_create_users_stops_admission_on_fatal() -> None:
     assert started_count == 2, "fatal 検知後に残り 8 件が投入されていないこと"
 
 
+async def test_async_bulk_create_users_does_not_admit_after_same_batch_fatal() -> None:
+    """同一完了バッチ内の fatal 検出前に後続ユーザーを投入しない契約。"""
+    loop = asyncio.get_running_loop()
+    previous_factory = loop.get_task_factory()
+    loop.set_task_factory(asyncio.eager_task_factory)
+
+    async def create_user(user_data: dict[str, object]) -> dict[str, object]:
+        if user_data["id"] == 1:
+            raise asyncio.CancelledError
+        return user_data
+
+    users_to_create = [{"id": index} for index in range(4)]
+    try:
+        with patch.object(
+            AsyncJSONPlaceholderClient,
+            "create_user",
+            new_callable=AsyncMock,
+            side_effect=create_user,
+        ) as mock_create:
+            async with AsyncJSONPlaceholderClient() as client:
+                with pytest.raises(asyncio.CancelledError):
+                    await client.bulk_create_users(users_to_create, max_concurrent=2)
+
+        assert mock_create.call_count == 2
+    finally:
+        loop.set_task_factory(previous_factory)
+
+
 async def test_run_rolling_window_processes_batch_in_input_order() -> None:
     """同一バッチの完了タスクを入力インデックス順に処理する契約。
 

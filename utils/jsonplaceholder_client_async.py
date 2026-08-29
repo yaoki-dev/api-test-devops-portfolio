@@ -17,6 +17,27 @@ from utils.response_parsing import (
 MAX_LOGGED_FAILURE_DETAILS: Final[int] = 5
 
 
+def _process_completed_tasks[ResultT](
+    done: set[asyncio.Task[ResultT]],
+    pending: dict[asyncio.Task[ResultT], int],
+    results: list[ResultT | BaseException | None],
+    collect_exception: Callable[[BaseException], bool],
+) -> BaseException | None:
+    """Store completed results and return the first exception that should propagate."""
+    fatal_exception: BaseException | None = None
+    for task in sorted(done, key=lambda completed: pending[completed]):
+        index = pending.pop(task)
+        try:
+            results[index] = task.result()
+        except BaseException as exc:
+            if not collect_exception(exc):
+                if fatal_exception is None:
+                    fatal_exception = exc
+            else:
+                results[index] = exc
+    return fatal_exception
+
+
 async def _run_rolling_window[ResultT](
     operation: Callable[[int], Coroutine[Any, Any, ResultT]],
     item_count: int,
@@ -64,14 +85,16 @@ async def _run_rolling_window[ResultT](
                 pending,
                 return_when=asyncio.FIRST_COMPLETED,
             )
-            for task in sorted(done, key=lambda completed: pending[completed]):
-                index = pending.pop(task)
-                try:
-                    results[index] = task.result()
-                except BaseException as exc:
-                    if not collect_exception(exc):
-                        raise
-                    results[index] = exc
+            fatal_exception = _process_completed_tasks(
+                done,
+                pending,
+                results,
+                collect_exception,
+            )
+            if fatal_exception is not None:
+                raise fatal_exception
+
+            for _ in done:
                 schedule_next()
     finally:
         if pending:
