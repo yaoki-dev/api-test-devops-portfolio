@@ -539,15 +539,54 @@ async def test_async_bulk_create_users_bounds_admission_window() -> None:
             operation = asyncio.create_task(
                 client.bulk_create_users(users_to_create, max_concurrent=2),
             )
-            await asyncio.wait_for(started_second.wait(), timeout=0.05)
+            # timeout はハング検出の上限であり到達時間の期待値ではない。
+            # 遅い CI ランナーでの誤検知を避けるため余裕を取る。
+            await asyncio.wait_for(started_second.wait(), timeout=5.0)
             assert started_count == 2
             first_finished.set()
-            await asyncio.wait_for(started_third.wait(), timeout=0.05)
+            await asyncio.wait_for(started_third.wait(), timeout=5.0)
             assert started_count == 3
             remaining_release.set()
             results = await operation
 
     assert [result["id"] for result in results] == [0, 1, 2, 3, 4]
+
+
+async def test_async_multiple_users_cancels_and_awaits_pending_on_fatal() -> None:
+    """収集対象外の例外で打ち切る際、保留タスクを cancel し終了まで待ってから伝播する契約。
+
+    get_multiple_users は APIClientError のみを収集対象とするため、それ以外の例外は
+    rolling window 内で即座に再送出される。この経路は bulk_create_users からは到達
+    できない（全例外を収集する述語を渡すため）。後始末を怠るとタスクが未 await の
+    まま破棄され、"Task was destroyed but it is pending" やイベントループ汚染として
+    後続テストに漏れる。
+    """
+    blocked_started = asyncio.Event()
+    blocked_cancelled = asyncio.Event()
+    never_set = asyncio.Event()
+
+    async def get_user(user_id: int) -> User:
+        if user_id == 1:
+            blocked_started.set()
+            try:
+                await never_set.wait()
+            except asyncio.CancelledError:
+                blocked_cancelled.set()
+                raise
+        await blocked_started.wait()
+        raise RuntimeError("fatal failure outside the collected exception set")
+
+    with patch.object(
+        AsyncJSONPlaceholderClient,
+        "get_user",
+        new_callable=AsyncMock,
+        side_effect=get_user,
+    ):
+        async with AsyncJSONPlaceholderClient() as client:
+            with pytest.raises(RuntimeError, match="fatal failure"):
+                await client.get_multiple_users([1, 2], max_concurrent=2)
+
+    assert blocked_cancelled.is_set()
 
 
 @pytest.mark.parametrize("invalid_max_concurrent", [0, -1])

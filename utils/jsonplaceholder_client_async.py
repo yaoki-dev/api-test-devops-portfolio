@@ -23,7 +23,22 @@ async def _run_rolling_window[ResultT](
     max_concurrent: int,
     collect_exception: Callable[[BaseException], bool],
 ) -> list[ResultT | BaseException]:
-    """Run indexed async operations with bounded task admission."""
+    """Run indexed async operations with bounded task admission.
+
+    Notes:
+        ``collect_exception`` が制御フローを二分する。``True`` を返した例外は
+        ``results`` の該当インデックスへ格納され処理が続行するが、``False`` を返すと
+        その場で再送出され残りの入力は投入されない。呼び出し側はこの述語で
+        「部分失敗を許容する」か「即座に打ち切る」かを選ぶ。
+
+        打ち切り時は ``finally`` が保留タスクを ``cancel()`` し ``gather()`` で
+        終了まで待ち切ってから例外を伝播する。呼び出し側が例外を受け取った時点で
+        孤立タスクは残っていない。
+
+        ``results`` は完了順ではなく入力順で返る。``operation`` はインデックスを
+        受け取り、そのインデックスの位置へ結果が書き戻される。
+
+    """
     results: list[ResultT | BaseException | None] = [None] * item_count
     input_indices = iter(range(item_count))
     pending: dict[asyncio.Task[ResultT], int] = {}
