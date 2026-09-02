@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import re
 import secrets
 import sys
 from typing import TYPE_CHECKING, Any, cast
 
 from utils.logger import get_logger
-from utils.sentry_scrub_primitives import _PATH_PII_PATTERN, _is_sensitive_key, _safe_log_warning
+from utils.sentry_scrub_primitives import (
+    _PATH_PII_PATTERN,
+    _is_sensitive_key,
+    _safe_log_warning,
+    _scrub_path_identifiers,
+)
 from utils.sentry_scrub_values import (
     MAX_SCRUB_DEPTH,
     _scrub_list_item,
@@ -111,6 +117,24 @@ def _scrub_exception_stacktrace(stacktrace: dict[str, Any]) -> dict[str, Any]:
     return stacktrace
 
 
+def _scrub_sequence_preserving_kind(seq: list[Any] | tuple[Any, ...]) -> Any:
+    """list / tuple の各要素を ``_scrub_list_item`` でスクラブし、並び型を保つ。
+
+    namedtuple は位置引数シグネチャを持つため ``type(seq)(generator)`` では再構築できず
+    TypeError になる。before_send 内で送出されるとイベントごと失われるため、
+    tuple 系は plain tuple へ落とす。
+
+    Args:
+        seq: スクラブ対象の list / tuple
+
+    Returns:
+        list はそのまま list、tuple 系は plain tuple
+
+    """
+    scrubbed = [_scrub_list_item(item, _depth=0) for item in seq]
+    return scrubbed if isinstance(seq, list) else tuple(scrubbed)
+
+
 def _scrub_exception_value_item_extra_keys(scrubbed_value: dict[str, Any]) -> None:
     """exception value item の value/stacktrace 以外のトップレベルキーを in-place で
     機密スクラブする。
@@ -130,7 +154,7 @@ def _scrub_exception_value_item_extra_keys(scrubbed_value: dict[str, Any]) -> No
         elif isinstance(item, dict):
             scrubbed_value[key] = _scrub_sensitive_data(item)
         elif isinstance(item, (list, tuple)):
-            scrubbed_value[key] = type(item)(_scrub_list_item(elem, _depth=0) for elem in item)
+            scrubbed_value[key] = _scrub_sequence_preserving_kind(item)
 
 
 def _scrub_exception_value_item(value_item: Any) -> Any:
@@ -141,7 +165,7 @@ def _scrub_exception_value_item(value_item: Any) -> Any:
     """
     if not isinstance(value_item, dict):
         if isinstance(value_item, (list, tuple)):
-            return type(value_item)(_scrub_list_item(item, _depth=0) for item in value_item)
+            return _scrub_sequence_preserving_kind(value_item)
         # str/bytes は PII を含む可能性があるため内容確認せず一律 REDACT。
         # int/float/bool は PII 非含のため素通し。
         if isinstance(value_item, (str, bytes)):
@@ -154,7 +178,14 @@ def _scrub_exception_value_item(value_item: Any) -> Any:
         return value_item
 
     scrubbed_value = dict(value_item)
-    if isinstance(scrubbed_value.get("value"), (str, bytes)):
+    # dict / list / tuple も str/bytes と同様に無条件 REDACT する。
+    # 標準の value は例外メッセージ文字列だが、custom before_send hook や SDK 拡張が
+    # 構造化された value を渡しうる。この分岐がないと _scrub_exception_value_item_extra_keys
+    # が "value" を明示スキップするため、非文字列の value はどこからもスクラブされず
+    # PII が素通りする。キー名ベースの再帰スクラブでは message 由来の PII
+    # （機密キー名を持たない値）を捕捉できないため、本フィールドは一律 REDACT に倒す。
+    # int/float/bool/None は PII 非含のため素通し（非 dict value_item の扱いと対称）。
+    if isinstance(scrubbed_value.get("value"), (str, bytes, dict, list, tuple)):
         scrubbed_value["value"] = "[REDACTED]"
 
     stacktrace = scrubbed_value.get("stacktrace")
@@ -215,16 +246,37 @@ def _scrub_span_item(item: Any, _depth: int) -> Any:
         return scrubbed
     description = scrubbed.get("description")
     if isinstance(description, str):
-        method, separator, target = description.partition(" ")
-        value_to_scrub = target if separator else description
-        if "?" in value_to_scrub or "#" in value_to_scrub:
-            scrubbed_description = _scrub_url(value_to_scrub)
-        else:
-            scrubbed_description = _PATH_PII_PATTERN.sub("[REDACTED]", value_to_scrub)
-        scrubbed["description"] = (
-            f"{method} {scrubbed_description}" if separator else scrubbed_description
-        )
+        scrubbed["description"] = _scrub_http_descriptor(description)
     return scrubbed
+
+
+def _scrub_http_descriptor(text: str) -> str:
+    """``"GET /users?token=abc"`` 形式の HTTP 記述子から PII を除去する。
+
+    span の ``description`` と transaction 名は Sentry 上で別フィールドだが、
+    どちらも「メソッド + URL」という同一形式を取り、同じ経路（URL のクエリと
+    パス）で PII を運ぶ。数値・UUIDのpath segmentも同じ境界で置換する。
+    処理を分けると片方だけ塞ぎ忘れるため共通化する。
+
+    メソッド部は保持する。落とすと Sentry UI で GET と POST の区別が付かなくなり、
+    PII を含まない情報を失うだけになるため。
+
+    Args:
+        text: スクラブ対象の HTTP 記述子
+
+    Returns:
+        クエリ文字列とパス中の PII を除去した文字列
+
+    """
+    method, separator, target = text.partition(" ")
+    value_to_scrub = target if separator else text
+    if any(delimiter in value_to_scrub for delimiter in ("?", "#", ";")):
+        scrubbed_value = _scrub_url(value_to_scrub)
+    else:
+        scrubbed_value = _scrub_path_identifiers(
+            _PATH_PII_PATTERN.sub("[REDACTED]", value_to_scrub)
+        )
+    return f"{method} {scrubbed_value}" if separator else scrubbed_value
 
 
 def _scrub_tags_item(item: Any, _depth: int = 0) -> Any:
@@ -309,27 +361,17 @@ def _scrub_exception_field(exception_value: dict[str, Any]) -> dict[str, Any]:
         result = dict(exception_value)
         result["values"] = _scrub_sensitive_data(values)
         return result
-    if values is None:
-        # "values" キー未存在は Sentry exception interface 仕様上の有効な構造
-        # (getsentry/sentry interfaces/exception.py: get_path(data, "values",
-        # default=[]) で空リスト扱い、Relay schema でも values は必須でない)。
-        # よって誤検知 WARNING を出さずに、他キーをベストエフォートスクラブして返す
-        # 正常構造に対するログノイズ抑制
-        scrubbed = _scrub_sensitive_data(exception_value)
-        # _depth=0 開始のため dict 以外（"[MAX_DEPTH_EXCEEDED]"）は構造上発生しないが、
-        # cast による型隠蔽を避け isinstance ガードで型安全を明示する。
-        return scrubbed if isinstance(scrubbed, dict) else {}
-    if not isinstance(values, list):
+    if values is not None and not isinstance(values, (dict, list)):
         # str / int 等、None でも list/dict でもない真に予期しない型のみ WARNING。
         _safe_log_warning(
             "sentry_exception_values_unexpected_type",
             actual_type=type(values).__name__,
             action="exception_scrub_fallback",
         )
-        # 構造不明でも _scrub_sensitive_data でベストエフォートスクラブ
+    if values is None or not isinstance(values, list):
+        # values 未指定は Sentry仕様上の有効な形。未知型は warning 後に同じ
+        # best-effort fallback を使い、fallback の実装を一箇所に保つ。
         scrubbed = _scrub_sensitive_data(exception_value)
-        # _depth=0 開始のため dict 以外（"[MAX_DEPTH_EXCEEDED]"）は構造上発生しないが、
-        # cast による型隠蔽を避け isinstance ガードで型安全を明示する。
         return scrubbed if isinstance(scrubbed, dict) else {}
 
     result = dict(exception_value)
@@ -395,36 +437,325 @@ def _scrub_sentry_field(event_dict: dict[str, Any], field: str) -> None:
                 event_dict[field] = [_scrub_span_item(item, _depth=0) for item in value]
             else:
                 event_dict[field] = [_scrub_list_item(item, _depth=0) for item in value]
+        # dict/list以外はスクラブ不可能なため、安全サイドに倒して置換する（fail-closed）。
+        # exception フィールドは Sentry exception interface 仕様に準拠した
+        # 無害なプレースホルダ構造へ置換し PII 素通りを防ぐ。
+        # 他フィールドは空 dict に置換する。
+        elif field == "exception":
+            event_dict[field] = {
+                "values": [
+                    {
+                        "type": "ScrubbedException",
+                        "value": "[REDACTED: unscrubable exception structure]",
+                    }
+                ]
+            }
+            _safe_log_warning(
+                "sentry_field_type_unexpected",
+                field=field,
+                actual_type=type(value).__name__,
+                action="replaced_with_safe_placeholder",
+                event_id=event_dict.get("event_id"),
+            )
         else:
-            # dict/list以外はスクラブ不可能なため、安全サイドに倒して置換する（fail-closed）。
-            # exception フィールドは Sentry exception interface 仕様に準拠した
-            # 無害なプレースホルダ構造へ置換し PII 素通りを防ぐ。
-            # 他フィールドは空 dict に置換する。
-            if field == "exception":
-                event_dict[field] = {
-                    "values": [
-                        {
-                            "type": "ScrubbedException",
-                            "value": "[REDACTED: unscrubable exception structure]",
-                        }
-                    ]
-                }
-                _safe_log_warning(
-                    "sentry_field_type_unexpected",
-                    field=field,
-                    actual_type=type(value).__name__,
-                    action="replaced_with_safe_placeholder",
-                    event_id=event_dict.get("event_id"),
-                )
-            else:
-                event_dict[field] = {}
-                _safe_log_warning(
-                    "sentry_field_type_unexpected",
-                    field=field,
-                    actual_type=type(value).__name__,
-                    action="replaced_with_empty_dict",
-                    event_id=event_dict.get("event_id"),
-                )
+            event_dict[field] = {}
+            _safe_log_warning(
+                "sentry_field_type_unexpected",
+                field=field,
+                actual_type=type(value).__name__,
+                action="replaced_with_empty_dict",
+                event_id=event_dict.get("event_id"),
+            )
+
+
+# 自由文字列中の `key=value` / `key: value` / `key value` 形式を捉えるパターン。
+# 値側は引用符付き（内部の空白を含む）と非引用の連続語の両方を受ける。
+# `_is_sensitive_key` と組み合わせ、機密キー名を持つ代入だけを選択的にマスクする。
+# 入れ子量化子を持たないため入力長に対して線形で、ReDoS 耐性がある。
+#
+# 全角区切りと空白区切りも受けるのは、CLI・日本語ログ・設定ダンプの表記揺れを
+# 同じ境界で処理するため。非機密キーは callback で元の文字列を返す。
+# キー側の引用符を任意で受けるのは、ログへ JSON 文字列がそのまま埋まる経路
+# （``logger.error("failed", body=json.dumps(payload))`` 等）を捉えるため。
+# 引用符なしのみを許すと ``{"password": "x"}`` が丸ごと素通りする。
+#
+# 非引用値の終端は空白・``,``・``;``・``&`` のみとし、``{`` と引用符は値の
+# 先頭に来られない。この2点が組み合わさって次を成立させる:
+#   - ``token=a&status=ok`` で ``a`` だけを潰す（後続パラメータを失わない）
+#   - ``body={"password": "x"}`` で外側の非機密キー ``body`` が内側を食い潰さず、
+#     走査が JSON の内部まで到達する
+#   - ``token=a]b`` のように括弧を含む値を途中で切らない（切ると残りが漏れる）
+#   - 置換後の ``[REDACTED]`` が値としてそのまま再マッチし、二重適用が冪等になる
+# 代償として ``(password=x)`` のような囲みでは閉じ括弧まで潰れる。表示は崩れるが
+# 値は残らないため fail-safe 側に倒している。
+_FREETEXT_ASSIGNMENT_PATTERN: re.Pattern[str] = re.compile(
+    r"(['\"]?)([A-Za-z][\w.\-]*|パスワード|トークン|シークレット|APIキー|認証情報|メールアドレス)"
+    r"(['\"]?\s*[=:＝：]\s*)"
+    r"(\[REDACTED\]|'[^']*'|\"[^\"]*\"|[^\s,;&{'\"]+)"
+)
+# 空白区切りは機密キーのみに限定する。任意のキーを許すと、`x token=abc` の
+# `x ` をキーと誤認して token=abc 全体を値として消費するため。
+_FREETEXT_SPACE_ASSIGNMENT_PATTERN: re.Pattern[str] = re.compile(
+    r"(['\"]?)(password|passwd|token|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|"
+    r"authorization|credential|パスワード|トークン|シークレット|APIキー|認証情報|メールアドレス)"
+    r"(['\"]?\s+)"
+    r"(\[REDACTED\]|'[^']*'|\"[^\"]*\"|[^\s,;&{'\"]+)",
+    re.IGNORECASE,
+)
+# `cfg[password]=x` のような添字記法は一般パターンのキー境界に入らないため別処理する。
+_FREETEXT_BRACKET_ASSIGNMENT_PATTERN: re.Pattern[str] = re.compile(
+    r"(\[)([A-Za-z][\w.\-]*|パスワード|トークン|シークレット|APIキー|認証情報|メールアドレス)"
+    r"(\]\s*(?:[=:＝：]\s*))"
+    r"(\[REDACTED\]|'[^']*'|\"[^\"]*\"|[^\s,;&{'\"]+)"
+)
+# Authorization値は scheme と credential が空白で分かれるため、一般assignmentより
+# 先に区切りまでを置換する。通常の次のassignmentは残すが、曖昧な値の終端は
+# fail-closed 側へ倒す。scheme直後の区切りや、値中の assignment も認証値として扱う。
+# 終端判定は文字列の形状に依存するため、捕捉しきれない形状が残る。best-effort
+# の保険であり、認証情報を自由文字列へ載せないことが第一の防御である。
+_AUTH_ASSIGNMENT_PATTERN: re.Pattern[str] = re.compile(
+    r"(['\"]?)(Authorization|Proxy-Authorization)(['\"]?\s*[=:]\s*)"
+    r"(?:\"[^\"\r\n]*\"|'[^'\r\n]*'"
+    r"|[A-Za-z][\w.\-]*\s*[,;][^\r\n&{}]*"
+    r"|[A-Za-z][\w.\-]*\s+[\w.\-]+\s*=[^\r\n;&{}]*"
+    r"|[A-Za-z][\w.\-]*\s+[^\s\r\n,;&{}]+"
+    r"|[^\r\n,;&{}]+?)"
+    r"(?=\s+[A-Za-z][\w.\-]*\s*[=:]|\s*$|[,;&{}\r\n])",
+    re.IGNORECASE,
+)
+
+# message / logentry に適用する自由文字列スクラブの対象キー。
+# Sentry の logentry は message（テンプレート）と formatted（展開済み文字列）を持ち、
+# UI の issue タイトルには formatted が使われる。両方をマスクする。
+_LOGENTRY_TEXT_KEYS: tuple[str, ...] = ("formatted", "message")
+
+# キー名を伴わない文字列でも形状が十分に一意な秘密値は defense-in-depth で検出する。
+# ローカル電話番号や任意の数字列は誤検知が大きいため対象にせず、国際形式と
+# Luhn 検証済みの一般的な16桁カード番号に限定する（網羅的なDLPではない）。
+_JWT_PATTERN: re.Pattern[str] = re.compile(
+    r"(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}"
+    r"(?![A-Za-z0-9_-])"
+)
+_CARD_NUMBER_PATTERN: re.Pattern[str] = re.compile(r"(?<!\d)[3456]\d{3}(?:[ -]?\d{4}){3}(?!\d)")
+_INTERNATIONAL_PHONE_PATTERN: re.Pattern[str] = re.compile(
+    r"(?<!\w)\+\d{1,3}(?:[ -]\d{2,4}){2,4}(?!\w)"
+)
+
+
+def _mask_card_number(match: re.Match[str]) -> str:
+    """Luhn検証を通る一般的なカード番号だけをマスクする。"""
+    digits = re.sub(r"[ -]", "", match.group(0))
+    total = 0
+    for position, digit in enumerate(reversed(digits)):
+        value = int(digit)
+        if position % 2:
+            value = value * 2 - 9 if value > 4 else value * 2
+        total += value
+    return "[REDACTED]" if total % 10 == 0 else match.group(0)
+
+
+def _mask_sensitive_assignment(match: re.Match[str]) -> str:
+    """機密キー名を持つ代入の値のみを [REDACTED] へ置換する。
+
+    キーを囲む引用符は保持する。剥がすと JSON 文字列が壊れ、
+    ログの読み手が元の構造を復元できなくなるため。
+    """
+    open_quote, key, separator = match.group(1), match.group(2), match.group(3)
+    if _is_sensitive_key(key) or key in {
+        "パスワード",
+        "トークン",
+        "シークレット",
+        "APIキー",
+        "認証情報",
+        "メールアドレス",
+    }:
+        return f"{open_quote}{key}{separator}[REDACTED]"
+    return match.group(0)
+
+
+def _mask_auth_assignment(match: re.Match[str]) -> str:
+    """Authorization系assignmentのschemeとcredentialをマスクする。
+
+    値の終端判定は文字列の形状に依存するため、全形状の捕捉は保証しない
+    （best-effort）。
+    """
+
+    return f"{match.group(1)}{match.group(2)}{match.group(3)}[REDACTED]"
+
+
+def _mask_freetext_pii(text: str) -> str:
+    """自由文字列 PII を選択的にマスクする（文脈は保持する）。
+
+    exception values[*].value の一律 REDACT と異なり、message / logentry は
+    Sentry の issue タイトル・アラート件名として使われるため、全体を潰すと
+    エラー分類が不能になる。そこで PII と判定できる部分のみを置換する。
+
+    適用順序:
+        1. 認証assignment（``Authorization: Bearer secret``）— schemeと値を潰す
+        2. 一般代入形式（``password=hunter2``）— 値だけを潰す
+        3. 添字記法（``cfg[password]=hunter2``）と日本語ラベル
+        4. JWT、Luhn検証を通るカード番号、国際電話番号
+        5. メールアドレス（``alice@example.com``）
+
+    冪等（``f(f(x)) == f(x)``）。置換後の ``[REDACTED]`` は値パターンの第一候補と
+    して丸ごと再マッチするため、二重適用しても崩れない。
+
+    既知の限界（denylist / heuristic の宿命）:
+        - 機密キー名を伴わないローカル電話番号や、Luhnに通らないカード番号は通過する
+        - 網羅ではなく高頻度形式の遮断が目的であり、根本対策はログ文字列へ PII を
+          埋め込まないこと。
+
+    Args:
+        text: マスク対象の自由文字列
+
+    Returns:
+        PII 部分を [REDACTED] へ置換した文字列
+
+    """
+    masked = _AUTH_ASSIGNMENT_PATTERN.sub(_mask_auth_assignment, text)
+    masked = _FREETEXT_SPACE_ASSIGNMENT_PATTERN.sub(_mask_sensitive_assignment, masked)
+    masked = _FREETEXT_ASSIGNMENT_PATTERN.sub(_mask_sensitive_assignment, masked)
+    masked = _FREETEXT_BRACKET_ASSIGNMENT_PATTERN.sub(_mask_sensitive_assignment, masked)
+    masked = _JWT_PATTERN.sub("[REDACTED]", masked)
+    masked = _CARD_NUMBER_PATTERN.sub(_mask_card_number, masked)
+    masked = _INTERNATIONAL_PHONE_PATTERN.sub("[REDACTED]", masked)
+    return _PATH_PII_PATTERN.sub("[REDACTED]", masked)
+
+
+def _scrub_logentry_param(param: Any, _depth: int = 0) -> Any:
+    """logentry.params の要素を再帰スクラブする。
+
+    キー文脈の有無で方針を切り替える:
+
+    - str / bytes は無条件に潰す（キー名を持たないため機密判定の手掛かりがない）
+    - dict はキー文脈があるため ``_scrub_sensitive_data`` のキーベース scrub に委ねる
+    - list / tuple は入れ子を降りて同じ方針を適用する
+    - それ以外（int / float / bool / None 等）は残す
+
+    Args:
+        param: スクラブ対象の要素
+        _depth: 再帰深度（循環参照ガード用の内部引数）
+
+    Returns:
+        スクラブ済みの要素
+
+    """
+    if _depth >= MAX_SCRUB_DEPTH:
+        _safe_log_warning("scrub_max_depth_exceeded", depth=_depth, max=MAX_SCRUB_DEPTH)
+        return "[MAX_DEPTH_EXCEEDED]"
+    if isinstance(param, (str, bytes)):
+        return "[REDACTED]"
+    if isinstance(param, dict):
+        return _scrub_sensitive_data(param, _depth + 1)
+    if isinstance(param, list):
+        return [_scrub_logentry_param(item, _depth + 1) for item in param]
+    if isinstance(param, tuple):
+        # namedtuple は位置引数シグネチャを持つため type(param)(...) では再構築できない。
+        # plain tuple へ落として TypeError を避ける。
+        return tuple(_scrub_logentry_param(item, _depth + 1) for item in param)
+    return param
+
+
+def _scrub_event_message_fields(event_dict: dict[str, Any]) -> None:
+    """message / logentry / transaction の自由文字列を選択的マスクする（in-place）。
+
+    ``_SCRUBBED_EVENT_FIELDS`` 経由の ``_scrub_sentry_field`` はキー名ベースの
+    再帰スクラブであり、str 型の message には適用できない（fail-closed 分岐で
+    空 dict に置換され、イベントが壊れる）。そのため専用経路を設ける。
+
+    Sentry 公式のデータスクラブセレクタが ``$error.value``（例外メッセージ）と
+    ``$message``（イベントレベルのログメッセージ）を別物として定義しているとおり、
+    exception のスクラブだけでは capture_message 経路の PII を止められない。
+
+    Args:
+        event_dict: Sentryイベント辞書（破壊的更新）
+
+    """
+    message = event_dict.get("message")
+    if isinstance(message, str):
+        event_dict["message"] = _mask_freetext_pii(message)
+
+    logentry = event_dict.get("logentry")
+    if isinstance(logentry, dict):
+        scrubbed = dict(logentry)
+        for text_key in _LOGENTRY_TEXT_KEYS:
+            if isinstance(scrubbed.get(text_key), str):
+                scrubbed[text_key] = _mask_freetext_pii(scrubbed[text_key])
+        # params は logging の可変引数そのもの（``log.error("failed for %s", email)``）。
+        # str 要素は無条件に潰す。理由は3つある:
+        #   1. テンプレートの可変部分は定義上ログ中で最も PII が入りやすい場所で、
+        #      formatted より PII 濃度が高い
+        #   2. 引数は単独で現れ、機密かどうかを判定する手掛かりのキー名を持たない。
+        #      自由文字列マスクを掛けても ``"hunter2"`` のような裸の値は素通りする
+        #   3. 同じ内容が formatted 側に文脈付きマスク済みで残るため、失う情報がない
+        # 非 str のスカラ（int / float / bool / None）は残す。配列の形と型が読めると
+        # デバッグの手掛かりになり、値自体も formatted に現れるため。
+        # dict / list / tuple は ``_scrub_logentry_param`` が入れ子を降り、キー文脈を
+        # 持つ dict だけキーベース scrub へ回す。
+        #
+        # ``_scrub_list_item`` の「素の値はキー文脈を持たないため redact しない」方針とは
+        # 適用場面が異なる。あちらは隣にキーがある構造（extra / breadcrumbs）での
+        # 過剰 redact を避ける判断であり、キー文脈が原理的に存在しない params には及ばない。
+        params = scrubbed.get("params")
+        if isinstance(params, (list, tuple)):
+            scrubbed["params"] = _scrub_logentry_param(params)
+        elif isinstance(params, dict):
+            scrubbed["params"] = _scrub_sensitive_data(params)
+        event_dict["logentry"] = scrubbed
+    elif logentry is not None:
+        # dict 以外の logentry はスクラブ不能なため fail-closed で除去する。
+        event_dict["logentry"] = {}
+        _safe_log_warning(
+            "sentry_logentry_type_unexpected",
+            actual_type=type(logentry).__name__,
+            action="replaced_with_empty_dict",
+            event_id=event_dict.get("event_id"),
+        )
+
+    # transaction 名は Sentry 公式が「スクラブすべき箇所」として明示的に挙げている
+    # （raw URL がそのまま名前になり、``/users/1234/details`` の ``1234`` のような
+    # PII を運ぶ）。SDK は URL のパラメータ化を試みるが、ルーティング設定次第で
+    # 失敗しうると公式が述べており、それを前提に塞ぐ。
+    #
+    # 本プロジェクトには現時点で transaction を生成する経路が無い
+    # （手動 start_transaction はゼロ件、auto-enable される統合は HttpxIntegration
+    # のみで span しか作らない）。それでも塞ぐのは、Web フレームワークを1つ足した
+    # 時点で無言で穴が開く種類の欠陥であり、``_scrub_exception_value_item_extra_keys``
+    # と同じ defense-in-depth の方針に揃えるため。span.description と処理を共有する
+    # ため追加コストはほぼ無い。
+    transaction = event_dict.get("transaction")
+    if isinstance(transaction, str):
+        event_dict["transaction"] = _scrub_http_descriptor(transaction)
+
+    _mask_breadcrumb_messages(event_dict)
+
+
+def _mask_breadcrumb_messages(event_dict: dict[str, Any]) -> None:
+    """breadcrumbs[*].message の自由文字列をマスクする（in-place）。
+
+    ``breadcrumbs`` は ``_SCRUBBED_EVENT_FIELDS`` 経由でキー名ベースのスクラブを
+    受けているが、``message`` というキー名は機密キー集合に無いため値が素通りする。
+    LoggingIntegration は既定で INFO 以上を breadcrumb 化するので、logentry と
+    同じ形の PII がここにも流れ込む。logentry.formatted と同じ扱いで塞ぐ。
+
+    Args:
+        event_dict: Sentryイベント辞書（破壊的更新）
+
+    """
+    breadcrumbs = event_dict.get("breadcrumbs")
+    if not isinstance(breadcrumbs, dict):
+        return
+    values = breadcrumbs.get("values")
+    if not isinstance(values, list):
+        return
+
+    scrubbed_crumbs: list[Any] = []
+    for crumb in values:
+        if isinstance(crumb, dict) and isinstance(crumb.get("message"), str):
+            scrubbed_crumbs.append({**crumb, "message": _mask_freetext_pii(crumb["message"])})
+        else:
+            scrubbed_crumbs.append(crumb)
+    event_dict["breadcrumbs"] = {**breadcrumbs, "values": scrubbed_crumbs}
 
 
 # fail-closed防御による退避後、スクラビング失敗イベントを安全にSentryへ通知するフェーズ。
@@ -534,7 +865,46 @@ def _emit_scrub_failure_to_sentry(exc: BaseException, event_id: str | None = Non
         )
 
 
-def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C901
+def _scrub_event_request(event_dict: dict[str, Any]) -> None:
+    """Sentry event の request 部分を non-destructive にスクラブする。"""
+    if "request" not in event_dict:
+        return
+
+    request = event_dict["request"]
+    if not isinstance(request, dict):
+        event_dict["request"] = {}
+        _safe_log_warning(
+            "sentry_request_type_unexpected",
+            actual_type=type(request).__name__,
+            action="replaced_with_empty_dict",
+            event_id=event_dict.get("event_id"),
+        )
+        return
+
+    scrubbed_request = dict(request)
+    for req_field in ("headers", "data", "cookies", "env"):
+        if req_field in scrubbed_request:
+            scrubbed_request[req_field] = _scrub_request_field(scrubbed_request[req_field])
+    if "query_string" in scrubbed_request and isinstance(
+        scrubbed_request["query_string"], (str, bytes)
+    ):
+        scrubbed_request["query_string"] = _scrub_request_query_string(
+            scrubbed_request["query_string"]
+        )
+    if "url" in scrubbed_request and isinstance(scrubbed_request["url"], str):
+        scrubbed_request["url"] = _scrub_url(scrubbed_request["url"])
+    event_dict["request"] = scrubbed_request
+
+
+def _scrub_event_payload(event_dict: dict[str, Any]) -> None:
+    """Sentry event の可変 payload を送信前に一括スクラブする。"""
+    _scrub_event_request(event_dict)
+    for field in _SCRUBBED_EVENT_FIELDS:
+        _scrub_sentry_field(event_dict, field)
+    _scrub_event_message_fields(event_dict)
+
+
+def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001
     """Sentry送信前フック（機密データ除外）
 
     再帰防止: scrub 失敗時に発火する内部通知イベント（_INTERNAL_TAG_KEY
@@ -563,43 +933,7 @@ def _before_send(event: Event, hint: Hint) -> Event | None:  # noqa: ARG001, C90
     # cast は実行時 no-op（型システム専用）— try 外に置いても動作変化なし
     event_dict = cast(dict[str, Any], event)
     try:
-        # リクエストデータのスクラブ。成功時だけ event["request"] を差し替える。
-        # _scrub_sensitive_data / _scrub_query_string / _scrub_url は全て non-destructive で
-        # 新しいオブジェクトを返すため、top-level dict の shallow copy で十分。
-        # 元 request の non-mutation 契約は既存テスト
-        # ``test_before_send_fail_closed_without_partial_request_mutation`` で継続検証。
-        if "request" in event_dict:
-            request = event_dict["request"]
-            if isinstance(request, dict):
-                scrubbed_request = dict(request)
-                for req_field in ("headers", "data", "cookies", "env"):
-                    if req_field in scrubbed_request:
-                        scrubbed_request[req_field] = _scrub_request_field(
-                            scrubbed_request[req_field]
-                        )
-                if "query_string" in scrubbed_request and isinstance(
-                    scrubbed_request["query_string"], (str, bytes)
-                ):
-                    scrubbed_request["query_string"] = _scrub_request_query_string(
-                        scrubbed_request["query_string"]
-                    )
-                if "url" in scrubbed_request and isinstance(scrubbed_request["url"], str):
-                    scrubbed_request["url"] = _scrub_url(scrubbed_request["url"])
-                event_dict["request"] = scrubbed_request
-            else:
-                event_dict["request"] = {}
-                _safe_log_warning(
-                    "sentry_request_type_unexpected",
-                    actual_type=type(request).__name__,
-                    action="replaced_with_empty_dict",
-                    event_id=event_dict.get("event_id"),
-                )
-
-        # 追加データのスクラブ（2層防御）
-        # _scrub_sentry_field: 非dict型フィールドを空dictに置換（型安全化・PII漏洩防止）
-        # _scrub_sensitive_data: dict内の機密キーを [REDACTED] に置換（PII除外）
-        for field in _SCRUBBED_EVENT_FIELDS:
-            _scrub_sentry_field(event_dict, field)
+        _scrub_event_payload(event_dict)
     except (MemoryError, RecursionError):  # fmt: skip
         # システム異常（OOM・スタックオーバーフロー）は fail-closed で event を
         # ドロップする。before_send からの例外は Sentry SDK が内部 catch し

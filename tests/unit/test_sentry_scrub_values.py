@@ -55,6 +55,14 @@ class TestScrubSensitiveData:
         assert result["items"][0][0]["x-auth-token"] == "[REDACTED]"  # noqa: S105
         assert result["items"][0][1]["name"] == "public"
 
+    def test_scrub_tuple_value_containing_dict(self) -> None:
+        data = {"items": ("safe", {"password": "dummy"})}
+
+        result = _scrub_sensitive_data(data)
+
+        assert result["items"] == ("safe", {"password": "[REDACTED]"})
+        assert data["items"][1]["password"] == "dummy"  # noqa: S105
+
     def test_scrub_case_insensitive(self) -> None:
         data = {"PASSWORD": "secret", "Api_Key": "key", "TOKEN": "tok"}
         result = _scrub_sensitive_data(data)
@@ -158,6 +166,26 @@ class TestScrubQueryStringAndUrl:
         assert "user@example.com" not in result
         assert "[REDACTED]" in result
         assert "sort=asc" in result  # query は保持
+
+    @pytest.mark.parametrize(
+        ("url", "expected"),
+        [
+            (
+                "https://example.com/users/1234/details",
+                "https://example.com/users/<digits>/details",
+            ),
+            (
+                "https://example.com/jobs/550e8400-e29b-41d4-a716-446655440000",
+                "https://example.com/jobs/<uuid>",
+            ),
+            (
+                "https://example.com/users/1234;token=secret",
+                "https://example.com/users/<digits>;token=[REDACTED]",
+            ),
+        ],
+    )
+    def test_scrub_url_replaces_path_identifiers(self, url: str, expected: str) -> None:
+        assert _scrub_url(url) == expected
 
     def test_scrub_url_redacts_email_in_path_params(self) -> None:
         result = _scrub_url("https://example.com/activate;email=user@example.com?sort=asc")

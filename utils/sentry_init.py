@@ -22,7 +22,7 @@ structlogと連携し、ERROR以上のログをSentryに送信。
     初期化失敗時は warning ログを常時出力する（本番監視対応）。
 
 セキュリティ:
-    - before_sendフックで機密データを自動除外（44種類のキーパターン）
+    - before_sendフックで機密データを自動除外（46種類のキーパターン）
     - DSNはSecretStrで管理（config/settings.py）
     - enabled=Falseで完全無効化可能
 """
