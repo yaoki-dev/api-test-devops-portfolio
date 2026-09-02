@@ -45,6 +45,7 @@ class TestDockerComposeContract:
         assert test_service["profiles"] == ["test"]
         assert test_service["env_file"] == [{"path": ".env.testing", "required": False}]
         assert test_service["environment"]["ENVIRONMENT"] == "testing"
+        assert test_service["environment"]["TEST__EXTERNAL_API_ENABLED"] == "false"
         assert test_service["environment"]["COVERAGE_FILE"] == "/tmp/.coverage"  # noqa: S108
         assert test_service["user"] == "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
         # ci.yml の test_filter と同一 + repo_contract 除外。完全一致で固定し、除外条件が

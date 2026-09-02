@@ -72,6 +72,8 @@ services:
     # 環境は testing を明示（.env.testing 未設定でもテストモードを保証。機密ではないため直書き可）
     environment:
       ENVIRONMENT: testing
+      # .env.testing がなくてもPR/Compose検証は外部APIへ接続しない
+      TEST__EXTERNAL_API_ENABLED: "false"
       # SQLite中間DBをUID非依存の書込可能領域 /temp へ逃がす
       COVERAGE_FILE: /tmp/.coverage
     # Dockerfile CMD を上書き。pyproject.toml の addopts (--cov=utils --cov=config --cov=models 等)

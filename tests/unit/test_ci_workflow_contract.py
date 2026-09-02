@@ -37,6 +37,29 @@ def test_pr_validation_main_pytest_emits_junit_xml(workflow_data: dict[str, Any]
     assert upload_step["with"]["name"] == "pr-validation-results-py3.14"
 
 
+def test_external_api_environment_boundaries_are_explicit(
+    workflow_data: dict[str, Any],
+) -> None:
+    """PR/Composeは外部APIを止め、週次coverageだけ明示的に有効化する。"""
+    pr_steps = workflow_data["jobs"]["pr-validation"]["steps"]
+    pr_test_step = next(
+        step for step in pr_steps if step.get("name") == "Run tests (unit + integration + smoke)"
+    )
+    assert pr_test_step["env"]["TEST__EXTERNAL_API_ENABLED"] == "false"
+
+    compose_steps = workflow_data["jobs"]["compose-test"]["steps"]
+    compose_test_step = next(
+        step for step in compose_steps if step.get("name") == "Run pytest in test container"
+    )
+    assert compose_test_step["env"]["TEST__EXTERNAL_API_ENABLED"] == "false"
+
+    weekly_steps = workflow_data["jobs"]["weekly-extended-test"]["steps"]
+    coverage_step = next(
+        step for step in weekly_steps if step.get("name") == "Full coverage report"
+    )
+    assert coverage_step["env"]["TEST__EXTERNAL_API_ENABLED"] == "true"
+
+
 def test_renderer_step_runs_always_after_pytest(workflow_data: dict[str, Any]) -> None:
     steps = workflow_data["jobs"]["pr-validation"]["steps"]
     renderer_index = next(

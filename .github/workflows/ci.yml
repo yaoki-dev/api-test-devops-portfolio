@@ -76,6 +76,8 @@ jobs:
           echo "🎯 PR Validation: Unit + Integration (with coverage) → Smoke (no coverage)"
 
       - name: Run tests (unit + integration + smoke)
+        env:
+          TEST__EXTERNAL_API_ENABLED: "false"
         run: |
           mkdir -p reports
           # Step 1: unit + integration with coverage
@@ -213,6 +215,8 @@ jobs:
           chmod 755 reports
 
       - name: Run pytest in test container
+        env:
+          TEST__EXTERNAL_API_ENABLED: "false"
         run: |
           set -o pipefail
           docker compose --profile test run --rm test 2>&1 | tee reports/compose-test-output.log
@@ -739,6 +743,8 @@ jobs:
 
       - name: Full coverage report
         # unit/integration/smoke/slow のみ（performance/external は上で個別実行済）
+        env:
+          TEST__EXTERNAL_API_ENABLED: "true"
         run: uv run pytest -m 'not performance and not external' --cov=. --cov-report=html:reports/htmlcov --cov-report=json -v
 
       - name: Upload weekly test results
