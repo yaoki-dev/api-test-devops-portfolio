@@ -1,13 +1,19 @@
 """HTTPクライアントの共有ヘルパー関数"""
 
 import sys
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
 from structlog.typing import FilteringBoundLogger
 
 from config.settings import settings
-from utils.exceptions import APIClientError, APIConnectionError, APITimeoutError
+from utils.exceptions import (
+    APIClientError,
+    APIConnectionError,
+    APITimeoutError,
+    SuppressedReason,
+)
 
 
 def validate_optional_int(value: int | None, name: str, min_value: int) -> None:
@@ -23,6 +29,52 @@ def validate_optional_int(value: int | None, name: str, min_value: int) -> None:
     """
     if value is not None and value < min_value:
         raise ValueError(f"{name} must be >= {min_value}")
+
+
+IDEMPOTENT_METHODS: frozenset[str] = frozenset({"GET", "HEAD", "DELETE", "OPTIONS", "TRACE"})
+
+
+@dataclass(frozen=True, slots=True)
+class RetryPolicy:
+    """HTTPメソッドごとの総送信回数とリトライ抑止理由。"""
+
+    max_attempts: int
+    suppressed_reason: SuppressedReason | None = None
+
+
+def resolve_retry_policy(
+    method: str,
+    retry_count: int,
+    *,
+    retry_non_idempotent: bool = False,
+) -> RetryPolicy:
+    """HTTPメソッドと設定から安全な送信予算を解決する。
+
+    非冪等メソッドは、呼び出し側がサーバー側の重複排除契約を確認した場合だけ
+    per-call opt-in で再送できる。未知のメソッドは安全側に倒して非冪等として扱う。
+    """
+    normalized_method = method.upper()
+    configured_attempts = retry_count + 1
+    if normalized_method not in IDEMPOTENT_METHODS and not retry_non_idempotent:
+        return RetryPolicy(
+            max_attempts=1,
+            suppressed_reason=("non_idempotent_method" if retry_count > 0 else None),
+        )
+    return RetryPolicy(max_attempts=configured_attempts)
+
+
+def retry_suppression_suffix(policy: RetryPolicy, method: str) -> str:
+    """抑止された非冪等リトライの説明を例外メッセージへ付加する。"""
+    reason = policy.suppressed_reason
+    if reason is None:
+        return ""
+    suffix_by_reason: dict[SuppressedReason, str] = {
+        "non_idempotent_method": "non-idempotent",
+    }
+    label = suffix_by_reason.get(reason)
+    if label is None:
+        return f" Retry suppressed for {method.upper()} request."
+    return f" Retry suppressed for {label} {method.upper()} request."
 
 
 def map_request_error(e: httpx.RequestError | httpx.InvalidURL) -> APIClientError:

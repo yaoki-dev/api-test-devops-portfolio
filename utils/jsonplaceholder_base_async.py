@@ -8,7 +8,13 @@ import httpx
 
 from config.settings import settings
 from utils.exceptions import APIClientError, APIHTTPError, APIRetryError
-from utils.http_helpers import classify_error, log_error_with_stderr_fallback, resolve_client_config
+from utils.http_helpers import (
+    classify_error,
+    log_error_with_stderr_fallback,
+    resolve_client_config,
+    resolve_retry_policy,
+    retry_suppression_suffix,
+)
 from utils.logger import get_logger
 from utils.retry import exponential_backoff_with_jitter
 
@@ -204,6 +210,8 @@ class AsyncAPIClient:
         self,
         method: str,
         endpoint: str,
+        *,
+        retry_non_idempotent: bool = False,
         **kwargs: Any,
     ) -> httpx.Response:
         """リトライ機能付き非同期HTTPリクエスト実行
@@ -211,6 +219,7 @@ class AsyncAPIClient:
         Args:
             method: HTTPメソッド
             endpoint: APIエンドポイント
+            retry_non_idempotent: 非冪等メソッドの再送を明示的に許可するか
             **kwargs: httpxに渡す追加パラメータ
 
         Returns:
@@ -228,13 +237,9 @@ class AsyncAPIClient:
             APIRetryError ではなく APIClientError として呼び出し元に届く。
             呼び出し元は APIClientError で捕捉すること。
 
-            - リトライは HTTP メソッドを問わず 5xx / ネットワークエラーで発生する。
-            POST/PATCH 等の非冪等な書き込みでは、サーバー側で処理が確定した後に
-            レスポンスが失われた場合（例: 送信後の ReadTimeout）、同一リクエストの
-            再送により実バックエンドでは重複リソースが生成されうる。対象 API
-            （JSONPlaceholder）は書き込みを永続化しないため実害はないが、実運用の
-            stateful backend に向ける場合は冪等キー付与またはメソッド別のリトライ
-            制御を検討すること。
+            - 5xx / ネットワークエラーは、冪等メソッドでは設定回数までリトライする。
+            POST/PATCH/PUT 等の非冪等メソッドは既定で 1 回だけ実行し、サーバー側の
+            重複排除契約がある場合に限り ``retry_non_idempotent=True`` で再送を許可する。
 
         """
         # close 後の use-after-close を明示エラー化（github_client.py L878 と同一パターン）。
@@ -242,9 +247,14 @@ class AsyncAPIClient:
         if self._client is None:
             raise RuntimeError("Client not initialized. Use 'async with' context.")
 
+        retry_policy = resolve_retry_policy(
+            method,
+            self.retry_count,
+            retry_non_idempotent=retry_non_idempotent,
+        )
         last_exception: APIClientError | None = None
 
-        for attempt in range(self.retry_count + 1):
+        for attempt in range(retry_policy.max_attempts):
             # 非同期HTTPリクエスト実行（ネットワーク層）
             try:
                 # structlogでログ出力（DRY原則: 重複ログ削除）
@@ -252,7 +262,7 @@ class AsyncAPIClient:
                     self.logger.warning(
                         "async_request_retry",
                         attempt=attempt + 1,
-                        max_attempts=self.retry_count + 1,
+                        max_attempts=retry_policy.max_attempts,
                         method=method,
                         endpoint=endpoint,
                     )
@@ -311,7 +321,7 @@ class AsyncAPIClient:
                     )
 
             # 最後の試行でなければ指数バックオフ + 30%ジッターで待機
-            if attempt < self.retry_count:
+            if attempt + 1 < retry_policy.max_attempts:
                 delay = exponential_backoff_with_jitter(
                     attempt=attempt,
                     base_delay=self.retry_delay,
@@ -326,9 +336,21 @@ class AsyncAPIClient:
                 await asyncio.sleep(delay)
 
         # すべてのリトライが失敗
-        self.logger.error("async_all_retries_failed", method=method, endpoint=endpoint)
+        self.logger.error(
+            "async_all_retries_failed",
+            method=method,
+            endpoint=endpoint,
+            attempts=retry_policy.max_attempts,
+            suppressed_reason=retry_policy.suppressed_reason,
+        )
+        message = (
+            f"Async request failed after {retry_policy.max_attempts} attempts"
+            f"{retry_suppression_suffix(retry_policy, method)}"
+        )
         raise APIRetryError(
-            f"Async request failed after {self.retry_count + 1} attempts",
+            message,
+            attempts=retry_policy.max_attempts,
+            suppressed_reason=retry_policy.suppressed_reason,
         ) from last_exception
 
     async def get(
@@ -346,14 +368,21 @@ class AsyncAPIClient:
         json: dict[str, Any] | None = None,
         data: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
+        *,
+        retry_non_idempotent: bool = False,
     ) -> httpx.Response:
-        """非同期POSTリクエスト実行"""
+        """非同期POSTリクエスト実行。
+
+        ``retry_non_idempotent`` は、冪等キーまたはサーバー側の重複排除契約が
+        ある場合だけ有効化する。
+        """
         return await self._make_request_with_retry(
             "POST",
             endpoint,
             json=json,
             data=data,
             headers=headers,
+            retry_non_idempotent=retry_non_idempotent,
         )
 
     async def put(
@@ -362,14 +391,21 @@ class AsyncAPIClient:
         json: dict[str, Any] | None = None,
         data: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
+        *,
+        retry_non_idempotent: bool = False,
     ) -> httpx.Response:
-        """非同期PUTリクエスト実行"""
+        """非同期PUTリクエスト実行。
+
+        ``retry_non_idempotent`` は、サーバー実装がPUTの冪等性を保証せず、
+        かつ重複排除契約がある場合だけ有効化する。
+        """
         return await self._make_request_with_retry(
             "PUT",
             endpoint,
             json=json,
             data=data,
             headers=headers,
+            retry_non_idempotent=retry_non_idempotent,
         )
 
     async def delete(self, endpoint: str, headers: dict[str, str] | None = None) -> httpx.Response:
@@ -382,12 +418,19 @@ class AsyncAPIClient:
         json: dict[str, Any] | None = None,
         data: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
+        *,
+        retry_non_idempotent: bool = False,
     ) -> httpx.Response:
-        """非同期PATCHリクエスト実行"""
+        """非同期PATCHリクエスト実行。
+
+        ``retry_non_idempotent`` は、冪等キーまたはサーバー側の重複排除契約が
+        ある場合だけ有効化する。
+        """
         return await self._make_request_with_retry(
             "PATCH",
             endpoint,
             json=json,
             data=data,
             headers=headers,
+            retry_non_idempotent=retry_non_idempotent,
         )

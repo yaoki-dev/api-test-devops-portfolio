@@ -225,6 +225,32 @@ def test_sync_create_post() -> None:
     assert result.body == body
 
 
+@respx.mock
+@patch("utils.jsonplaceholder_base_sync.exponential_backoff_with_jitter", return_value=0.0)
+def test_sync_create_post_retries_when_explicitly_opted_in(mock_backoff: Mock) -> None:
+    """ドメインのPOSTでも明示的なオプトインがbase clientへ伝播する。"""
+    route = respx.post(f"{BASE_URL}/posts")
+    route.side_effect = [
+        httpx.Response(502),
+        httpx.Response(
+            201,
+            json={"id": 101, "userId": 1, "title": "created", "body": "content"},
+        ),
+    ]
+
+    with SyncJSONPlaceholderClient(retry_count=2) as client:
+        result = client.create_post(
+            title="created",
+            body="content",
+            user_id=1,
+            retry_non_idempotent=True,
+        )
+
+    assert route.call_count == 2
+    assert result.id == 101
+    assert mock_backoff.call_count == 1
+
+
 @pytest.mark.parametrize(
     "user_id,completed,limit,expected_count",
     [
