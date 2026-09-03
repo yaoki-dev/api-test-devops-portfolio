@@ -610,6 +610,8 @@ async def test_async_retry_exhausted(mock_backoff: Mock) -> None:
     # リトライ回数+1回（初回+リトライ{retry_count}回={retry_count + 1}回）実行されたことを確認
     assert route.call_count == retry_count + 1
     assert f"Async request failed after {retry_count + 1} attempts" in str(exc_info.value)
+    assert exc_info.value.attempts == retry_count + 1
+    assert exc_info.value.suppressed_reason is None
     # バックオフがretry_count回呼ばれることを確認（最後の試行ではバックオフなし）
     assert mock_backoff.call_count == retry_count
 
@@ -752,8 +754,29 @@ async def test_async_mixed_errors_exhaust_retries(mock_backoff: Mock) -> None:
 
 @respx.mock
 @patch("utils.jsonplaceholder_base_async.exponential_backoff_with_jitter", return_value=0.0)
-async def test_async_post_with_retry(mock_backoff: Mock) -> None:
-    """POSTの5xxはリトライ対象とする外部APIクライアントの境界を固定する。"""
+async def test_async_post_does_not_retry_by_default(mock_backoff: Mock) -> None:
+    """POSTは既定で再送せず、非冪等リトライの抑止理由を公開する。"""
+    route = respx.post(f"{BASE_URL}/posts")
+    route.side_effect = [httpx.Response(502)]
+
+    async with AsyncAPIClient(retry_count=2) as client:
+        with pytest.raises(APIRetryError) as exc_info:
+            await client.post(
+                "/posts",
+                json={"title": "test", "body": "content", "userId": 1},
+            )
+
+    assert route.call_count == 1
+    assert exc_info.value.attempts == 1
+    assert exc_info.value.suppressed_reason == "non_idempotent_method"
+    assert "Retry suppressed for non-idempotent POST request." in str(exc_info.value)
+    assert mock_backoff.call_count == 0
+
+
+@respx.mock
+@patch("utils.jsonplaceholder_base_async.exponential_backoff_with_jitter", return_value=0.0)
+async def test_async_post_retries_when_explicitly_opted_in(mock_backoff: Mock) -> None:
+    """POSTは明示的なオプトイン時だけ既存の再送動作を許可する。"""
     route = respx.post(f"{BASE_URL}/posts")
     route.side_effect = [
         httpx.Response(502),
@@ -764,11 +787,46 @@ async def test_async_post_with_retry(mock_backoff: Mock) -> None:
         response = await client.post(
             "/posts",
             json={"title": "test", "body": "content", "userId": 1},
+            retry_non_idempotent=True,
         )
 
     assert route.call_count == 2
     assert response.status_code == 201
-    # バックオフが1回呼ばれることを確認（attempt 0で502失敗→backoff、attempt 1で成功）
+    assert mock_backoff.call_count == 1
+
+
+@respx.mock
+@patch("utils.jsonplaceholder_base_async.exponential_backoff_with_jitter", return_value=0.0)
+async def test_async_patch_does_not_retry_by_default(mock_backoff: Mock) -> None:
+    """PATCHも既定で再送しない。"""
+    route = respx.patch(f"{BASE_URL}/todos/1")
+    route.side_effect = [httpx.Response(502)]
+
+    async with AsyncAPIClient(retry_count=2) as client:
+        with pytest.raises(APIRetryError) as exc_info:
+            await client.patch("/todos/1", json={"completed": True})
+
+    assert route.call_count == 1
+    assert exc_info.value.suppressed_reason == "non_idempotent_method"
+    assert mock_backoff.call_count == 0
+
+
+@respx.mock
+@patch("utils.jsonplaceholder_base_async.exponential_backoff_with_jitter", return_value=0.0)
+async def test_async_patch_retries_when_explicitly_opted_in(mock_backoff: Mock) -> None:
+    """PATCHは明示的なオプトイン時だけ再送する。"""
+    route = respx.patch(f"{BASE_URL}/todos/1")
+    route.side_effect = [httpx.Response(502), httpx.Response(200)]
+
+    async with AsyncAPIClient(retry_count=2) as client:
+        response = await client.patch(
+            "/todos/1",
+            json={"completed": True},
+            retry_non_idempotent=True,
+        )
+
+    assert route.call_count == 2
+    assert response.status_code == 200
     assert mock_backoff.call_count == 1
 
 
@@ -790,6 +848,41 @@ async def test_async_put_4xx_no_retry(mock_backoff: Mock) -> None:
     assert exc_info.value.status_code == 400
     # 4xxは即raise、バックオフに到達しないことを確認
     assert mock_backoff.call_count == 0
+
+
+@respx.mock
+@patch("utils.jsonplaceholder_base_async.exponential_backoff_with_jitter", return_value=0.0)
+async def test_async_put_does_not_retry_by_default(mock_backoff: Mock) -> None:
+    """PUTも実サーバーの非冪等実装に備え、既定では再送しない。"""
+    route = respx.put(f"{BASE_URL}/posts/1")
+    route.side_effect = [httpx.Response(502)]
+
+    async with AsyncAPIClient(retry_count=2) as client:
+        with pytest.raises(APIRetryError) as exc_info:
+            await client.put("/posts/1", json={"title": "updated"})
+
+    assert route.call_count == 1
+    assert exc_info.value.suppressed_reason == "non_idempotent_method"
+    assert "Retry suppressed for non-idempotent PUT request." in str(exc_info.value)
+    assert mock_backoff.call_count == 0
+
+
+@respx.mock
+@patch("utils.jsonplaceholder_base_async.exponential_backoff_with_jitter", return_value=0.0)
+async def test_async_put_retries_when_explicitly_opted_in(mock_backoff: Mock) -> None:
+    route = respx.put(f"{BASE_URL}/posts/1")
+    route.side_effect = [httpx.Response(502), httpx.Response(200)]
+
+    async with AsyncAPIClient(retry_count=2) as client:
+        response = await client.put(
+            "/posts/1",
+            json={"title": "updated"},
+            retry_non_idempotent=True,
+        )
+
+    assert route.call_count == 2
+    assert response.status_code == 200
+    assert mock_backoff.call_count == 1
 
 
 @respx.mock

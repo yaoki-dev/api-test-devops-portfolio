@@ -1,6 +1,6 @@
 # Documentation Index
 
-*最終更新: 2026-08-27*
+*最終更新: 2026-08-31*
 
 このリポジトリで公開しているドキュメントの一覧です。
 
@@ -25,6 +25,12 @@
 | [domain.md](agents/domain.md) | ドメインドキュメントの配置方針 |
 | [issue-tracker.md](agents/issue-tracker.md) | GitHub Issues による課題管理 |
 | [triage-labels.md](agents/triage-labels.md) | トリアージラベル運用（4ラベル） |
+
+## 🏛 ADR（アーキテクチャ決定記録）
+
+| ファイル | 説明 |
+|---------|------|
+| [adr/README.md](adr/README.md) | ADR の一覧・記述フォーマット・運用ルール（個別 ADR はこちらから辿る） |
 
 ## 📚 Reference（開発ガイド）
 

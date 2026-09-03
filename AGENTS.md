@@ -93,14 +93,6 @@ APIテスト + DevOps統合学習ポートフォリオ。時給4000-4500円レ�
 - GitHub Actions (CI/CD自動化)
 
 <!-- preserve-on-compact: Serena Memory System -->
-## 📖 Serenaメモリシステムの使い方
-
-**メモリ参照**: メモリ名（例: `implementation_quality_gates`）は Serena の `read_memory()`（または相当ツール）で明示的に参照する
-
-**主要メモリ**:`implementation_quality_gates`, `test_strategy_details`
-
-**物理ファイル位置**: `.serena/memories/` 配下
-
 
 ### リンター・フォーマッター
 

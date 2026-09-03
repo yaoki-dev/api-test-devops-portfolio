@@ -25,7 +25,11 @@ from utils.jsonplaceholder_client_sync import SyncJSONPlaceholderClient
 SKIP_INTEGRATION = not settings.test.external_api_enabled
 SKIP_REASON = "settings.test.external_api_enabled is False - skipping external API tests"
 
-pytestmark = [pytest.mark.integration, pytest.mark.skipif(SKIP_INTEGRATION, reason=SKIP_REASON)]
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.external,
+    pytest.mark.skipif(SKIP_INTEGRATION, reason=SKIP_REASON),
+]
 
 
 def test_sync_get_nonexistent_post_raises_404() -> None:

@@ -44,13 +44,31 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         response = self.get(f"/posts/{post_id}")
         return parse_response_model(response, Post)
 
-    def create_post(self, title: str, body: str, user_id: int) -> Post:
-        """新規投稿の作成"""
+    def create_post(
+        self,
+        title: str,
+        body: str,
+        user_id: int,
+        *,
+        retry_non_idempotent: bool = False,
+    ) -> Post:
+        """新規投稿の作成。
+
+        ``retry_non_idempotent`` は、冪等キーまたはサーバー側の重複排除契約が
+        ある場合だけ有効化する。
+        """
         data = {"title": title, "body": body, "userId": user_id}
-        response = self.post("/posts", json=data)
+        response = self.post("/posts", json=data, retry_non_idempotent=retry_non_idempotent)
         return parse_response_model(response, Post)
 
-    def update_post(self, post_id: int, title: str, body: str) -> dict[str, Any]:
+    def update_post(
+        self,
+        post_id: int,
+        title: str,
+        body: str,
+        *,
+        retry_non_idempotent: bool = False,
+    ) -> dict[str, Any]:
         """投稿更新の実行
 
         Note:
@@ -65,6 +83,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
             post_id: 更新対象の投稿ID
             title: 更新後のタイトル
             body: 更新後の本文
+            retry_non_idempotent: PUTの再送を安全に許可できる場合だけTrue
 
         Returns:
             JSONPlaceholderが返した部分的な投稿データ
@@ -75,7 +94,11 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
 
         """
         data = {"title": title, "body": body}
-        response = self.put(f"/posts/{post_id}", json=data)
+        response = self.put(
+            f"/posts/{post_id}",
+            json=data,
+            retry_non_idempotent=retry_non_idempotent,
+        )
         return safe_parse_json_object(response)
 
     def delete_post(self, post_id: int) -> None:
@@ -103,11 +126,17 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         response = self.get(f"/users/{user_id}")
         return parse_response_model(response, User)
 
-    def create_user(self, user_data: dict[str, Any]) -> dict[str, Any]:
+    def create_user(
+        self,
+        user_data: dict[str, Any],
+        *,
+        retry_non_idempotent: bool = False,
+    ) -> dict[str, Any]:
         """新規ユーザーの作成
 
         Args:
             user_data: 作成するユーザーのフィールド
+            retry_non_idempotent: サーバー側の重複排除契約がある場合だけPOST再送を許可
 
         Returns:
             JSONPlaceholderが返した作成済みユーザーデータ
@@ -117,7 +146,7 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
                 （レスポンスのトップレベルがJSONオブジェクトでない場合を含む）
 
         """
-        response = self.post("/users", json=user_data)
+        response = self.post("/users", json=user_data, retry_non_idempotent=retry_non_idempotent)
         return safe_parse_json_object(response)
 
     def get_todos(
@@ -156,14 +185,34 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
         response = self.get(f"/todos/{todo_id}")
         return parse_response_model(response, Todo)
 
-    def create_todo(self, title: str, user_id: int, completed: bool = False) -> Todo:
-        """新規TODOの作成"""
+    def create_todo(
+        self,
+        title: str,
+        user_id: int,
+        completed: bool = False,
+        *,
+        retry_non_idempotent: bool = False,
+    ) -> Todo:
+        """新規TODOの作成。
+
+        ``retry_non_idempotent`` は、冪等キーまたはサーバー側の重複排除契約が
+        ある場合だけ有効化する。
+        """
         data = {"title": title, "userId": user_id, "completed": completed}
-        response = self.post("/todos", json=data)
+        response = self.post("/todos", json=data, retry_non_idempotent=retry_non_idempotent)
         return parse_response_model(response, Todo)
 
-    def update_todo(self, todo_id: int, **kwargs: Any) -> dict[str, Any]:
+    def update_todo(
+        self,
+        todo_id: int,
+        *,
+        retry_non_idempotent: bool = False,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
         """TODOの更新
+
+        ``retry_non_idempotent`` は、冪等キーまたはサーバー側の重複排除契約が
+        ある場合だけ有効化する。
 
         Note:
             ``**kwargs`` による部分更新（PATCH）のため、レスポンスは可変な
@@ -175,7 +224,11 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
             APIClientError: HTTPリクエストまたはレスポンスのJSONパースに失敗した場合
                 （レスポンスのトップレベルがJSONオブジェクトでない場合を含む）
         """
-        response = self.patch(f"/todos/{todo_id}", json=kwargs)
+        response = self.patch(
+            f"/todos/{todo_id}",
+            json=kwargs,
+            retry_non_idempotent=retry_non_idempotent,
+        )
         return safe_parse_json_object(response)
 
     def get_comments(self, post_id: int | None = None) -> list[Comment]:

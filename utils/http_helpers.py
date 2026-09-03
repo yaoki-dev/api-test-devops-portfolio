@@ -1,28 +1,112 @@
 """HTTPクライアントの共有ヘルパー関数"""
 
 import sys
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
 from structlog.typing import FilteringBoundLogger
 
 from config.settings import settings
-from utils.exceptions import APIClientError, APIConnectionError, APITimeoutError
+from utils.exceptions import (
+    APIClientError,
+    APIConnectionError,
+    APITimeoutError,
+    SuppressedReason,
+)
 
 
-def validate_optional_int(value: int | None, name: str, min_value: int) -> None:
-    """オプショナルな整数パラメータの最小値バリデーション。
+def validate_optional_int(
+    value: int | None,
+    name: str,
+    min_value: int,
+    max_value: int | None = None,
+) -> None:
+    """オプショナルな整数パラメータの範囲バリデーション。
 
     Args:
         value: 検証対象の値（Noneの場合はスキップ）
         name: パラメータ名（エラーメッセージ用）
         min_value: 最小許容値（含む）
+        max_value: 最大許容値（含む）。Noneの場合は上限なし
 
     Raises:
-        ValueError: valueがmin_valueより小さい場合
+        TypeError: valueが整数またはNoneでない場合
+        ValueError: valueがmin_valueより小さい場合、またはmax_valueより大きい場合
     """
+    if value is not None and (isinstance(value, bool) or not isinstance(value, int)):
+        raise TypeError(f"{name} must be an int or None")
     if value is not None and value < min_value:
         raise ValueError(f"{name} must be >= {min_value}")
+    if value is not None and max_value is not None and value > max_value:
+        raise ValueError(f"{name} must be <= {max_value}")
+
+
+IDEMPOTENT_METHODS: frozenset[str] = frozenset({"GET", "HEAD", "DELETE", "OPTIONS", "TRACE"})
+
+
+@dataclass(frozen=True, slots=True)
+class RetryPolicy:
+    """HTTPメソッドごとの総送信回数とリトライ抑止理由。"""
+
+    max_attempts: int
+    suppressed_reason: SuppressedReason | None = None
+
+
+def resolve_retry_policy(
+    method: str,
+    retry_count: int,
+    *,
+    retry_non_idempotent: bool = False,
+) -> RetryPolicy:
+    """HTTPメソッドと設定から安全な送信予算を解決する。
+
+    非冪等メソッドは、呼び出し側がサーバー側の重複排除契約を確認した場合だけ
+    per-call opt-in で再送できる。未知のメソッドは安全側に倒して非冪等として扱う。
+
+    Raises:
+        TypeError: retry_non_idempotent が bool でない場合
+        ValueError: retry_count が 0..10 の範囲外の場合
+
+    """
+    # 型注釈と mypy strict が守るのは型検査を通る呼び出し元だけ。このフラグは呼び出しごとに
+    # 渡される引数で settings に対応するフィールドを持たないため、Pydantic の検証も届かない。
+    # 非冪等メソッドの再送を解禁する安全ゲートなので、"false" のような文字列が truthy として
+    # 素通りすると、重複排除契約を確認しないまま POST が複数回送信される（ADR-0006 の前提が
+    # 崩れる）。bool は int の派生型のため、int ではなく bool を指定する必要がある。
+    if not isinstance(retry_non_idempotent, bool):
+        raise TypeError("retry_non_idempotent must be a bool")
+    # resolve_client_config との二重検証は冗長ではない。あちらは構築時の fail-fast、
+    # ここは使用時の境界を守る。retry_count は public 属性で構築後の代入を防げない。
+    # timeout や retry_delay も同じく可変だが、負値を与えても送信自体は続く
+    # （retry_delay=-1 は exponential_backoff_with_jitter の下限 0.1 秒に丸められる）。
+    # retry_count=-1 だけは max_attempts=0 でループ本体が1回も実行されず、
+    # リクエストを送らないまま「Request failed after 0 attempts」で失敗する。
+    # 送信そのものが起きなくなる唯一の値なので、ここで止める。
+    validate_optional_int(retry_count, "retry_count", 0, 10)
+
+    normalized_method = method.upper()
+    configured_attempts = retry_count + 1
+    if normalized_method not in IDEMPOTENT_METHODS and not retry_non_idempotent:
+        return RetryPolicy(
+            max_attempts=1,
+            suppressed_reason=("non_idempotent_method" if retry_count > 0 else None),
+        )
+    return RetryPolicy(max_attempts=configured_attempts)
+
+
+def retry_suppression_suffix(policy: RetryPolicy, method: str) -> str:
+    """抑止された非冪等リトライの説明を例外メッセージへ付加する。"""
+    reason = policy.suppressed_reason
+    if reason is None:
+        return ""
+    suffix_by_reason: dict[SuppressedReason, str] = {
+        "non_idempotent_method": "non-idempotent",
+    }
+    label = suffix_by_reason.get(reason)
+    if label is None:
+        return f" Retry suppressed for {method.upper()} request."
+    return f" Retry suppressed for {label} {method.upper()} request."
 
 
 def map_request_error(e: httpx.RequestError | httpx.InvalidURL) -> APIClientError:
@@ -110,7 +194,8 @@ def resolve_client_config(
 
     Raises:
         ValueError: base_urlが空文字列またはホワイトスペース
-            （str.strip() で除去される文字）のみの文字列の場合
+            （str.strip() で除去される文字）のみの文字列の場合、
+            または retry_count が 0..10 の範囲外の場合
 
     """
     active_settings = settings
@@ -122,6 +207,9 @@ def resolve_client_config(
     timeout = timeout if timeout is not None else active_settings.api.timeout
     retry_count = retry_count if retry_count is not None else active_settings.api.retry_count
     retry_delay = retry_delay if retry_delay is not None else active_settings.api.retry_delay
+    # 構築時に fail-fast させ、最初のリクエストではなくクライアント生成で失敗させる。
+    # 使用時の境界は resolve_retry_policy 側が別途守る（そちらのコメント参照）。
+    validate_optional_int(retry_count, "retry_count", 0, 10)
 
     default_headers = {
         "User-Agent": active_settings.api.user_agent,

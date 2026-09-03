@@ -31,6 +31,7 @@
 | [ADR-0003](0003-ci-result-loss-prevention-conditions.md) | CI ジョブ結果の取りこぼしを防ぐ条件設計 | Accepted | `.github/workflows/trivy-scan.yml`、`.github/workflows/ci.yml` |
 | [ADR-0004](0004-trivy-ignore-unfixed-policy.md) | Trivy で修正未提供の脆弱性をゲート対象から除外する方針 | Accepted | `.github/workflows/trivy-scan.yml` |
 | [ADR-0005](0005-ci-cache-freshness-vs-build-time.md) | CI キャッシュ鮮度 vs ビルド時間のトレードオフ | Accepted | `.github/workflows/ci.yml`、`.github/workflows/trivy-scan.yml` |
+| [ADR-0006](0006-non-idempotent-retry-policy.md) | 非冪等 HTTP メソッドのリトライ方針 | Accepted | `utils/http_helpers.py`、`utils/jsonplaceholder_base_{sync,async}.py` |
 
 ## ADR 追加ルール
 

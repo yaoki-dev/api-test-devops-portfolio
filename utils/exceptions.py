@@ -1,6 +1,7 @@
 """Shared API client exceptions and fatal-exception policy."""
 
 import asyncio
+from typing import Literal
 
 import httpx
 
@@ -34,6 +35,9 @@ class APITimeoutError(APIClientError):
     """APIタイムアウトエラー"""
 
 
+SuppressedReason = Literal["non_idempotent_method"]
+
+
 class APIHTTPError(APIClientError):
     """HTTPステータスエラー"""
 
@@ -47,6 +51,17 @@ class APIHTTPError(APIClientError):
 
 class APIRetryError(APIClientError):
     """リトライ上限エラー"""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        attempts: int = 1,
+        suppressed_reason: SuppressedReason | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.attempts = attempts
+        self.suppressed_reason = suppressed_reason
 
 
 class APIJSONDecodeError(APIClientError):

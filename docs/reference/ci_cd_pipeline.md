@@ -1,6 +1,6 @@
 # CI/CD Pipeline
 
-*最終更新: 2026-08-15*
+*最終更新: 2026-09-01*
 
 ## CI/CDパイプライン概要
 
@@ -139,6 +139,12 @@ flowchart TD
 | **status-report** | 全トリガー | パイプラインサマリー生成（`if: !cancelled()`） | 5分 |
 
 CD 3ジョブ（`deploy-pages` / `publish-image` / `verify-published-image`）は main push 限定のため、後述の「CD（Continuous Delivery）」節の表を参照してください。同一トリガーで起動するジョブは GitHub Actions により並列実行され、直列関係はトリガー別 DAG の 3 図でノード内に `needs:` として明示されたものだけです。
+
+### 外部APIの実行境界
+
+- PR Validationのpytest stepと`compose-test`のtest containerは、`TEST__EXTERNAL_API_ENABLED=false`を明示する。`.env.testing`の有無やSettingsの既定値に依存せず、PR品質ゲートを外部APIの可用性から分離する。
+- `docker-compose.yml`の`test` serviceも同じ値をenvironmentへ固定する。`env_file`が任意でも、Compose実行時のテスト境界は変わらない。
+- 週次の`Full coverage report`だけは`TEST__EXTERNAL_API_ENABLED=true`を明示する。External markerのAPI検証は別stepで継続し、PRの再現性と週次の実API確認を混同しない。
 
 ---
 

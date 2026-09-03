@@ -14,7 +14,11 @@ from utils.jsonplaceholder_client_async import AsyncJSONPlaceholderClient
 SKIP_INTEGRATION = not settings.test.external_api_enabled
 SKIP_REASON = "settings.test.external_api_enabled is False - skipping external API tests"
 
-pytestmark = [pytest.mark.integration, pytest.mark.skipif(SKIP_INTEGRATION, reason=SKIP_REASON)]
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.external,
+    pytest.mark.skipif(SKIP_INTEGRATION, reason=SKIP_REASON),
+]
 
 
 async def test_async_user_nested_models_parsed() -> None:

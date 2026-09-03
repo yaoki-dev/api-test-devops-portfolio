@@ -14,9 +14,9 @@ pytestmark = pytest.mark.unit
 
 INTENTIONALLY_ASYNC_ONLY: dict[str, str] = {
     # Intentional async-only: this method demonstrates concurrent fan-out.
-    "bulk_create_users": "Uses asyncio.gather for concurrent user creation.",
+    "bulk_create_users": "Uses a rolling admission window to bound in-flight user creation tasks.",
     # Intentional async-only: bounded concurrency is the behavior under demonstration.
-    "get_multiple_users": "Uses a semaphore to bound concurrent user requests.",
+    "get_multiple_users": "Uses a rolling admission window to bound in-flight user requests.",
     # Intentional async-only: TaskGroup cancellation behavior is being demonstrated.
     "get_user_data": "Uses asyncio.TaskGroup for concurrent related-data requests.",
 }

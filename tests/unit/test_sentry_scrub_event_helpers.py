@@ -11,15 +11,20 @@ test_sentry_scrub_events.py 側にある。
 
 from __future__ import annotations
 
-from typing import Any
+from collections import namedtuple
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
+from sentry_sdk.types import Event
 
 import utils.sentry_scrub_events as sentry_events
 from utils.sentry_scrub_events import (
+    _mask_freetext_pii,
+    _scrub_event_message_fields,
     _scrub_exception_field,
     _scrub_exception_value_item,
+    _scrub_exception_value_item_extra_keys,
 )
 
 pytestmark = pytest.mark.unit
@@ -265,6 +270,69 @@ def test_exception_value_item_redacts_dict_bytes_value() -> None:
     assert result == {"value": "[REDACTED]"}
 
 
+@pytest.mark.parametrize(
+    "structured_value",
+    [
+        pytest.param({"password": "hunter2"}, id="dict"),
+        pytest.param(["token=abc123"], id="list"),
+        pytest.param(("token=abc123",), id="tuple"),
+    ],
+)
+def test_exception_value_item_redacts_structured_value(structured_value: Any) -> None:
+    """非文字列の value も REDACT する。
+
+    _scrub_exception_value_item_extra_keys が "value" を明示スキップするため、
+    ここで REDACT しないと構造化された value はどこからもスクラブされず素通りする。
+    custom before_send hook / SDK 拡張が構造化 value を渡す経路を想定した多層防御。
+    """
+    result = _scrub_exception_value_item({"type": "ValueError", "value": structured_value})
+
+    assert result == {"type": "ValueError", "value": "[REDACTED]"}
+
+
+def test_exception_value_item_keeps_numeric_value() -> None:
+    """int/float/bool は PII 非含のため素通しする（非 dict value_item の扱いと対称）。"""
+    assert _scrub_exception_value_item({"value": 42}) == {"value": 42}
+
+
+def test_exception_value_item_namedtuple_does_not_raise() -> None:
+    """namedtuple を再構築しようとすると TypeError になるため plain tuple へ落とす。
+
+    `type(value_item)(generator)` は namedtuple の位置引数シグネチャと衝突する。
+    ここで例外が漏れると before_send がイベントごと落とし観測性を失う。
+    """
+    params = namedtuple("Params", ["a", "b"])("a@b.com", 42)  # noqa: PYI024
+
+    result = _scrub_exception_value_item(params)
+
+    # 素の str は redact されない（_scrub_list_item のキー文脈方針）。
+    # ここで固定するのは plain tuple へ落ちて例外にならないこと。
+    assert result == ("a@b.com", 42)
+    assert type(result) is tuple
+
+
+def test_exception_value_item_extra_keys_namedtuple_does_not_raise() -> None:
+    """extra key 側の並び再構築も namedtuple で落ちない。"""
+    scrubbed_value: dict[str, Any] = {
+        "type": "ValueError",
+        "custom": namedtuple("Params", ["a", "b"])("a@b.com", 42),  # noqa: PYI024
+    }
+
+    _scrub_exception_value_item_extra_keys(scrubbed_value)
+
+    assert scrubbed_value["custom"] == ("a@b.com", 42)
+    assert type(scrubbed_value["custom"]) is tuple
+
+
+def test_exception_value_item_extra_keys_keeps_list_type() -> None:
+    """list は list のまま返し、tuple 化しない（並び型を保つ既存契約）。"""
+    scrubbed_value: dict[str, Any] = {"type": "ValueError", "custom": [{"password": "hunter2"}]}
+
+    _scrub_exception_value_item_extra_keys(scrubbed_value)
+
+    assert scrubbed_value["custom"] == [{"password": "[REDACTED]"}]
+
+
 class TestSetInternalExtras:
     """_set_internal_extras の許可リスト強制。
 
@@ -330,3 +398,429 @@ class TestSetInternalExtras:
         mock_scope = MagicMock()
         sentry_events._set_internal_extras(mock_scope, {})
         mock_scope.set_extra.assert_not_called()
+
+
+class TestMaskFreetextPII:
+    """message / logentry 向け選択的マスクの境界を検証する。"""
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            pytest.param(
+                "login failed for alice@example.com password=hunter2",
+                "login failed for [REDACTED] password=[REDACTED]",
+                id="email_and_assignment",
+            ),
+            pytest.param("token: abc123, status=ok", "token: [REDACTED], status=ok", id="colon"),
+            pytest.param(
+                "api_key='sk live 123' user=bob",
+                "api_key=[REDACTED] user=bob",
+                id="quoted_value_with_spaces",
+            ),
+            pytest.param(
+                "Authorization: Bearer secret status=500",
+                "Authorization: [REDACTED] status=500",
+                id="authorization_bearer_keeps_following_assignment",
+            ),
+            pytest.param(
+                "proxy-authorization=Basic abc123",
+                "proxy-authorization=[REDACTED]",
+                id="proxy_authorization_case_insensitive",
+            ),
+            pytest.param(
+                '{"Authorization": "Digest username=alice, realm=example"}',
+                '{"Authorization": [REDACTED]}',
+                id="quoted_authorization_digest",
+            ),
+            pytest.param(
+                "password hunter2 token＝abc123 cfg[secret]=xyz",
+                "password [REDACTED] token＝[REDACTED] cfg[secret]=[REDACTED]",
+                id="space_fullwidth_and_bracket_assignments",
+            ),
+            pytest.param(
+                "パスワード: hunter2 メールアドレス: alice@example.com",
+                "パスワード: [REDACTED] メールアドレス: [REDACTED]",
+                id="japanese_sensitive_labels",
+            ),
+            pytest.param(
+                "request eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.s3cr3t",
+                "request [REDACTED]",
+                id="bare_jwt",
+            ),
+            pytest.param(
+                "card 4111 1111 1111 1111 phone +81 90 1234 5678",
+                "card [REDACTED] phone [REDACTED]",
+                id="bare_card_and_international_phone",
+            ),
+        ],
+    )
+    def test_sensitive_parts_are_masked(self, text: str, expected: str) -> None:
+        assert _mask_freetext_pii(text) == expected
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            pytest.param("retry=3 attempt=2", id="non_sensitive_keys"),
+            pytest.param("timeout after 30s (retry=1)", id="parenthesized"),
+        ],
+    )
+    def test_non_sensitive_text_is_preserved(self, text: str) -> None:
+        """機密キー名を持たない代入は潰さない。issue タイトルの識別性を保つため。"""
+        assert _mask_freetext_pii(text) == text
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            pytest.param(
+                "token=abc123&status=ok&retry=3",
+                "token=[REDACTED]&status=ok&retry=3",
+                id="query_string_keeps_following_params",
+            ),
+            pytest.param(
+                'body={"password": "hunter2"}',
+                'body={"password": [REDACTED]}',
+                id="json_nested_in_non_sensitive_key",
+            ),
+            pytest.param(
+                '{"password": "hunter2", "email": "a@b.co"}',
+                '{"password": [REDACTED], "email": [REDACTED]}',
+                id="bare_json_quoted_keys",
+            ),
+            pytest.param("token=a]b", "token=[REDACTED]", id="value_containing_bracket"),
+        ],
+    )
+    def test_structured_text_is_masked_without_collateral_loss(
+        self, text: str, expected: str
+    ) -> None:
+        """構造化文字列の境界。マスクが過小（漏洩）にも過大（情報喪失）にもならないこと。
+
+        いずれも実装当初の正規表現では失敗した。``&`` 区切りで後続パラメータを
+        巻き込み、JSON は外側の非機密キーが内側を食い潰し、``]`` を含む値は
+        途中で切れて残りが漏れた。
+        """
+        assert _mask_freetext_pii(text) == expected
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            pytest.param("password=[REDACTED] realpw=x", id="already_redacted"),
+            pytest.param('{"password": "hunter2"}', id="json"),
+            pytest.param("token=abc&status=ok", id="query_string"),
+        ],
+    )
+    def test_masking_is_idempotent(self, text: str) -> None:
+        """二重適用で出力が壊れないこと。before_send は再入しうるため。"""
+        once = _mask_freetext_pii(text)
+
+        assert _mask_freetext_pii(once) == once
+
+    def test_authorization_masking_is_idempotent(self) -> None:
+        text = "Authorization: Bearer secret"
+        once = _mask_freetext_pii(text)
+        assert once == "Authorization: [REDACTED]"
+        assert _mask_freetext_pii(once) == once
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            pytest.param(
+                "Authorization: Bearer YWJjZA==",
+                "Authorization: [REDACTED]",
+                id="base64_padding_at_end",
+            ),
+            pytest.param(
+                "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.s3cr3t",
+                "Authorization: [REDACTED]",
+                id="dotted_jwt",
+            ),
+            pytest.param(
+                "Authorization: Bearer YWJjZA==\nstatus=500",
+                "Authorization: [REDACTED]\nstatus=500",
+                id="lf_termination_preserves_context",
+            ),
+            pytest.param(
+                "Authorization: Bearer YWJjZA==\r\nstatus=500",
+                "Authorization: [REDACTED]\r\nstatus=500",
+                id="crlf_termination_preserves_context",
+            ),
+        ],
+    )
+    def test_authorization_masks_padded_tokens_and_line_terminators(
+        self, text: str, expected: str
+    ) -> None:
+        """認証値のpaddingと改行終端を含めてcredentialを残さない。"""
+        assert _mask_freetext_pii(text) == expected
+
+
+class TestScrubEventMessageFields:
+    """message / logentry を専用経路でスクラブすることを検証する。"""
+
+    def test_message_and_logentry_are_masked(self) -> None:
+        event = {
+            "message": "x token=abc",
+            "logentry": {
+                "formatted": "login failed for alice@example.com password=hunter2",
+                "message": "login failed for %s",
+                "params": ["alice@example.com", 42],
+            },
+        }
+
+        _scrub_event_message_fields(event)
+
+        assert event["message"] == "x token=[REDACTED]"
+        assert event["logentry"] == {
+            "formatted": "login failed for [REDACTED] password=[REDACTED]",
+            "message": "login failed for %s",
+            "params": ["[REDACTED]", 42],
+        }
+
+    def test_before_send_masks_authorization_in_message(self) -> None:
+        event = cast(
+            Event,
+            {"message": "request failed Authorization: Bearer secret-xyz"},
+        )
+
+        result = sentry_events._before_send(event, {})
+
+        assert result is not None
+        assert result["message"] == "request failed Authorization: [REDACTED]"
+        assert "secret-xyz" not in str(result)
+
+    @pytest.mark.parametrize("line_ending", ["\n", "\r\n"])
+    def test_before_send_masks_padded_authorization_before_next_line(
+        self, line_ending: str
+    ) -> None:
+        event = cast(
+            Event,
+            {"message": (f"request failed Authorization: Bearer YWJjZA=={line_ending}status=500")},
+        )
+
+        result = sentry_events._before_send(event, {})
+
+        assert result is not None
+        assert result["message"] == (
+            f"request failed Authorization: [REDACTED]{line_ending}status=500"
+        )
+        assert "YWJjZA==" not in str(result)
+
+    def test_bare_param_value_is_redacted(self) -> None:
+        """LoggingIntegration の実イベント形状。params の裸の値も潰れること。
+
+        formatted だけを塞いでも params にオリジナルが残る経路があり、
+        自由文字列マスクでは ``"hunter2"`` のようなキー文脈を持たない値を捕まえられない。
+        """
+        event: dict[str, Any] = {
+            "logentry": {
+                "message": "auth failed for %s password=%s",
+                "formatted": "auth failed for alice@example.com password=hunter2",
+                "params": ["alice@example.com", "hunter2"],
+            }
+        }
+
+        _scrub_event_message_fields(event)
+
+        assert event["logentry"]["params"] == ["[REDACTED]", "[REDACTED]"]
+        assert "hunter2" not in event["logentry"]["formatted"]
+
+    def test_breadcrumb_messages_are_masked(self) -> None:
+        """breadcrumbs[*].message も塞ぐこと。
+
+        キー名 ``message`` は機密キー集合に無く ``_SCRUBBED_EVENT_FIELDS`` 経由の
+        キー名ベーススクラブを素通りする。LoggingIntegration は INFO 以上を
+        breadcrumb 化するため、logentry と同じ形の PII がここにも流れ込む。
+        """
+        event: dict[str, Any] = {
+            "breadcrumbs": {
+                "values": [
+                    {"message": "retrying for bob@example.com token=abc123", "level": "warning"},
+                    {"level": "info"},
+                    "not-a-dict",
+                ]
+            }
+        }
+
+        _scrub_event_message_fields(event)
+
+        values = event["breadcrumbs"]["values"]
+        assert values[0] == {
+            "message": "retrying for [REDACTED] token=[REDACTED]",
+            "level": "warning",
+        }
+        assert values[1] == {"level": "info"}
+        assert values[2] == "not-a-dict"
+
+    def test_flat_breadcrumb_messages_are_masked(self) -> None:
+        event: dict[str, Any] = {
+            "breadcrumbs": [
+                {"message": "request from alice@example.com", "level": "info"},
+                {"category": "http"},
+            ]
+        }
+
+        _scrub_event_message_fields(event)
+
+        assert event["breadcrumbs"] == [
+            {"message": "request from [REDACTED]", "level": "info"},
+            {"category": "http"},
+        ]
+
+    def test_non_string_params_are_kept(self) -> None:
+        """非 str は残す。配列の形と型がデバッグの手掛かりになるため。"""
+        event: dict[str, Any] = {"logentry": {"params": ["secret", 42, True, None]}}
+
+        _scrub_event_message_fields(event)
+
+        assert event["logentry"]["params"] == ["[REDACTED]", 42, True, None]
+
+    def test_dict_params_go_through_key_based_scrub(self) -> None:
+        event: dict[str, Any] = {"logentry": {"params": {"password": "hunter2", "safe": "ok"}}}
+
+        _scrub_event_message_fields(event)
+
+        assert event["logentry"]["params"] == {"password": "[REDACTED]", "safe": "ok"}
+
+    def test_dict_inside_params_list_goes_through_key_based_scrub(self) -> None:
+        """params 直下の dict と同じ扱いを、list に入れ子になった dict にも適用する。
+
+        キー文脈がある要素はキーベース scrub、無い素の str は位置ベースで潰す、
+        という二重ポリシーを入れ子でも維持することを固定する。
+        """
+        event: dict[str, Any] = {
+            "logentry": {"params": [{"password": "hunter2", "safe": "ok"}, "alice@example.com"]}
+        }
+
+        _scrub_event_message_fields(event)
+
+        assert event["logentry"]["params"] == [
+            {"password": "[REDACTED]", "safe": "ok"},
+            "[REDACTED]",
+        ]
+
+    def test_bytes_params_are_redacted(self) -> None:
+        """bytes も PII を含みうるため str と同じく潰す。
+
+        ``_scrub_exception_value_item`` が bytes を REDACT する方針と対称にする。
+        """
+        event: dict[str, Any] = {"logentry": {"params": [b"password=hunter2", 42]}}
+
+        _scrub_event_message_fields(event)
+
+        assert event["logentry"]["params"] == ["[REDACTED]", 42]
+
+    def test_nested_list_params_are_scrubbed(self) -> None:
+        event: dict[str, Any] = {"logentry": {"params": [["alice@example.com", "hunter2"], 42]}}
+
+        _scrub_event_message_fields(event)
+
+        assert event["logentry"]["params"] == [["[REDACTED]", "[REDACTED]"], 42]
+
+    def test_dict_inside_params_tuple_is_scrubbed(self) -> None:
+        event: dict[str, Any] = {"logentry": {"params": ({"token": "sk-live-XYZ"},)}}
+
+        _scrub_event_message_fields(event)
+
+        assert event["logentry"]["params"] == ({"token": "[REDACTED]"},)
+
+    def test_namedtuple_params_do_not_raise(self) -> None:
+        """namedtuple を再構築しようとすると TypeError になるため plain tuple へ落とす。
+
+        `type(params)(generator)` は namedtuple の位置引数シグネチャと衝突する。
+        """
+        params = namedtuple("Params", ["a", "b"])("secret", 42)  # noqa: PYI024
+        event: dict[str, Any] = {"logentry": {"params": params}}
+
+        _scrub_event_message_fields(event)
+
+        assert event["logentry"]["params"] == ("[REDACTED]", 42)
+        assert type(event["logentry"]["params"]) is tuple
+
+    def test_circular_params_hit_depth_guard(self) -> None:
+        """循環参照でも RecursionError にならず深度ガードで打ち切る。"""
+        circular: list[Any] = []
+        circular.append(circular)
+        event: dict[str, Any] = {"logentry": {"params": circular}}
+
+        _scrub_event_message_fields(event)
+
+        flattened = repr(event["logentry"]["params"])
+        assert "[MAX_DEPTH_EXCEEDED]" in flattened
+
+    @pytest.mark.parametrize(
+        ("transaction", "expected"),
+        [
+            pytest.param(
+                "GET /users?token=abc123",
+                # _scrub_url は結果を URL エンコードして返すため [] は %5B%5D になる。
+                # spans[*].description と同一の既存挙動。
+                "GET /users?token=%5BREDACTED%5D",
+                id="query_string_pii_removed_method_kept",
+            ),
+            pytest.param(
+                "GET /users/alice@example.com/details",
+                "GET /users/[REDACTED]/details",
+                id="path_pii_removed",
+            ),
+            pytest.param(
+                "GET /users/1234/details",
+                "GET /users/<digits>/details",
+                id="numeric_path_identifier_removed",
+            ),
+            pytest.param(
+                "GET /jobs/550e8400-e29b-41d4-a716-446655440000",
+                "GET /jobs/<uuid>",
+                id="uuid_path_identifier_removed",
+            ),
+            pytest.param(
+                "GET /users/1234;token=secret",
+                "GET /users/<digits>;token=[REDACTED]",
+                id="path_parameter_and_identifier_removed",
+            ),
+            pytest.param("GET /users", "GET /users", id="clean_transaction_untouched"),
+            pytest.param("celery.task.sync", "celery.task.sync", id="non_url_name_untouched"),
+        ],
+    )
+    def test_transaction_name_is_scrubbed(self, transaction: str, expected: str) -> None:
+        """transaction 名の PII を落とし、メソッドと経路の可読性は保つこと。
+
+        Sentry 公式が「raw URL がそのまま transaction 名になり PII を運ぶ」箇所として
+        明示している。SDK の URL パラメータ化はルーティング設定次第で失敗しうる。
+        """
+        event: dict[str, Any] = {"transaction": transaction}
+
+        _scrub_event_message_fields(event)
+
+        assert event["transaction"] == expected
+
+    def test_non_string_transaction_is_left_alone(self) -> None:
+        """str 以外は触らない。壊すと transaction イベントごと失うため。"""
+        event: dict[str, Any] = {"transaction": None}
+
+        _scrub_event_message_fields(event)
+
+        assert event["transaction"] is None
+
+    def test_non_dict_logentry_is_dropped_fail_closed(self) -> None:
+        """dict 以外の logentry はスクラブ不能なため空 dict へ倒す。"""
+        event: dict[str, Any] = {"logentry": "raw-string"}
+
+        with patch.object(sentry_events, "_safe_log_warning") as mock_warning:
+            _scrub_event_message_fields(event)
+
+        assert event["logentry"] == {}
+        mock_warning.assert_called_once()
+
+    def test_before_send_masks_message_end_to_end(self) -> None:
+        """_before_send 経由でも message / logentry がマスクされる。"""
+        event = cast(
+            "Any",
+            {
+                "message": "login failed for alice@example.com password=hunter2",
+                "logentry": {"formatted": "login failed for alice@example.com password=hunter2"},
+            },
+        )
+
+        result = sentry_events._before_send(event, {})
+
+        assert result is not None
+        assert result["message"] == "login failed for [REDACTED] password=[REDACTED]"
+        assert result["logentry"]["formatted"] == "login failed for [REDACTED] password=[REDACTED]"

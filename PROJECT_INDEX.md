@@ -1,6 +1,6 @@
 # Project Index: api-test-devops-portfolio
 
-**Generated:** 2026-08-25
+**Generated:** 2026-08-31
 **Version:** 0.1.0
 **Python:** ==3.14.*
 
@@ -37,7 +37,7 @@ api-test-devops-portfolio/
 │   ├── logger.py          # 構造化ログ（structlog）
 │   ├── sentry_init.py     # エラー監視（Sentry SDK 初期化）
 │   └── sentry_scrub_*.py  # PIIスクラブ（events / values / primitives）
-├── tests/                  # テストスイート（全44 test files / 2026-08-25 実測）
+├── tests/                  # テストスイート（全44 test files / 2026-08-31 実測）
 │   ├── unit/              # ユニットテスト（38 files）
 │   ├── integration/       # 統合テスト（4 files）
 │   ├── performance/       # パフォーマンステスト（1 file）
@@ -113,7 +113,8 @@ api-test-devops-portfolio/
 - **.serena/project.yml**: Serena プロジェクト設定（言語: typescript, python）
 
 ### Quality Assurance
-- **.pre-commit-config.yaml**: Pre-commit hooks（ruff, mypy, pytest, markdownlint等）
+- **.pre-commit-config.yaml**: Pre-commit hooks（ruff / ruff-format / gitleaks / markdownlint）。
+  mypy・pytest は実行時間の都合で pre-commit に含めず CI 専用
 - **.markdownlint.json**: Markdown品質ルール（23ルール無効化＋日本語対応）
 - **.gitleaks.toml**: シークレットスキャン設定
 
@@ -144,24 +145,20 @@ api-test-devops-portfolio/
 - **docs/reference/docker.md**: Docker リファレンス
 - **docs/agents/**: エージェント運用ドキュメント（issue-tracker, triage-labels, domain）
 
-### Agent Configuration
-- **.claude/agents/**: カスタムエージェント定義（7 files: silent-failure-hunter, security-code-reviewer等）
-- **.claude/commands/**: カスタムコマンド定義（2 files: review-pr, code-review-excellence）
-
 ---
 
 ## 🧪 Test Coverage
 
 ### Test Statistics
-- **Total Test Files**: 44（2026-08-25 実測）
+- **Total Test Files**: 44（2026-08-31 実測）
 - **Unit Tests**: 38 files (tests/unit/)
 - **Integration Tests**: 4 files (tests/integration/)
 - **Performance Tests**: 1 file (tests/performance/)
 - **Smoke Tests**: 1 file (tests/test_smoke.py)
 
 ### Coverage Metrics
-- **Coverage**: 97.64%（2026-08-25 実測 / `unit+integration` かつ `not external`）
-- **Target Coverage**: 85%（`pyproject.toml` の `--cov-fail-under=85`）✅ 達成済み
+- **テスト数・カバレッジの実測値**: [README.md](README.md) の「概要」節を参照（単一真実源）
+- **Target Coverage**: `pyproject.toml` の `--cov-fail-under`（pytest の `addopts` 経由で自動適用）
 - **Coverage Reports**: `reports/coverage.json`, `reports/htmlcov/`
 
 ### Test Execution
@@ -291,12 +288,12 @@ open reports/htmlcov/index.html
 
 ---
 
-## 📊 Project Metrics　(CI計測対象: unit + integration)
+## 📊 Project Metrics　(CIセレクタ対象: unit + integration, external除外)
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Test Coverage | 97.64%（2026-08-25 実測） | `pyproject.toml` の `--cov-fail-under=85` |
-| CI Test Files (unit+integration) | 42（2026-08-25 実測） | - |
+| Test Coverage / テスト数 | [README.md](README.md)「概要」節を参照（単一真実源） | `pyproject.toml` の `--cov-fail-under` |
+| CI Test Files (unit+integration, external除外) | 41（2026-08-31 実測） | - |
 | Python Version | 3.14 | - |
 | Code Quality | ruff + mypy | 0 errors |
 | Documentation | CLAUDE.md + README | - |

@@ -1,6 +1,6 @@
 # API Test + DevOps Portfolio
 
-*最終更新: 2026-08-07*
+*最終更新: 2026-09-03*
 
 外部API連携における堅牢性と品質保証を追求し、APIテストとDevOps技術を統合したポートフォリオです。
 外部API連携の防御境界を、base URLの許可ドメインallowlist、Sentryの`before_send` / `before_send_transaction`による送信前スクラブ、exponential backoff + jitterによるリトライ間隔制御として実装・検証しています。
@@ -26,10 +26,16 @@
 
 ## 概要
 
-- **`1,533件のテストスイート`**（2026-08-28 `pytest --collect-only --no-cov` 実測）: Unit(1,509) / Integration(15, うちExternal 4件含む) / Performance(7, 週次のみ) / Smoke(2)
-- **`カバレッジ: 97.31%`**（2026-08-28 `unit+integration` かつ `not external` 実測）: 継続的な品質向上
-- **`CIカバレッジ対象テスト: 1,520件`**（`unit or integration` かつ `not external`。external・performance・smoke除外。PR ValidationはこれにSmoke 2件をカバレッジ計測外で追加実行）
-  - 内訳: Unit 1,509件 + Integration 11件（15件のうちexternal 4件を除外）
+- **`テストスイート`**: 全1,637件 — Unit 1,613 / Integration 15（うち External 12）/ Performance 7（週次のみ）/ Smoke 2
+- **`CIセレクタ対象`**: 1,616件（収集時） / **ローカル再計測カバレッジ 97.76%**（下限は `pyproject.toml` の `--cov-fail-under`）
+  - セレクタ `(unit or integration) and not external`。PR Validation はこれに Smoke 2件をカバレッジ計測外で追加実行
+- 上記のテストケース数・CIセレクタ対象ケース数・カバレッジは、公開ドキュメント内の集計値のSSOTとする。
+  他文書は数値を転記せず本節を参照する。2026-09-03 の基準測定は、clean worktreeのcommit `33779df55c4eadd1dae6b9466f8f50e4c66bd8c1`で実施し、1,613 selected / 1,613 passedを確認した。今回の検証テスト追加後のローカル再検証では、1,616 selected / 1,616 passedを確認した。変更後の不変な測定証跡は、最終commitのCI実行で更新する:
+
+  ```bash
+  TEST__EXTERNAL_API_ENABLED=false uv run pytest -n auto -m "(unit or integration) and not external" \
+    --cov=utils --cov=config --cov=models
+  ```
 - **`CI/CD自動化`**: GitHub Actions による多段階パイプライン
 - **`セキュリティ`**: CI/CD品質ゲート（pytest + ruff + mypy + Trivy）
 - **`GitHub API統合`**: 実務的なAPI統合スキルを証明（Rate Limit管理、ETag活用、非同期処理）
@@ -204,6 +210,7 @@ flowchart TD
 | **`HTTPXモック: respx採用`** | httpx ネイティブ対応・非同期対応・ルーティングベースで宣言的。requests-mock より型安全。 | httpx 依存。標準 library 非依存を優先する場合は不向き。 |
 | **`Sync / Async 使い分け`** | JSONPlaceholder の単体CRUDは Sync、並行I/Oが効く処理と GitHub API は Async。（適材適所） | シンプルAPIでは Sync の方が直線的でテスト容易。GitHub は Rate Limit / ETag / 並行取得の恩恵が大きいため Async 特化。Async 導入により呼び出し側は asyncio.run() 等の境界管理が必要。 |
 | **`JSONPlaceholder: Sync基盤継承`** | JSONPlaceholder の Sync クライアントは共通 SyncAPIClient を継承し、HTTP基盤とドメイン操作を分離。 | LSP遵守 (HTTP動詞契約維持) + boilerplate削減。汎用HTTP層とドメインメソッドの責務分離 (SRP)。代償として基底 SyncAPIClient の契約変更が全ドメインメソッドへ波及し、JSONPlaceholder 固有のHTTP制御は基底の契約内に制限される（詳細: [ADR-0002](docs/adr/0002-sync-async-parity-api-client.md)）。 |
+| **`非冪等メソッドのリトライ`** | `POST` / `PATCH` / `PUT` は既定で 1 回のみ実行し、サーバー側の重複排除契約がある場合だけ呼び出し単位で `retry_non_idempotent=True` を指定する。Sync / Async と公開ドメインメソッドで同じ契約を提供。 | 要求処理済み・応答消失時の重複作成・更新を既定で防ぐ。明示指定の手間と、Idempotency-Key 等の契約確認責任は呼び出し側に残る（詳細: [ADR-0006](docs/adr/0006-non-idempotent-retry-policy.md)）。 |
 | **`GitHubClient: 独立実装`** | 継承せず | 戻り値型契約差異 (httpx.Response vs 検証済み Pydantic モデル) と ETag/RateLimit/PII redaction の固有要件により、継承すると LSP違反。共通化は例外階層 (GitHubAPIError(APIClientError)) と utility 関数レベルに限定。 |
 | **`GitHubClient: Async特化`** | GitHub API は Async 専用クライアントとして実装し、Sync 版は持たない。 | 認証・Rate Limit・ETag・複数リソース取得により並行I/Oの恩恵が大きい。Sync版を持たないことで保守対象を増やさず、同期利用は呼び出し境界で明示的に扱う。 |
 | **`GitHubモデル: strict + extra ignore`** | GitHubの既知フィールドは厳密に型検証し、将来の追加フィールドは無視する。一方、JSONPlaceholderは既存のstrict/forbid/サニタイズ方針を維持する。 | 外部APIごとの型ドリフト耐性と既存データ保護ポリシーを分離する。代償として `extra="ignore"` は追加フィールドを黙って捨てる。さらに任意フィールドは既定値 `None` を持つため、欠落・改名の検知が遅れやすい（`extra="forbid"` なら追加フィールドは ValidationError として通知される）。 |
@@ -283,7 +290,7 @@ uv run pytest -m "manual or external"  # GitHub API統合テスト（週1回推�
 
 ```bash
 # テスト専用プロファイルでテスト実行（testコンテナで品質検証）
-docker compose --profile test run --rm test
+docker compose --profile test run --build --rm test
 
 # 共通runtime用のコンテナを起動
 docker compose up -d
@@ -293,7 +300,7 @@ docker compose up -d
 
 ### Sentry統合
 
-Sentry SDK標準のスクラブに加えて、44種の機密キーパターンを基準とした防御的スクラブを`before_send` / `before_send_transaction`フックへ自前実装しています。初期化失敗時は本番相当環境でfail-fast、開発・テスト環境では警告して継続します。既定無効のopt-inで、テストはネットワーク非依存です。
+Sentry SDK標準のスクラブに加えて、46種の機密キーパターン、自由文字列の認証情報・高信頼なPII形状、HTTP pathの数値・UUID識別子を対象とする防御的スクラブを`before_send` / `before_send_transaction`フックへ自前実装しています。初期化失敗時は本番相当環境でfail-fast、開発・テスト環境では警告して継続します。既定無効のopt-inで、テストはネットワーク非依存です。
 
 対象APIが実PIIを扱わなくても、外部サービスへ送信するイベント境界には例外・ログ経由の機密情報が混入し得るため、`before_send` と `before_send_transaction` を送信前の防御層として検証しています。
 
