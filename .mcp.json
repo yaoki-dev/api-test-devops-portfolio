@@ -1,0 +1,75 @@
+{
+  "mcpServers": {
+    "morph-mcp": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@morphllm/morphmcp@0.8.177"
+      ],
+      "env": {
+        "MORPH_API_KEY": "${MORPH_API_KEY}",
+        "DISABLED_TOOLS": ""
+      }
+    },
+    "notion": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@notionhq/notion-mcp-server"
+      ],
+      "env": {
+        "NOTION_TOKEN": "${NOTION_TOKEN}"
+      }
+    },
+    "prompts-chat": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@fkadev/prompts.chat-mcp"
+      ],
+      "env": {
+        "PROMPTS_API_KEY": "${PROMPTS_API_KEY}",
+        "PROMPTS_QUERY": "categories=coding,software-engineering"
+      }
+    },
+    "trivy": {
+      "type": "stdio",
+      "command": "trivy",
+      "args": [
+        "mcp"
+      ]
+    },
+    "codegraph": {
+      "type": "stdio",
+      "command": "codegraph",
+      "args": [
+        "serve",
+        "--mcp"
+      ]
+    },
+    "code-review-graph": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "code-review-graph",
+        "serve"
+      ]
+    },
+    "context7": {
+      "type": "http",
+      "url": "https://mcp.context7.com/mcp",
+      "headers": {
+        "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"
+      }
+    },
+    "graft": {
+      "command": "graft",
+      "args": [
+        "mcp"
+      ]
+    }
+  }
+}
