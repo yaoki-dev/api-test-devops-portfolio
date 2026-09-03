@@ -124,6 +124,19 @@ def test_validate_optional_int_boundary_value_equal_to_min_passes(
 
 
 @pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param(True, id="bool_true"),
+        pytest.param(False, id="bool_false"),
+        pytest.param(1.5, id="float"),
+    ],
+)
+def test_validate_optional_int_rejects_non_integer_types(value: object) -> None:
+    with pytest.raises(TypeError, match="limit must be an int or None"):
+        _validate_optional_int(cast(int | None, value), "limit", 0)
+
+
+@pytest.mark.parametrize(
     "value,name,min_value",
     [
         (-1, "limit", 0),

@@ -31,8 +31,11 @@ def validate_optional_int(
         max_value: 最大許容値（含む）。Noneの場合は上限なし
 
     Raises:
+        TypeError: valueが整数またはNoneでない場合
         ValueError: valueがmin_valueより小さい場合、またはmax_valueより大きい場合
     """
+    if value is not None and (isinstance(value, bool) or not isinstance(value, int)):
+        raise TypeError(f"{name} must be an int or None")
     if value is not None and value < min_value:
         raise ValueError(f"{name} must be >= {min_value}")
     if value is not None and max_value is not None and value > max_value:

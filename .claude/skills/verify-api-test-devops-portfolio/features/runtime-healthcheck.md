@@ -45,12 +45,16 @@ coverage/log artifacts:
 
 ```bash
 set +e
-docker compose --profile test run --rm test 2>&1 \
+docker compose --profile test run --build --rm test 2>&1 \
   | tee "$EVIDENCE_DIR/compose-test-output.log"
-test_exit_code=${PIPESTATUS[0]}
+pipeline_status=("${PIPESTATUS[@]}")
 set -e
-printf 'test_exit_code=%s\n' "$test_exit_code" | tee -a "$EVIDENCE_DIR/compose-test-output.log"
+test_exit_code="${pipeline_status[0]}"
+tee_exit_code="${pipeline_status[1]}"
+printf 'test_exit_code=%s tee_exit_code=%s\n' "$test_exit_code" "$tee_exit_code" \
+  | tee -a "$EVIDENCE_DIR/compose-test-output.log"
 test "$test_exit_code" -eq 0
+test "$tee_exit_code" -eq 0
 ```
 
 ## Gotchas

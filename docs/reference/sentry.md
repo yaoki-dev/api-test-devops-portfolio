@@ -86,8 +86,8 @@ uv run pytest -k sentry -v --no-cov
 
 `--no-cov`はカバレッジ計測を無効にするため、このコマンドはSentry機能の回帰確認であり、プロジェクト全体のカバレッジ品質ゲートではありません。
 
-Sentry関連テストの件数はテスト追加で変動するため固定値を記載しません。確認時は
-`uv run pytest --collect-only -q --no-cov -k sentry` を実行し、Sentry関連テストの収集結果と実行成否を確認してください。`-k sentry` は部分集合のため、READMEのプロジェクト全体のテスト件数とは比較しません。
+Sentry関連テストの件数はテスト追加で変動するため固定値を記載しません。収集項目の確認には
+`uv run pytest --collect-only -q --no-cov -k sentry` を使用してください。`--collect-only` はテストを実行しないため、実行成否の確認には上記の通常実行コマンドを使用します。`-k sentry` は部分集合のため、READMEのプロジェクト全体のテスト件数とは比較しません。
 
 関連テスト:
 

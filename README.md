@@ -26,11 +26,11 @@
 
 ## 概要
 
-- **`テストスイート`**: 全1,634件 — Unit 1,610 / Integration 15（うち External 12）/ Performance 7（週次のみ）/ Smoke 2
-- **`CIセレクタ対象`**: 1,613件（収集時） / **ローカル再計測カバレッジ 97.76%**（下限は `pyproject.toml` の `--cov-fail-under`）
+- **`テストスイート`**: 全1,637件 — Unit 1,613 / Integration 15（うち External 12）/ Performance 7（週次のみ）/ Smoke 2
+- **`CIセレクタ対象`**: 1,616件（収集時） / **ローカル再計測カバレッジ 97.76%**（下限は `pyproject.toml` の `--cov-fail-under`）
   - セレクタ `(unit or integration) and not external`。PR Validation はこれに Smoke 2件をカバレッジ計測外で追加実行
 - 上記のテストケース数・CIセレクタ対象ケース数・カバレッジは、公開ドキュメント内の集計値のSSOTとする。
-  他文書は数値を転記せず本節を参照する。2026-09-03 に develop の現行 worktree candidate（base HEAD `aa11165c9c5b21f7fcc81410734b220e2c159e48`、既存staged差分と今回の未staged修正を含む）でローカル再計測（1,613 selected / 1,613 passed）:
+  他文書は数値を転記せず本節を参照する。2026-09-03 の基準測定は、clean worktreeのcommit `33779df55c4eadd1dae6b9466f8f50e4c66bd8c1`で実施し、1,613 selected / 1,613 passedを確認した。今回の検証テスト追加後のローカル再検証では、1,616 selected / 1,616 passedを確認した。変更後の不変な測定証跡は、最終commitのCI実行で更新する:
 
   ```bash
   TEST__EXTERNAL_API_ENABLED=false uv run pytest -n auto -m "(unit or integration) and not external" \
@@ -290,7 +290,7 @@ uv run pytest -m "manual or external"  # GitHub API統合テスト（週1回推�
 
 ```bash
 # テスト専用プロファイルでテスト実行（testコンテナで品質検証）
-docker compose --profile test run --rm test
+docker compose --profile test run --build --rm test
 
 # 共通runtime用のコンテナを起動
 docker compose up -d

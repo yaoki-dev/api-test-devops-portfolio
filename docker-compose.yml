@@ -53,7 +53,7 @@ services:
   # ---------------------------------------------------------------
   # test: テスト実行専用コンテナ
   #   - profiles により通常の `docker compose up` では起動しない
-  #   - 実行: docker compose --profile test run --rm test
+  #   - 実行: docker compose --profile test run --build --rm test
   #   - command: ["pytest"] で pyproject.toml [tool.pytest] addopts を採用
   #     （Dockerfile test ステージの CMD `pytest --cov=utils --cov=config --cov=models --cov-report=term-missing -v` を上書き）
   #   - reports/htmlcov, reports/coverage.xml が /app/reports に出力され、host ./reports に永続化
