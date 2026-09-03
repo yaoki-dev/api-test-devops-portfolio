@@ -73,7 +73,7 @@ api-test-devops-portfolio/
 
 ### Module: utils.jsonplaceholder_*（旧 api_client.py を責務別に分割）
 - **Path**: `utils/jsonplaceholder_base_sync.py` / `utils/jsonplaceholder_base_async.py` / `utils/jsonplaceholder_client_sync.py` / `utils/jsonplaceholder_client_async.py`
-- **Exports**: `SyncAPIClient` (同期), `AsyncAPIClient` (非同期), `SyncJSONPlaceholderClient`, `AsyncJSONPlaceholderClient`, `create_client()`。例外階層（`APIClientError`, `APIConnectionError`, `APITimeoutError`, `APIHTTPError`, `APIRetryError`, `APIJSONDecodeError`）は `utils.exceptions` から import
+- **Exports**: `SyncAPIClient` (同期), `AsyncAPIClient` (非同期), `SyncJSONPlaceholderClient`, `AsyncJSONPlaceholderClient`。例外階層（`APIClientError`, `APIConnectionError`, `APITimeoutError`, `APIHTTPError`, `APIRetryError`, `APIJSONDecodeError`）は `utils.exceptions` から import
 - **Purpose**: HTTP API クライアント。リトライ（`utils/retry.py`）・HTTP配管（`utils/http_helpers.py`）・レスポンス解析（`utils/response_parsing.py`）は共有ヘルパーモジュールへ分離済み。
 
 ### Module: utils.github_client
@@ -185,8 +185,6 @@ uv run pytest -m "not slow"      # 高速テストのみ
 - **pydantic** (>=2.0.0): データバリデーション
 - **pydantic-settings** (>=2.0.0): 型安全な設定管理
 - **sentry-sdk[httpx]** (>=2.61.1,<3.0.0): エラー監視（httpx統合）
-- **psutil** (>=6.1.1): システムメトリクス
-- **pyyaml** (>=6.0): YAML設定ファイル読み込み
 
 ### Development
 - **pytest** (>=9.0.3): テストフレームワーク
@@ -194,6 +192,8 @@ uv run pytest -m "not slow"      # 高速テストのみ
 - **pytest-cov** (>=4.1.0): カバレッジ測定
 - **pytest-xdist** (>=3.5.0): 並列テスト実行
 - **respx** (>=0.23.1): httpx用モックライブラリ
+- **psutil** (>=6.1.1): tests/performance のプロセスリソース計測
+- **pyyaml** (>=6.0): repo_contract テストのワークフローYAMLパース
 - **ruff** (>=0.15.12,<0.16): Linter + Formatter
 - **mypy** (>=1.20.2): 型チェッカー
 
