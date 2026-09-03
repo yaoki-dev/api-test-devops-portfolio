@@ -108,7 +108,8 @@ api-test-devops-portfolio/
 
 ### Project Configuration
 - **pyproject.toml**: Python プロジェクト設定（hatchling, dependencies, dev tools）
-- **.mcp.json**: MCP サーバー設定（Serena, Context7, Sequential Thinking等）
+- **.mcp.json**: MCP サーバー設定。サーバー一覧はファイル本体が単一真実源（索引側へ転記しない）。
+  シークレットは `${VAR}` 形式で環境変数から注入
 - **.serena/project.yml**: Serena プロジェクト設定（言語: typescript, python）
 
 ### Quality Assurance
