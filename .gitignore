@@ -82,7 +82,6 @@ reports/**
 !.context/compound-engineering/ce-review/**/.vscode/settings.json
 
 # MCP and AI Tools
-.mcp.json
 .serena/**
 !.serena/memories/**
 .memory_mcp/**
