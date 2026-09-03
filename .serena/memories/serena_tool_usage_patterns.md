@@ -105,7 +105,7 @@
 # Step 1: 構造把握
 serena get_symbols_overview relative_path="utils/jsonplaceholder_base_async.py" depth=1
 # → Classes: AsyncAPIClient
-# → Functions: （モジュールレベル関数なし。create_client は jsonplaceholder_client_sync.py）
+# → Functions: （モジュールレベル関数なし）
 
 # Step 2: クラス詳細
 serena find_symbol "AsyncAPIClient" relative_path="utils/" depth=1

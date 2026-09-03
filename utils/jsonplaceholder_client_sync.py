@@ -318,8 +318,3 @@ class SyncJSONPlaceholderClient(SyncAPIClient):
                 endpoint="/users",
             )
             return False
-
-
-def create_client() -> SyncJSONPlaceholderClient:
-    """設定に基づいたクライアントインスタンスの作成"""
-    return SyncJSONPlaceholderClient()
