@@ -26,11 +26,11 @@ loaded line and then stays alive for the healthcheck.
 Capture the visible container state, health field, and logs:
 
 ```bash
+set -euo pipefail
 EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/api-test-devops-portfolio-verification/runtime}"
 mkdir -p "$EVIDENCE_DIR"
-set -o pipefail
 docker compose config --quiet
-docker compose up -d --wait --wait-timeout 120 app
+docker compose up -d --wait --wait-timeout 120 --build app
 docker compose ps | tee "$EVIDENCE_DIR/compose-ps.log"
 CONTAINER_ID="$(docker compose ps -q app)"
 test -n "$CONTAINER_ID"
@@ -44,9 +44,11 @@ For the test-container path, use the repository's profile and preserve its
 coverage/log artifacts:
 
 ```bash
+set +e
 docker compose --profile test run --rm test 2>&1 \
   | tee "$EVIDENCE_DIR/compose-test-output.log"
-test_exit_code=$?
+test_exit_code=${PIPESTATUS[0]}
+set -e
 printf 'test_exit_code=%s\n' "$test_exit_code" | tee -a "$EVIDENCE_DIR/compose-test-output.log"
 test "$test_exit_code" -eq 0
 ```

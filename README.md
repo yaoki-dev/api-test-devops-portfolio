@@ -1,6 +1,6 @@
 # API Test + DevOps Portfolio
 
-*最終更新: 2026-08-31*
+*最終更新: 2026-09-03*
 
 外部API連携における堅牢性と品質保証を追求し、APIテストとDevOps技術を統合したポートフォリオです。
 外部API連携の防御境界を、base URLの許可ドメインallowlist、Sentryの`before_send` / `before_send_transaction`による送信前スクラブ、exponential backoff + jitterによるリトライ間隔制御として実装・検証しています。
@@ -26,11 +26,11 @@
 
 ## 概要
 
-- **`テストスイート`**: 全1,623件 — Unit 1,599 / Integration 15（うち External 12）/ Performance 7（週次のみ）/ Smoke 2
-- **`CIセレクタ対象`**: 1,602件（収集時） / **ローカル再計測カバレッジ 97.81%**（下限は `pyproject.toml` の `--cov-fail-under`）
+- **`テストスイート`**: 全1,634件 — Unit 1,610 / Integration 15（うち External 12）/ Performance 7（週次のみ）/ Smoke 2
+- **`CIセレクタ対象`**: 1,613件（収集時） / **ローカル再計測カバレッジ 97.76%**（下限は `pyproject.toml` の `--cov-fail-under`）
   - セレクタ `(unit or integration) and not external`。PR Validation はこれに Smoke 2件をカバレッジ計測外で追加実行
 - 上記のテストケース数・CIセレクタ対象ケース数・カバレッジは、公開ドキュメント内の集計値のSSOTとする。
-  他文書は数値を転記せず本節を参照する。2026-09-02 に develop の現行 worktree candidate（base HEAD `aa11165c9c5b21f7fcc81410734b220e2c159e48`、既存staged差分と今回の未staged修正を含む）でローカル再計測（1,602 selected / 1,602 passed）:
+  他文書は数値を転記せず本節を参照する。2026-09-03 に develop の現行 worktree candidate（base HEAD `aa11165c9c5b21f7fcc81410734b220e2c159e48`、既存staged差分と今回の未staged修正を含む）でローカル再計測（1,613 selected / 1,613 passed）:
 
   ```bash
   TEST__EXTERNAL_API_ENABLED=false uv run pytest -n auto -m "(unit or integration) and not external" \
@@ -210,7 +210,7 @@ flowchart TD
 | **`HTTPXモック: respx採用`** | httpx ネイティブ対応・非同期対応・ルーティングベースで宣言的。requests-mock より型安全。 | httpx 依存。標準 library 非依存を優先する場合は不向き。 |
 | **`Sync / Async 使い分け`** | JSONPlaceholder の単体CRUDは Sync、並行I/Oが効く処理と GitHub API は Async。（適材適所） | シンプルAPIでは Sync の方が直線的でテスト容易。GitHub は Rate Limit / ETag / 並行取得の恩恵が大きいため Async 特化。Async 導入により呼び出し側は asyncio.run() 等の境界管理が必要。 |
 | **`JSONPlaceholder: Sync基盤継承`** | JSONPlaceholder の Sync クライアントは共通 SyncAPIClient を継承し、HTTP基盤とドメイン操作を分離。 | LSP遵守 (HTTP動詞契約維持) + boilerplate削減。汎用HTTP層とドメインメソッドの責務分離 (SRP)。代償として基底 SyncAPIClient の契約変更が全ドメインメソッドへ波及し、JSONPlaceholder 固有のHTTP制御は基底の契約内に制限される（詳細: [ADR-0002](docs/adr/0002-sync-async-parity-api-client.md)）。 |
-| **`非冪等メソッドのリトライ`** | `POST` / `PATCH` は既定で 1 回のみ実行し、サーバー側の重複排除契約がある場合だけ呼び出し単位で `retry_non_idempotent=True` を指定する。Sync / Async と公開ドメインメソッドで同じ契約を提供。 | 要求処理済み・応答消失時の重複作成・更新を既定で防ぐ。明示指定の手間と、Idempotency-Key 等の契約確認責任は呼び出し側に残る（詳細: [ADR-0006](docs/adr/0006-non-idempotent-retry-policy.md)）。 |
+| **`非冪等メソッドのリトライ`** | `POST` / `PATCH` / `PUT` は既定で 1 回のみ実行し、サーバー側の重複排除契約がある場合だけ呼び出し単位で `retry_non_idempotent=True` を指定する。Sync / Async と公開ドメインメソッドで同じ契約を提供。 | 要求処理済み・応答消失時の重複作成・更新を既定で防ぐ。明示指定の手間と、Idempotency-Key 等の契約確認責任は呼び出し側に残る（詳細: [ADR-0006](docs/adr/0006-non-idempotent-retry-policy.md)）。 |
 | **`GitHubClient: 独立実装`** | 継承せず | 戻り値型契約差異 (httpx.Response vs 検証済み Pydantic モデル) と ETag/RateLimit/PII redaction の固有要件により、継承すると LSP違反。共通化は例外階層 (GitHubAPIError(APIClientError)) と utility 関数レベルに限定。 |
 | **`GitHubClient: Async特化`** | GitHub API は Async 専用クライアントとして実装し、Sync 版は持たない。 | 認証・Rate Limit・ETag・複数リソース取得により並行I/Oの恩恵が大きい。Sync版を持たないことで保守対象を増やさず、同期利用は呼び出し境界で明示的に扱う。 |
 | **`GitHubモデル: strict + extra ignore`** | GitHubの既知フィールドは厳密に型検証し、将来の追加フィールドは無視する。一方、JSONPlaceholderは既存のstrict/forbid/サニタイズ方針を維持する。 | 外部APIごとの型ドリフト耐性と既存データ保護ポリシーを分離する。代償として `extra="ignore"` は追加フィールドを黙って捨てる。さらに任意フィールドは既定値 `None` を持つため、欠落・改名の検知が遅れやすい（`extra="forbid"` なら追加フィールドは ValidationError として通知される）。 |

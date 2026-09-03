@@ -649,6 +649,21 @@ class TestScrubEventMessageFields:
         assert values[1] == {"level": "info"}
         assert values[2] == "not-a-dict"
 
+    def test_flat_breadcrumb_messages_are_masked(self) -> None:
+        event: dict[str, Any] = {
+            "breadcrumbs": [
+                {"message": "request from alice@example.com", "level": "info"},
+                {"category": "http"},
+            ]
+        }
+
+        _scrub_event_message_fields(event)
+
+        assert event["breadcrumbs"] == [
+            {"message": "request from [REDACTED]", "level": "info"},
+            {"category": "http"},
+        ]
+
     def test_non_string_params_are_kept(self) -> None:
         """非 str は残す。配列の形と型がデバッグの手掛かりになるため。"""
         event: dict[str, Any] = {"logentry": {"params": ["secret", 42, True, None]}}
@@ -717,6 +732,7 @@ class TestScrubEventMessageFields:
         _scrub_event_message_fields(event)
 
         assert event["logentry"]["params"] == ("[REDACTED]", 42)
+        assert type(event["logentry"]["params"]) is tuple
 
     def test_circular_params_hit_depth_guard(self) -> None:
         """循環参照でも RecursionError にならず深度ガードで打ち切る。"""

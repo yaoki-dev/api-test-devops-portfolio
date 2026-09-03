@@ -1,5 +1,6 @@
 """HTTP helper tests for utils.http_helpers."""
 
+from typing import cast
 from unittest.mock import Mock, patch
 
 import httpx
@@ -136,6 +137,29 @@ def test_validate_optional_int_below_min_raises_value_error(
 ) -> None:
     with pytest.raises(ValueError, match=f"{name} must be >= {min_value}"):
         _validate_optional_int(value, name, min_value)
+
+
+@pytest.mark.parametrize(
+    "retry_count,error_match",
+    [
+        (-1, "retry_count must be >= 0"),
+        (11, "retry_count must be <= 10"),
+    ],
+    ids=["below_minimum", "above_maximum"],
+)
+def test_resolve_retry_policy_rejects_retry_count_out_of_range(
+    retry_count: int,
+    error_match: str,
+) -> None:
+    with pytest.raises(ValueError, match=error_match):
+        _resolve_retry_policy("GET", retry_count)
+
+
+def test_resolve_retry_policy_rejects_non_bool_retry_opt_in() -> None:
+    invalid_flag = cast(bool, "false")
+
+    with pytest.raises(TypeError, match="retry_non_idempotent must be a bool"):
+        _resolve_retry_policy("POST", 2, retry_non_idempotent=invalid_flag)
 
 
 def test_map_request_error_too_many_redirects() -> None:
@@ -337,6 +361,37 @@ def test_resolve_client_config_none_retry_count_uses_settings(mock_settings: Moc
             "https://example.com", 10.0, None, 2.0, None
         )
     assert retry_count == 3
+
+
+@pytest.mark.parametrize("retry_count", [0, 10])
+def test_resolve_client_config_accepts_retry_count_bounds(
+    mock_settings: MockSettings,
+    retry_count: int,
+) -> None:
+    with patch("utils.http_helpers.settings", mock_settings):
+        _, _, resolved_retry_count, _, _ = _resolve_client_config(
+            "https://example.com", 10.0, retry_count, 2.0, None
+        )
+
+    assert resolved_retry_count == retry_count
+
+
+@pytest.mark.parametrize(
+    "retry_count,error_match",
+    [
+        (-1, "retry_count must be >= 0"),
+        (11, "retry_count must be <= 10"),
+    ],
+    ids=["below_minimum", "above_maximum"],
+)
+def test_resolve_client_config_rejects_retry_count_out_of_range(
+    mock_settings: MockSettings,
+    retry_count: int,
+    error_match: str,
+) -> None:
+    with patch("utils.http_helpers.settings", mock_settings):
+        with pytest.raises(ValueError, match=error_match):
+            _resolve_client_config("https://example.com", 10.0, retry_count, 2.0, None)
 
 
 def test_resolve_client_config_none_retry_delay_uses_settings(mock_settings: MockSettings) -> None:

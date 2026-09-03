@@ -69,6 +69,8 @@ class TestSensitiveKeysCompleteness:
             "email",
             "ip_address",
             "username",
+            "phone",
+            "phone_number",
             "database_url",
             "ssn",
             "credit_card",

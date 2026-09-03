@@ -37,6 +37,24 @@ def _process_completed_tasks[ResultT](
     if not fatal_exceptions:
         return None
 
+    cancelled_exception = next(
+        (
+            (index, exception)
+            for index, exception in fatal_exceptions
+            if isinstance(exception, asyncio.CancelledError)
+        ),
+        None,
+    )
+    if cancelled_exception is not None:
+        primary_index, cancelled_primary_exception = cancelled_exception
+        for index, exception in fatal_exceptions:
+            if index != primary_index:
+                cancelled_primary_exception.add_note(
+                    f"Additional fatal exception at input index {index}: "
+                    f"{type(exception).__qualname__}"
+                )
+        return cancelled_primary_exception
+
     if len(fatal_exceptions) > 1 and all(
         isinstance(exception, Exception) for _, exception in fatal_exceptions
     ):

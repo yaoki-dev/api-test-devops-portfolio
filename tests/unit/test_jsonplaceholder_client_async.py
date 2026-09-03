@@ -980,6 +980,23 @@ async def test_run_rolling_window_records_additional_fatal_exceptions() -> None:
     ]
 
 
+async def test_run_rolling_window_prioritizes_cancelled_error_over_fatal_exception() -> None:
+    async def operation(index: int) -> int:
+        if index == 0:
+            raise MemoryError("first")
+        raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError) as exc_info:
+        await _run_rolling_window(
+            operation=operation,
+            item_count=2,
+            max_concurrent=2,
+            collect_exception=lambda _: False,
+        )
+
+    assert exc_info.value.__notes__ == ["Additional fatal exception at input index 0: MemoryError"]
+
+
 @pytest.mark.parametrize(
     "fatal_exc",
     [MemoryError("OOM"), RecursionError("max depth")],

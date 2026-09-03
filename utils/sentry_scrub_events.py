@@ -743,10 +743,16 @@ def _mask_breadcrumb_messages(event_dict: dict[str, Any]) -> None:
 
     """
     breadcrumbs = event_dict.get("breadcrumbs")
-    if not isinstance(breadcrumbs, dict):
-        return
-    values = breadcrumbs.get("values")
-    if not isinstance(values, list):
+    if isinstance(breadcrumbs, list):
+        values = breadcrumbs
+        wrapped_breadcrumbs: dict[str, Any] | None = None
+    elif isinstance(breadcrumbs, dict):
+        candidate_values = breadcrumbs.get("values")
+        if not isinstance(candidate_values, list):
+            return
+        values = candidate_values
+        wrapped_breadcrumbs = breadcrumbs
+    else:
         return
 
     scrubbed_crumbs: list[Any] = []
@@ -755,7 +761,11 @@ def _mask_breadcrumb_messages(event_dict: dict[str, Any]) -> None:
             scrubbed_crumbs.append({**crumb, "message": _mask_freetext_pii(crumb["message"])})
         else:
             scrubbed_crumbs.append(crumb)
-    event_dict["breadcrumbs"] = {**breadcrumbs, "values": scrubbed_crumbs}
+    event_dict["breadcrumbs"] = (
+        scrubbed_crumbs
+        if wrapped_breadcrumbs is None
+        else {**wrapped_breadcrumbs, "values": scrubbed_crumbs}
+    )
 
 
 # fail-closed防御による退避後、スクラビング失敗イベントを安全にSentryへ通知するフェーズ。
