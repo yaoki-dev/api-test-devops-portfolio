@@ -17,7 +17,7 @@ paths:
 |--------------|------|---------|
 | **本テンプレート** | フィーチャー単位の計画・決定記録 | Within-task |
 | **@memory:execution-efficiency** | 実行効率化・並列判定の手法詳細 | How to execute |
-| **TodoWrite** | セッション内タスク進捗UI表示 | 揮発性 |
+| **タスクリスト**（`TodoWrite` / `TaskCreate` 系） | セッション内タスク進捗UI表示 | 揮発性 |
 | **lessons.md** (Rule 15) | セッション横断の教訓蓄積 | Cross-project |
 
 ### 使用閾値
@@ -26,7 +26,7 @@ paths:
 
 - 設計上の判断（AskUserQuestion）が必要
 - アーキテクチャ / 既存動作に影響する変更
-- TodoWrite で3タスク以上 **かつ 機械的でない**（同型処理の繰り返しでない）
+- タスクリストで3タスク以上 **かつ 機械的でない**（同型処理の繰り返しでない）
 
 スキップ可能: 単純バグ修正・同型テスト追加・1ファイル以内の自明な変更
 
@@ -44,7 +44,7 @@ paths:
 ### [必須] Progress
 
 ISO 8601 タイムスタンプ付きチェックボックス。
-TodoWrite の各タスクと 1対1 対応させること。
+タスクリストの各タスクと 1対1 対応させること。
 
 - [ ] (YYYY-MM-DDTHH:MMZ) 未完了ステップ
 - [x] (2026-03-02T03:00Z) 完了ステップ
@@ -54,7 +54,7 @@ TodoWrite の各タスクと 1対1 対応させること。
 ### [必須] Decision Log
 
 AskUserQuestion の回答・設計判断を記録する。
-**@memory:参照は推奨。外部ブログリンクによる情報委譲は禁止。**
+参照方針は「品質ルール 3. 自己完結性」に従う。
 
 | 決定 | 根拠 | 日付 |
 |------|------|------|
@@ -93,14 +93,22 @@ AskUserQuestion の回答・設計判断を記録する。
 - [ ] `Skill(reflexion:reflect)` （信頼度90%以上）
 - [ ] `Skill(code-review medium)`
 
-**プラン実装（.md）**:
+**プラン実装（.html）**:
 
-- [ ] `npm run lint:md && npm run lint:text` 全pass
+- [ ] 「HTML Document Design Rules」§Verification の全項目を確認
 - [ ] `Skill(fable:fable-judge)`（全タスク完了確認 — 未完了検出時: 修正 → 品質ゲート → 再実行 - 最大3回まで）
-- ※ 事実主張・数値データを含む変更の場合は CLAUDE.md Medium「Skill(fact-checker)」を参照
 - [ ] `Skill(reflexion:reflect)`（信頼度90%以上）
-- [ ] `Skill(pr-review-toolkit:review-pr)`
-- ※ PRレビューは CLAUDE.md Step 8 ELSE節（`Skill(pr-review-toolkit:review-pr)`）に委譲
+
+**既存プラン実装（既存 `.md` の編集）**:
+
+新規プランは `.html` のみとする。既存の `.md` プランを編集する場合は、編集対象を明示したlegacy分岐を適用する。`claudedocs/**` は通常のignore設定で除外されるため、次の2コマンドは `--ignore-path /dev/null` で既定のignoreを上書きし、変更したファイルだけを直接検証する。
+
+- [ ] `npx markdownlint --config .markdownlint.json --ignore-path /dev/null "$PLAN_MD"`（`PLAN_MD` は編集した既存 `.md` のパス）
+- [ ] `npx textlint --ignore-path /dev/null "$PLAN_MD"`（`PLAN_MD` は編集した既存 `.md` のパス）
+- [ ] 事実主張・数値データを一次資料または実測コマンドで確認し、根拠を記録
+- [ ] `Skill(fable:fable-judge)`（全タスク完了確認 — 未完了検出時: 修正 → 品質ゲート → 再実行 - 最大3回まで）
+- [ ] `Skill(reflexion:reflect)`（信頼度90%以上）
+- [ ] `Skill(code-review medium)`
 
 **設定ファイル変更（*.yml / pyproject.toml / config/）**:
 
@@ -145,6 +153,8 @@ AskUserQuestion の回答・設計判断を記録する。
 ```
 claudedocs/plans/YYYY-MM-DD-<topic>.html   # フィーチャー別計画
 ```
+
+新規作成は `.html` のみ。既存の `.md` プランは現状維持とし、遡及的な変換・削除は行わない。
 
 ## HTML Document Design Rules
 
