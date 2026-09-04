@@ -65,7 +65,7 @@ agent when they are small, sequentially dependent, require shared global
 context, or may cause overlapping file modifications.
 Assign each subagent a distinct scope, explicit completion criteria, and
 clear read/write permissions. The parent agent remains responsible for
-validating, reconciling, and integrating all results. After all agents complete and all task-list tasks are marked done, `Skill(fable:fable-judge)` → `Skill(reflexion:reflect)` runs per CLAUDE.md Rule 11 at the parent agent level only (subagents do not repeat it). On verification failure (i.e., `Skill(fable:fable-judge)` reports incomplete work): apply CLAUDE.md Step 4 retry policy (max 3 retries; report to user and stop on 4th consecutive failure — counter resets on success).
+validating, reconciling, and integrating all results. After all agents complete and all task-list tasks are marked done, `Skill(fable:fable-judge)` → `Skill(reflexion:reflect)` runs per CLAUDE.md Rule 11 at the parent agent level only (subagents do not repeat this parent-level pass; the per-subagent `Skill(fable:fable-judge)` before completion report remains required as the delegated content verification). On verification failure (i.e., `Skill(fable:fable-judge)` reports incomplete work): apply CLAUDE.md Step 4 retry policy (max 3 retries; report to user and stop on 4th consecutive failure — counter resets on success).
 
 **Good:** Plan → task list → Execute → Verify | **Bad:** Jump to implementation
 
