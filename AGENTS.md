@@ -24,6 +24,7 @@
 - コミット用の標準ワークフローまたは専用自動化がある場合は、それを必須手順として扱う。
 - コミットメッセージは Conventional Commits の意図を維持する。
 - Markdown を変更したら、必要に応じて `npm run lint:md` と `npm run lint:text` を実行する。
+- `.claude/**/*.md` を変更した場合は、hidden path を明示した `npx markdownlint '**/*.md' '.claude/**/*.md' --ignore-path .markdownlintignore` を実行する。`npm run lint:md` は同じ明示グロブを含む候補でのみ代用できる。
 
 ## Testing Strategy
 
@@ -49,7 +50,7 @@
 **YOU MUST** follow these rules. Violations are NOT acceptable.
 
 1. **ALWAYS** respond in `Japanese` for all outputs, including skill usage
-2. **ALWAYS** create a task list using `todowrite` before starting any work (exception: obvious single-step trivial tasks; RULES.md Workflow Rules "TodoWrite (3+ tasks)" qualifier)
+2. **ALWAYS** create a task list before starting any work, using the harness's task-list tool (`TodoWrite`, or `TaskCreate`/`TaskList`/`TaskUpdate` where TodoWrite is not granted) (exception: obvious single-step trivial tasks; RULES.md Workflow Rules "task list (3+ tasks)" qualifier)
 3. **ALWAYS** use the AskUserQuestion tool to propose 2-3 alternative approaches and wait for user confirmation before executing any major tasks or structural changes (exception: explicit slash command invocation (e.g., `/commit`, `/push-pr`), subagent execution context — parent agent owns the AskUserQuestion call, user-directed single-line trivial fix)
 4. **NEVER** use `git commit` → **ALWAYS** use `Skill(commit)`
 5. **NEVER** use `gh pr create` → **ALWAYS** use `Skill(push-pr)`
@@ -58,7 +59,7 @@
 8. **NEVER** push to protected branches (main/develop) directly
 9. **ALWAYS** invoke skills via Skill(skill-name) notation when user requests
 10. **ALWAYS** follow development workflow order → Section「🔄 開発ワークフロー」
-11. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `Skill(fable:fable-judge)` → then `Skill(reflexion:reflect)`
+11. **ALWAYS** after completing all tasks in the task list, Use Skill tool to run `Skill(fable:fable-judge)` → then `Skill(reflexion:reflect)`
 12. **ALWAYS** when using Fable model → invoke `Skill(efficient-fable)`
 13. **ALWAYS** verify file content with Read/Grep tool BEFORE making any claim about line numbers, file structure, or code content
 14. **ALWAYS** enforce worktree boundary: セッション開始時に `git rev-parse --show-toplevel` でWORKTREE_ROOTを確認し、WORKTREE_ROOT外ファイルの自律的編集を禁止する（`~/.claude/tasks/` は例外）
@@ -250,7 +251,7 @@ git checkout -b feature/<次のタスク> origin/develop
 ```
 
 <!-- preserve-on-compact: Quality Gates -->
-**※1 worktree**: 固定worktree運用（${HOME}/projects/python/.worktrees/wt-feature0[1-3]（個人環境ごとにカスタマイズ））。セッション開始時にwatch_directoryの設定を確認する（mcp__CodeGraphContext__list_watched_paths）
+**※1 worktree**: 固定worktree運用（${HOME}/projects/python/.worktrees/wt-feature0[1-3]（個人環境ごとにカスタマイズ））
 **※2 品質ゲート**: 本ファイル Section「品質ゲート」→「統合コマンド」を使用する
 
 ```bash
