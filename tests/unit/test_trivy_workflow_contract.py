@@ -37,11 +37,13 @@ def _workflow_on(data: dict[Any, Any]) -> dict[str, Any]:
 
 @pytest.fixture
 def ci_workflow(request: pytest.FixtureRequest) -> dict[str, Any]:
+    """CI workflowをpytest rootpath基準で読み込み、移動時の相対パス破損を防ぐ。"""
     return _load_yaml(".github/workflows/ci.yml", request)
 
 
 @pytest.fixture
 def trivy_workflow(request: pytest.FixtureRequest) -> dict[str, Any]:
+    """Trivy workflowをpytest rootpath基準で読み込み、契約テストの参照を一元化する。"""
     return _load_yaml(".github/workflows/trivy-scan.yml", request)
 
 

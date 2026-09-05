@@ -69,7 +69,7 @@ if init_sentry():
 
 ## 機密データ保護
 
-`before_send`フックで以下**44種類**の機密キーを自動スクラブ:
+`before_send`フックで以下**46種類**の機密キーを自動スクラブ:
 
 | カテゴリ | キー | 個数 |
 |---------|------|------|
@@ -78,13 +78,14 @@ if init_sentry():
 | **暗号化** | encryption_key, cipher_key | 2 |
 | **OAuth** | oauth_token | 1 |
 | **二要素認証** | otp, mfa, totp | 3 |
-| **個人情報** | email, ip_address, username, database_url, ssn, credit_card, cvv, card_number | 8 |
+| **個人情報** | email, ip_address, username, database_url, ssn, credit_card, cvv, card_number, phone, phone_number | 10 |
 | **HTTPヘッダー/レスポンス** | body_preview, access_key, proxy-authorization, set-cookie, x-auth-token, csrf_token, x-csrf-token, x-refresh-token, x-access-token | 9 |
-| **合計** | - | **44** |
+| **合計** | - | **46** |
 
 **注記 (個数 baseline)**:
 
-- `CHANGELOG.md` の「32 → 44（+12件）」表記が最終状態と一致する。
+- `CHANGELOG.md` の「32 → 44（+12件）」表記は**その時点の**最終状態と一致する
+  （現在は `phone` / `phone_number` 追加後の 46 件）。
   起点 32 は **PR#340 で `email` / `ip_address` / `body_preview` 追加後の件数**。
   PR#340 前起点では **29 → 44（+15件）**。
 - 現ステージ済 PR で追加された **12 件** の内訳（CHANGELOG.md と同一）:
@@ -93,7 +94,7 @@ if init_sentry():
     `csrf_token`, `x-csrf-token`, `x-refresh-token`, `x-access-token`
   - 複合語バリアント 3 件: `authtoken`, `usertoken`, `userpassword`
   - 個人情報 1 件: `username`（PR#347 review follow-up で追加）
-- 最終状態は **44 件**（`utils/sentry_scrub_primitives.py` 実装・`test_sentry_scrub_primitives.py::assert len(SENSITIVE_KEYS) == 44` と一致）。
+- 現在の状態は **46 件**（`utils/sentry_scrub_primitives.py` 実装・`test_sentry_scrub_primitives.py::assert len(SENSITIVE_KEYS) == 46` と一致）。
 
 **確認元**: `utils/sentry_scrub_primitives.py` (`SENSITIVE_KEYS` frozenset)
 **マッチング方式**: `_is_sensitive_key` は **単語境界マッチ + ハイフン/アンダースコア
@@ -151,5 +152,5 @@ export SENTRY_DEBUG=true
 ```python
 # スクラブ対象キーの確認
 from utils.sentry_scrub_primitives import SENSITIVE_KEYS
-print(len(SENSITIVE_KEYS))  # 44
+print(len(SENSITIVE_KEYS))  # 46
 ```
