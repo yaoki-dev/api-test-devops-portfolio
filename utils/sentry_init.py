@@ -25,6 +25,20 @@ structlogと連携し、ERROR以上のログをSentryに送信。
     - before_sendフックで機密データを自動除外（46種類のキーパターン）
     - DSNはSecretStrで管理（config/settings.py）
     - enabled=Falseで完全無効化可能
+
+自前スクラブと SDK EventScrubber の役割分担:
+    両者は重複ではなく補完関係にあり、SDK 側の既定 EventScrubber は
+    有効なまま残す。自前の SENSITIVE_KEYS 46件と SDK の実効 denylist
+    36件はリテラルとして12件しか重ならない。SDK にしか無い24件のうち
+    11件は自前のパターン照合が拾うが、残る13件（auth, credentials,
+    csrf, sessionid, phpsessid, remote_addr, x_real_ip 等）は素通りする。
+    併用でカバーするキーは和集合70件（46 + 36 - 重複12）になる。
+
+    EventScrubber(denylist=...) を明示指定してはならない。SDK は
+    denylist 引数を DEFAULT_DENYLIST の置換として扱うため、自前キーを
+    渡すと SDK 側21件が失われ、うち10件（auth, credentials, csrf,
+    sessionid 等）は自前でも拾えず無防備になる。send_default_pii=False
+    のとき DEFAULT_PII_DENYLIST の4件だけは置換後も追記される。
 """
 
 from __future__ import annotations

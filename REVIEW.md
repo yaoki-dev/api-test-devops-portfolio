@@ -23,8 +23,8 @@
 - **リトライ**: リトライには exponential backoff with jitter を使用し、429/5xx 等の一時的失敗に限定すること。
 
 ### 3. URL / SSRF Protection (🔴 Blocking)
-- **URL構造検証**: 外部URLを受け取る場合は、scheme、hostname、port、allowlist を検証すること。
-- **内部ネットワーク保護**: localhost、loopback、private IP、link-local、metadata IP への通信を防止すること。
+- **URL構造検証**: 外部URLを受け取る場合は、scheme、hostname、port、allowlist を検証すること。対象URLが運用者の管理する設定値のみに由来し、ホスト許可リストが deny-by-default で公開ホストに限定されている場合、port の検証は不要である（非既定ポートを指定できる主体は許可リスト自体も変更できるため、内部ネットワークへの到達を防ぐ効果がない）。
+- **内部ネットワーク保護**: localhost、loopback、private IP、link-local、metadata IP への通信を防止すること。ホスト許可リストが deny-by-default で境界を担保している場合、設定バリデータに独立した private IP 判定を置く必要はない（許可リストに無いホストは IP リテラルを含めてすべて拒否されるため）。設定読み込み時の DNS 解決は TOCTOU と DNS rebinding を招くうえテストの決定性を損なうため行わない。解決後アドレスに対する実効的な遮断が要件になる場合は、設定層ではなく egress 層に置くこと。
 - **prefix判定禁止**: URL検証では文字列 prefix 判定だけに依存せず、`urlparse` 等で構造化して検証すること。
 
 ### 4. 可観測性 (🟡 Suggested)

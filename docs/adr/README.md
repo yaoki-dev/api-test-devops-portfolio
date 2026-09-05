@@ -32,6 +32,7 @@
 | [ADR-0004](0004-trivy-ignore-unfixed-policy.md) | Trivy で修正未提供の脆弱性をゲート対象から除外する方針 | Accepted | `.github/workflows/trivy-scan.yml` |
 | [ADR-0005](0005-ci-cache-freshness-vs-build-time.md) | CI キャッシュ鮮度 vs ビルド時間のトレードオフ | Accepted | `.github/workflows/ci.yml`、`.github/workflows/trivy-scan.yml` |
 | [ADR-0006](0006-non-idempotent-retry-policy.md) | 非冪等 HTTP メソッドのリトライ方針 | Accepted | `utils/http_helpers.py`、`utils/jsonplaceholder_base_{sync,async}.py` |
+| [ADR-0007](0007-ssrf-boundary-allowlist-only.md) | SSRF 境界を設定層の allowlist 単層に定める | Accepted | `config/settings.py`、`REVIEW.md` |
 
 ## ADR 追加ルール
 

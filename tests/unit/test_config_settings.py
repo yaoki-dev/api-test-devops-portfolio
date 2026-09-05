@@ -1,6 +1,4 @@
 import logging
-import socket
-from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -15,11 +13,8 @@ from config.settings import (
     SecurityConfig,
     SentryConfig,
     Settings,
-    _resolve_hostname,
-    _resolve_hostname_cached,
     _validate_base_url_with_allowed_domains,
     get_settings,
-    is_private_ip,
     reload_settings,
 )
 from config.settings import (
@@ -28,38 +23,6 @@ from config.settings import (
 
 # Module-level marker: All tests in this file are unit tests
 pytestmark = pytest.mark.unit
-
-
-@pytest.fixture(autouse=True)
-def deterministic_ssrf_validator_dns(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """SSRF validator 専用の DNS 決定論化
-
-    NOTE: これは unit 全域の DNS stub ではなく、本ファイルの SSRF validator
-    テスト専用の決定論化である。tests/unit/conftest.py の socket blocker により
-    実 socket.gethostbyname が SocketBlockedError になるため、SSRF validator が
-    本番コードで呼ぶ DNS 解決を固定 IP に差し替える。is_private_ip 等の判定
-    ロジック自体は実コードのまま検証される（DNS 解決結果のみ決定論化）。
-
-    設計:
-        - fake map で `localhost -> 127.0.0.1` を返し、private/loopback 判定を維持。
-          未登録ホスト名は public IP `1.2.3.4` を返し、ドメイン allowlist 判定を検証。
-          固定値 1 つだけでは localhost の private 判定が壊れるため fake map にする。
-        - patch 対象は `socket.gethostbyname` seam（既存の個別 monkeypatch と同層）。
-          `_resolve_hostname_cached` は patch せず実コードのまま動かす。
-        - lru_cache 汚染防止のため patch 前と teardown 後に cache_clear する。
-        - 個別テストが `socket.gethostbyname` を再 monkeypatch する場合、pytest の
-          後勝ち規則によりテスト側が優先される（衝突しない）。
-    """
-    fake_dns = {"localhost": "127.0.0.1"}
-
-    def fake_gethostbyname(hostname: str) -> str:
-        # public dummy IP for SSRF allowlist/IP判定テスト
-        return fake_dns.get(hostname, "1.2.3.4")
-
-    _resolve_hostname_cached.cache_clear()
-    monkeypatch.setattr(socket, "gethostbyname", fake_gethostbyname)
-    yield
-    _resolve_hostname_cached.cache_clear()
 
 
 class TestAPIConfigBaseUrlDependencyInjection:
@@ -71,12 +34,7 @@ class TestAPIConfigBaseUrlDependencyInjection:
 
         assert result == "https://example.com"
 
-    def test_validate_base_url_rejects_domain_missing_from_injected_allowlist(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # このテストは DNS/private-IP 判定経路を使わず、
-        # allowlist 分岐だけを決定的に検証する。
-        monkeypatch.setattr(socket, "gethostbyname", lambda _: "1.2.3.4")
+    def test_validate_base_url_rejects_domain_missing_from_injected_allowlist(self) -> None:
         with pytest.raises(ValueError, match="Domain not in allowlist"):
             _validate_base_url_with_allowed_domains(
                 "https://evil.com",
@@ -93,11 +51,7 @@ class TestAPIConfigBaseUrlDependencyInjection:
     def test_validate_base_url_allowlist_log_includes_operator_guidance(
         self,
         caplog: pytest.LogCaptureFixture,
-        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        # このテストは DNS/private-IP 判定経路を使わず、
-        # allowlist 分岐だけを決定的に検証する。
-        monkeypatch.setattr(socket, "gethostbyname", lambda _: "1.2.3.4")
         with caplog.at_level(logging.WARNING, logger="config.settings"):
             with pytest.raises(ValueError, match="Domain not in allowlist"):
                 _validate_base_url_with_allowed_domains(
@@ -112,9 +66,8 @@ class TestAPIConfigBaseUrlDependencyInjection:
         )
 
     def test_validate_base_url_logs_warning_for_domain_not_in_allowlist(
-        self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+        self, caplog: pytest.LogCaptureFixture
     ) -> None:
-        monkeypatch.setattr(socket, "gethostbyname", lambda _: "1.2.3.4")
         with caplog.at_level(logging.WARNING, logger="config.settings"):
             with pytest.raises(ValueError, match="Domain not in allowlist"):
                 _validate_base_url_with_allowed_domains(
@@ -187,7 +140,6 @@ class TestAPIConfigValidation:
         assert config.base_url == "http://httpbin.org"
 
     def test_base_url_https_scheme_valid(self):
-        # Note: example.com系はDNS解決失敗でFail-Closedブロック
         config = APIConfig(base_url="https://api.github.com")
         assert config.base_url == "https://api.github.com"
 
@@ -631,7 +583,6 @@ class TestTestConfigDefaults:
 
 class TestEnvironmentVariableLoading:
     def test_nested_environment_variable_loading(self, monkeypatch):
-        # Note: DNS解決可能なドメインを使用（example.com系はFail-Closedでブロック）
         monkeypatch.setenv("API__BASE_URL", "https://httpbin.org")
         import config.settings
 
@@ -659,19 +610,8 @@ class TestEnvironmentVariableLoading:
         assert settings.debug is False
 
 
-class DNSCacheClearMixin:
-    """TestSSRFPreventionとTestResolveHostnameでDNSキャッシュ汚染によるテスト間干渉を防ぐ共通fixtureを提供する。"""
-
-    @pytest.fixture(autouse=True)
-    def clear_dns_cache(self) -> Iterator[None]:
-        """各テスト前後にDNS解決キャッシュをクリアする"""
-        _resolve_hostname_cached.cache_clear()
-        yield
-        _resolve_hostname_cached.cache_clear()
-
-
-class TestSSRFPrevention(DNSCacheClearMixin):
-    """OWASP API7:2023 SSRF対策としてprivate IP・ドメイン外・DNS失敗時の防御を検証する。"""
+class TestSSRFPrevention:
+    """OWASP API7:2023対策として、base_urlを許可ドメインのallowlistだけで制限する契約を検証する。"""
 
     @pytest.mark.parametrize(
         ("malicious_url", "description"),
@@ -706,9 +646,15 @@ class TestSSRFPrevention(DNSCacheClearMixin):
                 "Private IP 172.16.x.x",
                 id="private_172_16",
             ),
+            # userinfo はホストではない。allowlist 判定が netloc に退行すると通ってしまう
+            pytest.param(
+                "https://jsonplaceholder.typicode.com@169.254.169.254/latest/meta-data/",
+                "Userinfo authority confusion to metadata endpoint",
+                id="userinfo_authority_confusion",
+            ),
         ],
     )
-    def test_ssrf_private_ip_blocked(self, malicious_url: str, description: str) -> None:
+    def test_ssrf_unallowlisted_hosts_rejected(self, malicious_url: str, description: str) -> None:
         with pytest.raises(ValidationError) as exc_info:
             APIConfig(base_url=malicious_url)
 
@@ -735,6 +681,12 @@ class TestSSRFPrevention(DNSCacheClearMixin):
                 "internal.corp.local",
                 id="corp_internal",
             ),
+            # 末尾ドット FQDN は DNS 上は同一だが、allowlist は完全一致のため拒否される
+            pytest.param(
+                "https://jsonplaceholder.typicode.com./posts",
+                "jsonplaceholder.typicode.com.",
+                id="trailing_dot_fqdn",
+            ),
         ],
     )
     def test_ssrf_domain_allowlist_enforced(self, unauthorized_url: str, domain: str) -> None:
@@ -749,137 +701,22 @@ class TestSSRFPrevention(DNSCacheClearMixin):
         )
 
     @pytest.mark.parametrize(
-        ("ip_address", "expected_private"),
-        [
-            # プライベートIPレンジ（True = ブロック）
-            pytest.param("127.0.0.1", True, id="loopback"),
-            pytest.param("10.0.0.1", True, id="private_10"),
-            pytest.param("172.16.0.1", True, id="private_172_16"),
-            pytest.param("192.168.1.1", True, id="private_192_168"),
-            pytest.param("169.254.169.254", True, id="link_local_aws"),
-            # パブリックIP（False = 許可候補、ただしドメインリスト確認が必要）
-            pytest.param("8.8.8.8", False, id="google_dns"),
-            pytest.param("1.1.1.1", False, id="cloudflare_dns"),
-        ],
-    )
-    def test_is_private_ip_detection(self, ip_address: str, expected_private: bool) -> None:
-        """RFC 1918/3927/5735のプライベート/リンクローカル/ループバック範囲の識別を検証する。"""
-        result = is_private_ip(ip_address)
-        assert result == expected_private, (
-            f"Expected is_private_ip({ip_address}) == {expected_private}"
-        )
-
-    def test_is_private_ip_dns_failure_returns_true(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """DNS rebinding攻撃を防ぐため、DNS解決失敗時はFail-ClosedでTrueを返す契約を検証する。"""
-        import socket
-
-        # DNS解決を常に失敗させる
-        def mock_gethostbyname(hostname: str) -> str:
-            raise OSError("DNS resolution failed")
-
-        monkeypatch.setattr(socket, "gethostbyname", mock_gethostbyname)
-
-        # 不明なホストはプライベートIPとして扱う（Fail-Closed）
-        result = is_private_ip("unknown-host.test")
-        assert result is True, "DNS failure should return True (Fail-Closed)"
-
-    def test_is_private_ip_invalid_dns_response_returns_true(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """不正なDNS応答に対するFail-Closed最終防御と、warningログ記録の両方を検証する。"""
-        monkeypatch.setattr(socket, "gethostbyname", lambda _: "not-an-ip-address")
-
-        with caplog.at_level(logging.WARNING, logger="config.settings"):
-            result = is_private_ip("malicious.example.com")
-
-        assert result is True, "不正なDNS応答はブロック扱い（Fail-Closed）"
-        assert any("不正なIPアドレス形式" in record.message for record in caplog.records), (
-            "セキュリティ証跡としてwarningログが出力されること"
-        )
-
-    @pytest.mark.parametrize(
         "allowed_domain",
         [
-            # 実際にDNS解決可能なドメインのみテスト
-            # example.com系は予約済みドメインで解決失敗 → Fail-Closedでブロック
             pytest.param("https://jsonplaceholder.typicode.com", id="jsonplaceholder"),
             pytest.param("https://api.github.com", id="github_api"),
             pytest.param("https://httpbin.org", id="httpbin"),
+            # allowlist の次元はホスト名のみ
+            # port を検証次元に加える退行を検出する。
+            pytest.param(
+                "https://jsonplaceholder.typicode.com:8443",
+                id="allowed_host_non_default_port",
+            ),
         ],
     )
     def test_allowed_domains_accepted(self, allowed_domain: str) -> None:
         config = APIConfig(base_url=allowed_domain)
         assert config.base_url == allowed_domain.rstrip("/")
-
-    @pytest.mark.parametrize(
-        ("ipv6_address", "expected_private"),
-        [
-            # IPv6ループバック
-            pytest.param("::1", True, id="ipv6_loopback"),
-            # IPv6ユニークローカル（RFC 4193）
-            pytest.param("fc00::1", True, id="ipv6_unique_local_fc00"),
-            pytest.param("fd00::1", True, id="ipv6_unique_local_fd00"),
-            # IPv6リンクローカル（RFC 4291）
-            pytest.param("fe80::1", True, id="ipv6_link_local"),
-            # IPv4-mapped IPv6（バイパス攻撃対策）
-            pytest.param("::ffff:192.168.1.1", True, id="ipv4_mapped_private"),
-            pytest.param("::ffff:127.0.0.1", True, id="ipv4_mapped_loopback"),
-            # パブリックIPv6（False = 許可候補）
-            pytest.param("2001:4860:4860::8888", False, id="google_dns_ipv6"),
-        ],
-    )
-    def test_is_private_ip_ipv6_detection(self, ipv6_address: str, expected_private: bool) -> None:
-        """IPv4-mapped IPv6（::ffff:x.x.x.x）によるSSRFバイパス攻撃を防止できることを検証する。"""
-        result = is_private_ip(ipv6_address)
-        assert result == expected_private, (
-            f"Expected is_private_ip({ipv6_address}) == {expected_private}"
-        )
-
-    @pytest.mark.parametrize(
-        ("boundary_ip", "expected_private", "description"),
-        [
-            # 10.0.0.0/8 境界
-            pytest.param("10.0.0.0", True, "10.x.x.x range start", id="private_10_start"),
-            pytest.param("10.255.255.255", True, "10.x.x.x range end", id="private_10_end"),
-            pytest.param("9.255.255.255", False, "just below 10.x.x.x", id="below_private_10"),
-            pytest.param("11.0.0.0", False, "just above 10.x.x.x", id="above_private_10"),
-            # 172.16.0.0/12 境界
-            pytest.param("172.16.0.0", True, "172.16-31 start", id="private_172_start"),
-            pytest.param("172.31.255.255", True, "172.16-31 end", id="private_172_end"),
-            pytest.param("172.15.255.255", False, "just below 172.16", id="below_private_172"),
-            pytest.param("172.32.0.0", False, "just above 172.31", id="above_private_172"),
-            # 192.168.0.0/16 境界
-            pytest.param("192.168.0.0", True, "192.168 start", id="private_192_start"),
-            pytest.param("192.168.255.255", True, "192.168 end", id="private_192_end"),
-            pytest.param("192.167.255.255", False, "just below 192.168", id="below_private_192"),
-            pytest.param("192.169.0.0", False, "just above 192.168", id="above_private_192"),
-            # 127.0.0.0/8 境界（ループバック）
-            pytest.param("127.0.0.1", True, "standard loopback", id="loopback_standard"),
-            pytest.param("127.255.255.255", True, "loopback end", id="loopback_end"),
-            # RFC 1122 / RFC 6598 ranges that should never be accepted as public API hosts.
-            pytest.param(
-                "0.0.0.0",  # noqa: S104 - SSRF boundary test data, not a bind address.
-                True,
-                "current network start",
-                id="current_network_start",
-            ),
-            pytest.param("0.255.255.255", True, "current network end", id="current_network_end"),
-            pytest.param("100.64.0.0", True, "carrier-grade NAT start", id="cgnat_start"),
-            pytest.param("100.127.255.255", True, "carrier-grade NAT end", id="cgnat_end"),
-            pytest.param("100.128.0.0", False, "just above carrier-grade NAT", id="above_cgnat"),
-        ],
-    )
-    def test_is_private_ip_boundary_values(
-        self,
-        boundary_ip: str,
-        expected_private: bool,
-        description: str,
-    ) -> None:
-        result = is_private_ip(boundary_ip)
-        assert result == expected_private, (
-            f"Boundary test failed for {description}: "
-            f"is_private_ip({boundary_ip}) should be {expected_private}"
-        )
 
     def test_validate_base_url_ssrf_block_logs_warning(
         self, caplog: pytest.LogCaptureFixture
@@ -891,150 +728,6 @@ class TestSSRFPrevention(DNSCacheClearMixin):
         assert any("SSRF Prevention" in record.message for record in caplog.records), (
             "SSRF防止ブロック時にwarningログが出力されるべき"
         )
-
-
-class TestResolveHostname(DNSCacheClearMixin):
-    """DNS解決結果のキャッシュ動作を検証し、ネットワーク障害時にNoneへ安全にフォールバックする契約を保護する。"""
-
-    def test_resolve_hostname_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(socket, "gethostbyname", lambda _: "93.184.216.34")
-
-        result = _resolve_hostname("example.com")
-
-        assert result == "93.184.216.34"
-
-    def test_resolve_hostname_failure_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """lru_cacheは例外をキャッシュしないため、DNS障害後も再試行できる「成功のみキャッシュ」設計を保護する。"""
-        call_count = 0
-
-        def raise_os_error(hostname: str) -> str:
-            nonlocal call_count
-            call_count += 1
-            raise OSError(f"Name resolution failed: {hostname}")
-
-        monkeypatch.setattr(socket, "gethostbyname", raise_os_error)
-
-        result1 = _resolve_hostname("nonexistent.invalid")
-        result2 = _resolve_hostname("nonexistent.invalid")
-
-        assert result1 is None
-        assert result2 is None
-        # 重要: 失敗がキャッシュされていないことを検証（2回とも gethostbyname が呼ばれる）
-        # もし失敗をキャッシュする実装に退行した場合、call_count == 1 になりこのテストで検出できる
-        assert call_count == 2, (
-            f"DNS failure should NOT be cached by lru_cache. "
-            f"gethostbyname should be called twice, but was called {call_count} time(s)."
-        )
-
-    def test_resolve_hostname_cache_hit(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        call_count = 0
-
-        def counting_resolver(hostname: str) -> str:
-            nonlocal call_count
-            call_count += 1
-            return "10.0.0.1"
-
-        monkeypatch.setattr(socket, "gethostbyname", counting_resolver)
-
-        result1 = _resolve_hostname("cached.example.com")
-        result2 = _resolve_hostname("cached.example.com")
-
-        assert result1 == "10.0.0.1"
-        assert result2 == "10.0.0.1"
-        assert call_count == 1, (
-            f"gethostbyname should be called once due to cache, but was called {call_count} times"
-        )
-
-    def test_resolve_hostname_cache_clear(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        call_count = 0
-
-        def counting_resolver(hostname: str) -> str:
-            nonlocal call_count
-            call_count += 1
-            return "10.0.0.2"
-
-        monkeypatch.setattr(socket, "gethostbyname", counting_resolver)
-
-        _resolve_hostname("cleared.example.com")
-        assert call_count == 1
-
-        _resolve_hostname_cached.cache_clear()
-        _resolve_hostname("cleared.example.com")
-        assert call_count == 2, (
-            f"gethostbyname should be called again after cache_clear(), "
-            f"but total calls were {call_count}"
-        )
-
-    @pytest.mark.parametrize(
-        "exc_factory",
-        [
-            lambda: UnicodeDecodeError("utf-8", b"\xff\xfe", 0, 1, "invalid byte"),
-            lambda: UnicodeEncodeError(
-                "ascii", "ÿþ.attacker.example", 0, 1, "ordinal not in range(128)"
-            ),
-            lambda: TypeError("embedded null byte"),
-            lambda: OverflowError("host name is too long"),
-        ],
-        ids=["UnicodeDecodeError", "UnicodeEncodeError", "TypeError", "OverflowError"],
-    )
-    def test_resolve_hostname_security_exception_logs_warning(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        caplog: pytest.LogCaptureFixture,
-        exc_factory: Callable[[], Exception],
-    ) -> None:
-        """Unicode/Type/OverflowErrorは攻撃的ホスト名の兆候として、一時的なOSErrorと区別してwarningログに残す契約を検証する。"""
-
-        def raise_exc(hostname: str) -> str:
-            raise exc_factory()
-
-        monkeypatch.setattr(socket, "gethostbyname", raise_exc)
-
-        with caplog.at_level(logging.WARNING, logger="config.settings"):
-            result = _resolve_hostname("invalid")
-
-        assert result is None
-        assert "SSRF試行の可能性" in caplog.text
-
-    @pytest.mark.parametrize(
-        ("exc_factory", "expected_log_message"),
-        [
-            pytest.param(
-                lambda: socket.gaierror("Name resolution failed"),
-                "DNS解決失敗",
-                id="gaierror",
-            ),
-            pytest.param(
-                lambda: socket.herror("Host resolution failed"),
-                "DNS解決失敗",
-                id="herror",
-            ),
-            pytest.param(
-                lambda: OSError("Network error"),
-                "予期しないネットワークエラー",
-                id="os_error",
-            ),
-        ],
-    )
-    def test_resolve_hostname_network_exception_logs_warning(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        caplog: pytest.LogCaptureFixture,
-        exc_factory: Callable[[], Exception],
-        expected_log_message: str,
-    ) -> None:
-        """gaierror/herror/OSErrorが個別exceptとして誤って除外されない回帰防止のため、ログメッセージ差異を検証する。"""
-
-        def raise_exc(hostname: str) -> str:
-            raise exc_factory()
-
-        monkeypatch.setattr(socket, "gethostbyname", raise_exc)
-
-        with caplog.at_level(logging.WARNING, logger="config.settings"):
-            result = _resolve_hostname("nonexistent.invalid")
-
-        assert result is None
-        assert expected_log_message in caplog.text
 
 
 # ── Boundary value + ALLOWED_DOMAINS tests ──

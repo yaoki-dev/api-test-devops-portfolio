@@ -16,6 +16,7 @@ docs/main/interview_docs/skillsheet_yuta-aoki-yyyymmdd.md
 .history/**
 .planning/**
 graphify-out/**
+.atl/**
 
 # Cache directories
 .pre-commit-cache/**

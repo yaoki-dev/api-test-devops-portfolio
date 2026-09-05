@@ -26,7 +26,7 @@ repo-root/
 ### CONTEXT.md Actual Content (as of 2026-06-26)
 
 The current `CONTEXT.md` is minimal — only contains:
-- CD実証 (CD verification) definition
+- CD verification (continuous deployment verification) definition
 
 It does **not** yet contain the full domain glossary. The richer domain context lives in:
 - `.claude/CLAUDE.md` — project overview, tech stack, workflow rules

@@ -2,8 +2,8 @@
   "name": "api-test-devops-portfolio",
   "private": true,
   "scripts": {
-    "lint:md": "markdownlint '**/*.md' --ignore-path .markdownlintignore",
-    "lint:md:fix": "markdownlint '**/*.md' --ignore-path .markdownlintignore --fix",
+    "lint:md": "markdownlint '**/*.md' '.claude/**/*.md' --ignore-path .markdownlintignore",
+    "lint:md:fix": "markdownlint '**/*.md' '.claude/**/*.md' --ignore-path .markdownlintignore --fix",
     "lint:text": "textlint '**/*.md' --ignore-path .textlintignore",
     "lint:text:fix": "textlint '**/*.md' --ignore-path .textlintignore --fix",
     "lint:links": "git ls-files -z '*.md' | xargs -0 -I {} markdown-link-check ./{} --config .markdown-link-check.json --quiet",
