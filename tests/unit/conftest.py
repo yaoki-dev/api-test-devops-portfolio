@@ -14,9 +14,7 @@ def block_network_socket() -> Generator[None]:
 
     allow_unix_socket=True は xdist/asyncio の Unix domain socket 通信を残すため。
     function スコープで unit 層外への漏れを防ぐが、高スコープ fixture setup は先に走る。
-    pytest-socket は DNS も遮断するため、SSRF validator は決定論的 DNS fixture で上書きする
-    (localhost→127.0.0.1、その他→1.2.3.4)。
-    """  # noqa: E501
+    """
     disable_socket(allow_unix_socket=True)
     yield
     enable_socket()
