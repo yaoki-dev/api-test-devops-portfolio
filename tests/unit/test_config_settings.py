@@ -706,6 +706,12 @@ class TestSSRFPrevention:
             pytest.param("https://jsonplaceholder.typicode.com", id="jsonplaceholder"),
             pytest.param("https://api.github.com", id="github_api"),
             pytest.param("https://httpbin.org", id="httpbin"),
+            # allowlist の次元はホスト名のみ
+            # port を検証次元に加える退行を検出する。
+            pytest.param(
+                "https://jsonplaceholder.typicode.com:8443",
+                id="allowed_host_non_default_port",
+            ),
         ],
     )
     def test_allowed_domains_accepted(self, allowed_domain: str) -> None:
