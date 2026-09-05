@@ -137,7 +137,7 @@ jobs:
 
       - name: Run markdownlint
         id: markdownlint
-        run: npx markdownlint '**/*.md' --ignore-path .markdownlintignore
+        run: npx markdownlint '**/*.md' '.claude/**/*.md' --ignore-path .markdownlintignore
         continue-on-error: true
 
       - name: Run textlint
