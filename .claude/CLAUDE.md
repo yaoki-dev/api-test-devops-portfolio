@@ -87,10 +87,6 @@ uv run mypy utils/ config/ models/ tests/conftest.py
 uv run ruff check --fix .           # スタイル + 自動修正
 uv run ruff format .                # フォーマット適用
 uv run mypy utils/ config/ models/ tests/conftest.py # 型チェック
-
-# セキュリティ（手動実行・CI未統合。CIでは ruff S-rules + gitleaks が代替）
-uv run bandit -r utils/ config/ models/
-uv run safety scan
 ```
 
 ### pre-commit（軽量版）
