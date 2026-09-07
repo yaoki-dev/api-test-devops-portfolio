@@ -53,7 +53,7 @@ dev = [
     "pyyaml>=6.0",              # repo_contract テストのワークフローYAMLパース
     # 品質管理
     "ruff>=0.16.3,<0.17",       # pre-commit hook: v0.16.1（.pre-commit-config.yaml参照）
-    "zizmor==1.29.0",
+    "zizmor==1.30.0",
     "mypy>=2.3.0,<3.0.0",
     "bandit>=1.8.6",
     "safety>=3.8.1",
