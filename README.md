@@ -16,7 +16,7 @@
 
 ## 作成背景
 
-前職では、他メンバーが実装した機能をステージング環境で手動操作し、結合・システム・業務シナリオ観点で確認していました。
+前プロジェクトでは、他メンバーが実装した機能をステージング環境で手動操作し、結合・システム・業務シナリオ観点で確認していました。
 その中で、実行手順の属人化、確認漏れ、リリース前の再実行コストといった課題を経験しました。
 
 このリポジトリでは、その課題を API / 結合層の品質保証に絞って設計しています。
@@ -56,7 +56,7 @@
 
 ## アーキテクチャ
 
-### システム構成図
+### APIクライアント
 
 ```mermaid
 graph TB
@@ -79,7 +79,7 @@ graph TB
 
 > この図は、リクエストが同期・非同期APIクライアントを経由して外部APIへ到達し、検証済みモデルとして返る主要な処理経路を示します。
 
-### 運用・デプロイフロー
+### CI/CDパイプライン
 
 ```mermaid
 flowchart TD
@@ -202,24 +202,24 @@ flowchart TD
 
 ### 設計判断（Design Decisions）
 
-| 判断 | 採用方針 | 根拠・トレードオフ |
-|------|----------|------------------|
-| **`pytest 採用`** | 標準的・豊富なプラグイン・並列実行対応。既存のpytestテスト/fixtureを拡張しやすい。 | 機能過多で学習曲線あり。fixture 設計に慣れが必要。 |
-| **`HTTPXモック: respx採用`** | HTTPXのSync / Asyncに対応し、ルーティングベースで宣言的にモック。 | HTTPX依存。標準 library 非依存を優先する場合は不向き。 |
-| **`Sync / Async 使い分け`** | JSONPlaceholderはSync / Async双方で共通CRUDを提供し、単純な利用例はSync、並行I/Oが必要な処理はAsync。GitHub APIはAsync専用。 | 単純なAPIはSyncの方が直線的でテスト容易。Asyncは呼び出し側に asyncio.run() 等の境界管理が必要で、Sync / Async双方の契約・テスト維持コストを負う（詳細: [ADR-0002](docs/adr/0002-sync-async-parity-api-client.md)）。 |
-| **`JSONPlaceholder: Sync基盤継承`** | JSONPlaceholder の Sync クライアントは共通 SyncAPIClient を継承し、HTTP基盤とドメイン操作を分離。 | LSP遵守 (HTTP動詞契約維持) + boilerplate削減。汎用HTTP層とドメインメソッドの責務分離 (SRP)。代償として基底 SyncAPIClient の契約変更が全ドメインメソッドへ波及し、JSONPlaceholder 固有のHTTP制御は基底の契約内に制限される（詳細: [ADR-0002](docs/adr/0002-sync-async-parity-api-client.md)）。 |
-| **`書き込みメソッドの保守的なリトライ`** | `POST` / `PATCH` / `PUT` は既定で 1 回のみ実行し、サーバー側の重複排除契約がある場合だけ呼び出し単位で `retry_non_idempotent=True` を指定する。Sync / Async と公開ドメインメソッドで同じ契約を提供。 | 要求処理済み・応答消失時の意図しない再送を既定で抑える。HTTP仕様上PUTは冪等だが、本プロジェクトでは書き込みを保守的に扱うため、明示指定の手間とIdempotency-Key等の契約確認責任が呼び出し側に残る（[RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html#name-idempotent-methods)、詳細: [ADR-0006](docs/adr/0006-non-idempotent-retry-policy.md)）。 |
-| **`GitHubClient: 独立実装`** | 継承せず | 戻り値型契約差異（httpx.Response vs 検証済み Pydantic モデル）と ETag / Rate Limit / PII redaction の固有要件により、継承すると LSP違反。共通化は例外階層（GitHubAPIError(APIClientError)）とutility関数レベルに限定する（詳細: [ADR-0001](docs/adr/0001-async-only-github-client.md)）。 |
-| **`GitHubClient: Async特化`** | GitHub APIはAsync専用クライアントとして実装し、Sync版は持たない。現行実装はRate Limitヘッダー監視とETag / 304キャッシュを提供し、複数リソースの並行取得は今後の拡張余地とする。 | Async-onlyにより同期利用は asyncio.run() 等の境界管理が必要。fan-out経路は現時点で未行使だが、Sync版を増やさず将来の並行I/Oを取り込める（詳細: [ADR-0001](docs/adr/0001-async-only-github-client.md)）。 |
-| **`GitHubモデル: strict + extra ignore`** | GitHubの既知フィールドは厳密に型検証し、将来の追加フィールドは無視する。一方、JSONPlaceholderは既存のstrict/forbid/サニタイズ方針を維持する。 | 外部APIごとの型ドリフト耐性と既存データ保護ポリシーを分離する。代償として `extra="ignore"` は追加フィールドを黙って捨てる。さらに任意フィールドは既定値 `None` を持つため、欠落・改名の検知が遅れやすい（`extra="forbid"` なら追加フィールドは ValidationError として通知される）。 |
-| **`サニタイズの適用範囲`** | JSONPlaceholder モデルのユーザー生成テキストに防御的サニタイズ (html.escape) を実装。GitHub 側は原文保持を優先し横展開しない。 | XSS対策の基本は出力時の context-aware encoding。モデル層サニタイズは補助防御だが、html.escape は値を変換するためデータ忠実性と衝突する。GitHub は原文保持を優先。 |
-| **`例外チェーン方針`** | GitHubの実レスポンス由来例外は未サニタイズのまま cause にせず、JSON解析失敗は本文を含まない `SanitizedJSONDecodeError` を代理 cause にする。合成モックAPIのJSONPlaceholderは既存の `from e` を維持する（詳細: [ADR-0001](docs/adr/0001-async-only-github-client.md)）。 | Pydantic ValidationError等からのPII漏洩を抑える一方、原因追跡は例外種別・メッセージ・位置情報に限定される。実装を非対称にする代わりに、データの出所をリスク判定の軸にする。 |
-| **`Multi-stage Docker`** | base / dependencies / runtime / test の4段階。runtimeの圧縮pull sizeは48.4 MB（2026-07-04の記録値。測定条件は [Docker reference](docs/reference/docker.md) を参照）・非root・ビルドキャッシュ最適化。 | 依存解決・runtime・testを分離し、最終イメージから不要なビルド/テスト依存を除外。代償として Dockerfile は複雑化し、単一 stage より理解コストが上がる。 |
-| **`多段階CIゲート`** | PRではpytest・Compose/healthcheck・Markdown・Trivyを、pushではCompose/healthcheck・filesystem/Trivy・post-validationを実行し、main push時だけPages/GHCR公開と公開物検証を追加。ジョブ間はneedsで必要な依存だけを接続し、独立ゲートを並列化する。 | トリガーとneeds条件の組合せは複雑になるが、独立ジョブの並列化で待ち時間を抑える（詳細: [CI/CD reference](docs/reference/ci_cd_pipeline.md)、[ADR-0003](docs/adr/0003-ci-result-loss-prevention-conditions.md)）。 |
-| **`Trivy 3層検証`** | PR: filesystem scan（develop/main）。main宛または`docker`ラベル付きPRはimage scanも追加。push: filesystem + image scan（`post-trivy-scan`）。 | 重複スキャンあり。image scanのDockerビルドはPR/pushとも `no-cache` でゲート自身の鮮度を優先し、Trivy脆弱性DBキャッシュはschedule以外で再利用する（両者は別のキャッシュ層。[ADR-0005](docs/adr/0005-ci-cache-freshness-vs-build-time.md)）。SARIFでSecurity tabに統合。 |
-| **`Trivy: unfixed除外`** | `ignore-unfixed: true` で、Trivy の脆弱性 DB に修正情報が反映され、更新済み DB を使用したスキャンで検出された脆弱性をゲート対象にする。 | 修正未提供の脆弱性を合否から除外するリスク受容であり、脆弱性ゼロの証明ではない（詳細: [ADR-0004](docs/adr/0004-trivy-ignore-unfixed-policy.md)）。 |
-| **`Markdown品質ゲート`** | `.github/workflows/ci.yml` の `pr-md-quality-check` はmarkdownlintとtextlintの結果を収集し、`Check lint results` で失敗時にジョブをfailureにする。 | `continue-on-error` は診断継続に限定する。required status checkとして設定されていない限り、ワークフロー単体ではマージを直接ブロックしない。 |
-| **`GHCR + Pages 公開`** | GHCR: 公開パッケージは匿名pullで検証可能。publishは`GITHUB_TOKEN`を使い、GHCR用OIDCは不要。Pages: カバレッジHTMLとバッジを公開し、deployにはPages権限を使う。バッジは生成失敗時に `n/a` fallback。 | GHCRはpublic package設定が必要（リポジトリ公開性とは別管理）。PagesはGitHub Actionsの`pages:write` / `id-token:write`等が必要。 |
+| 設計判断 | 採用方針 | 判断理由 | トレードオフ |
+|----------|----------|----------|----------------|
+| **`pytest 採用`** | pytestをテスト基盤とし、fixtureとプラグインを活用する。 | 標準的で拡張しやすく、pytest-xdistによる並列実行にも対応できる。 | 機能が多く学習曲線があり、fixture設計にも習熟が必要。 |
+| **`HTTPXモック: respx採用`** | HTTPXのSync / Asyncテストをrespxでモックする。 | ルーティングベースでHTTPXの応答を宣言的に定義できる。 | HTTPXに依存するため、標準ライブラリ非依存を優先する用途には向かない。 |
+| **`Sync / Async 使い分け`** | JSONPlaceholderはSync / Async双方で共通CRUDを提供し、単純な処理はSync、並行I/Oが必要な処理はAsyncとする。GitHub APIはAsync専用とする。 | 単純なAPIはSyncの方が直線的でテストしやすく、並行I/OにはAsyncが適する。 | Async利用時は`asyncio.run()`等の境界管理が必要で、Sync / Async双方の契約とテストを維持する必要がある（詳細：[ADR-0002](docs/adr/0002-sync-async-parity-api-client.md)）。 |
+| **`JSONPlaceholder: Sync基盤継承`** | Syncクライアントは`SyncAPIClient`を継承し、HTTP基盤とドメイン操作を分離する。 | HTTP動詞の契約を保ちながらboilerplateを減らし、責務を分離できる。 | 基底クラスの契約変更が全ドメインメソッドへ波及し、固有のHTTP制御は基底の契約内に限られる（詳細：[ADR-0002](docs/adr/0002-sync-async-parity-api-client.md)）。 |
+| **`書き込みメソッドの保守的なリトライ`** | `POST` / `PATCH` / `PUT`は既定で1回だけ実行し、重複排除契約がある場合のみ`retry_non_idempotent=True`を指定する。Sync / Asyncと公開ドメインメソッドで同じ契約を提供する。 | 要求処理済み・応答消失時の意図しない再送を既定で抑える。 | PUTはHTTP仕様上冪等だが保守的に扱うため、明示指定の手間とIdempotency-Key等の契約確認が呼び出し側に残る（[RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html#name-idempotent-methods)、詳細：[ADR-0006](docs/adr/0006-non-idempotent-retry-policy.md)）。 |
+| **`GitHubClient: 独立実装`** | `AsyncGitHubClient`はAPIClientを継承せず、共通化を例外階層とutility関数に限定する。 | 戻り値型の契約と、ETag / Rate Limit / PII redactionの固有要件が異なり、継承するとLSPに反する。 | 共通化できる範囲が限定される（詳細：[ADR-0001](docs/adr/0001-async-only-github-client.md)）。 |
+| **`GitHubClient: Async特化`** | GitHub APIはAsync専用クライアントとし、Sync版は持たない。Rate Limit監視とETag / 304キャッシュを実装する。 | Sync版を増やさず、将来の並行I/Oを取り込める設計にする。 | 同期利用には`asyncio.run()`等の境界管理が必要で、複数リソースのfan-outは現時点で未実装（詳細：[ADR-0001](docs/adr/0001-async-only-github-client.md)）。 |
+| **`GitHubモデル: strict + extra ignore`** | 既知フィールドは厳密に検証し、追加フィールドは無視する。JSONPlaceholderはstrict / forbid / サニタイズ方針を維持する。 | 外部APIごとに型ドリフトへの耐性とデータ保護方針を分ける。 | `extra="ignore"`は追加フィールドを黙って捨て、任意フィールドの既定値`None`は欠落や改名の検知を遅らせる。 |
+| **`サニタイズの適用範囲`** | JSONPlaceholderのユーザー生成テキストは`html.escape`で防御的にサニタイズし、GitHub側は原文を保持する。 | データの出所に応じて補助防御と原文保持を使い分ける。 | モデル層の変換はデータ忠実性と衝突し、XSS対策には出力時のcontext-aware encodingも必要。 |
+| **`例外チェーン方針`** | GitHubの実レスポンス由来例外は未サニタイズのままcauseにせず、JSON解析失敗は本文を含まない`SanitizedJSONDecodeError`を代理causeにする。JSONPlaceholderは既存の`from e`を維持する。 | Pydanticの`ValidationError`等を経由したPII漏洩を抑える。 | 原因追跡は例外種別・メッセージ・位置情報に限定され、データの出所に応じて実装が非対称になる（詳細：[ADR-0001](docs/adr/0001-async-only-github-client.md)）。 |
+| **`Multi-stage Docker`** | base / dependencies / runtime / testの4段階とし、runtimeを非rootで実行する。圧縮pull sizeは48.4 MB（2026-07-04の記録値。測定条件は[Docker reference](docs/reference/docker.md)を参照）。 | 依存解決・runtime・testを分離し、最終イメージから不要な依存を除外しつつビルドキャッシュを活用できる。 | 単一stageよりDockerfileが複雑になり、理解コストが上がる。 |
+| **`多段階CIゲート`** | PRではpytest・Compose / healthcheck・Markdown・Trivyを実行し、pushではCompose / healthcheck・filesystem / Trivy・post-validationを追加する。main push時のみPages / GHCRの公開と検証を行う。 | `needs`で必要な依存だけを接続し、失敗箇所を分離しながら独立ゲートを並列化できる。 | トリガーと`needs`条件の組み合わせが複雑になる（詳細：[CI/CD reference](docs/reference/ci_cd_pipeline.md)、[ADR-0003](docs/adr/0003-ci-result-loss-prevention-conditions.md)）。 |
+| **`Trivy 3層検証`** | develop / main宛PRでfilesystem scanを実行し、main宛または`docker`ラベル付きPRではimage scanも行う。pushではfilesystem / image scanを実行する。 | 開発時と公開後の両方を検証し、SARIFをSecurityタブへ統合する。 | スキャンが重複する。image scanは`no-cache`で鮮度を優先し、脆弱性DBキャッシュはschedule以外で再利用する（詳細：[ADR-0005](docs/adr/0005-ci-cache-freshness-vs-build-time.md)）。 |
+| **`Trivy: unfixed除外`** | `ignore-unfixed: true`とし、修正情報がある脆弱性をゲート対象にする。 | 修正可能な検出結果をCIの合否へ反映する。 | 修正未提供の脆弱性は合否から除外されるため、脆弱性ゼロの証明にはならない（詳細：[ADR-0004](docs/adr/0004-trivy-ignore-unfixed-policy.md)）。 |
+| **`Markdown品質ゲート`** | `pr-md-quality-check`でmarkdownlintとtextlintの結果を収集し、失敗時は`Check lint results`でジョブをfailureにする。 | `continue-on-error`を診断継続だけに使い、両方の結果を確認できる。 | required status checkに設定されていなければ、ワークフロー単体ではマージを直接ブロックしない。 |
+| **`GHCR + Pages 公開`** | GHCRの公開イメージを匿名pullで検証可能にし、PagesでカバレッジHTMLとバッジを公開する。publishには`GITHUB_TOKEN`を使い、GHCR用OIDCは使わない。 | 公開物ごとに認証経路と公開先を分ける。 | GHCRはpublic package設定が別途必要で、Pagesには`pages:write` / `id-token:write`等の権限が必要。バッジ生成失敗時は`n/a`表示になる。 |
 
 
 ## クイックスタート
