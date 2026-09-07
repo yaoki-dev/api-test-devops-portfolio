@@ -12,7 +12,7 @@
 #   2026-02-17: Python 3.12→3.13 (セキュリティサポート延長)
 #   2026-03-07: Python 3.13→3.14 (プロジェクト全体統一移行 PR#228)
 #   2026-06-13: digest更新 (CVE-2026-45447 openssl-provider-legacy HIGH / 修正版 3.5.6-1~deb13u2 取込)
-FROM python:3.14-slim@sha256:cae66f2ef0ec51a9891263eeee7f987dacf0a9879e8aa9353d5606e0530619a5 AS base
+FROM python:3.14-slim@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6 AS base
 
 WORKDIR /app
 
