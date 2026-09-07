@@ -18,11 +18,13 @@ from tests.unit.helpers import assert_warning_log_count, make_canonical_user
 from utils.exceptions import (
     APIClientError,
     APIHTTPError,
+    APIJSONDecodeError,
     APIRetryError,
 )
 from utils.jsonplaceholder_client_async import (
     MAX_LOGGED_FAILURE_DETAILS,
     AsyncJSONPlaceholderClient,
+    _run_rolling_window,
 )
 
 pytestmark = pytest.mark.unit
@@ -160,6 +162,32 @@ async def test_async_create_post(sample_post_data: PostData) -> None:
     assert post.body == "Test Body"
     assert post.user_id == 1
     assert post.id == 101
+
+
+@respx.mock
+@patch("utils.jsonplaceholder_base_async.exponential_backoff_with_jitter", return_value=0.0)
+async def test_async_create_post_retries_when_explicitly_opted_in(mock_backoff: Mock) -> None:
+    """ドメインのPOSTでも明示的なオプトインがbase clientへ伝播する。"""
+    route = respx.post(f"{BASE_URL}/posts")
+    route.side_effect = [
+        httpx.Response(502),
+        httpx.Response(
+            201,
+            json={"id": 101, "userId": 1, "title": "created", "body": "content"},
+        ),
+    ]
+
+    async with AsyncJSONPlaceholderClient(retry_count=2) as client:
+        result = await client.create_post(
+            title="created",
+            body="content",
+            user_id=1,
+            retry_non_idempotent=True,
+        )
+
+    assert route.call_count == 2
+    assert result.id == 101
+    assert mock_backoff.call_count == 1
 
 
 @respx.mock
@@ -337,11 +365,11 @@ async def test_async_concurrent_requests(sample_users_list):
 
 
 @respx.mock
-async def test_async_multiple_users_with_semaphore():
+async def test_async_multiple_users_with_rolling_window():
     """
     respx はリクエスト時刻を記録しないため、このテストでは戻り値だけを検証する。
 
-    max_concurrent の実測は test_semaphore_initialized_with_correct_max_concurrent で行う。
+    max_concurrent の実測は test_rolling_window_respects_max_concurrent で行う。
     """
 
     routes = {}
@@ -360,9 +388,10 @@ async def test_async_multiple_users_with_semaphore():
 
 
 @respx.mock
-async def test_semaphore_initialized_with_correct_max_concurrent():
+async def test_rolling_window_respects_max_concurrent():
     """
-    asyncio.sleep(0) で event loop に制御を返し、実行中タスク数の上限を観測する。
+    asyncio.sleep(0) で event loop に制御を返し、rolling window による
+    実行中タスク数の上限を観測する。
     """
     max_concurrent_observed = 0
     current_concurrent = 0
@@ -485,6 +514,128 @@ async def test_async_post_create_user():
     assert request_body["name"] == "New Async User"
     assert request_body["email"] == "async@example.com"
     assert request_body["phone"] == "123-456-7890"
+
+
+@pytest.mark.parametrize("invalid_max_concurrent", [0, -1])
+async def test_async_bulk_create_users_rejects_non_positive_max_concurrent(
+    invalid_max_concurrent: int,
+) -> None:
+    with patch.object(
+        AsyncJSONPlaceholderClient,
+        "create_user",
+        new_callable=AsyncMock,
+    ) as mock_create:
+        async with AsyncJSONPlaceholderClient() as client:
+            with pytest.raises(ValueError, match="max_concurrent must be >= 1"):
+                await client.bulk_create_users(
+                    [{"name": "A"}],
+                    max_concurrent=invalid_max_concurrent,
+                )
+
+    mock_create.assert_not_called()
+
+
+async def test_async_bulk_create_users_bounds_admission_window() -> None:
+    first_finished = asyncio.Event()
+    remaining_release = asyncio.Event()
+    started_second = asyncio.Event()
+    started_third = asyncio.Event()
+    started_count = 0
+
+    async def create_user(
+        user_data: dict[str, object],
+        *,
+        retry_non_idempotent: bool = False,  # noqa: ARG001
+    ) -> dict[str, object]:
+        nonlocal started_count
+        started_count += 1
+        if started_count == 2:
+            started_second.set()
+        if started_count == 3:
+            started_third.set()
+        if user_data["id"] == 0:
+            await first_finished.wait()
+        else:
+            await remaining_release.wait()
+        return user_data
+
+    users_to_create = [{"id": index} for index in range(5)]
+    with patch.object(
+        AsyncJSONPlaceholderClient,
+        "create_user",
+        new_callable=AsyncMock,
+        side_effect=create_user,
+    ):
+        async with AsyncJSONPlaceholderClient() as client:
+            operation = asyncio.create_task(
+                client.bulk_create_users(users_to_create, max_concurrent=2),
+            )
+            # timeout はハング検出の上限であり到達時間の期待値ではない。
+            # 遅い CI ランナーでの誤検知を避けるため余裕を取る。
+            await asyncio.wait_for(started_second.wait(), timeout=5.0)
+            assert started_count == 2
+            first_finished.set()
+            await asyncio.wait_for(started_third.wait(), timeout=5.0)
+            assert started_count == 3
+            remaining_release.set()
+            results = await operation
+
+    assert [result["id"] for result in results] == [0, 1, 2, 3, 4]
+
+
+async def test_async_multiple_users_cancels_and_awaits_pending_on_fatal() -> None:
+    """収集対象外の例外で打ち切る際、保留タスクを cancel し終了まで待ってから伝播する契約。
+
+    get_multiple_users は APIClientError のみを収集対象とするため、それ以外の例外は
+    rolling window 内で即座に再送出される。後始末を怠るとタスクが未 await の
+    まま破棄され、"Task was destroyed but it is pending" やイベントループ汚染として
+    後続テストに漏れる。
+    """
+    blocked_started = asyncio.Event()
+    blocked_cancelled = asyncio.Event()
+    never_set = asyncio.Event()
+
+    async def get_user(user_id: int) -> User:
+        if user_id == 1:
+            blocked_started.set()
+            try:
+                await never_set.wait()
+            except asyncio.CancelledError:
+                blocked_cancelled.set()
+                raise
+        await blocked_started.wait()
+        raise RuntimeError("fatal failure outside the collected exception set")
+
+    with patch.object(
+        AsyncJSONPlaceholderClient,
+        "get_user",
+        new_callable=AsyncMock,
+        side_effect=get_user,
+    ):
+        async with AsyncJSONPlaceholderClient() as client:
+            with pytest.raises(RuntimeError, match="fatal failure"):
+                await client.get_multiple_users([1, 2], max_concurrent=2)
+
+    assert blocked_cancelled.is_set()
+
+
+@pytest.mark.parametrize("invalid_max_concurrent", [0, -1])
+async def test_async_multiple_users_rejects_non_positive_max_concurrent(
+    invalid_max_concurrent: int,
+) -> None:
+    with patch.object(
+        AsyncJSONPlaceholderClient,
+        "get_user",
+        new_callable=AsyncMock,
+    ) as mock_get:
+        async with AsyncJSONPlaceholderClient() as client:
+            with pytest.raises(ValueError, match="max_concurrent must be >= 1"):
+                await client.get_multiple_users(
+                    [1],
+                    max_concurrent=invalid_max_concurrent,
+                )
+
+    mock_get.assert_not_called()
 
 
 @respx.mock
@@ -681,8 +832,11 @@ async def test_async_bulk_create_users_partial_failure_5xx_log_structure() -> No
 
 
 async def test_async_bulk_create_users_cancelled_error_propagates() -> None:
-    """
-    CancelledError は BaseException のため、複数件を BaseExceptionGroup で伝播する契約を固定する。
+    """CancelledError は集約せず素の例外として伝播する契約を固定する。
+
+    asyncio.TaskGroup が CancelledError を ExceptionGroup へ包まないのと同じ理由で、
+    集約すると呼び出し側の ``except asyncio.CancelledError`` や asyncio.timeout が
+    捕捉できず graceful shutdown が壊れる。
     """
     with patch.object(
         AsyncJSONPlaceholderClient,
@@ -691,11 +845,10 @@ async def test_async_bulk_create_users_cancelled_error_propagates() -> None:
     ) as mock_create:
         mock_create.side_effect = asyncio.CancelledError()
         async with AsyncJSONPlaceholderClient() as client:
-            with pytest.raises(BaseExceptionGroup) as exc_info:
+            with pytest.raises(asyncio.CancelledError):
                 await client.bulk_create_users([{"name": "A"}, {"name": "B"}])
 
-    assert len(exc_info.value.exceptions) == 2
-    assert all(isinstance(e, asyncio.CancelledError) for e in exc_info.value.exceptions)
+    assert mock_create.call_count == 2, "既定 max_concurrent では 2 件とも初期投入される"
 
 
 async def test_async_bulk_create_users_single_cancelled_error_no_log() -> None:
@@ -716,30 +869,132 @@ async def test_async_bulk_create_users_single_cancelled_error_no_log() -> None:
                 mock_logger.error.assert_not_called()
 
 
-async def test_async_bulk_create_users_multiple_cancelled_errors_logged() -> None:
+async def test_async_bulk_create_users_stops_admission_on_fatal() -> None:
+    """fatal 例外の発生後、未投入ユーザーへの create_user 呼び出しを打ち切る契約。
+
+    fatal を収集対象にすると rolling window が投入を続け、SIGTERM 後も残り全件へ
+    POST が飛ぶ。呼び出し回数が window 幅で頭打ちになることで停止を検証する。
     """
-    複数キャンセル時だけ error ログを出し、BaseExceptionGroup の件数と整合させる。
-    """
+    started_count = 0
+
+    async def create_user(
+        user_data: dict[str, object],
+        *,
+        retry_non_idempotent: bool = False,  # noqa: ARG001
+    ) -> dict[str, object]:
+        nonlocal started_count
+        started_count += 1
+        raise asyncio.CancelledError
+
+    users_to_create = [{"id": index} for index in range(10)]
     with patch.object(
         AsyncJSONPlaceholderClient,
         "create_user",
         new_callable=AsyncMock,
-    ) as mock_create:
-        mock_create.side_effect = asyncio.CancelledError()
+        side_effect=create_user,
+    ):
         async with AsyncJSONPlaceholderClient() as client:
-            with patch.object(client, "logger") as mock_logger:
-                # NOTE: CancelledError は BaseException サブクラスのため BaseExceptionGroup を使用
-                with pytest.raises(BaseExceptionGroup) as exc_info:
-                    await client.bulk_create_users([{"name": "A"}, {"name": "B"}])
+            with pytest.raises(asyncio.CancelledError):
+                await client.bulk_create_users(users_to_create, max_concurrent=2)
 
-                mock_logger.error.assert_called_once_with(
-                    "bulk_create_multiple_fatal_errors",
-                    count=2,
-                    types=["CancelledError", "CancelledError"],
-                )
+    assert started_count == 2, "fatal 検知後に残り 8 件が投入されていないこと"
 
-        assert len(exc_info.value.exceptions) == 2
-        assert all(isinstance(e, asyncio.CancelledError) for e in exc_info.value.exceptions)
+
+async def test_async_bulk_create_users_does_not_admit_after_same_batch_fatal() -> None:
+    """同一完了バッチ内の fatal 検出前に後続ユーザーを投入しない契約。"""
+    loop = asyncio.get_running_loop()
+    previous_factory = loop.get_task_factory()
+    loop.set_task_factory(asyncio.eager_task_factory)
+
+    async def create_user(
+        user_data: dict[str, object],
+        *,
+        retry_non_idempotent: bool = False,  # noqa: ARG001
+    ) -> dict[str, object]:
+        if user_data["id"] == 1:
+            raise asyncio.CancelledError
+        return user_data
+
+    users_to_create = [{"id": index} for index in range(4)]
+    try:
+        with patch.object(
+            AsyncJSONPlaceholderClient,
+            "create_user",
+            new_callable=AsyncMock,
+            side_effect=create_user,
+        ) as mock_create:
+            async with AsyncJSONPlaceholderClient() as client:
+                with pytest.raises(asyncio.CancelledError):
+                    await client.bulk_create_users(users_to_create, max_concurrent=2)
+
+        assert mock_create.call_count == 2
+    finally:
+        loop.set_task_factory(previous_factory)
+
+
+async def test_run_rolling_window_processes_batch_in_input_order() -> None:
+    """同一バッチの完了タスクを入力インデックス順に処理する契約。
+
+    ``asyncio.wait`` が返す ``done`` は set で反復順が不定。主例外の選択と追加 fatal の
+    notes への記録を入力順で行うため、順序を固定しないと「どの例外が呼び出し側へ届くか」
+    が実行ごとに変わり障害調査の再現性を欠く。
+    """
+    processed_order: list[int] = []
+
+    async def operation(index: int) -> int:
+        raise RuntimeError(str(index))
+
+    def collect_exception(exc: BaseException) -> bool:
+        processed_order.append(int(str(exc)))
+        return True
+
+    await _run_rolling_window(
+        operation=operation,
+        item_count=8,
+        max_concurrent=8,
+        collect_exception=collect_exception,
+    )
+
+    assert processed_order == list(range(8))
+
+
+async def test_run_rolling_window_records_additional_fatal_exceptions() -> None:
+    """同一バッチの通常 fatal は ExceptionGroup で診断情報を失わない。"""
+
+    async def operation(index: int) -> int:
+        if index == 0:
+            raise MemoryError("first")
+        raise RecursionError("second")
+
+    with pytest.raises(ExceptionGroup) as exc_info:
+        await _run_rolling_window(
+            operation=operation,
+            item_count=2,
+            max_concurrent=2,
+            collect_exception=lambda _: False,
+        )
+
+    assert [type(exception) for exception in exc_info.value.exceptions] == [
+        MemoryError,
+        RecursionError,
+    ]
+
+
+async def test_run_rolling_window_prioritizes_cancelled_error_over_fatal_exception() -> None:
+    async def operation(index: int) -> int:
+        if index == 0:
+            raise MemoryError("first")
+        raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError) as exc_info:
+        await _run_rolling_window(
+            operation=operation,
+            item_count=2,
+            max_concurrent=2,
+            collect_exception=lambda _: False,
+        )
+
+    assert exc_info.value.__notes__ == ["Additional fatal exception at input index 0: MemoryError"]
 
 
 @pytest.mark.parametrize(
@@ -762,6 +1017,21 @@ async def test_async_bulk_create_users_fatal_exception_propagates(
         async with AsyncJSONPlaceholderClient() as client:
             with pytest.raises(type(fatal_exc)):
                 await client.bulk_create_users([{"name": "A"}])
+
+
+@pytest.mark.parametrize("flag", [True, False])
+async def test_async_bulk_create_users_forwards_retry_non_idempotent(flag: bool) -> None:
+    """bulk 経由でも create_user の retry_non_idempotent がそのまま伝わる契約を固定する。"""
+    with patch.object(
+        AsyncJSONPlaceholderClient,
+        "create_user",
+        new_callable=AsyncMock,
+    ) as mock_create:
+        mock_create.return_value = {"id": 1}
+        async with AsyncJSONPlaceholderClient() as client:
+            await client.bulk_create_users([{"name": "A"}], retry_non_idempotent=flag)
+
+    assert mock_create.await_args.kwargs["retry_non_idempotent"] is flag
 
 
 @respx.mock
@@ -1403,6 +1673,52 @@ async def test_async_get_todos_validation_error(limit, user_id, expected_error):
             await client.get_todos(limit=limit, user_id=user_id)
 
 
+@respx.mock
+async def test_async_get_todo() -> None:
+    """sync 側 test_sync_get_todo と対を成す。"""
+    mock_todo = {"id": 1, "userId": 1, "title": "delectus aut autem", "completed": False}
+
+    route = respx.get(f"{BASE_URL}/todos/1").respond(json=mock_todo)
+
+    async with AsyncJSONPlaceholderClient() as client:
+        result = await client.get_todo(1)
+
+    assert result.id == 1
+    assert result.title == "delectus aut autem"
+    assert result.completed is False
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_async_create_todo() -> None:
+    """sync 側 test_sync_create_todo と対を成す。"""
+    new_todo_response = {
+        "id": 201,
+        "title": "Buy groceries",
+        "userId": 1,
+        "completed": False,
+    }
+
+    route = respx.post(f"{BASE_URL}/todos").respond(status_code=201, json=new_todo_response)
+
+    async with AsyncJSONPlaceholderClient() as client:
+        result = await client.create_todo(title="Buy groceries", user_id=1, completed=False)
+
+        # レスポンス検証: userId -> user_id の alias マッピングと
+        # completed フィールドまで含め、全属性の契約を検証する
+        assert result.id == 201
+        assert result.title == "Buy groceries"
+        assert result.user_id == 1
+        assert result.completed is False
+    assert route.call_count == 1
+
+    # リクエストボディ検証: title/userId/completedが正しく送信されたか
+    request_body = json.loads(route.calls[0].request.content)
+    assert request_body["title"] == "Buy groceries"
+    assert request_body["userId"] == 1
+    assert request_body["completed"] is False
+
+
 @pytest.mark.parametrize(
     "user_id,expected_count,test_description",
     [
@@ -1694,3 +2010,33 @@ async def test_bulk_create_users_details_truncated_true_above_max() -> None:
     detail = warn["failed_details"][0]
     assert "index" in detail
     assert "error_type" in detail
+
+
+@pytest.mark.parametrize(
+    ("method_name", "http_verb", "path", "call_args"),
+    [
+        ("update_post", "put", "/posts/1", (1, "Title", "Body")),
+        ("create_user", "post", "/users", ({"name": "New User"},)),
+        ("update_todo", "patch", "/todos/1", (1,)),
+    ],
+)
+@respx.mock
+async def test_async_dict_returning_methods_reject_non_object_json(
+    method_name: str,
+    http_verb: str,
+    path: str,
+    call_args: tuple[object, ...],
+) -> None:
+    """sync 版と同一の契約違反検出を async 側でも保証する（parity）。"""
+    route = getattr(respx, http_verb)(f"{BASE_URL}{path}").respond(
+        status_code=200,
+        json=["unexpected", "array"],
+    )
+
+    async with AsyncJSONPlaceholderClient() as client:
+        with pytest.raises(APIJSONDecodeError) as exc_info:
+            await getattr(client, method_name)(*call_args)
+
+    assert "Expected object JSON response" in str(exc_info.value)
+    assert "list" in str(exc_info.value)
+    assert route.call_count == 1

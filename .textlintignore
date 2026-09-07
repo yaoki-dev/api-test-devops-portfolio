@@ -16,6 +16,7 @@ docs/main/interview_docs/skillsheet_yuta-aoki-yyyymmdd.md
 .history/**
 .planning/**
 graphify-out/**
+.atl/**
 
 # Cache directories
 .pre-commit-cache/**
@@ -35,6 +36,8 @@ docs/brainstorms/**
 # Gemini/Codex agent skill definitions (English technical specs)
 .gemini/**
 # opencode
-opencode-studio/**
 .opencode/**
 .omo/**
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+graft/**

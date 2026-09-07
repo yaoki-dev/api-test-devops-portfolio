@@ -1,6 +1,7 @@
 """JSONPlaceholder 非同期リソースクライアント"""
 
 import asyncio
+from collections.abc import Callable, Coroutine
 from typing import Any, Final, TypedDict, cast
 
 from models.responses import Album, Comment, Photo, Post, Todo, User
@@ -10,10 +11,133 @@ from utils.jsonplaceholder_base_async import AsyncAPIClient
 from utils.response_parsing import (
     parse_response_model,
     parse_response_model_list,
-    safe_parse_json,
+    safe_parse_json_object,
 )
 
 MAX_LOGGED_FAILURE_DETAILS: Final[int] = 5
+
+
+def _process_completed_tasks[ResultT](
+    done: set[asyncio.Task[ResultT]],
+    pending: dict[asyncio.Task[ResultT], int],
+    results: list[ResultT | BaseException | None],
+    collect_exception: Callable[[BaseException], bool],
+) -> BaseException | None:
+    """Store completed results and return the first exception that should propagate."""
+    fatal_exceptions: list[tuple[int, BaseException]] = []
+    for task in sorted(done, key=lambda completed: pending[completed]):
+        index = pending.pop(task)
+        try:
+            results[index] = task.result()
+        except BaseException as exc:
+            if not collect_exception(exc):
+                fatal_exceptions.append((index, exc))
+            else:
+                results[index] = exc
+    if not fatal_exceptions:
+        return None
+
+    cancelled_exception = next(
+        (
+            (index, exception)
+            for index, exception in fatal_exceptions
+            if isinstance(exception, asyncio.CancelledError)
+        ),
+        None,
+    )
+    if cancelled_exception is not None:
+        primary_index, cancelled_primary_exception = cancelled_exception
+        for index, exception in fatal_exceptions:
+            if index != primary_index:
+                cancelled_primary_exception.add_note(
+                    f"Additional fatal exception at input index {index}: "
+                    f"{type(exception).__qualname__}"
+                )
+        return cancelled_primary_exception
+
+    if len(fatal_exceptions) > 1 and all(
+        isinstance(exception, Exception) for _, exception in fatal_exceptions
+    ):
+        return ExceptionGroup(
+            "Multiple fatal exceptions in rolling window",
+            [cast(Exception, exception) for _, exception in fatal_exceptions],
+        )
+
+    _, primary_exception = fatal_exceptions[0]
+    for index, exception in fatal_exceptions[1:]:
+        primary_exception.add_note(
+            f"Additional fatal exception at input index {index}: {type(exception).__qualname__}"
+        )
+    return primary_exception
+
+
+async def _run_rolling_window[ResultT](
+    operation: Callable[[int], Coroutine[Any, Any, ResultT]],
+    item_count: int,
+    max_concurrent: int,
+    collect_exception: Callable[[BaseException], bool],
+) -> list[ResultT | BaseException]:
+    """Run indexed async operations with bounded task admission.
+
+    Notes:
+        ``collect_exception`` が制御フローを二分する。``True`` を返した例外は
+        ``results`` の該当インデックスへ格納され処理が続行するが、``False`` を返すと
+        その場で再送出され残りの入力は投入されない。呼び出し側はこの述語で
+        「部分失敗を許容する」か「即座に打ち切る」かを選ぶ。
+
+        打ち切り時は ``finally`` が保留タスクを ``cancel()`` し ``gather()`` で
+        終了まで待ち切ってから例外を伝播する。呼び出し側が例外を受け取った時点で
+        孤立タスクは残っていない。
+
+        同一バッチ内で複数タスクが打ち切り対象の例外を出した場合、通常の fatal 例外は
+        入力順の ``ExceptionGroup`` として送出し、例外オブジェクトを失わない。
+        ``CancelledError`` を含む場合は asyncio の graceful shutdown 契約を優先し、
+        最小インデックスのキャンセルを素の例外として送出する。追加例外は型と入力
+        インデックスを notes に残す。``done`` を入力インデックス順に処理することで、
+        例外の順序を ``set`` の反復順に依存させない。
+
+        ``results`` は完了順ではなく入力順で返る。``operation`` はインデックスを
+        受け取り、そのインデックスの位置へ結果が書き戻される。
+
+    """
+    results: list[ResultT | BaseException | None] = [None] * item_count
+    input_indices = iter(range(item_count))
+    pending: dict[asyncio.Task[ResultT], int] = {}
+
+    def schedule_next() -> None:
+        try:
+            index = next(input_indices)
+        except StopIteration:
+            return
+        pending[asyncio.create_task(operation(index))] = index
+
+    for _ in range(min(max_concurrent, item_count)):
+        schedule_next()
+
+    try:
+        while pending:
+            done, _ = await asyncio.wait(
+                pending,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            fatal_exception = _process_completed_tasks(
+                done,
+                pending,
+                results,
+                collect_exception,
+            )
+            if fatal_exception is not None:
+                raise fatal_exception
+
+            for _ in done:
+                schedule_next()
+    finally:
+        if pending:
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+
+    return cast(list[ResultT | BaseException], results)
 
 
 class UserDataDict(TypedDict):
@@ -56,13 +180,35 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         response = await self.get(f"/posts/{post_id}")
         return parse_response_model(response, Post)
 
-    async def create_post(self, title: str, body: str, user_id: int) -> Post:
-        """新規投稿の非同期作成"""
+    async def create_post(
+        self,
+        title: str,
+        body: str,
+        user_id: int,
+        *,
+        retry_non_idempotent: bool = False,
+    ) -> Post:
+        """新規投稿の非同期作成。
+
+        ``retry_non_idempotent`` は、冪等キーまたはサーバー側の重複排除契約が
+        ある場合だけ有効化する。
+        """
         data = {"title": title, "body": body, "userId": user_id}
-        response = await self.post("/posts", json=data)
+        response = await self.post(
+            "/posts",
+            json=data,
+            retry_non_idempotent=retry_non_idempotent,
+        )
         return parse_response_model(response, Post)
 
-    async def update_post(self, post_id: int, title: str, body: str) -> dict[str, Any]:
+    async def update_post(
+        self,
+        post_id: int,
+        title: str,
+        body: str,
+        *,
+        retry_non_idempotent: bool = False,
+    ) -> dict[str, Any]:
         """投稿更新の非同期実行
 
         Note:
@@ -73,10 +219,17 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             モデルでは検証が失敗する。``update_todo`` (PATCH) と同様、部分的な
             レスポンスを検証モデルに固定せず生の dict で返すのは意図的な設計。
 
+        Raises:
+            APIClientError: HTTPリクエストまたはレスポンスのJSONパースに失敗した場合
+                （レスポンスのトップレベルがJSONオブジェクトでない場合を含む）
         """
         data = {"title": title, "body": body}
-        response = await self.put(f"/posts/{post_id}", json=data)
-        return cast("dict[str, Any]", safe_parse_json(response))
+        response = await self.put(
+            f"/posts/{post_id}",
+            json=data,
+            retry_non_idempotent=retry_non_idempotent,
+        )
+        return safe_parse_json_object(response)
 
     async def delete_post(self, post_id: int) -> None:
         """投稿削除の非同期実行"""
@@ -133,14 +286,33 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         title: str,
         user_id: int,
         completed: bool = False,
+        *,
+        retry_non_idempotent: bool = False,
     ) -> Todo:
-        """新規TODOの非同期作成"""
+        """新規TODOの非同期作成。
+
+        ``retry_non_idempotent`` は、冪等キーまたはサーバー側の重複排除契約が
+        ある場合だけ有効化する。
+        """
         data = {"title": title, "userId": user_id, "completed": completed}
-        response = await self.post("/todos", json=data)
+        response = await self.post(
+            "/todos",
+            json=data,
+            retry_non_idempotent=retry_non_idempotent,
+        )
         return parse_response_model(response, Todo)
 
-    async def update_todo(self, todo_id: int, **kwargs: Any) -> dict[str, Any]:
+    async def update_todo(
+        self,
+        todo_id: int,
+        *,
+        retry_non_idempotent: bool = False,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
         """TODOの非同期更新
+
+        ``retry_non_idempotent`` は、冪等キーまたはサーバー側の重複排除契約が
+        ある場合だけ有効化する。
 
         Note:
             ``**kwargs`` による部分更新（PATCH）のため、レスポンスは可変な
@@ -148,54 +320,83 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             返すのは意図的な設計（必須フィールド欠落で ``extra="forbid"`` の
             検証が失敗するのを避けるため）。
 
+        Raises:
+            APIClientError: HTTPリクエストまたはレスポンスのJSONパースに失敗した場合
+                （レスポンスのトップレベルがJSONオブジェクトでない場合を含む）
         """
-        response = await self.patch(f"/todos/{todo_id}", json=kwargs)
-        return cast("dict[str, Any]", safe_parse_json(response))
+        response = await self.patch(
+            f"/todos/{todo_id}",
+            json=kwargs,
+            retry_non_idempotent=retry_non_idempotent,
+        )
+        return safe_parse_json_object(response)
 
-    async def create_user(self, user_data: dict[str, Any]) -> dict[str, Any]:
-        """新規ユーザーの非同期作成"""
-        response = await self.post("/users", json=user_data)
-        return cast("dict[str, Any]", safe_parse_json(response))
+    async def create_user(
+        self,
+        user_data: dict[str, Any],
+        *,
+        retry_non_idempotent: bool = False,
+    ) -> dict[str, Any]:
+        """新規ユーザーの非同期作成
 
-    async def bulk_create_users(self, users_data: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """複数ユーザーの非同期一括作成
+        ``retry_non_idempotent`` は、冪等キーまたはサーバー側の重複排除契約が
+        ある場合だけ有効化する。
 
-        個別失敗を許容し、成功したユーザーのみ返却する。K8s SIGTERM 等で複数タスクが
-        同時キャンセルされた場合は error ログ出力後に fatal 例外を再送出する
-        （graceful shutdown 保護）。
+        Raises:
+            APIClientError: HTTPリクエストまたはレスポンスのJSONパースに失敗した場合
+                （レスポンスのトップレベルがJSONオブジェクトでない場合を含む）
+        """
+        response = await self.post(
+            "/users",
+            json=user_data,
+            retry_non_idempotent=retry_non_idempotent,
+        )
+        return safe_parse_json_object(response)
+
+    async def bulk_create_users(
+        self,
+        users_data: list[dict[str, Any]],
+        max_concurrent: int = 5,
+        *,
+        retry_non_idempotent: bool = False,
+    ) -> list[dict[str, Any]]:
+        """複数ユーザーを固定数の rolling window で非同期一括作成する。
+
+        個別失敗を許容し、成功したユーザーのみ入力順で返却する。入力件数に関係なく
+        作成済みタスク数を制限し、K8s SIGTERM 等によるキャンセルは既存契約どおり再送出する。
+        fatal 例外（キャンセル・OOM 等）は収集せず即座に再送出するため、その時点で
+        未投入の残りユーザーに対する POST は発行されない。
 
         Args:
             users_data: 作成するユーザーデータのリスト（各要素は name/email を含む dict）
+            max_concurrent: 同時実行するタスク数の上限（デフォルト 5）
+            retry_non_idempotent: サーバー側の重複排除契約がある場合だけPOST再送を許可
 
         Returns:
             成功したユーザーデータのリスト。部分失敗時は入力件数より短くなる。
 
         Raises:
-            asyncio.CancelledError: 単一タスクがキャンセルされた場合（graceful shutdown 等）
-            BaseExceptionGroup: 複数タスクが同時に fatal 例外を発生させた場合
+            ValueError: max_concurrent が 1 未満の場合
+            asyncio.CancelledError: タスクがキャンセルされた場合（graceful shutdown 等）
             KeyboardInterrupt: 割り込みシグナルを受けた場合
-            SystemExit: ``sys.exit()`` が呼ばれた場合
+            SystemExit: sys.exit() が呼び出された場合
             MemoryError: メモリ不足が発生した場合
             RecursionError: 再帰上限に達した場合
 
         """
-        tasks = [self.create_user(user_data) for user_data in users_data]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        validate_optional_int(max_concurrent, "max_concurrent", 1)
 
-        fatal_exceptions = [r for r in results if isinstance(r, ASYNC_FATAL_EXCEPTIONS)]
-        if fatal_exceptions:
-            if len(fatal_exceptions) > 1:
-                self.logger.error(
-                    "bulk_create_multiple_fatal_errors",
-                    count=len(fatal_exceptions),
-                    types=[type(e).__name__ for e in fatal_exceptions],
-                )
-                raise BaseExceptionGroup(
-                    "bulk_create_users: multiple fatal errors occurred",
-                    fatal_exceptions,
-                )
-            exc = fatal_exceptions[0]
-            raise exc
+        async def create_user_at(index: int) -> dict[str, Any]:
+            return await self.create_user(
+                users_data[index], retry_non_idempotent=retry_non_idempotent
+            )
+
+        results = await _run_rolling_window(
+            operation=create_user_at,
+            item_count=len(users_data),
+            max_concurrent=max_concurrent,
+            collect_exception=lambda exc: not isinstance(exc, ASYNC_FATAL_EXCEPTIONS),
+        )
 
         successful: list[dict[str, Any]] = [r for r in results if isinstance(r, dict)]
         failed: list[BaseException] = [r for r in results if isinstance(r, BaseException)]
@@ -354,22 +555,23 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
         user_ids: list[int],
         max_concurrent: int = 5,
     ) -> list[User]:
-        """複数ユーザーを並行取得（Semaphore 制御付き）
+        """複数ユーザーを rolling window で並行取得する。
 
-        ``asyncio.Semaphore`` で同時実行数を制限し、Rate Limit のある API でも
-        安全に並行リクエストする。
+        入力件数に関係なく作成済みタスク数を制限する。取得失敗は従来どおり warning
+        ログを出してスキップし、成功結果は入力順で返却する。
 
         Args:
             user_ids: 取得対象のユーザーIDリスト
-            max_concurrent: 同時実行数の上限（デフォルト 5）
+            max_concurrent: 同時実行するタスク数の上限（デフォルト 5）
 
         Returns:
             取得成功したユーザー情報リスト（失敗した ID はスキップし warning ログ出力）。
 
         Raises:
+            ValueError: max_concurrent が 1 未満の場合
             asyncio.CancelledError: タスクがキャンセルされた場合（graceful shutdown 等）
             KeyboardInterrupt: 割り込みシグナルを受けた場合
-            SystemExit: ``sys.exit()`` が呼ばれた場合
+            SystemExit: sys.exit() が呼び出された場合
             MemoryError: メモリ不足が発生した場合
             RecursionError: 再帰上限に達した場合
 
@@ -379,25 +581,25 @@ class AsyncJSONPlaceholderClient(AsyncAPIClient):
             ...     print(f"Fetched {len(users)} users")
 
         """
-        semaphore = asyncio.Semaphore(max_concurrent)
+        validate_optional_int(max_concurrent, "max_concurrent", 1)
+        results = await _run_rolling_window(
+            operation=lambda index: self.get_user(user_ids[index]),
+            item_count=len(user_ids),
+            max_concurrent=max_concurrent,
+            collect_exception=lambda exc: isinstance(exc, APIClientError),
+        )
 
-        async def fetch_with_semaphore(user_id: int) -> User | None:
-            async with semaphore:
-                try:
-                    return await self.get_user(user_id)
-                except ASYNC_FATAL_EXCEPTIONS:
-                    raise
-                except APIClientError as e:
-                    self.logger.warning(
-                        "get_user_failed",
-                        user_id=user_id,
-                        error_type=type(e).__name__,
-                    )
-                    return None
+        successful: list[User] = []
+        for index, result in enumerate(results):
+            if isinstance(result, BaseException):
+                self.logger.warning(
+                    "get_user_failed",
+                    user_id=user_ids[index],
+                    error_type=type(result).__name__,
+                )
+                continue
+            successful.append(result)
 
-        results = await asyncio.gather(*[fetch_with_semaphore(uid) for uid in user_ids])
-
-        successful = [r for r in results if r is not None]
         failed_count = len(user_ids) - len(successful)
         if failed_count:
             self.logger.warning(

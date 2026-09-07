@@ -368,7 +368,7 @@ find . -name "debug_*" -delete
 utils/
 ├── jsonplaceholder_base_sync.py      # SyncAPIClient（同期ベース、リトライ付き）
 ├── jsonplaceholder_base_async.py     # AsyncAPIClient（非同期ベース、リトライ付き）
-├── jsonplaceholder_client_sync.py    # SyncJSONPlaceholderClient + create_client()
+├── jsonplaceholder_client_sync.py    # SyncJSONPlaceholderClient
 ├── jsonplaceholder_client_async.py   # AsyncJSONPlaceholderClient（並行処理対応）
 ├── retry.py                          # exponential_backoff_with_jitter()
 ├── exceptions.py                     # API例外階層

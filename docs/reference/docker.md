@@ -62,7 +62,7 @@ ENVIRONMENT と環境別 env ファイルで設定と検証ポリシーを環境
 ```bash
 
 # テスト実行
-docker compose --profile test run --rm test
+docker compose --profile test run --build --rm test
 
 # 共通runtimeコンテナ起動
 docker compose up -d

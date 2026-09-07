@@ -24,14 +24,14 @@ class TestSensitiveKeysCompleteness:
         assert isinstance(SENSITIVE_KEYS, frozenset)
 
     def test_sensitive_keys_count(self) -> None:
-        """機密キーが44個定義されていることを検証するセンチネルテスト
+        """機密キーが46個定義されていることを検証するセンチネルテスト
 
         Note:
         件数のハードコードは意図的であり、SENSITIVE_KEYS への意図しない
         キーの追加・削除を検知するセンチネルとして機能する。
         キーを追加・削除する場合は、このテストの件数も更新する。
         """
-        assert len(SENSITIVE_KEYS) == 44  # SENSITIVE_KEYS 変更時はここの数値も更新
+        assert len(SENSITIVE_KEYS) == 46  # SENSITIVE_KEYS 変更時はここの数値も更新
 
     @pytest.mark.parametrize(
         "key",
@@ -69,6 +69,8 @@ class TestSensitiveKeysCompleteness:
             "email",
             "ip_address",
             "username",
+            "phone",
+            "phone_number",
             "database_url",
             "ssn",
             "credit_card",

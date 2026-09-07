@@ -5,7 +5,12 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlunparse
 
-from utils.sentry_scrub_primitives import _PATH_PII_PATTERN, _is_sensitive_key, _safe_log_warning
+from utils.sentry_scrub_primitives import (
+    _PATH_PII_PATTERN,
+    _is_sensitive_key,
+    _safe_log_warning,
+    _scrub_path_identifiers,
+)
 
 __all__ = ["MAX_SCRUB_DEPTH"]
 
@@ -81,8 +86,8 @@ def _scrub_sensitive_data(data: Any, _depth: int = 0) -> Any:
             result[key] = "[REDACTED]"
         elif isinstance(value, dict):
             result[key] = _scrub_sensitive_data(value, _depth + 1)
-        elif isinstance(value, list):
-            result[key] = [_scrub_list_item(item, _depth + 1) for item in value]
+        elif isinstance(value, (list, tuple)):
+            result[key] = _scrub_list_item(value, _depth + 1)
         else:
             result[key] = value
     return result
@@ -161,7 +166,7 @@ def _scrub_url(url: str) -> str:
     """URLのuserinfo/fragmentを除去し、query・pathのPIIをスクラブする。
 
     - query: `_scrub_query_string` でキーベーススクラブ
-    - path: メールアドレス形式のPII (`_PATH_PII_PATTERN`) を [REDACTED] に置換 (#16)
+    - path: メールPIIを [REDACTED]、数値・UUIDの識別子を `<digits>` / `<uuid>` に置換
     - params: RFC 2396 パスパラメータ (`;key=value` 形式) を `_scrub_path_params` で
               キーベーススクラブ + email PII 除去
     - fragment: 完全除去（PII漏洩防止）
@@ -186,7 +191,7 @@ def _scrub_url(url: str) -> str:
         (
             parsed.scheme,
             netloc,
-            _PATH_PII_PATTERN.sub("[REDACTED]", parsed.path),
+            _scrub_path_identifiers(_PATH_PII_PATTERN.sub("[REDACTED]", parsed.path)),
             # RFC 2396 パスパラメータ: キーベーススクラブ + email PII 除去
             _scrub_path_params(parsed.params) if parsed.params else "",
             _scrub_query_string(parsed.query) if parsed.query else "",

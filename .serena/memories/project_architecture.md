@@ -84,7 +84,6 @@
 | SyncJSONPlaceholderClient | jsonplaceholder_client_sync | Sync | JSONPlaceholder API (sync) |
 | AsyncJSONPlaceholderClient | jsonplaceholder_client_async | Async | JSONPlaceholder API (async) |
 | AsyncGitHubClient | github_client | Async | GitHub API integration |
-| create_client() | jsonplaceholder_client_sync | Factory | Client instantiation |
 
 ## Response Models (models/responses.py)
 - Post / Comment / Company / User / Todo / Album / Photo

@@ -1,9 +1,7 @@
 name: CI/CD Pipeline
 
-# Test Pyramid Strategy (Google Testing Blog):
+# Test Pyramid Strategy:
 #   Unit 70% / Integration 30%
-# Reference: .serena/memories/test_strategy_part1_overview.md
-
 # Default permissions (least privilege principle)
 # security-events: write is granted at job level where needed
 permissions:
@@ -19,7 +17,7 @@ on:
 
 jobs:
   # ============================================================
-  # Stage 1: PR Validation
+  # PR Validation
   # Triggers: pull_request
   # Tests: Unit + Integration (with coverage) → Smoke (no coverage)
   # Scope: develop/main PRs use identical strategy
@@ -42,7 +40,7 @@ jobs:
           python-version: "3.14"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           enable-cache: true
 
@@ -76,6 +74,8 @@ jobs:
           echo "🎯 PR Validation: Unit + Integration (with coverage) → Smoke (no coverage)"
 
       - name: Run tests (unit + integration + smoke)
+        env:
+          TEST__EXTERNAL_API_ENABLED: "false"
         run: |
           mkdir -p reports
           # Step 1: unit + integration with coverage
@@ -108,9 +108,9 @@ jobs:
           if-no-files-found: warn
 
   # ============================================================
-  # Stage 1.1: Markdown Quality Check
+  # Markdown Quality Check
   # Triggers: pull_request
-  # Checks: markdownlint, textlint (日本語対応)
+  # Checks: markdownlint, textlint
   # ============================================================
   pr-md-quality-check:
     name: PR Markdown Quality Check
@@ -127,7 +127,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "20"
+          node-version-file: ".nvmrc"
           cache: "npm"
 
       - name: Install dependencies
@@ -135,7 +135,7 @@ jobs:
 
       - name: Run markdownlint
         id: markdownlint
-        run: npx markdownlint '**/*.md' --ignore-path .markdownlintignore
+        run: npx markdownlint '**/*.md' '.claude/**/*.md' --ignore-path .markdownlintignore
         continue-on-error: true
 
       - name: Run textlint
@@ -152,7 +152,7 @@ jobs:
           exit 1
 
   # ============================================================
-  # Stage 1.2: PR Trivy Scan
+  # PR Trivy Scan
   # Triggers: pull_request (develop, main)
   # Strategy:
   #   - develop: trivy fs only (fast, no Docker build)
@@ -163,261 +163,13 @@ jobs:
   pr-trivy-scan:
     name: PR Trivy scan
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    # Explicit permissions (security hardening)
     permissions:
       contents: read
       security-events: write
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      # Step 1: Filesystem scan (both develop and main)
-      # Stage 1a: Security tab 可視化用（全severity・ジョブを落とさない）
-      # trivy-action は format=sarif のとき TRIVY_SEVERITY を unset する（entrypoint.sh:76-83）。
-      # つまり SARIF スキャンに severity を指定しても無視されるため、ここでは指定せず
-      # 全severityを Security tab に記録し、CIゲートは Stage 1b に分離する。
-      - name: Trivy filesystem scan (SARIF for Security tab)
-        id: fs-scan
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
-        env:
-          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
-        with:
-          scan-type: "fs"
-          scan-ref: "."
-          format: "sarif"
-          output: "trivy-fs-scan.sarif"
-          exit-code: "0"
-          ignore-unfixed: true
-          trivyignores: ".trivyignore"
-          # Trivyキャッシュ戦略: 週次スケジュール実行時のみDB再ダウンロード、通常PRではキャッシュ利用
-          cache: ${{ github.event_name != 'schedule' }}
-        continue-on-error: true
-
-      - name: Verify filesystem scan execution
-        id: verify-fs-scan
-        if: "!cancelled()"
-        uses: ./.github/actions/trivy-sarif-verify
-        with:
-          sarif-file: "trivy-fs-scan.sarif"
-          scan-type: "filesystem"
-
-      - name: Upload filesystem scan results to Security tab
-        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
-        if: always() && steps.verify-fs-scan.outcome == 'success' && steps.fs-scan.outcome != 'cancelled' && steps.fs-scan.outcome != 'skipped'
-        with:
-          sarif_file: "trivy-fs-scan.sarif"
-          category: "trivy-pr-fs-scan"
-
-      # Stage 1b: CIゲート（CRITICAL,HIGH のみ）
-      # format=table では TRIVY_SEVERITY が unset されないため severity 指定が実際に効く。
-      # 併せてジョブログに脆弱性テーブルが出力され、開発者が失敗理由を直接確認できる。
-      - name: Trivy filesystem gate (CRITICAL,HIGH)
-        id: fs-gate
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
-        env:
-          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
-        with:
-          scan-type: "fs"
-          scan-ref: "."
-          format: "table"
-          exit-code: "1"
-          ignore-unfixed: true
-          severity: "CRITICAL,HIGH"
-          trivyignores: ".trivyignore"
-          # 同一job内での再呼び出し: 直前のSARIFスキャンが2種類のキャッシュを処理済みのため両方止める。
-          #   skip-setup-trivy → Trivyバイナリの再取得(trivy-binary-* キャッシュ)を省略
-          #   cache: false     → 脆弱性DBの actions/cache 再実行(cache-trivy-* キャッシュ)を省略
-          # DBは cache-dir (${{ github.workspace }}/.cache/trivy) に残り、TRIVY_CACHE_DIR は常に設定される。
-          skip-setup-trivy: true
-          cache: false
-        continue-on-error: true
-
-      - name: Fail job if fs vulnerabilities found or verification failed
-        if: |
-          !cancelled() && (
-            steps.fs-scan.outcome == 'failure' ||
-            steps.fs-scan.outcome == 'skipped' ||
-            steps.fs-gate.outcome == 'failure' ||
-            steps.fs-gate.outcome == 'skipped' ||
-            steps.verify-fs-scan.outcome == 'failure'
-          )
-        run: |
-          # 優先度1: スキャン自体が未実施
-          if [ "${{ steps.fs-scan.outcome }}" == "skipped" ]; then
-            echo "::error::Trivy filesystem scan was skipped — security gate requires the scan to run"
-          fi
-
-          # 優先度2: SARIF検証失敗
-          if [ "${{ steps.verify-fs-scan.outcome }}" == "failure" ]; then
-            echo "::error::SARIF検証が失敗しました — Trivyの異常終了または不正なSARIFの可能性があります"
-            echo "::warning::考えられる原因: DB取得失敗、タイムアウト、ディスク容量不足、SARIF出力不備"
-            echo "::notice::対処法: TrivyおよびSARIF検証ステップのログを確認してください"
-          fi
-
-          # 優先度3: SARIFスキャンの実行エラー
-          if [ "${{ steps.fs-scan.outcome }}" == "failure" ]; then
-            echo "::error::SARIFスキャンが異常終了しました — Trivy実行エラーの可能性があります"
-          fi
-
-          # 優先度4: ゲート未実施
-          if [ "${{ steps.fs-gate.outcome }}" == "skipped" ]; then
-            echo "::error::Filesystem vulnerability gate was skipped because a prerequisite step did not complete successfully"
-          fi
-
-          # 優先度5: 脆弱性検出
-          if [ "${{ steps.fs-gate.outcome }}" == "failure" ]; then
-            echo "::error::脆弱性（CRITICAL/HIGH）がdependenciesで検出されました"
-            echo "::notice::対処法: 上記のTrivyテーブル出力を確認し、依存関係を更新してください"
-          fi
-
-          exit 1
-
-      # Step 2: Build Docker image (main PRs + Dependabot docker PRs)
-      - name: Build Docker image for scanning
-        id: docker-build
-        # Trigger conditions (OR logic):
-        # 1. main PRs: Production security validation
-        # 2. docker label PRs: Dependabot SHA256 updates
-        #    - Dependabotがdependabot.yml L103設定により'docker'ラベルを自動付与
-        #    - target: develop, CI gate before auto-merge
-        if: github.base_ref == 'main' || contains(github.event.pull_request.labels.*.name, 'docker')
-        run: |
-          if ! docker build -t security-scan:${{ github.sha }} --target runtime .; then
-            echo "::error::Docker build failed"
-            exit 1
-          fi
-
-      - name: Fail if Docker build failed (security gate)
-        if: |
-          !cancelled() && (
-            steps.docker-build.outcome == 'failure' ||
-            steps.docker-build.outcome == 'cancelled'
-          )
-        run: |
-          echo "::error::Docker build ${{ steps.docker-build.outcome }} — image scan skipped. Security gate requires image scan to pass."
-          exit 1
-
-      # Step 3: Docker image scan (main PRs + Dependabot docker PRs)
-      # Stage 3a: Security tab 可視化用（全severity・ここではジョブを落とさない）
-      - name: Trivy image scan (SARIF for Security tab)
-        id: image-scan
-        if: steps.docker-build.outcome == 'success'
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
-        env:
-          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
-        with:
-          image-ref: "security-scan:${{ github.sha }}"
-          format: "sarif"
-          output: "trivy-image-scan.sarif"
-          exit-code: "0"
-          ignore-unfixed: true
-          trivyignores: ".trivyignore"
-          # Trivyキャッシュ戦略: 週次スケジュール実行時のみDB再ダウンロード、通常PRではキャッシュ利用
-          cache: ${{ github.event_name != 'schedule' }}
-        continue-on-error: true
-
-      - name: Verify image scan execution
-        id: verify-image-scan
-        if: always() && steps.image-scan.outcome != 'skipped'
-        uses: ./.github/actions/trivy-sarif-verify
-        with:
-          sarif-file: "trivy-image-scan.sarif"
-          scan-type: "image"
-
-      - name: Upload image scan results to Security tab
-        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
-        if: always() && steps.verify-image-scan.outcome == 'success' && steps.image-scan.outcome != 'cancelled' && steps.image-scan.outcome != 'skipped'
-        with:
-          sarif_file: "trivy-image-scan.sarif"
-          category: "trivy-pr-image-scan"
-
-      # Stage 3b: CIゲート（CRITICAL,HIGH のみ）
-      - name: Trivy image gate (CRITICAL,HIGH)
-        id: image-gate
-        if: steps.docker-build.outcome == 'success'
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
-        env:
-          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
-        with:
-          image-ref: "security-scan:${{ github.sha }}"
-          format: "table"
-          exit-code: "1"
-          ignore-unfixed: true
-          severity: "CRITICAL,HIGH"
-          trivyignores: ".trivyignore"
-          # 同一job内での再呼び出し: 直前のSARIFスキャンが2種類のキャッシュを処理済みのため両方止める。
-          #   skip-setup-trivy → Trivyバイナリの再取得(trivy-binary-* キャッシュ)を省略
-          #   cache: false     → 脆弱性DBの actions/cache 再実行(cache-trivy-* キャッシュ)を省略
-          # DBは cache-dir (${{ github.workspace }}/.cache/trivy) に残り、TRIVY_CACHE_DIR は常に設定される。
-          skip-setup-trivy: true
-          cache: false
-        continue-on-error: true
-
-      # 'skipped'チェックは docker-build 成功時のみ評価する。
-      # 本ジョブの docker-build は条件付き (main PR / docker ラベル) のため、無ガードだと
-      # image scan 対象外の通常 develop PR を落としてしまう (post-trivy-scan の
-      # docker-build は無条件なので、あちらは無ガードで成立する)。
-      # docker-build 成功後に image-scan/image-gate が skip されるのは、先行ステップが
-      # conclusion=failure で終わった場合のみ (if: の暗黙 success() が false になる)。
-      # その時点でジョブは既に赤なので、本チェックは pass/fail を変えない。
-      # ゲートが未実行だった事実を明示するための診断用セーフネットである。
-      - name: Fail job if image vulnerabilities found or verification failed
-        if: |
-          !cancelled() && (
-            steps.image-scan.outcome == 'failure' ||
-            steps.image-gate.outcome == 'failure' ||
-            steps.verify-image-scan.outcome == 'failure' ||
-            (steps.docker-build.outcome == 'success' && (
-              steps.image-scan.outcome == 'skipped' ||
-              steps.image-gate.outcome == 'skipped'
-            ))
-          )
-        run: |
-          # 優先度1: スキャン自体が未実施
-          if [ "${{ steps.image-scan.outcome }}" == "skipped" ]; then
-            echo "::error::Trivy image scan was skipped — security gate requires the scan to run"
-          fi
-
-          # 優先度2: SARIF検証失敗
-          if [ "${{ steps.verify-image-scan.outcome }}" == "failure" ]; then
-            echo "::error::SARIF検証が失敗しました — Trivyの異常終了または不正なSARIFの可能性があります"
-            echo "::warning::考えられる原因: DB取得失敗、タイムアウト、ディスク容量不足、SARIF出力不備"
-            echo "::notice::対処法: TrivyおよびSARIF検証ステップのログを確認してください"
-          fi
-
-          # 優先度3: SARIFスキャンの実行エラー
-          if [ "${{ steps.image-scan.outcome }}" == "failure" ]; then
-            echo "::error::SARIFスキャンが異常終了しました — Trivy実行エラーの可能性があります"
-          fi
-
-          # 優先度4: ゲート未実施
-          if [ "${{ steps.image-gate.outcome }}" == "skipped" ]; then
-            echo "::error::Image vulnerability gate was skipped because a prerequisite step did not complete successfully"
-          fi
-
-          # 優先度5: 脆弱性検出
-          if [ "${{ steps.image-gate.outcome }}" == "failure" ]; then
-            echo "::error::脆弱性（CRITICAL/HIGH）が Docker image で検出されました"
-            echo "::notice::対処法: 上記のTrivyテーブル出力を確認し、ベースイメージを更新してください"
-          fi
-
-          exit 1
-
-      # Step 4: Cleanup Docker image (resource hygiene)
-      - name: Clean up Docker image
-        if: always() && steps.docker-build.outcome != 'skipped'
-        run: docker rmi security-scan:${{ github.sha }} || true
-
-  # ============================================================
-  # Stage 2: Docker Compose Verification
-  # Triggers: pull_request + push (develop, main)
-  # Tests: Compose test profile (pytest + coverage) → Compose app healthcheck
-  # ============================================================
+    uses: ./.github/workflows/trivy-scan.yml
+    with:
+      scan-prefix: pr
+      scan-image: ${{ github.base_ref == 'main' || contains(github.event.pull_request.labels.*.name, 'docker') }}
   compose-test:
     name: Compose test profile (pytest + coverage)
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'))
@@ -433,7 +185,7 @@ jobs:
         run: docker compose config --quiet
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Build test image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
@@ -461,6 +213,8 @@ jobs:
           chmod 755 reports
 
       - name: Run pytest in test container
+        env:
+          TEST__EXTERNAL_API_ENABLED: "false"
         run: |
           set -o pipefail
           docker compose --profile test run --rm test 2>&1 | tee reports/compose-test-output.log
@@ -625,7 +379,7 @@ jobs:
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -761,7 +515,7 @@ jobs:
       # Validate compose config は compose-test ジョブで実行済み (needs: [compose-test] で保証)
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Build app(runtime) image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
@@ -772,11 +526,18 @@ jobs:
           load: true
           # load: true時の manifest unknown エラー回避 (compose-test job と対称)
           provenance: false
-          # ci.yml の runtime キャッシュを読む。healthcheck job は読み取り専用にして
-          # PR時の cache poisoning と重複書き込みを避ける。
+          # PR: cache-from のみでキャッシュ再利用（高速化・書き込みなしで poisoning 回避）。
+          # main push: no-cache で最新レイヤを再ビルドし api-test-runtime scope に書き込む。
+          #   publish-image (main push 限定) が needs 経由でこの scope を読むため、ここで
+          #   新鮮化しないと Trivy ゲートと GHCR 公開イメージのレイヤが乖離しうる
+          #   (詳細: docs/adr/0005-ci-cache-freshness-vs-build-time.md)。
+          # develop push: apt 層の鮮度検証は post-trivy-scan (no-cache: true) が別途担うため、
+          #   ここではキャッシュを再利用する。cache-to は push 全体で継続し、PR の
+          #   cache-from 読み取り元を維持する（no-cache と cache-to の条件は非対称）。
           cache-from: |
             type=gha,scope=api-test-runtime
             type=gha,scope=compose-test
+          no-cache: ${{ github.ref == 'refs/heads/main' }}
           cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=max,scope=api-test-runtime' || '' }}
 
       - name: Start app and wait for healthy
@@ -837,7 +598,7 @@ jobs:
           }
 
   # ============================================================
-  # Stage 3: Post Validation
+  # Post Validation
   # Triggers: push to main or develop
   # Tests: Smoke
   # ============================================================
@@ -861,7 +622,7 @@ jobs:
           python-version: "3.14"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           enable-cache: true
 
@@ -900,7 +661,7 @@ jobs:
           if-no-files-found: warn
 
   # ============================================================
-  # Stage 3.1: Post Trivy Security Scan
+  # Post Trivy Security Scan
   # Triggers: push to main or develop
   # Strategy: fs scan (dependencies) + image scan (Docker image)
   #   following pr-trivy-scan pattern for consistency
@@ -909,260 +670,14 @@ jobs:
   post-trivy-scan:
     name: Post Trivy Scan
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
     permissions:
       contents: read
       security-events: write
+    uses: ./.github/workflows/trivy-scan.yml
+    with:
+      scan-prefix: post
+      scan-image: true
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      # ===== Stage 1: Filesystem Scan (dependencies) =====
-      # Stage 1a: Security tab 可視化用（全severity・ここではジョブを落とさない）
-      # trivy-action は format=sarif のとき TRIVY_SEVERITY を unset する（entrypoint.sh:76-83）。
-      # CIゲートは Stage 1b (format=table) に分離する。
-      - name: Trivy filesystem scan (SARIF for Security tab)
-        id: fs-scan
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
-        env:
-          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
-        with:
-          scan-type: "fs"
-          scan-ref: "."
-          format: "sarif"
-          output: "trivy-post-fs-scan.sarif"
-          exit-code: "0"
-          ignore-unfixed: true
-          trivyignores: ".trivyignore"
-          cache: ${{ github.event_name != 'schedule' }}
-        continue-on-error: true
-
-      - name: Verify filesystem scan execution
-        id: verify-fs-scan
-        if: "!cancelled()"
-        uses: ./.github/actions/trivy-sarif-verify
-        with:
-          sarif-file: "trivy-post-fs-scan.sarif"
-          scan-type: "filesystem"
-
-      - name: Upload filesystem scan results to Security tab
-        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
-        if: always() && steps.verify-fs-scan.outcome == 'success' && steps.fs-scan.outcome != 'cancelled' && steps.fs-scan.outcome != 'skipped'
-        with:
-          sarif_file: "trivy-post-fs-scan.sarif"
-          category: "trivy-post-fs-scan"
-
-      # Stage 1b: CIゲート（CRITICAL,HIGH のみ）
-      # format=table では TRIVY_SEVERITY が unset されないため severity 指定が実際に効く。
-      - name: Trivy filesystem gate (CRITICAL,HIGH)
-        id: fs-gate
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
-        env:
-          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
-        with:
-          scan-type: "fs"
-          scan-ref: "."
-          format: "table"
-          exit-code: "1"
-          ignore-unfixed: true
-          severity: "CRITICAL,HIGH"
-          trivyignores: ".trivyignore"
-          # 同一job内での再呼び出し: 直前のSARIFスキャンが2種類のキャッシュを処理済みのため両方止める。
-          #   skip-setup-trivy → Trivyバイナリの再取得(trivy-binary-* キャッシュ)を省略
-          #   cache: false     → 脆弱性DBの actions/cache 再実行(cache-trivy-* キャッシュ)を省略
-          # DBは cache-dir (${{ github.workspace }}/.cache/trivy) に残り、TRIVY_CACHE_DIR は常に設定される。
-          skip-setup-trivy: true
-          cache: false
-        continue-on-error: true
-
-      - name: Fail job if fs vulnerabilities found or verification failed
-        if: |
-          !cancelled() && (
-            steps.fs-scan.outcome == 'failure' ||
-            steps.fs-scan.outcome == 'skipped' ||
-            steps.fs-gate.outcome == 'failure' ||
-            steps.fs-gate.outcome == 'skipped' ||
-            steps.verify-fs-scan.outcome == 'failure'
-          )
-        run: |
-          # 優先度1: スキャン自体が未実施
-          if [ "${{ steps.fs-scan.outcome }}" == "skipped" ]; then
-            echo "::error::Trivy filesystem scan was skipped — security gate requires the scan to run"
-          fi
-
-          # 優先度2: SARIF検証失敗
-          if [ "${{ steps.verify-fs-scan.outcome }}" == "failure" ]; then
-            echo "::error::SARIF検証が失敗しました — Trivyの異常終了または不正なSARIFの可能性があります"
-            echo "::warning::考えられる原因: DB取得失敗、タイムアウト、ディスク容量不足、SARIF出力不備"
-            echo "::notice::対処法: TrivyおよびSARIF検証ステップのログを確認してください"
-          fi
-
-          # 優先度3: SARIFスキャンの実行エラー（exit-code:0 のため脆弱性では失敗しない）
-          if [ "${{ steps.fs-scan.outcome }}" == "failure" ]; then
-            echo "::error::SARIFスキャンが異常終了しました — Trivy実行エラーの可能性があります"
-          fi
-
-          # 優先度4: ゲート未実施
-          if [ "${{ steps.fs-gate.outcome }}" == "skipped" ]; then
-            echo "::error::Filesystem vulnerability gate was skipped because a prerequisite step did not complete successfully"
-          fi
-
-          # 優先度5: 脆弱性検出
-          if [ "${{ steps.fs-gate.outcome }}" == "failure" ]; then
-            echo "::error::脆弱性（CRITICAL/HIGH）がdependenciesで検出されました"
-            echo "::notice::対処法: 上記のTrivyテーブル出力を確認し、依存関係を更新してください"
-          fi
-
-          exit 1
-
-      # ===== Stage 2: Docker Image Build =====
-      - name: Set up Docker Build
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-
-      - name: Set image tag
-        id: image-tag
-        run: echo "tag=myapp:${{ github.sha }}" >> "$GITHUB_OUTPUT"
-
-      - name: Build production Docker image
-        id: docker-build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: .
-          target: runtime
-          tags: ${{ steps.image-tag.outputs.tag }}
-          load: true
-          cache-from: type=gha,scope=api-test-runtime
-          # PR時の cache poisoning 防止: cache-to は develop/main push時のみ書込
-          # (PR branch contributor が tainted base layer を `api-test-runtime` scope に
-          #  注入し trunk CI が consume する same-repo poisoning vector を遮断)
-          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=max,scope=api-test-runtime' || '' }}
-
-      - name: Fail if Docker build failed (security gate)
-        if: |
-          !cancelled() && (
-            steps.docker-build.outcome == 'failure' ||
-            steps.docker-build.outcome == 'cancelled'
-          )
-        run: |
-          echo "::error::Docker build ${{ steps.docker-build.outcome }} — image scan skipped. Security gate requires image scan to pass."
-          exit 1
-
-      # ===== Stage 3: Docker Image Scan =====
-      # Stage 3a: Security tab 可視化用（全severity・ここではジョブを落とさない）
-      - name: Trivy image scan (SARIF for Security tab)
-        id: image-scan
-        if: steps.docker-build.outcome == 'success'
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
-        env:
-          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
-        with:
-          image-ref: ${{ steps.image-tag.outputs.tag }}
-          format: "sarif"
-          output: "trivy-post-image-scan.sarif"
-          exit-code: "0"
-          ignore-unfixed: true
-          trivyignores: ".trivyignore"
-          cache: ${{ github.event_name != 'schedule' }}
-        continue-on-error: true
-
-      - name: Verify image scan execution
-        id: verify-image-scan
-        if: always() && steps.image-scan.outcome != 'skipped'
-        uses: ./.github/actions/trivy-sarif-verify
-        with:
-          sarif-file: "trivy-post-image-scan.sarif"
-          scan-type: "image"
-
-      - name: Upload image scan results to Security tab
-        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
-        if: always() && steps.verify-image-scan.outcome == 'success' && steps.image-scan.outcome != 'cancelled' && steps.image-scan.outcome != 'skipped'
-        with:
-          sarif_file: "trivy-post-image-scan.sarif"
-          category: "trivy-post-image-scan"
-
-      # Stage 3b: CIゲート（CRITICAL,HIGH のみ）
-      - name: Trivy image gate (CRITICAL,HIGH)
-        id: image-gate
-        if: steps.docker-build.outcome == 'success'
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
-        env:
-          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
-        with:
-          image-ref: ${{ steps.image-tag.outputs.tag }}
-          format: "table"
-          exit-code: "1"
-          ignore-unfixed: true
-          severity: "CRITICAL,HIGH"
-          trivyignores: ".trivyignore"
-          # 同一job内での再呼び出し: 直前のSARIFスキャンが2種類のキャッシュを処理済みのため両方止める。
-          #   skip-setup-trivy → Trivyバイナリの再取得(trivy-binary-* キャッシュ)を省略
-          #   cache: false     → 脆弱性DBの actions/cache 再実行(cache-trivy-* キャッシュ)を省略
-          # DBは cache-dir (${{ github.workspace }}/.cache/trivy) に残り、TRIVY_CACHE_DIR は常に設定される。
-          skip-setup-trivy: true
-          cache: false
-        continue-on-error: true
-
-      # 'skipped'チェックは Docker build security gate (上記) が先に exit する shielding により
-      # 通常重複だが、将来の条件分岐変更時の防御的セーフネット。
-      # 本ジョブの docker-build は無条件 (pr-trivy-scan と異なり if: を持たない) ため、
-      # pr-trivy-scan 側のような docker-build 成功ガードは不要。
-      - name: Fail job if image vulnerabilities found or verification failed
-        if: |
-          !cancelled() && (
-            steps.image-scan.outcome == 'failure' ||
-            steps.image-scan.outcome == 'skipped' ||
-            steps.image-gate.outcome == 'failure' ||
-            steps.image-gate.outcome == 'skipped' ||
-            steps.verify-image-scan.outcome == 'failure'
-          )
-        run: |
-          # 優先度1: スキャン自体が未実施
-          if [ "${{ steps.image-scan.outcome }}" == "skipped" ]; then
-            echo "::error::Trivy image scan was skipped — security gate requires the scan to run"
-          fi
-
-          # 優先度2: SARIF検証失敗
-          if [ "${{ steps.verify-image-scan.outcome }}" == "failure" ]; then
-            echo "::error::SARIF検証が失敗しました — Trivyの異常終了または不正なSARIFの可能性があります"
-            echo "::warning::考えられる原因: DB取得失敗、タイムアウト、ディスク容量不足、SARIF出力不備"
-            echo "::notice::対処法: TrivyおよびSARIF検証ステップのログを確認してください"
-          fi
-
-          # 優先度3: SARIFスキャンの実行エラー
-          if [ "${{ steps.image-scan.outcome }}" == "failure" ]; then
-            echo "::error::SARIFスキャンが異常終了しました — Trivy実行エラーの可能性があります"
-          fi
-
-          # 優先度4: ゲート未実施
-          if [ "${{ steps.image-gate.outcome }}" == "skipped" ]; then
-            echo "::error::Image vulnerability gate was skipped because a prerequisite step did not complete successfully"
-          fi
-
-          # 優先度5: 脆弱性検出
-          if [ "${{ steps.image-gate.outcome }}" == "failure" ]; then
-            echo "::error::脆弱性（CRITICAL/HIGH）が Docker image で検出されました"
-            echo "::notice::対処法: 上記のTrivyテーブル出力を確認し、ベースイメージを更新してください"
-          fi
-
-          exit 1
-
-      # ===== Cleanup =====
-      - name: Clean up Docker image
-        if: always() && steps.docker-build.outcome != 'skipped'
-        run: docker rmi ${{ steps.image-tag.outputs.tag }} || true
-
-  # ============================================================
-  # Stage 4: Weekly Extended Tests (< 30 min)
-  # Triggers: schedule (Sunday 00:00 UTC)
-  # Tests: Performance + External API + Coverage（Performance + Externalを除く）
-  # Note: Security は PR 毎の静的解析（gitleaks, ruff(S)）で代用
-  #       Python SAST: ruff S-rulesでbandit主要ルールを概ね網羅（B1-3xx, B310-315含む）
-  #       高セキュリティ要件時はbanditを別途実行推奨（ruff S-rulesはbanditの完全な代替ではない）
-  # ============================================================
   weekly-extended-test:
     name: Weekly Extended Test
     if: github.event_name == 'schedule'
@@ -1181,7 +696,7 @@ jobs:
           python-version: "3.14"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           enable-cache: true
 
@@ -1195,7 +710,8 @@ jobs:
         run: uv run pytest -m "performance" -v
 
       - name: Run external API tests
-        id: external-tests # Used for outcome-based error handling
+        id: external-tests
+        # Used for outcome-based error handling
         # External API tests run only if performance tests completed (success or failure).
         # On cancellation, external tests are intentionally skipped to save CI costs and API rate limits.
         # Next scheduled run or manual re-run should be used to verify external API health.
@@ -1227,6 +743,8 @@ jobs:
 
       - name: Full coverage report
         # unit/integration/smoke/slow のみ（performance/external は上で個別実行済）
+        env:
+          TEST__EXTERNAL_API_ENABLED: "true"
         run: uv run pytest -m 'not performance and not external' --cov=. --cov-report=html:reports/htmlcov --cov-report=json -v
 
       - name: Upload weekly test results
@@ -1239,7 +757,7 @@ jobs:
             coverage.json
 
   # ============================================================
-  # Stage 4.1: Weekly Link Check
+  # Weekly Link Check
   # Role: Detailed log collection — runs all files with continue-on-error
   #   and saves results as artifact (does not fail the workflow)
   # Counterpart: markdown-link-check.yml acts as gate check (fails on broken links)
@@ -1265,7 +783,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "20"
+          node-version-file: ".nvmrc"
           cache: "npm"
 
       - name: Install dependencies

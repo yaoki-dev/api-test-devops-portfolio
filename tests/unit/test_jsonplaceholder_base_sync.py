@@ -379,6 +379,8 @@ def test_sync_retry_exhausted(mock_backoff: Mock) -> None:
     # リトライ回数+1回（初回+リトライ2回=3回）実行されたことを確認
     assert route.call_count == 3
     assert "Request failed after 3 attempts" in str(exc_info.value)
+    assert exc_info.value.attempts == 3
+    assert exc_info.value.suppressed_reason is None
     # バックオフはattempt 0, 1で呼ばれる（attempt 2は最後なのでなし）
     assert mock_backoff.call_count == 2
 
@@ -482,6 +484,41 @@ def test_sync_put_4xx_no_retry(mock_backoff: Mock) -> None:
 
 @respx.mock
 @patch("utils.jsonplaceholder_base_sync.exponential_backoff_with_jitter", return_value=0.0)
+def test_sync_put_does_not_retry_by_default(mock_backoff: Mock) -> None:
+    """PUTも実サーバーの非冪等実装に備え、既定では再送しない。"""
+    route = respx.put(f"{BASE_URL}/posts/1")
+    route.side_effect = [httpx.Response(502)]
+
+    with SyncAPIClient(retry_count=2) as client:
+        with pytest.raises(APIRetryError) as exc_info:
+            client.put("/posts/1", json={"title": "updated"})
+
+    assert route.call_count == 1
+    assert exc_info.value.suppressed_reason == "non_idempotent_method"
+    assert "Retry suppressed for non-idempotent PUT request." in str(exc_info.value)
+    assert mock_backoff.call_count == 0
+
+
+@respx.mock
+@patch("utils.jsonplaceholder_base_sync.exponential_backoff_with_jitter", return_value=0.0)
+def test_sync_put_retries_when_explicitly_opted_in(mock_backoff: Mock) -> None:
+    route = respx.put(f"{BASE_URL}/posts/1")
+    route.side_effect = [httpx.Response(502), httpx.Response(200)]
+
+    with SyncAPIClient(retry_count=2) as client:
+        response = client.put(
+            "/posts/1",
+            json={"title": "updated"},
+            retry_non_idempotent=True,
+        )
+
+    assert route.call_count == 2
+    assert response.status_code == 200
+    assert mock_backoff.call_count == 1
+
+
+@respx.mock
+@patch("utils.jsonplaceholder_base_sync.exponential_backoff_with_jitter", return_value=0.0)
 def test_sync_delete_with_retry(mock_backoff: Mock) -> None:
     route = respx.delete(f"{BASE_URL}/posts/1")
     route.side_effect = [
@@ -500,8 +537,29 @@ def test_sync_delete_with_retry(mock_backoff: Mock) -> None:
 
 @respx.mock
 @patch("utils.jsonplaceholder_base_sync.exponential_backoff_with_jitter", return_value=0.0)
-def test_sync_post_with_retry(mock_backoff: Mock) -> None:
-    """POSTリクエストのリトライ動作確認（5xxはリトライ対象）"""
+def test_sync_post_does_not_retry_by_default(mock_backoff: Mock) -> None:
+    """POSTは既定で再送せず、非冪等リトライの抑止理由を公開する。"""
+    route = respx.post(f"{BASE_URL}/posts")
+    route.side_effect = [httpx.Response(502)]
+
+    with SyncAPIClient(retry_count=2, retry_delay=0.01) as client:
+        with pytest.raises(APIRetryError) as exc_info:
+            client.post(
+                "/posts",
+                json={"title": "test", "body": "content", "userId": 1},
+            )
+
+    assert route.call_count == 1
+    assert exc_info.value.attempts == 1
+    assert exc_info.value.suppressed_reason == "non_idempotent_method"
+    assert "Retry suppressed for non-idempotent POST request." in str(exc_info.value)
+    assert mock_backoff.call_count == 0
+
+
+@respx.mock
+@patch("utils.jsonplaceholder_base_sync.exponential_backoff_with_jitter", return_value=0.0)
+def test_sync_post_retries_when_explicitly_opted_in(mock_backoff: Mock) -> None:
+    """POSTは明示的なオプトイン時だけ既存の再送動作を許可する。"""
     route = respx.post(f"{BASE_URL}/posts")
     route.side_effect = [
         httpx.Response(502),
@@ -512,11 +570,46 @@ def test_sync_post_with_retry(mock_backoff: Mock) -> None:
         response = client.post(
             "/posts",
             json={"title": "test", "body": "content", "userId": 1},
+            retry_non_idempotent=True,
         )
 
     assert route.call_count == 2
     assert response.status_code == 201
-    # バックオフが1回呼ばれることを確認（attempt 0で502失敗→backoff、attempt 1で成功）
+    assert mock_backoff.call_count == 1
+
+
+@respx.mock
+@patch("utils.jsonplaceholder_base_sync.exponential_backoff_with_jitter", return_value=0.0)
+def test_sync_patch_does_not_retry_by_default(mock_backoff: Mock) -> None:
+    """PATCHも既定で再送しない。"""
+    route = respx.patch(f"{BASE_URL}/todos/1")
+    route.side_effect = [httpx.Response(502)]
+
+    with SyncAPIClient(retry_count=2) as client:
+        with pytest.raises(APIRetryError) as exc_info:
+            client.patch("/todos/1", json={"completed": True})
+
+    assert route.call_count == 1
+    assert exc_info.value.suppressed_reason == "non_idempotent_method"
+    assert mock_backoff.call_count == 0
+
+
+@respx.mock
+@patch("utils.jsonplaceholder_base_sync.exponential_backoff_with_jitter", return_value=0.0)
+def test_sync_patch_retries_when_explicitly_opted_in(mock_backoff: Mock) -> None:
+    """PATCHは明示的なオプトイン時だけ再送する。"""
+    route = respx.patch(f"{BASE_URL}/todos/1")
+    route.side_effect = [httpx.Response(502), httpx.Response(200)]
+
+    with SyncAPIClient(retry_count=2) as client:
+        response = client.patch(
+            "/todos/1",
+            json={"completed": True},
+            retry_non_idempotent=True,
+        )
+
+    assert route.call_count == 2
+    assert response.status_code == 200
     assert mock_backoff.call_count == 1
 
 

@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **YOU MUST** follow these rules. Violations are NOT acceptable.
 
 1. **ALWAYS** respond in `Japanese` for all outputs, including skill usage
-2. **ALWAYS** create a task list using `todowrite` before starting any work (exception: obvious single-step trivial tasks; RULES.md Workflow Rules "TodoWrite (3+ tasks)" qualifier)
+2. **ALWAYS** create a task list before starting any work, using the harness's task-list tool (`TodoWrite`, or `TaskCreate`/`TaskList`/`TaskUpdate` where TodoWrite is not granted) (exception: obvious single-step trivial tasks; RULES.md Workflow Rules "task list (3+ tasks)" qualifier)
 3. **ALWAYS** use the AskUserQuestion tool to propose 2-3 alternative approaches and wait for user confirmation before executing any major tasks or structural changes (exception: explicit slash command invocation (e.g., `/commit`, `/push-pr`), subagent execution context — parent agent owns the AskUserQuestion call, user-directed single-line trivial fix)
 4. **NEVER** use `git commit` → **ALWAYS** use `Skill(commit)`
 5. **NEVER** use `gh pr create` → **ALWAYS** use `Skill(push-pr)`
@@ -20,7 +20,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 8. **NEVER** push to protected branches (main/develop) directly
 9. **ALWAYS** invoke skills via Skill(skill-name) notation when user requests
 10. **ALWAYS** follow development workflow order → Section「🔄 開発ワークフロー」
-11. **ALWAYS** after completing all tasks in `todowrite`, Use Skill tool to run `Skill(fable:fable-judge)` → then `Skill(reflexion:reflect)`
+11. **ALWAYS** after completing all tasks in the task list, Use Skill tool to run `Skill(fable:fable-judge)` → then `Skill(reflexion:reflect)`
 12. **ALWAYS** when using Fable model → invoke `Skill(efficient-fable)`
 13. **ALWAYS** verify file content with Read/Grep tool BEFORE making any claim about line numbers, file structure, or code content
 14. **ALWAYS** enforce worktree boundary: セッション開始時に `git rev-parse --show-toplevel` でWORKTREE_ROOTを確認し、WORKTREE_ROOT外ファイルの自律的編集を禁止する（`~/.claude/tasks/` は例外）
@@ -87,10 +87,6 @@ uv run mypy utils/ config/ models/ tests/conftest.py
 uv run ruff check --fix .           # スタイル + 自動修正
 uv run ruff format .                # フォーマット適用
 uv run mypy utils/ config/ models/ tests/conftest.py # 型チェック
-
-# セキュリティ（手動実行・CI未統合。CIでは ruff S-rules + gitleaks が代替）
-uv run bandit -r utils/ config/ models/
-uv run safety scan
 ```
 
 ### pre-commit（軽量版）
@@ -108,6 +104,10 @@ uv run safety scan
 ```bash
 npm run lint:md && npm run lint:text   # ローカル実行
 ```
+
+`.claude/**/*.md` を変更した場合は、hidden path を明示した
+`npx markdownlint '**/*.md' '.claude/**/*.md' --ignore-path .markdownlintignore`
+を実行する。`npm run lint:md` は同じ明示グロブを含む候補でのみ代用できる。
 
 ## 設定管理
 
@@ -147,19 +147,19 @@ SECURITY__API_KEY=your-secret-key
    自動ループ:
     - 信頼度90%未満: 改善して再実行（各反復で信頼度と改善理由を簡潔に示す）/ 90%以上 → 終了 - 最大3回まで
     - 4回連続失敗時（信頼度90%未満継続）はユーザーに報告して停止
-6. コミット前レビュー → `Skill(review:review-local-changes)` (80点閾値)
+6. コミット前レビュー → `Skill(code-review medium)`
 7. コミット前確認（重要変更の場合） → `Skill(judgment-day)`を実行
 8. コミット   → `Skill(commit)`【git commit禁止】
 
 【PUSH/PR/マージフェーズ】
 9. PR作成     → Skill(push-pr)【gh pr create禁止】
-10. レビュー対応 → 修正 → 品質ゲート →  `Skill(fable:fable-judge)` を実行 →  `Skill(reflexion:reflect)` を実行 → `Skill(review:review-local-changes)`を実行 → `Skill(judgment-day)`を実行（重要変更の場合） → Skill(commit) → push
+10. レビュー対応 → 修正 → 品質ゲート →  `Skill(fable:fable-judge)` を実行 →  `Skill(reflexion:reflect)` を実行 → `Skill(code-review medium)`を実行 → `Skill(judgment-day)`を実行（重要変更の場合） → Skill(commit) → push
 11. マージ実行  → マージ戦略【※3参照】
 12. クリーンアップ → `git fetch --prune origin` + `/git:clean-gone`（worktree: 固定運用のため削除しない）
 ```
 
 <!-- preserve-on-compact: Quality Gates -->
-**※1 worktree**: 固定worktree運用（${HOME}/projects/python/.worktrees/wt-feature0[1-3]（個人環境ごとにカスタマイズ））。セッション開始時にwatch_directoryの設定を確認する（mcp__CodeGraphContext__list_watched_paths）
+**※1 worktree**: 固定worktree運用（${HOME}/projects/python/.worktrees/wt-feature0[1-3]（個人環境ごとにカスタマイズ））
 **※2 品質ゲート**: 本ファイル Section「品質ゲート」→「統合コマンド」を使用する
 
 ## トラブルシューティング

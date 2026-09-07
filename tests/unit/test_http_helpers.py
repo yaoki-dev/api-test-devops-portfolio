@@ -1,5 +1,6 @@
 """HTTP helper tests for utils.http_helpers."""
 
+from typing import cast
 from unittest.mock import Mock, patch
 
 import httpx
@@ -10,6 +11,11 @@ from utils.exceptions import (
     APIClientError,
     APIConnectionError,
     APITimeoutError,
+    SuppressedReason,
+)
+from utils.http_helpers import (
+    IDEMPOTENT_METHODS,
+    RetryPolicy,
 )
 from utils.http_helpers import (
     classify_error as _classify_error,
@@ -24,10 +30,69 @@ from utils.http_helpers import (
     resolve_client_config as _resolve_client_config,
 )
 from utils.http_helpers import (
+    resolve_retry_policy as _resolve_retry_policy,
+)
+from utils.http_helpers import (
+    retry_suppression_suffix as _retry_suppression_suffix,
+)
+from utils.http_helpers import (
     validate_optional_int as _validate_optional_int,
 )
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.mark.parametrize(
+    "method,retry_count,retry_non_idempotent,max_attempts,suppressed_reason",
+    [
+        ("GET", 0, False, 1, None),
+        ("get", 2, False, 3, None),
+        ("PUT", 2, False, 1, "non_idempotent_method"),
+        ("PUT", 2, True, 3, None),
+        ("POST", 0, False, 1, None),
+        ("PATCH", 2, False, 1, "non_idempotent_method"),
+        ("POST", 2, True, 3, None),
+        ("CUSTOM", 2, False, 1, "non_idempotent_method"),
+    ],
+    ids=[
+        "idempotent_without_retry",
+        "idempotent_with_retry",
+        "put_retry_suppressed",
+        "put_retry_opt_in",
+        "post_without_configured_retry",
+        "patch_retry_suppressed",
+        "post_retry_opt_in",
+        "unknown_method_is_safe_by_default",
+    ],
+)
+def test_resolve_retry_policy_returns_safe_send_budget(
+    method: str,
+    retry_count: int,
+    retry_non_idempotent: bool,
+    max_attempts: int,
+    suppressed_reason: SuppressedReason | None,
+) -> None:
+    policy = _resolve_retry_policy(
+        method,
+        retry_count,
+        retry_non_idempotent=retry_non_idempotent,
+    )
+
+    assert policy == RetryPolicy(max_attempts, suppressed_reason)
+
+
+def test_idempotent_method_allowlist_is_immutable() -> None:
+    assert IDEMPOTENT_METHODS == frozenset({"GET", "HEAD", "DELETE", "OPTIONS", "TRACE"})
+
+
+def test_retry_suppression_suffix_is_empty_without_suppression() -> None:
+    assert _retry_suppression_suffix(RetryPolicy(3), "POST") == ""
+
+
+def test_retry_suppression_suffix_describes_method() -> None:
+    suffix = _retry_suppression_suffix(RetryPolicy(1, "non_idempotent_method"), "patch")
+
+    assert suffix == " Retry suppressed for non-idempotent PATCH request."
 
 
 @pytest.mark.parametrize(
@@ -59,6 +124,19 @@ def test_validate_optional_int_boundary_value_equal_to_min_passes(
 
 
 @pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param(True, id="bool_true"),
+        pytest.param(False, id="bool_false"),
+        pytest.param(1.5, id="float"),
+    ],
+)
+def test_validate_optional_int_rejects_non_integer_types(value: object) -> None:
+    with pytest.raises(TypeError, match="limit must be an int or None"):
+        _validate_optional_int(cast(int | None, value), "limit", 0)
+
+
+@pytest.mark.parametrize(
     "value,name,min_value",
     [
         (-1, "limit", 0),
@@ -72,6 +150,29 @@ def test_validate_optional_int_below_min_raises_value_error(
 ) -> None:
     with pytest.raises(ValueError, match=f"{name} must be >= {min_value}"):
         _validate_optional_int(value, name, min_value)
+
+
+@pytest.mark.parametrize(
+    "retry_count,error_match",
+    [
+        (-1, "retry_count must be >= 0"),
+        (11, "retry_count must be <= 10"),
+    ],
+    ids=["below_minimum", "above_maximum"],
+)
+def test_resolve_retry_policy_rejects_retry_count_out_of_range(
+    retry_count: int,
+    error_match: str,
+) -> None:
+    with pytest.raises(ValueError, match=error_match):
+        _resolve_retry_policy("GET", retry_count)
+
+
+def test_resolve_retry_policy_rejects_non_bool_retry_opt_in() -> None:
+    invalid_flag = cast(bool, "false")
+
+    with pytest.raises(TypeError, match="retry_non_idempotent must be a bool"):
+        _resolve_retry_policy("POST", 2, retry_non_idempotent=invalid_flag)
 
 
 def test_map_request_error_too_many_redirects() -> None:
@@ -273,6 +374,37 @@ def test_resolve_client_config_none_retry_count_uses_settings(mock_settings: Moc
             "https://example.com", 10.0, None, 2.0, None
         )
     assert retry_count == 3
+
+
+@pytest.mark.parametrize("retry_count", [0, 10])
+def test_resolve_client_config_accepts_retry_count_bounds(
+    mock_settings: MockSettings,
+    retry_count: int,
+) -> None:
+    with patch("utils.http_helpers.settings", mock_settings):
+        _, _, resolved_retry_count, _, _ = _resolve_client_config(
+            "https://example.com", 10.0, retry_count, 2.0, None
+        )
+
+    assert resolved_retry_count == retry_count
+
+
+@pytest.mark.parametrize(
+    "retry_count,error_match",
+    [
+        (-1, "retry_count must be >= 0"),
+        (11, "retry_count must be <= 10"),
+    ],
+    ids=["below_minimum", "above_maximum"],
+)
+def test_resolve_client_config_rejects_retry_count_out_of_range(
+    mock_settings: MockSettings,
+    retry_count: int,
+    error_match: str,
+) -> None:
+    with patch("utils.http_helpers.settings", mock_settings):
+        with pytest.raises(ValueError, match=error_match):
+            _resolve_client_config("https://example.com", 10.0, retry_count, 2.0, None)
 
 
 def test_resolve_client_config_none_retry_delay_uses_settings(mock_settings: MockSettings) -> None:

@@ -90,6 +90,27 @@ class TestBeforeSendTransaction:
         assert "token=%5BREDACTED%5D" in description
         assert "safe=1" in description
 
+    def test_transaction_and_span_path_identifiers_are_redacted(self) -> None:
+        event = cast(
+            Event,
+            {
+                "type": "transaction",
+                "transaction": "GET /posts/1/comments/2",
+                "spans": [
+                    {
+                        "op": "http.client",
+                        "description": "GET /jobs/550e8400-e29b-41d4-a716-446655440000",
+                        "data": {},
+                    }
+                ],
+            },
+        )
+
+        result_dict = self._call_before_send(event)
+
+        assert result_dict["transaction"] == "GET /posts/<digits>/comments/<digits>"
+        assert result_dict["spans"][0]["description"] == "GET /jobs/<uuid>"
+
     def test_transaction_internal_tag_skips_scrub_no_recursion(self) -> None:
         """内部通知タグ付き transaction は scrub をスキップ通過する（再帰防止）。
 

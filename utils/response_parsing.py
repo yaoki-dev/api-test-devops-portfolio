@@ -45,6 +45,36 @@ def safe_parse_json(response: httpx.Response) -> Any:
         ) from e
 
 
+def safe_parse_json_object(response: httpx.Response) -> dict[str, Any]:
+    """レスポンスJSONをオブジェクト（dict）であることを検証してパース
+
+    Args:
+        response: HTTPレスポンスオブジェクト
+
+    Returns:
+        パースされたJSONオブジェクト
+
+    Raises:
+        APIJSONDecodeError: JSONパース失敗時、またはトップレベルの値が
+            オブジェクトでない場合
+
+    Notes:
+        ``safe_parse_json`` の戻り値は ``Any`` であり、``dict[str, Any]``
+        のアノテーションや ``cast`` を付けても実行時の型検査は行われない。
+        RFC 7159 上 JSONのトップレベルは配列・文字列・数値・null も取り得る
+        ため、``dict`` を返す契約のメソッドは本ヘルパーを経由して境界で検証し、
+        契約違反を ``APIClientError`` 階層の例外として送出する。
+
+    """
+    data = safe_parse_json(response)
+    if not isinstance(data, dict):
+        raise APIJSONDecodeError(
+            f"Expected object JSON response, got {type(data).__name__}",
+            response=response,
+        )
+    return data
+
+
 def _format_validation_error(e: ValidationError) -> str:
     details = "; ".join(
         f"{'.'.join(map(str, err.get('loc', ()))) or '<root>'}: "

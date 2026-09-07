@@ -1,6 +1,6 @@
 # Project Index: api-test-devops-portfolio
 
-**Generated:** 2026-07-31
+**Generated:** 2026-08-31
 **Version:** 0.1.0
 **Python:** ==3.14.*
 
@@ -10,6 +10,13 @@
 
 ```
 api-test-devops-portfolio/
+├── README.md                 # プロジェクト概要・セットアップ手順
+├── PROJECT_INDEX.md          # リポジトリ構成と主要ドキュメントの索引
+├── REVIEW.md                 # コードレビュー基準と重大度定義
+├── CHANGELOG.md              # 変更履歴（Keep a Changelog / SemVer 準拠）
+├── CONTEXT.md                # ドメイン用語定義（現状は「CD実証」1項目のみ）
+├── CLAUDE.md                 # Claude Code 向けプロジェクト指示書
+├── AGENTS.md                 # エージェント向けプロジェクト指示
 ├── config/                 # 設定管理（Pydantic Settings）
 │   ├── __init__.py
 │   └── settings.py        # 型安全な環境変数管理
@@ -30,8 +37,8 @@ api-test-devops-portfolio/
 │   ├── logger.py          # 構造化ログ（structlog）
 │   ├── sentry_init.py     # エラー監視（Sentry SDK 初期化）
 │   └── sentry_scrub_*.py  # PIIスクラブ（events / values / primitives）
-├── tests/                  # テストスイート（全39 test files / 2026-07 実測）
-│   ├── unit/              # ユニットテスト（33 files）
+├── tests/                  # テストスイート（全44 test files / 2026-08-31 実測）
+│   ├── unit/              # ユニットテスト（38 files）
 │   ├── integration/       # 統合テスト（4 files）
 │   ├── performance/       # パフォーマンステスト（1 file）
 │   ├── conftest.py        # pytest fixtures
@@ -66,7 +73,7 @@ api-test-devops-portfolio/
 
 ### Module: utils.jsonplaceholder_*（旧 api_client.py を責務別に分割）
 - **Path**: `utils/jsonplaceholder_base_sync.py` / `utils/jsonplaceholder_base_async.py` / `utils/jsonplaceholder_client_sync.py` / `utils/jsonplaceholder_client_async.py`
-- **Exports**: `SyncAPIClient` (同期), `AsyncAPIClient` (非同期), `SyncJSONPlaceholderClient`, `AsyncJSONPlaceholderClient`, `create_client()`。例外階層（`APIClientError`, `APIConnectionError`, `APITimeoutError`, `APIHTTPError`, `APIRetryError`, `APIJSONDecodeError`）は `utils.exceptions` から import
+- **Exports**: `SyncAPIClient` (同期), `AsyncAPIClient` (非同期), `SyncJSONPlaceholderClient`, `AsyncJSONPlaceholderClient`。例外階層（`APIClientError`, `APIConnectionError`, `APITimeoutError`, `APIHTTPError`, `APIRetryError`, `APIJSONDecodeError`）は `utils.exceptions` から import
 - **Purpose**: HTTP API クライアント。リトライ（`utils/retry.py`）・HTTP配管（`utils/http_helpers.py`）・レスポンス解析（`utils/response_parsing.py`）は共有ヘルパーモジュールへ分離済み。
 
 ### Module: utils.github_client
@@ -101,11 +108,13 @@ api-test-devops-portfolio/
 
 ### Project Configuration
 - **pyproject.toml**: Python プロジェクト設定（hatchling, dependencies, dev tools）
-- **.mcp.json**: MCP サーバー設定（Serena, Context7, Sequential Thinking等）
+- **.mcp.json**: MCP サーバー設定。サーバー一覧はファイル本体が単一真実源（索引側へ転記しない）。
+  シークレットは `${VAR}` 形式で環境変数から注入
 - **.serena/project.yml**: Serena プロジェクト設定（言語: typescript, python）
 
 ### Quality Assurance
-- **.pre-commit-config.yaml**: Pre-commit hooks（ruff, mypy, pytest, markdownlint等）
+- **.pre-commit-config.yaml**: Pre-commit hooks（ruff / ruff-format / gitleaks / markdownlint）。
+  mypy・pytest は実行時間の都合で pre-commit に含めず CI 専用
 - **.markdownlint.json**: Markdown品質ルール（23ルール無効化＋日本語対応）
 - **.gitleaks.toml**: シークレットスキャン設定
 
@@ -123,7 +132,12 @@ api-test-devops-portfolio/
 
 ### Core Documentation
 - **README.md**: プロジェクト概要・セットアップ手順・開発ガイド
+- **PROJECT_INDEX.md**: リポジトリ構成と主要ドキュメントの索引
+- **REVIEW.md**: コードレビュー基準と重大度定義
+- **CHANGELOG.md**: 変更履歴（Keep a Changelog / SemVer 準拠）
+- **CONTEXT.md**: ドメイン用語定義（`docs/agents/domain.md` の consumer rules が参照。現状は「CD実証」1項目のみ）
 - **CLAUDE.md**: Claude Code 向けプロジェクト指示書（開発ワークフロー、品質ゲート等）
+- **AGENTS.md**: エージェント向けプロジェクト指示（実装前提・既存パターン優先方針）
 
 ### Development Guides
 - **docs/DOCS_INDEX.md**: 公開ドキュメントの索引
@@ -131,24 +145,20 @@ api-test-devops-portfolio/
 - **docs/reference/docker.md**: Docker リファレンス
 - **docs/agents/**: エージェント運用ドキュメント（issue-tracker, triage-labels, domain）
 
-### Agent Configuration
-- **.claude/agents/**: カスタムエージェント定義（7 files: silent-failure-hunter, security-code-reviewer等）
-- **.claude/commands/**: カスタムコマンド定義（2 files: review-pr, code-review-excellence）
-
 ---
 
 ## 🧪 Test Coverage
 
 ### Test Statistics
-- **Total Test Files**: 39（2026-07 実測）
-- **Unit Tests**: 33 files (tests/unit/)
+- **Total Test Files**: 44（2026-08-31 実測）
+- **Unit Tests**: 38 files (tests/unit/)
 - **Integration Tests**: 4 files (tests/integration/)
 - **Performance Tests**: 1 file (tests/performance/)
 - **Smoke Tests**: 1 file (tests/test_smoke.py)
 
 ### Coverage Metrics
-- **Coverage**: 97.60%（2026-07 実測 / unit+integration条件）
-- **Target Coverage**: `pyproject.toml` の `--cov-fail-under` ✅ 達成済み
+- **テスト数・カバレッジの実測値**: [README.md](README.md) の「概要」節を参照（単一真実源）
+- **Target Coverage**: `pyproject.toml` の `--cov-fail-under`（pytest の `addopts` 経由で自動適用）
 - **Coverage Reports**: `reports/coverage.json`, `reports/htmlcov/`
 
 ### Test Execution
@@ -175,8 +185,6 @@ uv run pytest -m "not slow"      # 高速テストのみ
 - **pydantic** (>=2.0.0): データバリデーション
 - **pydantic-settings** (>=2.0.0): 型安全な設定管理
 - **sentry-sdk[httpx]** (>=2.61.1,<3.0.0): エラー監視（httpx統合）
-- **psutil** (>=6.1.1): システムメトリクス
-- **pyyaml** (>=6.0): YAML設定ファイル読み込み
 
 ### Development
 - **pytest** (>=9.0.3): テストフレームワーク
@@ -184,6 +192,8 @@ uv run pytest -m "not slow"      # 高速テストのみ
 - **pytest-cov** (>=4.1.0): カバレッジ測定
 - **pytest-xdist** (>=3.5.0): 並列テスト実行
 - **respx** (>=0.23.1): httpx用モックライブラリ
+- **psutil** (>=6.1.1): tests/performance のプロセスリソース計測
+- **pyyaml** (>=6.0): repo_contract テストのワークフローYAMLパース
 - **ruff** (>=0.15.12,<0.16): Linter + Formatter
 - **mypy** (>=1.20.2): 型チェッカー
 
@@ -278,12 +288,12 @@ open reports/htmlcov/index.html
 
 ---
 
-## 📊 Project Metrics　(CI計測対象: unit + integration)
+## 📊 Project Metrics　(CIセレクタ対象: unit + integration, external除外)
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Test Coverage | 97.60%（2026-07 実測） | `pyproject.toml` の `--cov-fail-under` |
-| CI Test Files (unit+integration) | 37（2026-07 実測） | - |
+| Test Coverage / テスト数 | [README.md](README.md)「概要」節を参照（単一真実源） | `pyproject.toml` の `--cov-fail-under` |
+| CI Test Files (unit+integration, external除外) | 41（2026-08-31 実測） | - |
 | Python Version | 3.14 | - |
 | Code Quality | ruff + mypy | 0 errors |
 | Documentation | CLAUDE.md + README | - |

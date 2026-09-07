@@ -8,7 +8,12 @@ import httpx
 
 from config.settings import settings
 from utils.exceptions import APIClientError, APIHTTPError, APIRetryError
-from utils.http_helpers import classify_error, resolve_client_config
+from utils.http_helpers import (
+    classify_error,
+    resolve_client_config,
+    resolve_retry_policy,
+    retry_suppression_suffix,
+)
 from utils.logger import get_logger
 from utils.retry import exponential_backoff_with_jitter
 
@@ -95,12 +100,20 @@ class SyncAPIClient:
                 self._client = None
             self.logger.info("api_client_closed")
 
-    def _make_request_with_retry(self, method: str, endpoint: str, **kwargs: Any) -> httpx.Response:
+    def _make_request_with_retry(
+        self,
+        method: str,
+        endpoint: str,
+        *,
+        retry_non_idempotent: bool = False,
+        **kwargs: Any,
+    ) -> httpx.Response:
         """リトライ機能付きHTTPリクエスト実行
 
         Args:
             method: HTTPメソッド
             endpoint: APIエンドポイント
+            retry_non_idempotent: 非冪等メソッドの再送を明示的に許可するか
             **kwargs: httpxに渡す追加パラメータ
 
         Returns:
@@ -119,13 +132,9 @@ class SyncAPIClient:
             呼び出し元は APIClientError で捕捉すること。
 
         Note:
-            リトライは HTTP メソッドを問わず 5xx / ネットワークエラーで発生する。
-            POST/PATCH 等の非冪等な書き込みでは、サーバー側で処理が確定した後に
-            レスポンスが失われた場合（例: 送信後の ReadTimeout）、同一リクエストの
-            再送により実バックエンドでは重複リソースが生成されうる。対象 API
-            （JSONPlaceholder）は書き込みを永続化しないため実害はないが、実運用の
-            stateful backend に向ける場合は冪等キー付与またはメソッド別のリトライ
-            制御を検討すること。
+            5xx / ネットワークエラーは、冪等メソッドでは設定回数までリトライする。
+            POST/PATCH/PUT 等の非冪等メソッドは既定で 1 回だけ実行し、サーバー側の
+            重複排除契約がある場合に限り ``retry_non_idempotent=True`` で再送を許可する。
 
         """
         # close 後の use-after-close を明示エラー化（AsyncAPIClient._request と同一パターン）。
@@ -133,9 +142,14 @@ class SyncAPIClient:
         if self._client is None:
             raise RuntimeError("Client not initialized or already closed.")
 
+        retry_policy = resolve_retry_policy(
+            method,
+            self.retry_count,
+            retry_non_idempotent=retry_non_idempotent,
+        )
         last_exception: APIClientError | None = None
 
-        for attempt in range(self.retry_count + 1):
+        for attempt in range(retry_policy.max_attempts):
             # HTTPリクエスト実行（ネットワーク層）
             try:
                 # structlogでログ出力（DRY原則: 重複ログ削除）
@@ -143,7 +157,7 @@ class SyncAPIClient:
                     self.logger.warning(
                         "request_retry",
                         attempt=attempt + 1,
-                        max_attempts=self.retry_count + 1,
+                        max_attempts=retry_policy.max_attempts,
                         method=method,
                         endpoint=endpoint,
                     )
@@ -202,7 +216,7 @@ class SyncAPIClient:
                     )
 
             # 最後の試行でなければ指数バックオフ + 30%ジッターで待機
-            if attempt < self.retry_count:
+            if attempt + 1 < retry_policy.max_attempts:
                 delay = exponential_backoff_with_jitter(
                     attempt=attempt,
                     base_delay=self.retry_delay,
@@ -217,9 +231,21 @@ class SyncAPIClient:
                 time.sleep(delay)
 
         # すべてのリトライが失敗
-        self.logger.error("all_retries_failed", method=method, endpoint=endpoint)
+        self.logger.error(
+            "all_retries_failed",
+            method=method,
+            endpoint=endpoint,
+            attempts=retry_policy.max_attempts,
+            suppressed_reason=retry_policy.suppressed_reason,
+        )
+        message = (
+            f"Request failed after {retry_policy.max_attempts} attempts"
+            f"{retry_suppression_suffix(retry_policy, method)}"
+        )
         raise APIRetryError(
-            f"Request failed after {self.retry_count + 1} attempts",
+            message,
+            attempts=retry_policy.max_attempts,
+            suppressed_reason=retry_policy.suppressed_reason,
         ) from last_exception
 
     def get(
@@ -237,14 +263,21 @@ class SyncAPIClient:
         json: dict[str, Any] | None = None,
         data: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
+        *,
+        retry_non_idempotent: bool = False,
     ) -> httpx.Response:
-        """POSTリクエスト実行"""
+        """POSTリクエスト実行。
+
+        ``retry_non_idempotent`` は、冪等キーまたはサーバー側の重複排除契約が
+        ある場合だけ有効化する。
+        """
         return self._make_request_with_retry(
             "POST",
             endpoint,
             json=json,
             data=data,
             headers=headers,
+            retry_non_idempotent=retry_non_idempotent,
         )
 
     def put(
@@ -253,9 +286,22 @@ class SyncAPIClient:
         json: dict[str, Any] | None = None,
         data: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
+        *,
+        retry_non_idempotent: bool = False,
     ) -> httpx.Response:
-        """PUTリクエスト実行"""
-        return self._make_request_with_retry("PUT", endpoint, json=json, data=data, headers=headers)
+        """PUTリクエスト実行。
+
+        ``retry_non_idempotent`` は、サーバー実装がPUTの冪等性を保証せず、
+        かつ重複排除契約がある場合だけ有効化する。
+        """
+        return self._make_request_with_retry(
+            "PUT",
+            endpoint,
+            json=json,
+            data=data,
+            headers=headers,
+            retry_non_idempotent=retry_non_idempotent,
+        )
 
     def delete(self, endpoint: str, headers: dict[str, str] | None = None) -> httpx.Response:
         """DELETEリクエスト実行"""
@@ -267,12 +313,19 @@ class SyncAPIClient:
         json: dict[str, Any] | None = None,
         data: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
+        *,
+        retry_non_idempotent: bool = False,
     ) -> httpx.Response:
-        """PATCHリクエスト実行"""
+        """PATCHリクエスト実行。
+
+        ``retry_non_idempotent`` は、冪等キーまたはサーバー側の重複排除契約が
+        ある場合だけ有効化する。
+        """
         return self._make_request_with_retry(
             "PATCH",
             endpoint,
             json=json,
             data=data,
             headers=headers,
+            retry_non_idempotent=retry_non_idempotent,
         )

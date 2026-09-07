@@ -82,19 +82,6 @@ git diff --quiet && git diff --cached --quiet && \
 
 ---
 
-## 変更履歴
-
-| 日付 | 変更内容 |
-|------|---------|
-| 2025-11-14 | 初版作成 |
-| 2025-12-27 | 参照更新 |
-| 2026-02-05 | Gate 4: /commit必須化 |
-| 2026-02-10 | 簡潔化（221行→90行） |
-| 2026-07-30 | paths frontmatter追加（遅延ロード化）、コマンドを `.claude/CLAUDE.md`「統合コマンド」参照に統一、削除済みの日次進捗ファイルへの参照を除去 |
-| 2026-07-31 | Gate 1 のコマンドから展開不能プレースホルダ `--cov-fail-under=[Phase別目標]` を除去（下限は `pyproject.toml` の `addopts` が単一真実源） |
-
----
-
 ## 参考
 
 - RULES.md「Implementation Integrity」

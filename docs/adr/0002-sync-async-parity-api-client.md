@@ -2,7 +2,7 @@
 
 **Status**: Accepted
 **Date**: 2026-05-08
-**Last verified**: 2026-08-05 — 決定は有効。実装位置のみ変更 (「実装位置の変遷」参照)
+**Last verified**: 2026-08-31 — 決定は有効。async-only 例外の運用ルールを追記 (「Sync/Async Parity 維持ルール」参照)
 **Context tags**: API client design, Sync/Async paradigm parity, inheritance pattern, OOP design
 
 ## Context
@@ -138,6 +138,11 @@ Sync と Async にファイル分割された。クラス名と継承構造は�
 2. **共通ロジック変更時**: `utils/http_helpers.py` の `resolve_client_config` / `classify_error` /
    `map_request_error` への関数抽出を優先
 3. **テスト**: `tests/unit/` に Sync/Async 両方のテストを並列維持
+4. **async-only 例外の扱い**: 並行実行それ自体が実演対象であるメソッドに限り、Sync 側の対応実装を持たない
+   async 専用メソッドを許容する。許容は暗黙にせず、`tests/unit/test_api_parity.py` の
+   `INTENTIONALLY_ASYNC_ONLY` allowlist に「メソッド名 → 理由」として明示的に登録する。
+   allowlist に無い非対称は parity 契約テストが失敗させる（= 既定は parity 維持、例外は明示的 opt-in）。
+   理由の記述は実装が用いる並行機構を指すため、機構を変更した場合は allowlist の理由も同時に更新する。
 
 ## References
 

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from config.settings import _resolve_hostname_cached, reload_settings
+from config.settings import reload_settings
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -104,8 +104,7 @@ def cleanup_test_files() -> Iterator[None]:
 
 @pytest.fixture(scope="function", autouse=True)
 def reset_settings() -> Iterator[None]:
-    """settings singleton と hostname cache のテスト間汚染を防ぐ。"""
-    _resolve_hostname_cached.cache_clear()
+    """settings singleton のテスト間汚染を防ぐ。"""
     reload_settings()
     yield
 

@@ -52,6 +52,8 @@ SENSITIVE_KEYS: frozenset[str] = frozenset(
         "email",  # GDPR/個人情報保護法: メールアドレスは個人識別情報
         "ip_address",  # Sentry user.ip_address は個人識別情報として扱う
         "username",  # Sentry user.username は個人識別情報として扱う
+        "phone",
+        "phone_number",
         "database_url",
         "ssn",
         "credit_card",
@@ -112,6 +114,13 @@ _ACRONYM_PATTERN: re.Pattern[str] = re.compile(r"([A-Z]+)([A-Z][a-z])")
 _CAMEL_PATTERN: re.Pattern[str] = re.compile(r"(?<=[a-z])(?=[A-Z])")
 # URL パスセグメント内のメールアドレス形式 PII を検出して [REDACTED] に置換する (#16)
 _PATH_PII_PATTERN: re.Pattern[str] = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
+# HTTP path の数値・UUID識別子だけを検出する。メール用patternへ混ぜると、
+# URL以外の自由文字列やpath parameter値まで意味境界を越えて置換するため分離する。
+_PATH_IDENTIFIER_PATTERN: re.Pattern[str] = re.compile(
+    r"(?:(?<=/)(?P<uuid>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?=[/;]|$)"
+    r"|(?<=/)(?P<digits>[0-9]+)(?=[/;]|$))",
+    re.IGNORECASE,
+)
 
 
 def _safe_log_warning(event: str, **fields: Any) -> None:
@@ -159,8 +168,17 @@ def _safe_log_warning(event: str, **fields: Any) -> None:
             pass
 
 
+def _scrub_path_identifiers(path: str) -> str:
+    """HTTP path内の数値・UUID識別子を種別付きトークンへ置換する。"""
+
+    def replace_identifier(match: re.Match[str]) -> str:
+        return "<uuid>" if match.group("uuid") is not None else "<digits>"
+
+    return _PATH_IDENTIFIER_PATTERN.sub(replace_identifier, path)
+
+
 # maxsize=512 — Sentry イベントが持つユニークキー名は典型的に 50〜200 程度。
-# 512 はその 2〜10 倍のマージン。SENSITIVE_KEYS の要素数 (44) とは無関係。
+# 512 はその 2〜10 倍のマージン。SENSITIVE_KEYS の要素数 (46) とは無関係。
 @lru_cache(maxsize=512)
 def _is_sensitive_key(key: str) -> bool:
     """機密キーかどうかを判定する（単語境界一致 + ハイフン/アンダースコア正規化）。

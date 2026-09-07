@@ -6,7 +6,7 @@ Note:
 """
 
 import json
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import httpx
 import pytest
@@ -14,6 +14,7 @@ import respx
 
 from tests.constants import BASE_URL
 from tests.unit.helpers import make_mock_user, mock_get_route
+from utils.exceptions import APIHTTPError, APIJSONDecodeError, APIRetryError
 from utils.jsonplaceholder_client_sync import SyncJSONPlaceholderClient
 
 pytestmark = pytest.mark.unit
@@ -222,6 +223,32 @@ def test_sync_create_post() -> None:
     assert result.user_id == user_id
     assert result.title == title
     assert result.body == body
+
+
+@respx.mock
+@patch("utils.jsonplaceholder_base_sync.exponential_backoff_with_jitter", return_value=0.0)
+def test_sync_create_post_retries_when_explicitly_opted_in(mock_backoff: Mock) -> None:
+    """ドメインのPOSTでも明示的なオプトインがbase clientへ伝播する。"""
+    route = respx.post(f"{BASE_URL}/posts")
+    route.side_effect = [
+        httpx.Response(502),
+        httpx.Response(
+            201,
+            json={"id": 101, "userId": 1, "title": "created", "body": "content"},
+        ),
+    ]
+
+    with SyncJSONPlaceholderClient(retry_count=2) as client:
+        result = client.create_post(
+            title="created",
+            body="content",
+            user_id=1,
+            retry_non_idempotent=True,
+        )
+
+    assert route.call_count == 2
+    assert result.id == 101
+    assert mock_backoff.call_count == 1
 
 
 @pytest.mark.parametrize(
@@ -501,6 +528,76 @@ def test_sync_patch_method() -> None:
 
 
 @respx.mock
+def test_sync_update_post() -> None:
+    updated_data = {"id": 1, "title": "Updated Title", "body": "Updated Body"}
+    route = respx.put(f"{BASE_URL}/posts/1").respond(status_code=200, json=updated_data)
+
+    with SyncJSONPlaceholderClient() as client:
+        result = client.update_post(1, "Updated Title", "Updated Body")
+
+    assert result == updated_data
+    assert route.call_count == 1
+    assert route.calls[0].request.method == "PUT"
+    request_body = json.loads(route.calls[0].request.content)
+    assert request_body == {"title": "Updated Title", "body": "Updated Body"}
+
+
+@respx.mock
+def test_sync_delete_post() -> None:
+    route = respx.delete(f"{BASE_URL}/posts/1").respond(status_code=200)
+
+    with SyncJSONPlaceholderClient() as client:
+        result = client.delete_post(1)
+
+    assert result is None
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_sync_create_user() -> None:
+    user_data = {
+        "name": "New Sync User",
+        "email": "sync@example.com",
+        "phone": "123-456-7890",
+    }
+    created_user = {"id": 101, **user_data}
+    route = respx.post(f"{BASE_URL}/users").respond(status_code=201, json=created_user)
+
+    with SyncJSONPlaceholderClient() as client:
+        result = client.create_user(user_data)
+
+    assert result == created_user
+    assert route.call_count == 1
+    assert route.calls[0].request.method == "POST"
+    request_body = json.loads(route.calls[0].request.content)
+    assert request_body == user_data
+
+
+@respx.mock
+def test_sync_get_user() -> None:
+    """async 側 test_async_get_user と対を成す。"""
+    mock_user = make_mock_user(
+        1,
+        name="Leanne Graham",
+        username="Bret",
+        email="sincere@april.biz",
+        website="https://hildegard.org",
+    )
+
+    route = respx.get(f"{BASE_URL}/users/1").respond(json=mock_user)
+
+    with SyncJSONPlaceholderClient() as client:
+        result = client.get_user(1)
+
+    # async 版と同じく model_dump の往復で入れ子モデルまで含む全属性の契約を検証する
+    assert result.model_dump(by_alias=True) == mock_user
+    assert result.id == 1
+    assert result.name == "Leanne Graham"
+    assert result.email == "sincere@april.biz"
+    assert route.call_count == 1
+
+
+@respx.mock
 def test_sync_get_users() -> None:
     mock_users = [
         make_mock_user(
@@ -609,3 +706,67 @@ def test_sync_health_check_system_exception_propagates(
         with patch.object(client, "get", side_effect=exception_class(*exception_args)):
             with pytest.raises(exception_class):
                 client.health_check()
+
+
+@respx.mock
+def test_sync_update_post_404_error() -> None:
+    route = respx.put(f"{BASE_URL}/posts/99999").respond(
+        status_code=404,
+        json={"error": "Post not found"},
+    )
+
+    with SyncJSONPlaceholderClient() as client:
+        with pytest.raises(APIHTTPError) as exc_info:
+            client.update_post(99999, "Title", "Body")
+        assert exc_info.value.status_code == 404
+
+    assert route.call_count == 1  # 4xxはリトライせず即失敗
+
+
+@respx.mock
+@patch("utils.jsonplaceholder_base_sync.exponential_backoff_with_jitter", return_value=0.0)
+def test_sync_delete_post_500_error(mock_backoff: Mock) -> None:
+    route = respx.delete(f"{BASE_URL}/posts/1").respond(
+        status_code=500,
+        json={"error": "Internal server error"},
+    )
+
+    with SyncJSONPlaceholderClient(retry_count=3) as client:
+        with pytest.raises(APIRetryError):
+            client.delete_post(1)
+
+    assert route.call_count == 4  # retry_count=3 → 初回 + リトライ3回
+
+
+@pytest.mark.parametrize(
+    ("method_name", "http_verb", "path", "call_args"),
+    [
+        ("update_post", "put", "/posts/1", (1, "Title", "Body")),
+        ("create_user", "post", "/users", ({"name": "New User"},)),
+        ("update_todo", "patch", "/todos/1", (1,)),
+    ],
+)
+@respx.mock
+def test_sync_dict_returning_methods_reject_non_object_json(
+    method_name: str,
+    http_verb: str,
+    path: str,
+    call_args: tuple[object, ...],
+) -> None:
+    """2xx でも非オブジェクト JSON なら APIJSONDecodeError を送出する。
+
+    ``dict[str, Any]`` の戻り値アノテーションは実行時に検証されないため、
+    契約違反が APIClientError 階層を迂回して呼び出し側に漏れないことを保証する。
+    """
+    route = getattr(respx, http_verb)(f"{BASE_URL}{path}").respond(
+        status_code=200,
+        json=["unexpected", "array"],
+    )
+
+    with SyncJSONPlaceholderClient() as client:
+        with pytest.raises(APIJSONDecodeError) as exc_info:
+            getattr(client, method_name)(*call_args)
+
+    assert "Expected object JSON response" in str(exc_info.value)
+    assert "list" in str(exc_info.value)
+    assert route.call_count == 1
