@@ -24,7 +24,7 @@
 - コミット用の標準ワークフローまたは専用自動化がある場合は、それを必須手順として扱う。
 - コミットメッセージは Conventional Commits の意図を維持する。
 - Markdown を変更したら、必要に応じて `npm run lint:md` と `npm run lint:text` を実行する。
-- `.claude/**/*.md` を変更した場合は、hidden path を明示した `npx markdownlint '**/*.md' '.claude/**/*.md' --ignore-path .markdownlintignore` を実行する。`npm run lint:md` は同じ明示グロブを含む候補でのみ代用できる。
+- `.claude/**/*.md` を変更した場合は、`npm run lint:md` を実行する。
 
 ## Testing Strategy
 
@@ -115,7 +115,7 @@ uv run ruff format .                # フォーマット適用
 
 **ツール**: markdownlint + textlint + markdown-link-check
 **設定**: `.markdownlint.json`, `.textlintrc`, `.textlintignore`
-**CI**: PRごとに`md-quality`ジョブで自動実行、週次で`weekly-link-check`
+**CI**: PRごとに`pr-md-quality-check`ジョブで自動実行、週次で`weekly-link-check`
 
 ```bash
 npm run lint:md && npm run lint:text   # ローカル実行

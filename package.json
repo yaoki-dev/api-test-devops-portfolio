@@ -2,12 +2,12 @@
   "name": "api-test-devops-portfolio",
   "private": true,
   "scripts": {
-    "lint:md": "markdownlint '**/*.md' '.claude/**/*.md' --ignore-path .markdownlintignore",
-    "lint:md:fix": "markdownlint '**/*.md' '.claude/**/*.md' --ignore-path .markdownlintignore --fix",
-    "lint:text": "textlint '**/*.md' --ignore-path .textlintignore",
-    "lint:text:fix": "textlint '**/*.md' --ignore-path .textlintignore --fix",
-    "lint:links": "git ls-files -z '*.md' | xargs -0 -I {} markdown-link-check ./{} --config .markdown-link-check.json --quiet",
-    "lint:links:verbose": "git ls-files -z '*.md' | xargs -0 -I {} markdown-link-check ./{} --config .markdown-link-check.json",
+    "lint:md": "set -o pipefail; git ls-files -zco --exclude-standard '*.md' | xargs -0 -r npx markdownlint --ignore-path .markdownlintignore",
+    "lint:md:fix": "set -o pipefail; git ls-files -zco --exclude-standard '*.md' | xargs -0 -r npx markdownlint --ignore-path .markdownlintignore --fix",
+    "lint:text": "set -o pipefail; git ls-files -zco --exclude-standard '*.md' | xargs -0 -r npx textlint --ignore-path .textlintignore",
+    "lint:text:fix": "set -o pipefail; git ls-files -zco --exclude-standard '*.md' | xargs -0 -r npx textlint --ignore-path .textlintignore --fix",
+    "lint:links": "set -o pipefail; git ls-files -zco --exclude-standard '*.md' | xargs -0 -I {} markdown-link-check ./{} --config .markdown-link-check.json --quiet",
+    "lint:links:verbose": "set -o pipefail; git ls-files -zco --exclude-standard '*.md' | xargs -0 -I {} markdown-link-check ./{} --config .markdown-link-check.json",
     "lint:all": "npm run lint:md && npm run lint:text",
     "lint:all:fix": "npm run lint:md:fix && npm run lint:text:fix"
   },
