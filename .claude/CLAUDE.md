@@ -99,15 +99,13 @@ uv run mypy utils/ config/ models/ tests/conftest.py # 型チェック
 
 **ツール**: markdownlint + textlint + markdown-link-check
 **設定**: `.markdownlint.json`, `.textlintrc`, `.textlintignore`
-**CI**: PRごとに`md-quality`ジョブで自動実行、週次で`weekly-link-check`
+**CI**: PRごとに`pr-md-quality-check`ジョブで自動実行、週次で`weekly-link-check`
 
 ```bash
 npm run lint:md && npm run lint:text   # ローカル実行
 ```
 
-`.claude/**/*.md` を変更した場合は、hidden path を明示した
-`npx markdownlint '**/*.md' '.claude/**/*.md' --ignore-path .markdownlintignore`
-を実行する。`npm run lint:md` は同じ明示グロブを含む候補でのみ代用できる。
+`.claude/**/*.md` を変更した場合は、`npm run lint:md` を実行する。
 
 ## 設定管理
 
