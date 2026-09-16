@@ -186,7 +186,7 @@ workflow:
 3. ドキュメント保守時 → `/docs-maintenance` (Medium必要時)
 ```
 
-**※1 品質ゲート**: `uv run pytest && uv run ruff check . && uv run mypy utils/ config/ models/`
+**※1 品質ゲート**: `uv run pytest && uv run ruff check --no-fix . && uv run mypy utils/ config/ models/`
 
 ---
 

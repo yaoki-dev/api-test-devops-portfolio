@@ -16,7 +16,7 @@
 
 - 実装後は、変更範囲に応じて `ruff`、`mypy`、`pytest` を通す。
 - 基本コマンド:
-- `uv run ruff check --fix .`
+- `uv run ruff check --no-fix .`（ゲート用途。`--fix` は `pyproject.toml` の `fix = true` と併せて違反を自動修正し exit 0 を返すため使わない）
 - `uv run ruff format .`
 - `uv run mypy utils/ config/ models/ tests/conftest.py`
 - `uv run pytest -n auto -m "(unit or integration) and not external"`
@@ -253,9 +253,11 @@ git checkout -b feature/<次のタスク> origin/develop
 ```bash
 uv run pytest -n auto -m "(unit or integration) and not external" \
   --cov=utils --cov=config --cov=models --cov-report=term-missing && \
-uv run ruff check . && \
+uv run ruff check --no-fix . && \
 uv run mypy utils/ config/ models/ tests/conftest.py
 ```
+
+`--no-fix` はゲート用途のため必須（理由: `.claude/CLAUDE.md`「品質ゲート」→「統合コマンド」）。
 
 **※3 PR前レビュー規模判定**:
 

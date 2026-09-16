@@ -1,5 +1,8 @@
 """Static contracts for the Issue #552 CI workflow changes."""
 
+import shutil
+import subprocess
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -96,4 +99,67 @@ def test_status_report_summary_and_pr_coverage_contract(
     assert (
         run.count('echo "Coverage: n/a (not generated for this trigger)" >> "$GITHUB_STEP_SUMMARY"')
         == 2
+    )
+
+
+def test_ruff_workflow_steps_are_check_only(workflow_data: dict[str, Any]) -> None:
+    ruff_steps = [
+        (job_name, step.get("name", "<unnamed>"), step["run"])
+        for job_name, job in workflow_data["jobs"].items()
+        if isinstance(job.get("steps"), list)
+        for step in job["steps"]
+        if isinstance(step.get("run"), str) and "ruff check" in step["run"]
+    ]
+
+    # 非空 assert だけでは片方のジョブから ruff ステップが消えても通過してしまうため、
+    # lint ゲートを必要とするジョブを明示する（PR 検証とマージ後検証の両方）。
+    required_jobs = {"pr-validation", "post-validation"}
+    gated_jobs = {job_name for job_name, _, _ in ruff_steps}
+    assert required_jobs <= gated_jobs, (
+        f"CI ruff gate missing from jobs: {sorted(required_jobs - gated_jobs)}"
+    )
+
+    missing_no_fix = [
+        f"{job_name}/{step_name}"
+        for job_name, step_name, run in ruff_steps
+        if "--no-fix" not in run
+    ]
+    assert not missing_no_fix, "CI ruff check steps must not modify the checkout: " + ", ".join(
+        missing_no_fix
+    )
+
+
+def test_tracked_docs_do_not_teach_false_green_ruff_gate(
+    request: pytest.FixtureRequest,
+) -> None:
+    """`ruff check .` は `fix = true` を継承して違反を自動修正し exit 0 を返す。
+
+    CI だけを直してもドキュメント側に残っていれば、それを読んだ人間やエージェントが
+    緑になるだけのゲートを実行してしまう。追跡ファイル全体を対象に、フラグなしの
+    `ruff check .` が再び現れないことを保証する。
+    """
+    this_file = Path(__file__).resolve()
+    repo_root = Path(request.config.rootpath)
+    git = shutil.which("git")
+    assert git is not None, "git executable not found"
+
+    tracked = subprocess.run(  # noqa: S603
+        [git, "ls-files", "-z"],
+        capture_output=True,
+        check=True,
+        cwd=repo_root,
+        text=True,
+    )
+
+    offenders = []
+    for name in tracked.stdout.split("\0"):
+        path = repo_root / name
+        if not name or path.resolve() == this_file or path.suffix not in {".md", ".yml", ".yaml"}:
+            continue
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if "ruff check ." in line:
+                offenders.append(f"{name}:{lineno}")
+
+    assert not offenders, "ruff ゲートは --no-fix、自動修正は --fix を明示すること: " + ", ".join(
+        offenders
     )

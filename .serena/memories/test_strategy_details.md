@@ -134,7 +134,7 @@ exclude_lines = [
 **CI実行・マージブロック**: ruff の flake8-bandit ルール群（`S`）
 
 ```bash
-uv run ruff check .   # .github/workflows/ci.yml の pr-validation ジョブ
+uv run ruff check --no-fix .   # .github/workflows/ci.yml の pr-validation ジョブ
 ```
 
 - 有効化: `pyproject.toml` の `[tool.ruff.lint] select` に `"S"`（flake8-bandit 全体）
@@ -237,7 +237,7 @@ gitleaks git --pre-commit --staged --verbose --redact   # .pre-commit-config.yam
 # Week別統合検証
 uv run pytest -n auto -m "(unit or integration) and not external" \
   --cov=utils --cov=config --cov=models --cov-report=term-missing \
-  && uv run ruff check . \
+  && uv run ruff check --no-fix . \
   && uv run mypy utils/ config/ models/ \
   && git status
 ```

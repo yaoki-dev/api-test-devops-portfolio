@@ -196,7 +196,7 @@
    ```bash
    uv run pytest -n auto -m "(unit or integration) and not external" \
      --cov=utils --cov=config --cov=models --cov-report=term-missing
-   uv run ruff check .
+   uv run ruff check --no-fix .
    uv run mypy utils/ config/ models/
    ```
 
