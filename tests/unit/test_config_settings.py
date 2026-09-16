@@ -143,6 +143,30 @@ class TestAPIConfigValidation:
         config = APIConfig(base_url="https://api.github.com")
         assert config.base_url == "https://api.github.com"
 
+    def test_default_base_url_rejected_when_allowlist_is_empty(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import config.settings
+
+        monkeypatch.setattr(config.settings, "ALLOWED_DOMAINS", frozenset())
+
+        with pytest.raises(ValidationError, match="Domain not in allowlist"):
+            APIConfig()
+
+    def test_default_base_url_accepted_when_allowlisted(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import config.settings
+
+        monkeypatch.setattr(
+            config.settings,
+            "ALLOWED_DOMAINS",
+            frozenset({"jsonplaceholder.typicode.com"}),
+        )
+
+        api_config = APIConfig()
+        assert api_config.base_url == "https://jsonplaceholder.typicode.com"
+
 
 class TestLogConfigValidation:
     def test_log_file_none_handling(self):
