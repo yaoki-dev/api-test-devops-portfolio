@@ -41,7 +41,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## プロジェクト概要
 
-APIテスト + DevOps統合学習ポートフォリオ。時給4000-4500円レベルの技術力を証明するために設計されています。
+APIテスト + DevOps統合ポートフォリオ。時給4000-4500円レベルの技術力を証明するために設計されています。
 
 **技術スタック**:
 

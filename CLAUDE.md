@@ -6,7 +6,7 @@
 
 ## Project Overview
 
-APIテスト + DevOps統合学習ポートフォリオ（Python 3.14 / httpx / pytest / Pydantic Settings）
+APIテスト + DevOps統合ポートフォリオ（Python 3.14 / httpx / pytest / Pydantic Settings）
 
 **Tech Stack**: Python 3.14, httpx, pytest, Pydantic Settings, structlog, Docker, GitHub Actions
 
