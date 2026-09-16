@@ -132,13 +132,20 @@ def test_ruff_workflow_steps_are_check_only(workflow_data: dict[str, Any]) -> No
 def test_tracked_docs_do_not_teach_false_green_ruff_gate(
     request: pytest.FixtureRequest,
 ) -> None:
-    """`ruff check .` は `fix = true` を継承して違反を自動修正し exit 0 を返す。
+    """`ruff check` は `fix = true` を継承して違反を自動修正し exit 0 を返す。
 
     CI だけを直してもドキュメント側に残っていれば、それを読んだ人間やエージェントが
-    緑になるだけのゲートを実行してしまう。追跡ファイル全体を対象に、フラグなしの
-    `ruff check .` が再び現れないことを保証する。
+    緑になるだけのゲートを実行してしまう。追跡ファイル全体を対象に、修正フラグを
+    明示しない ruff 実行コマンドが再び現れないことを保証する。
+
+    検出対象は次の 2 形。
+    - `ruff check .`（パス明示・フラグなし）
+    - `uv run ruff check ...` で `--no-fix` も `--fix` も伴わないもの
+      （`ruff check`、`ruff check utils/`、`ruff check --select X scripts/` 等）
+
+    既知の限界: 「Gate」見出しの直下に `ruff check --fix .` を書く形は、自動修正
+    目的の正当な記述と機械的に区別できないため検出しない。レビューで担保する。
     """
-    this_file = Path(__file__).resolve()
     repo_root = Path(request.config.rootpath)
     git = shutil.which("git")
     assert git is not None, "git executable not found"
@@ -153,11 +160,17 @@ def test_tracked_docs_do_not_teach_false_green_ruff_gate(
 
     offenders = []
     for name in tracked.stdout.split("\0"):
+        if not name:
+            continue
         path = repo_root / name
-        if not name or path.resolve() == this_file or path.suffix not in {".md", ".yml", ".yaml"}:
+        if path.suffix not in {".md", ".yml", ".yaml"} or not path.is_file():
             continue
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            if "ruff check ." in line:
+            explicit_dot = "ruff check ." in line
+            unflagged_command = (
+                "uv run ruff check" in line and "--no-fix" not in line and "--fix" not in line
+            )
+            if explicit_dot or unflagged_command:
                 offenders.append(f"{name}:{lineno}")
 
     assert not offenders, "ruff ゲートは --no-fix、自動修正は --fix を明示すること: " + ", ".join(

@@ -153,7 +153,7 @@ uv run bandit -r utils/ config/ models/   # CI では実行されない
 - ruff のみが検出できる範囲: `S601`（bandit は `[tool.bandit] skips` で `B601` を無効化）、および `tests/**` 配下全体（bandit は `exclude_dirs = ["tests"]`）
 - 結論: 現行設定では ruff の `S` ルール群のほうが bandit より検査範囲が広い。bandit の CI 統合は費用対効果が低い
 
-**既知のギャップ**: `S603` をグローバル ignore しているため、`scripts/check_docstring_refactor.py` の `subprocess.run` 3箇所が未検査。`uv run ruff check --select S603 scripts/` で再現できる。
+**既知のギャップ**: `S603` をグローバル ignore しているため、`scripts/check_docstring_refactor.py` の `subprocess.run` 3箇所が未検査。`uv run ruff check --no-fix --select S603 scripts/` で再現できる。
 
 ### 4.2 依存関係脆弱性スキャン（SCA）
 
