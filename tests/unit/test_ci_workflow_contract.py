@@ -1,5 +1,6 @@
 """Static contracts for the Issue #552 CI workflow changes."""
 
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -129,6 +130,81 @@ def test_ruff_workflow_steps_are_check_only(workflow_data: dict[str, Any]) -> No
     )
 
 
+def _is_unflagged_ruff_gate(line: str) -> bool:
+    # 引用符を区切りに変換してから、shell のコメントと演算子を分離する。
+    normalized = line.translate(str.maketrans("`'\"", "   "))
+    lexer = shlex.shlex(normalized, posix=True, punctuation_chars=";&|")
+    lexer.whitespace_split = True
+    lexer.commenters = "#"
+    lexer.escape = ""
+    parsed = list(lexer)
+
+    for index in range(len(parsed) - 1):
+        if parsed[index : index + 2] != ["ruff", "check"]:
+            continue
+
+        command_end = next(
+            (
+                offset
+                for offset, token in enumerate(parsed[index + 2 :], index + 2)
+                # 同一行に並ぶ次の `ruff check` のフラグを、手前のコマンドの引数に数えない。
+                if token in {"&&", "||", "&", ";", "|"}
+                or parsed[offset : offset + 2] == ["ruff", "check"]
+            ),
+            len(parsed),
+        )
+        arguments = parsed[index + 2 : command_end]
+        if "--no-fix" in arguments or "--fix" in arguments:
+            continue
+
+        command_start = (
+            max(
+                (
+                    offset
+                    for offset, token in enumerate(parsed[:index])
+                    if token in {"&&", "||", "&", ";", "|"}
+                ),
+                default=-1,
+            )
+            + 1
+        )
+        # `uv run` と `ruff check` の間のトークンは uv のオプションとみなす。
+        has_uv_run_prefix = any(
+            parsed[offset : offset + 2] == ["uv", "run"] for offset in range(command_start, index)
+        )
+        if has_uv_run_prefix or "." in arguments:
+            return True
+
+    return False
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ("uv run --frozen ruff check utils/", True),
+        ("uv run --frozen --no-sync ruff check --select S603 scripts/", True),
+        ("uv run --frozen ruff check . --no-fix", False),
+        ("uv run ruff check --fix .", False),
+        ("ruff check .", True),
+        ("ruff check . --no-fix", False),
+        ("uv run ruff check . && echo --no-fix", True),
+        ("ruff check . & echo --no-fix", True),
+        ("ruff check .&& echo --no-fix", True),
+        ("ruff check .; uv run ruff check --no-fix .", True),
+        ("uv run --frozen ruff check utils/ # use --no-fix in CI", True),
+        ("`ruff check` is documented as the default command", False),
+        ('run: "uv run ruff check utils/"', True),
+        ("bash -c 'uv run ruff check .'", True),
+        ("Don't run `uv run ruff check utils/`, it's a false-green gate", True),
+        ("NG: `uv run ruff check .` / OK: `uv run ruff check . --no-fix`", True),
+        ("OK: `uv run ruff check --no-fix .` / NG: `uv run ruff check .`", True),
+        ("`uv run ruff check --no-fix .` と `uv run ruff check --fix .`", False),
+    ],
+)
+def test_ruff_gate_matcher_handles_uv_options_and_fix_flags(line: str, expected: bool) -> None:
+    assert _is_unflagged_ruff_gate(line) is expected
+
+
 def test_tracked_docs_do_not_teach_false_green_ruff_gate(
     request: pytest.FixtureRequest,
 ) -> None:
@@ -140,7 +216,8 @@ def test_tracked_docs_do_not_teach_false_green_ruff_gate(
 
     検出対象は次の 2 形。
     - `ruff check .`（パス明示・フラグなし）
-    - `uv run ruff check ...` で `--no-fix` も `--fix` も伴わないもの
+    - `uv run` の前置オプションを許容した `uv run ... ruff check ...` で、
+      `--no-fix` も `--fix` も伴わないもの
       （`ruff check`、`ruff check utils/`、`ruff check --select X scripts/` 等）
 
     既知の限界: 「Gate」見出しの直下に `ruff check --fix .` を書く形は、自動修正
@@ -166,11 +243,7 @@ def test_tracked_docs_do_not_teach_false_green_ruff_gate(
         if path.suffix not in {".md", ".yml", ".yaml"} or not path.is_file():
             continue
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            explicit_dot = "ruff check ." in line
-            unflagged_command = (
-                "uv run ruff check" in line and "--no-fix" not in line and "--fix" not in line
-            )
-            if explicit_dot or unflagged_command:
+            if _is_unflagged_ruff_gate(line):
                 offenders.append(f"{name}:{lineno}")
 
     assert not offenders, "ruff ゲートは --no-fix、自動修正は --fix を明示すること: " + ", ".join(
