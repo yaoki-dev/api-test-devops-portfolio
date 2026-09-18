@@ -172,7 +172,9 @@ def _is_unflagged_ruff_gate(line: str) -> bool:
         has_uv_run_prefix = any(
             parsed[offset : offset + 2] == ["uv", "run"] for offset in range(command_start, index)
         )
-        if has_uv_run_prefix or "." in arguments:
+        # `.` だけでなく `./scripts` 等のドット相対パスも明示ターゲットとして扱う。
+        targets_dot_path = any(argument.split("/", 1)[0] in {".", ".."} for argument in arguments)
+        if has_uv_run_prefix or targets_dot_path:
             return True
 
     return False
@@ -199,6 +201,9 @@ def _is_unflagged_ruff_gate(line: str) -> bool:
         ("NG: `uv run ruff check .` / OK: `uv run ruff check . --no-fix`", True),
         ("OK: `uv run ruff check --no-fix .` / NG: `uv run ruff check .`", True),
         ("`uv run ruff check --no-fix .` と `uv run ruff check --fix .`", False),
+        ("ruff check ./scripts", True),
+        ("ruff check ./scripts --no-fix", False),
+        ("ruff check ... を実行すると自動修正される", False),
     ],
 )
 def test_ruff_gate_matcher_handles_uv_options_and_fix_flags(line: str, expected: bool) -> None:
@@ -215,7 +220,7 @@ def test_tracked_docs_do_not_teach_false_green_ruff_gate(
     明示しない ruff 実行コマンドが再び現れないことを保証する。
 
     検出対象は次の 2 形。
-    - `ruff check .`（パス明示・フラグなし）
+    - `ruff check .` / `ruff check ./scripts`（ドット相対パス明示・フラグなし）
     - `uv run` の前置オプションを許容した `uv run ... ruff check ...` で、
       `--no-fix` も `--fix` も伴わないもの
       （`ruff check`、`ruff check utils/`、`ruff check --select X scripts/` 等）
