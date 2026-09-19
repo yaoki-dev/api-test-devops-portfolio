@@ -138,6 +138,7 @@ class APIConfig(BaseModel):
 
     base_url: str = Field(
         default="https://jsonplaceholder.typicode.com",
+        validate_default=True,
         description="APIのベースURL",
     )
     timeout: float = Field(

@@ -26,11 +26,11 @@
 
 ## 概要
 
-- **`テストスイート`**: 全1,597件 — Unit 1,573 / Integration合計15（非External 3 / External 12）/ Performance 7（週次のみ）/ Smoke 2 / Slow 1（Unit内のサブセット）/ 未分類 0
-- **`CIセレクタ対象`**: PR/host 1,576件（収集時） / **ローカル再計測カバレッジ 98.07%**（下限は `pyproject.toml` の `--cov-fail-under`）
-  - PR/hostセレクタは `(unit or integration) and not external`。Composeセレクタ（Pages artifactの生成元）は `(unit or integration) and not external and not repo_contract` で1,543件。PR Validation は前者にSmoke 2件をカバレッジ計測外で追加実行
+- **`テストスイート`**: 全1,631件 — Unit 1,607 / Integration合計15（非External 3 / External 12）/ Performance 7（週次のみ）/ Smoke 2 / Slow 1（Unit内のサブセット）/ 未分類 0
+- **`CIセレクタ対象`**: PR/host 1,610件（収集時） / **ローカル再計測カバレッジ 98.07%**（下限は `pyproject.toml` の `--cov-fail-under`）
+  - PR/hostセレクタは `(unit or integration) and not external`。Composeセレクタ（Pages artifactの生成元）は `(unit or integration) and not external and not repo_contract` で1,545件。PR Validation は前者にSmoke 2件をカバレッジ計測外で追加実行
 - 上記のテストケース数・CIセレクタ対象ケース数・カバレッジは、公開ドキュメント内の集計値のSSOTとする。
-  他文書は数値を転記せず本節を参照する。2026-09-07 の基準測定は、`origin/main` のcommit `8d1b73cb8a029de77f482ac00e81fc9668b04f23`で実施し、排他的内訳 `1,573 + 3 + 12 + 7 + 2 = 1,597`、1,597 collected / 1,576 selected / 1,576 passed、カバレッジ98.07%を確認した。Composeセレクタは `repo_contract` を除外するため、1,543 selected / 1,543 passedとなる:
+  他文書は数値を転記せず本節を参照する。現行値は排他的内訳 `1,607 + 3 + 12 + 7 + 2 = 1,631`、1,631 collected / 1,610 selected / 1,610 passed、カバレッジ98.07%。Composeセレクタは `repo_contract` を除外するため、1,545 selected / 1,545 passedとなる。初回の基準測定は 2026-09-07 に `origin/main` のcommit `8d1b73cb8a029de77f482ac00e81fc9668b04f23` で実施し、当時の値は 1,597 collected / 1,576 selected / 1,543 Compose selected だった:
 
   ```bash
   TEST__EXTERNAL_API_ENABLED=false uv run pytest -n auto -m "(unit or integration) and not external" \

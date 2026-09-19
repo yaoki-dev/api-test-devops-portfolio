@@ -35,12 +35,13 @@ uv run pytest -m "(unit or integration) and not external" --cov=utils --cov=conf
 
 **検証コマンド**:
 ```bash
-uv run ruff check --fix .
+uv run ruff check --no-fix .
 ```
 
 **合格基準**:
 - ruff検出エラー: 0件
-- 自動修正可能な警告: 全て修正済み（`--fix`適用）
+- `--no-fix` 必須: `pyproject.toml` の `fix = true` を継承すると自動修正可能な違反が
+  その場で書き換えられ exit 0 を返すため（自動修正不能なルールは exit 1 のまま）
 - 行長制限: 100文字以内（pyproject.toml設定）
 
 **ruffチェック項目**:
@@ -52,6 +53,7 @@ uv run ruff check --fix .
 **不合格時の対応**:
 - `uv run ruff check --fix .` で自動修正
 - 修正不可エラーは手動対応
+- 修正後は `uv run ruff check --no-fix .` で再検証する
 
 ---
 
