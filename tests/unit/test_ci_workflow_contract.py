@@ -130,7 +130,7 @@ def test_ruff_workflow_steps_are_check_only(workflow_data: dict[str, Any]) -> No
     )
 
 
-def _is_unflagged_ruff_gate(line: str) -> bool:
+def _is_unflagged_ruff_gate(line: str, bare_targets: frozenset[str] = frozenset()) -> bool:
     # 引用符を区切りに変換してから、shell のコメントと演算子を分離する。
     normalized = line.translate(str.maketrans("`'\"", "   "))
     lexer = shlex.shlex(normalized, posix=True, punctuation_chars=";&|")
@@ -172,9 +172,19 @@ def _is_unflagged_ruff_gate(line: str) -> bool:
         has_uv_run_prefix = any(
             parsed[offset : offset + 2] == ["uv", "run"] for offset in range(command_start, index)
         )
-        # `.` だけでなく `./scripts` 等のドット相対パスも明示ターゲットとして扱う。
-        targets_dot_path = any(argument.split("/", 1)[0] in {".", ".."} for argument in arguments)
-        if has_uv_run_prefix or targets_dot_path:
+        # `.` や `./scripts` に加えて `utils/` のような対象パス付き直接実行も明示ターゲットとする。
+        # ruff が取るのはディレクトリと `.py` のみ。区切りの単独 `/`、散文が参照する
+        # `docs/foo.md` や `conftest.py` を巻き込まないよう、パス表記の形で絞る。
+        targets_path = any(
+            argument.split("/", 1)[0] in {".", ".."}
+            or (argument.endswith("/") and argument != "/")
+            or ("/" in argument and argument.endswith(".py"))
+            # `utils` のような末尾スラッシュなしの指定は、追跡ディレクトリ名と一致した時だけ
+            # ターゲットとみなす。散文に現れる普通の単語を巻き込まないため。
+            or argument in bare_targets
+            for argument in arguments
+        )
+        if has_uv_run_prefix or targets_path:
             return True
 
     return False
@@ -204,10 +214,31 @@ def _is_unflagged_ruff_gate(line: str) -> bool:
         ("ruff check ./scripts", True),
         ("ruff check ./scripts --no-fix", False),
         ("ruff check ... を実行すると自動修正される", False),
+        ("ruff check utils/", True),
+        ("ruff check tests/unit/", True),
+        ("ruff check utils/ --no-fix", False),
+        ("ruff check --select S603 scripts/", True),
+        ("ruff check scripts/check_docstring_refactor.py", True),
+        ("`ruff check` の詳細は docs/reference/ci_cd_pipeline.md を参照", False),
+        ("`ruff check` / `ruff format` を実行する", False),
+        ("`ruff check` の設定は conftest.py に置く", False),
     ],
 )
 def test_ruff_gate_matcher_handles_uv_options_and_fix_flags(line: str, expected: bool) -> None:
     assert _is_unflagged_ruff_gate(line) is expected
+
+
+def test_ruff_gate_matcher_detects_bare_tracked_directory_targets() -> None:
+    """`ruff check utils` のような末尾スラッシュなしの直接指定も false-green ゲートになる。
+
+    普通名詞との区別がつかないため、追跡ディレクトリ名と一致する引数だけを対象にする。
+    """
+    targets = frozenset({"utils", "scripts"})
+
+    assert _is_unflagged_ruff_gate("ruff check utils", targets) is True
+    assert _is_unflagged_ruff_gate("ruff check utils --no-fix", targets) is False
+    assert _is_unflagged_ruff_gate("`ruff check` fails on lint errors", targets) is False
+    assert _is_unflagged_ruff_gate("ruff check utils") is False
 
 
 def test_tracked_docs_do_not_teach_false_green_ruff_gate(
@@ -219,8 +250,9 @@ def test_tracked_docs_do_not_teach_false_green_ruff_gate(
     緑になるだけのゲートを実行してしまう。追跡ファイル全体を対象に、修正フラグを
     明示しない ruff 実行コマンドが再び現れないことを保証する。
 
-    検出対象は次の 2 形。
+    検出対象は次の 3 形。
     - `ruff check .` / `ruff check ./scripts`（ドット相対パス明示・フラグなし）
+    - `ruff check utils/` / `ruff check utils`（追跡ディレクトリを直接指定・フラグなし）
     - `uv run` の前置オプションを許容した `uv run ... ruff check ...` で、
       `--no-fix` も `--fix` も伴わないもの
       （`ruff check`、`ruff check utils/`、`ruff check --select X scripts/` 等）
@@ -240,15 +272,17 @@ def test_tracked_docs_do_not_teach_false_green_ruff_gate(
         text=True,
     )
 
+    tracked_names = [name for name in tracked.stdout.split("\0") if name]
+    # 追跡実体のトップレベルディレクトリ名。末尾スラッシュなしの直接指定の照合に使う。
+    bare_targets = frozenset(name.split("/", 1)[0] for name in tracked_names if "/" in name)
+
     offenders = []
-    for name in tracked.stdout.split("\0"):
-        if not name:
-            continue
+    for name in tracked_names:
         path = repo_root / name
         if path.suffix not in {".md", ".yml", ".yaml"} or not path.is_file():
             continue
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            if _is_unflagged_ruff_gate(line):
+            if _is_unflagged_ruff_gate(line, bare_targets):
                 offenders.append(f"{name}:{lineno}")
 
     assert not offenders, "ruff ゲートは --no-fix、自動修正は --fix を明示すること: " + ", ".join(
