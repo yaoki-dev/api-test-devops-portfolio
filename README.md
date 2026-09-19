@@ -83,7 +83,7 @@ graph TB
 
 ```mermaid
 flowchart TD
-    A["<h4>Code Change</h4><br/><u>PR / Push</u>"]
+    A["<h4>Code Change</h4><u>PR / Push</u>"]
 
     A --> B["<h4>Quality & Security Checks</h4><u>lint / type check / tests / security scan</u>"]
 
@@ -97,8 +97,7 @@ flowchart TD
 
     F --> G["<h4>Pull & Run Verify</h4><u>public image smoke run</u>"]
 
-    G --> H["<h4>Status Summary</h4><u>all job results</u>
-    <br/>"]
+    G --> H["<h4>Status Summary</h4><u>all job results</u>　"]
 
     D --> H
 
@@ -121,8 +120,7 @@ flowchart TD
 ```mermaid
 flowchart TD
     A["<h4>Unit Tests</h4><u>Isolated & Fast (Deterministic)</u>"]
-    B["<h4>Integration Tests</h4><u>Actual API integration</u>
-    <br/>"]
+    B["<h4>Integration Tests</h4><u>Actual API integration</u>"]
     G["<h4>Smoke Tests</h4><u>Pull Request / Post merge</u>"]
 
     A --> C["<h4>CI Quality Gate</h4><u>unit + integration + smoke<br/>external excluded</u>"]
@@ -156,8 +154,7 @@ flowchart TD
 flowchart TD
     B["<h4>base</h4><u>python:3.14-slim<br/>digest pinned</u>"]
 
-    B --> D["<h4>dependencies</h4><u>base + prod deps only</u>
-    <br/>"]
+    B --> D["<h4>dependencies</h4><u>base + prod deps only</u>"]
 
     D --> R["<h4>runtime</h4><u>base + dependencies .venv<br/>non-root appuser<br/>HEALTHCHECK</u>"]
 
