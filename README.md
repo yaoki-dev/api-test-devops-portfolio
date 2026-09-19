@@ -61,7 +61,7 @@
 ```mermaid
 graph TB
     R[Request] --> AC[API Clients<br/>Sync + Async]
-    AC -- "Retry / HTTP errors" --> EA[External APIs<br/>JSONPlaceholder / GitHub]
+    AC -- "Outbound HTTP request<br/> (retry / HTTP errors) " --> EA[External APIs<br/>JSONPlaceholder / GitHub]
     EA --> VM[Validated Models]
 
     subgraph "Supporting Components"
@@ -289,4 +289,3 @@ MIT
 ## お問い合わせ
 
 - **GitHub**: [@yaoki-dev](https://github.com/yaoki-dev)
-- **LinkedIn**: *プロフィール準備中*
