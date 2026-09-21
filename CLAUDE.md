@@ -1,4 +1,4 @@
-# CLAUDE.md **Last Updated**: 2026-07-31
+# CLAUDE.md **Last Updated**: 2026-09-21
 
 **軽量インデックス — 詳細は `.claude/CLAUDE.md` を参照**
 
