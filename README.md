@@ -59,12 +59,27 @@
 ### APIクライアント
 
 ```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#F7F3EA'
+    primaryTextColor: '#111111'
+    primaryBorderColor: '#111111'
+    lineColor: '#767676'
+    titleColor: '#111111'
+    edgeLabelBackground: '#585858'
+    textColor: '#111111'
+  themeCSS: |
+    .edgeLabel, .labelBkg { background-color: transparent; }
+    .edgeLabel p { padding: 4px 10px; color: #F7F3EA; }
+---
 graph TB
     R[Request] --> AC[API Clients<br/>Sync + Async]
-    AC -- "Retry / HTTP errors" --> EA[External APIs<br/>JSONPlaceholder / GitHub]
+    AC -- "Outbound HTTP request<br/> (retry / HTTP errors) " --> EA[External APIs<br/>JSONPlaceholder / GitHub]
     EA --> VM[Validated Models]
 
-    subgraph "Supporting Components"
+    subgraph SC["Supporting Components"]
         CFG[Config]
         LOG[Logging]
         SEN[Optional Sentry]
@@ -75,6 +90,7 @@ graph TB
     SEN -.-> LOG
 
     classDef default fill:#F7F3EA,stroke:#111,stroke-width:1.5px,color:#111;
+    style SC fill:#EEF4FF,stroke:#767676,color:#111;
 ```
 
 > この図は、リクエストが同期・非同期APIクライアントを経由して外部APIへ到達し、検証済みモデルとして返る主要な処理経路を示します。
@@ -82,30 +98,34 @@ graph TB
 ### CI/CDパイプライン
 
 ```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#F7F3EA'
+    primaryTextColor: '#111111'
+    primaryBorderColor: '#111111'
+    lineColor: '#767676'
+    titleColor: '#111111'
+    edgeLabelBackground: '#FFFDF7'
+    textColor: '#111111'
+---
 flowchart TD
-    A["<h4>Code Change</h4><u>PR / Push</u>
-    <br/>"]
+    A["<h4>Code Change</h4><u>PR / Push</u>"]
 
-    A --> B["<h4>Quality & Security Checks</h4><u>lint / type check / tests / security scan</u>
-    <br/>"]
+    A --> B["<h4>Quality & Security Checks</h4><u>lint / type check / tests / security scan</u>"]
 
-    A --> C["<h4>Compose Test</h4><u>pytest + coverage</u>
-    <br/>"]
+    A --> C["<h4>Compose Test</h4><u>pytest + coverage</u>"]
 
-    C --> D["<h4>Coverage Pages</h4><u>GitHub Pages</u>
-    <br/>"]
+    C --> D["<h4>Coverage Pages</h4><u>GitHub Pages</u>"]
 
-    C --> E["<h4>Container Healthcheck</h4><u>runtime container validation</u>
-    <br/>"]
+    C --> E["<h4>Container Healthcheck</h4><u>runtime container validation</u>"]
 
-    E --> F["<h4>GHCR Runtime Image</h4><u>publish image</u>
-    <br/>"]
+    E --> F["<h4>GHCR Runtime Image</h4><u>publish image</u>"]
 
-    F --> G["<h4>Pull & Run Verify</h4><u>public image smoke run</u>
-    <br/>"]
+    F --> G["<h4>Pull & Run Verify</h4><u>public image smoke run</u>"]
 
-    G --> H["<h4>Status Summary</h4><u>all job results</u>
-    <br/>"]
+    G --> H["<h4>Status Summary</h4><u>all job results</u>　"]
 
     D --> H
 
@@ -126,30 +146,34 @@ flowchart TD
 ### テスト戦略
 
 ```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#F7F3EA'
+    primaryTextColor: '#111111'
+    primaryBorderColor: '#111111'
+    lineColor: '#767676'
+    titleColor: '#111111'
+    edgeLabelBackground: '#FFFDF7'
+    textColor: '#111111'
+---
 flowchart TD
-    A["<h4>Unit Tests</h4><u>Isolated & Fast (Deterministic)</u>
-    <br/>"]
-    B["<h4>Integration Tests</h4><u>Actual API integration</u>
-    <br/>"]
-    G["<h4>Smoke Tests</h4><u>Pull Request / Post merge</u>
-    <br/>"]
+    A["<h4>Unit Tests</h4><u>Isolated & Fast (Deterministic)</u>"]
+    B["<h4>Integration Tests</h4><u>Actual API integration</u>"]
+    G["<h4>Smoke Tests</h4><u>Pull Request / Post merge</u>"]
 
-    A --> C["<h4>CI Quality Gate</h4><u>unit + integration + smoke<br/>external excluded</u>
-    <br/>"]
+    A --> C["<h4>CI Quality Gate</h4><u>unit + integration + smoke<br/>external excluded</u>"]
     B --> C
     G --> C
 
-    D["<h4>External Tests</h4><u>Weekly<br/>GitHub API : rate-limit aware</u>
-    <br/>"]
-    F["<h4>Performance Tests</h4><u>Weekly</u>
-    <br/>"]
+    D["<h4>External Tests</h4><u>Weekly<br/>GitHub API : rate-limit aware</u>"]
+    F["<h4>Performance Tests</h4><u>Weekly</u>"]
 
-    D --> E["<h4>Scheduled Checks (Weekly)</h4><u>non-blocking external validation</u>
-    <br/>"]
+    D --> E["<h4>Scheduled Checks (Weekly)</h4><u>non-blocking external validation</u>"]
     F --> E
 
-    C --> H["<h4>Coverage</h4><u>target 85%+</u>
-    <br/>"]
+    C --> H["<h4>Coverage</h4><u>target 85%+</u>"]
     E --> H
 
     classDef default fill:#F7F3EA,stroke:#111,stroke-width:1.5px,color:#111;
@@ -167,24 +191,30 @@ flowchart TD
 ### Docker multi-stage
 
 ```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#F7F3EA'
+    primaryTextColor: '#111111'
+    primaryBorderColor: '#111111'
+    lineColor: '#767676'
+    titleColor: '#111111'
+    edgeLabelBackground: '#FFFDF7'
+    textColor: '#111111'
+---
 flowchart TD
-    B["<h4>base</h4><u>python:3.14-slim<br/>digest pinned</u>
-    <br/>"]
+    B["<h4>base</h4><u>python:3.14-slim<br/>digest pinned</u>"]
 
-    B --> D["<h4>dependencies</h4><u>base + prod deps only</u>
-    <br/>"]
+    B --> D["<h4>dependencies</h4><u>base + prod deps only</u>"]
 
-    D --> R["<h4>runtime</h4><u>base + dependencies .venv<br/>non-root appuser<br/>HEALTHCHECK</u>
-    <br/>"]
+    D --> R["<h4>runtime</h4><u>base + dependencies .venv<br/>non-root appuser<br/>HEALTHCHECK</u>"]
 
-    D --> T["<h4>test</h4><u>base + dependencies .venv + dev deps<br/>pytest + coverage</u>
-    <br/>"]
+    D --> T["<h4>test</h4><u>base + dependencies .venv + dev deps<br/>pytest + coverage</u>"]
 
-    R --> C1["<h4>docker compose</h4><u>app service<br/>target: runtime</u>
-    <br/>"]
+    R --> C1["<h4>docker compose</h4><u>app service<br/>target: runtime</u>"]
 
-    T --> C2["<h4>docker compose</h4><u>test service<br/>target: test profiles</u>
-    <br/>"]
+    T --> C2["<h4>docker compose</h4><u>test service<br/>target: test profiles</u>"]
 
     classDef default fill:#F7F3EA,stroke:#111,stroke-width:1.5px,color:#111;
     classDef key fill:#FFFDF7,stroke:#111,stroke-width:2px,color:#111;
@@ -196,7 +226,8 @@ flowchart TD
     class T,C1,C2 support;
 ```
 <br/>
-> この図は4段階マルチステージビルドの論理構成です。イメージサイズ最適化、マルチアーキ（amd64/arm64）publish・検証、非root実行・HEALTHCHECK、ベースイメージのdigest固定（サプライチェーン対策）は [Docker Multi-Stage Runtime Strategy](docs/reference/docker.md) に記載しています。
+
+> この図は4段階マルチステージビルドの論理構成です。イメージサイズ最適化、マルチアーキ（amd64/arm64）publish・検証、非root実行・HEALTHCHECK、ベースイメージのdigest固定（サプライチェーン対策）は [Docker](docs/reference/docker.md) に記載しています。
 
 <br/>
 
@@ -311,4 +342,3 @@ MIT
 ## お問い合わせ
 
 - **GitHub**: [@yaoki-dev](https://github.com/yaoki-dev)
-- **LinkedIn**: *プロフィール準備中*
