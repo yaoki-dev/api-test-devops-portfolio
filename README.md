@@ -67,8 +67,6 @@ config:
     primaryTextColor: '#111111'
     primaryBorderColor: '#111111'
     lineColor: '#767676'
-    clusterBkg: '#EEF4FF'
-    clusterBorder: '#767676'
     titleColor: '#111111'
     edgeLabelBackground: '#585858'
     textColor: '#111111'
@@ -81,7 +79,7 @@ graph TB
     AC -- "Outbound HTTP request<br/> (retry / HTTP errors) " --> EA[External APIs<br/>JSONPlaceholder / GitHub]
     EA --> VM[Validated Models]
 
-    subgraph "Supporting Components"
+    subgraph SC["Supporting Components"]
         CFG[Config]
         LOG[Logging]
         SEN[Optional Sentry]
@@ -92,6 +90,7 @@ graph TB
     SEN -.-> LOG
 
     classDef default fill:#F7F3EA,stroke:#111,stroke-width:1.5px,color:#111;
+    style SC fill:#EEF4FF,stroke:#767676,color:#111;
 ```
 
 > この図は、リクエストが同期・非同期APIクライアントを経由して外部APIへ到達し、検証済みモデルとして返る主要な処理経路を示します。
@@ -107,8 +106,6 @@ config:
     primaryTextColor: '#111111'
     primaryBorderColor: '#111111'
     lineColor: '#767676'
-    clusterBkg: '#EEF4FF'
-    clusterBorder: '#767676'
     titleColor: '#111111'
     edgeLabelBackground: '#FFFDF7'
     textColor: '#111111'
@@ -157,8 +154,6 @@ config:
     primaryTextColor: '#111111'
     primaryBorderColor: '#111111'
     lineColor: '#767676'
-    clusterBkg: '#EEF4FF'
-    clusterBorder: '#767676'
     titleColor: '#111111'
     edgeLabelBackground: '#FFFDF7'
     textColor: '#111111'
@@ -204,8 +199,6 @@ config:
     primaryTextColor: '#111111'
     primaryBorderColor: '#111111'
     lineColor: '#767676'
-    clusterBkg: '#EEF4FF'
-    clusterBorder: '#767676'
     titleColor: '#111111'
     edgeLabelBackground: '#FFFDF7'
     textColor: '#111111'
