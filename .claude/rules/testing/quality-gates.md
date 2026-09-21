@@ -30,12 +30,13 @@ uv run pytest -m "(unit or integration) and not external" --cov=utils --cov=conf
 ### Gate 2: ruff合格
 
 ```bash
-uv run ruff check --fix .
+uv run ruff check --no-fix .
 ```
 
 - ruff検出エラー: 0件
-- 自動修正適用済み
-- 不合格時: 手動対応
+- `--no-fix` 必須: `pyproject.toml` の `fix = true` を継承すると自動修正され exit 0 になる
+- 不合格時: `uv run ruff check --fix .` で自動修正 → 残りは手動対応 →
+  `uv run ruff check --no-fix .` で再検証
 
 ---
 

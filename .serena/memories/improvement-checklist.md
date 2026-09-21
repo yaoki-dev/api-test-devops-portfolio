@@ -398,7 +398,7 @@
 
   **Gate 2: ruff合格**:
   ```bash
-  uv run ruff check --fix .
+  uv run ruff check --no-fix .
   ```
   - [ ] ruff検出エラー: 0件
 

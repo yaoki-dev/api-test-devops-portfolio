@@ -126,7 +126,7 @@ Read(PORTFOLIO_STRATEGY_FILE,
 ```bash
 uv run pytest -n auto -m "(unit or integration) and not external" \
   --cov=utils --cov=config --cov=models --cov-report=term-missing
-uv run ruff check .
+uv run ruff check --no-fix .
 uv run mypy utils/ config/ models/
 
 # 全合格 → Phase 3へ
@@ -254,7 +254,7 @@ Same Session?
 # 実装完了後、必ず実行
 uv run pytest -n auto -m "(unit or integration) and not external" \
   --cov=utils --cov=config --cov=models --cov-report=term-missing
-uv run ruff check .
+uv run ruff check --no-fix .
 uv run mypy utils/ config/ models/
 
 # 全合格 → 実装活動認定

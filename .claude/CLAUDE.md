@@ -41,7 +41,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## プロジェクト概要
 
-APIテスト + DevOps統合学習ポートフォリオ。時給4000-4500円レベルの技術力を証明するために設計されています。
+APIテスト + DevOps統合ポートフォリオ。時給4000-4500円レベルの技術力を証明するために設計されています。
 
 **技術スタック**:
 
@@ -72,9 +72,14 @@ APIテスト + DevOps統合学習ポートフォリオ。時給4000-4500円レ�
 ```bash
 uv run pytest -n auto -m "(unit or integration) and not external" \
   --cov=utils --cov=config --cov=models --cov-report=term-missing && \
-uv run ruff check . && \
+uv run ruff check --no-fix . && \
 uv run mypy utils/ config/ models/ tests/conftest.py
 ```
+
+`--no-fix` はゲート用途のため必須。`pyproject.toml` の `[tool.ruff] fix = true` を継承すると
+`ruff check` が自動修正可能な違反をその場で書き換えて exit 0 を返すため、ゲートが違反を
+見逃す（自動修正不能なルールは `fix = true` でも exit 1 になる）。
+自動修正が目的の場合は下記「リンター・フォーマッター」の `ruff check --fix .` を使う。
 
 カバレッジ下限は `pyproject.toml` の `--cov-fail-under`（pytest の `addopts` 経由で自動適用）。個別に指定しない。
 
@@ -99,15 +104,13 @@ uv run mypy utils/ config/ models/ tests/conftest.py # 型チェック
 
 **ツール**: markdownlint + textlint + markdown-link-check
 **設定**: `.markdownlint.json`, `.textlintrc`, `.textlintignore`
-**CI**: PRごとに`md-quality`ジョブで自動実行、週次で`weekly-link-check`
+**CI**: PRごとに`pr-md-quality-check`ジョブで自動実行、週次で`weekly-link-check`
 
 ```bash
 npm run lint:md && npm run lint:text   # ローカル実行
 ```
 
-`.claude/**/*.md` を変更した場合は、hidden path を明示した
-`npx markdownlint '**/*.md' '.claude/**/*.md' --ignore-path .markdownlintignore`
-を実行する。`npm run lint:md` は同じ明示グロブを含む候補でのみ代用できる。
+`.claude/**/*.md` を変更した場合は、`npm run lint:md` を実行する。
 
 ## 設定管理
 

@@ -87,7 +87,7 @@ AskUserQuestion の回答・設計判断を記録する。
 **コード実装（.py 変更）**:
 
 - [ ] `uv run pytest -n auto -m "(unit or integration) and not external"` 全pass
-- [ ] `uv run ruff check .` エラー0件
+- [ ] `uv run ruff check --no-fix .` エラー0件（`--no-fix` 必須: `fix = true` 継承で自動修正され緑化するため）
 - [ ] `uv run mypy utils/ config/ models/ tests/conftest.py` エラー0件
 - [ ] `Skill(fable:fable-judge)`（全タスク完了確認 — 未完了検出時: 修正 → 品質ゲート → 再実行 - 最大3回まで）
 - [ ] `Skill(reflexion:reflect)` （信頼度90%以上）

@@ -16,7 +16,7 @@
 
 - 実装後は、変更範囲に応じて `ruff`、`mypy`、`pytest` を通す。
 - 基本コマンド:
-- `uv run ruff check --fix .`
+- `uv run ruff check --no-fix .`（ゲート用途。`--fix` は `pyproject.toml` の `fix = true` と併せて違反を自動修正し exit 0 を返すため使わない）
 - `uv run ruff format .`
 - `uv run mypy utils/ config/ models/ tests/conftest.py`
 - `uv run pytest -n auto -m "(unit or integration) and not external"`
@@ -24,7 +24,7 @@
 - コミット用の標準ワークフローまたは専用自動化がある場合は、それを必須手順として扱う。
 - コミットメッセージは Conventional Commits の意図を維持する。
 - Markdown を変更したら、必要に応じて `npm run lint:md` と `npm run lint:text` を実行する。
-- `.claude/**/*.md` を変更した場合は、hidden path を明示した `npx markdownlint '**/*.md' '.claude/**/*.md' --ignore-path .markdownlintignore` を実行する。`npm run lint:md` は同じ明示グロブを含む候補でのみ代用できる。
+- `.claude/**/*.md` を変更した場合は、`npm run lint:md` を実行する。
 
 ## Testing Strategy
 
@@ -80,7 +80,7 @@
 
 ## プロジェクト概要
 
-APIテスト + DevOps統合学習ポートフォリオ。時給4000-4500円レベルの技術力を証明するために設計されています。
+APIテスト + DevOps統合ポートフォリオ。時給4000-4500円レベルの技術力を証明するために設計されています。
 
 **技術スタック**:
 
@@ -115,7 +115,7 @@ uv run ruff format .                # フォーマット適用
 
 **ツール**: markdownlint + textlint + markdown-link-check
 **設定**: `.markdownlint.json`, `.textlintrc`, `.textlintignore`
-**CI**: PRごとに`md-quality`ジョブで自動実行、週次で`weekly-link-check`
+**CI**: PRごとに`pr-md-quality-check`ジョブで自動実行、週次で`weekly-link-check`
 
 ```bash
 npm run lint:md && npm run lint:text   # ローカル実行
@@ -253,9 +253,11 @@ git checkout -b feature/<次のタスク> origin/develop
 ```bash
 uv run pytest -n auto -m "(unit or integration) and not external" \
   --cov=utils --cov=config --cov=models --cov-report=term-missing && \
-uv run ruff check . && \
+uv run ruff check --no-fix . && \
 uv run mypy utils/ config/ models/ tests/conftest.py
 ```
+
+`--no-fix` はゲート用途のため必須（理由: `.claude/CLAUDE.md`「品質ゲート」→「統合コマンド」）。
 
 **※3 PR前レビュー規模判定**:
 

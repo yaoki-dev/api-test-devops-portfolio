@@ -40,7 +40,7 @@ jobs:
           python-version: "3.14"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           enable-cache: true
 
@@ -56,9 +56,9 @@ jobs:
       - name: Run zizmor High-severity gate
         run: uv run --frozen --no-sync zizmor --offline --no-config --strict-collection --persona=regular --min-severity=high --format=github .github/workflows .github/actions
 
-      # ruff を mypy より先に実行: lint 問題を先に除去し mypy の誤検知を低減（実行順設計）
+      # ruff を mypy より先に実行: lint 結果を先に確認し mypy の誤検知を低減（実行順設計）
       - name: Run ruff check
-        run: uv run ruff check .
+        run: uv run ruff check --no-fix .
 
       # mypyをvalidationジョブ内ステップとして統合
       # 設計決定: runner起動コスト~60秒削減 > 並列フィードバック喪失
@@ -135,12 +135,12 @@ jobs:
 
       - name: Run markdownlint
         id: markdownlint
-        run: npx markdownlint '**/*.md' '.claude/**/*.md' --ignore-path .markdownlintignore
+        run: npm run lint:md
         continue-on-error: true
 
       - name: Run textlint
         id: textlint
-        run: npx textlint '**/*.md' --ignore-path .textlintignore
+        run: npm run lint:text
         continue-on-error: true
 
       - name: Check lint results
@@ -347,7 +347,7 @@ jobs:
 
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
 
   # ============================================================
   # CD Stage: runtime イメージを GHCR へ publish
@@ -376,7 +376,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up QEMU (multi-arch emulation)
-        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+        uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4.3.0
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
@@ -431,7 +431,7 @@ jobs:
     steps:
       # arm64 変種をエミュレーション実行するため QEMU binfmt を登録する。
       - name: Set up QEMU (arm64 emulated smoke)
-        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+        uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4.3.0
 
       # publish が「マルチアーキ manifest list」として両プラットフォームを含むことを構造検証。
       # (単一の green バッジが部分ビルドを隠す anti-pattern を防ぐ)
@@ -622,7 +622,7 @@ jobs:
           python-version: "3.14"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           enable-cache: true
 
@@ -632,9 +632,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev --frozen
 
-      # ruff を mypy より先に実行: lint 問題を先に除去し mypy の誤検知を低減（実行順設計）
+      # ruff を mypy より先に実行: lint 結果を先に確認し mypy の誤検知を低減（実行順設計）
       - name: Run ruff check
-        run: uv run ruff check .
+        run: uv run ruff check --no-fix .
 
       # mypyをvalidationジョブ内ステップとして統合
       # 設計決定: runner起動コスト~60秒削減 > 並列フィードバック喪失
@@ -696,7 +696,7 @@ jobs:
           python-version: "3.14"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           enable-cache: true
 

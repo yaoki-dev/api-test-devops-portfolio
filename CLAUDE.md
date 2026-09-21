@@ -1,4 +1,4 @@
-# CLAUDE.md **Last Updated**: 2026-07-31
+# CLAUDE.md **Last Updated**: 2026-09-21
 
 **軽量インデックス — 詳細は `.claude/CLAUDE.md` を参照**
 
@@ -6,7 +6,7 @@
 
 ## Project Overview
 
-APIテスト + DevOps統合学習ポートフォリオ（Python 3.14 / httpx / pytest / Pydantic Settings）
+APIテスト + DevOps統合ポートフォリオ（Python 3.14 / httpx / pytest / Pydantic Settings）
 
 **Tech Stack**: Python 3.14, httpx, pytest, Pydantic Settings, structlog, Docker, GitHub Actions
 

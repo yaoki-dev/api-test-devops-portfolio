@@ -1,6 +1,6 @@
 # CI/CD Pipeline
 
-*最終更新: 2026-09-01*
+*最終更新: 2026-09-19*
 
 ## CI/CDパイプライン概要
 
@@ -255,7 +255,7 @@ uv run pytest -n auto -m "(unit or integration) and not external" \
 | 品質基準 | 目標値 | 検証コマンド |
 |---------|-------|------------|
 | カバレッジ | `pyproject.toml` の `--cov-fail-under` | 上記のCI実行コマンド（下限は addopts で自動適用） |
-| ruff | 0 errors | `ruff check .` |
+| ruff | 0 errors | `ruff check --no-fix .` |
 | mypy | 0 errors | `mypy utils/ config/ models/ tests/conftest.py` |
 | セキュリティ | 0 Critical/High | Trivy SARIF |
 
