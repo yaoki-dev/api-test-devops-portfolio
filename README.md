@@ -59,6 +59,23 @@
 ### APIクライアント
 
 ```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#F7F3EA'
+    primaryTextColor: '#111111'
+    primaryBorderColor: '#111111'
+    lineColor: '#767676'
+    clusterBkg: '#EEF4FF'
+    clusterBorder: '#767676'
+    titleColor: '#111111'
+    edgeLabelBackground: '#585858'
+    textColor: '#111111'
+  themeCSS: |
+    .edgeLabel, .labelBkg { background-color: transparent; }
+    .edgeLabel p { padding: 4px 10px; color: #F7F3EA; }
+---
 graph TB
     R[Request] --> AC[API Clients<br/>Sync + Async]
     AC -- "Outbound HTTP request<br/> (retry / HTTP errors) " --> EA[External APIs<br/>JSONPlaceholder / GitHub]
@@ -82,6 +99,20 @@ graph TB
 ### CI/CDパイプライン
 
 ```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#F7F3EA'
+    primaryTextColor: '#111111'
+    primaryBorderColor: '#111111'
+    lineColor: '#767676'
+    clusterBkg: '#EEF4FF'
+    clusterBorder: '#767676'
+    titleColor: '#111111'
+    edgeLabelBackground: '#FFFDF7'
+    textColor: '#111111'
+---
 flowchart TD
     A["<h4>Code Change</h4><u>PR / Push</u>"]
 
@@ -118,6 +149,20 @@ flowchart TD
 ### テスト戦略
 
 ```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#F7F3EA'
+    primaryTextColor: '#111111'
+    primaryBorderColor: '#111111'
+    lineColor: '#767676'
+    clusterBkg: '#EEF4FF'
+    clusterBorder: '#767676'
+    titleColor: '#111111'
+    edgeLabelBackground: '#FFFDF7'
+    textColor: '#111111'
+---
 flowchart TD
     A["<h4>Unit Tests</h4><u>Isolated & Fast (Deterministic)</u>"]
     B["<h4>Integration Tests</h4><u>Actual API integration</u>"]
@@ -151,6 +196,20 @@ flowchart TD
 ### Docker multi-stage
 
 ```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#F7F3EA'
+    primaryTextColor: '#111111'
+    primaryBorderColor: '#111111'
+    lineColor: '#767676'
+    clusterBkg: '#EEF4FF'
+    clusterBorder: '#767676'
+    titleColor: '#111111'
+    edgeLabelBackground: '#FFFDF7'
+    textColor: '#111111'
+---
 flowchart TD
     B["<h4>base</h4><u>python:3.14-slim<br/>digest pinned</u>"]
 
@@ -174,6 +233,7 @@ flowchart TD
     class T,C1,C2 support;
 ```
 <br/>
+
 > この図は4段階マルチステージビルドの論理構成です。イメージサイズ最適化、マルチアーキ（amd64/arm64）publish・検証、非root実行・HEALTHCHECK、ベースイメージのdigest固定（サプライチェーン対策）は [Docker Multi-Stage Runtime Strategy](docs/reference/docker.md) に記載しています。
 
 <br/>
