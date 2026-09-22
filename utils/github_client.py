@@ -175,6 +175,9 @@ class AsyncGitHubClient:
                 "User-Agent": self.user_agent,
             },
             limits=httpx.Limits(max_connections=self.max_connections),
+            # httpx 既定と同値だが、3xx を追従せず raise_for_status() で失敗させる契約を明示する
+            # （tests/unit/test_client_redirect_policy.py で固定。ADR-0007 参照）。
+            follow_redirects=False,
         )
         return self
 

@@ -61,6 +61,9 @@ class SyncAPIClient:
             timeout=self.timeout,
             headers=self.default_headers,
             limits=httpx.Limits(max_connections=settings.api.max_connections),
+            # SSRF 境界は base_url の allowlist 単層（ADR-0007）。リダイレクト追従で
+            # allowlist 外ホストへ到達しないよう httpx 既定と同値を明示して契約テストで固定する。
+            follow_redirects=False,
         )
 
         self.logger.info("api_client_initialized", base_url=self.base_url)
@@ -132,9 +135,11 @@ class SyncAPIClient:
             呼び出し元は APIClientError で捕捉すること。
 
         Note:
-            5xx / ネットワークエラーは、冪等メソッドでは設定回数までリトライする。
-            POST/PATCH/PUT 等の非冪等メソッドは既定で 1 回だけ実行し、サーバー側の
-            重複排除契約がある場合に限り ``retry_non_idempotent=True`` で再送を許可する。
+            5xx / ネットワークエラーは、``DEFAULT_RETRY_METHODS``（GET/HEAD/DELETE/
+            OPTIONS/TRACE）では設定回数までリトライする。POST/PATCH/PUT はこの集合に
+            含まれず既定で 1 回だけ実行し（PUT は HTTP 上は冪等でも除外。ADR-0006）、
+            サーバー側の重複排除契約がある場合に限り ``retry_non_idempotent=True`` で
+            再送を許可する。
 
         """
         # close 後の use-after-close を明示エラー化（AsyncAPIClient._request と同一パターン）。

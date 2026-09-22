@@ -53,6 +53,22 @@ link-local、metadata IP への通信防止を求めています。
    ポートを拒否しても内部ネットワークへの到達を防ぐ効果はなく、`(hostname, port)` 単位の
    allowlist は単層設計を崩す割に防御を増やさない。`base_url` が運用者以外の入力源から
    与えられる構成へ変わった場合は、本判断を再評価する。
+   （2026-09-22 追記）allowlist は `base_url` の検証時にだけ働くため、HTTP クライアントが
+   3xx を追従すると許可ホストから `Location` 先の任意ホストへ到達できる。この経路を閉じるため、
+   3 つの HTTP クライアント（`SyncAPIClient` / `AsyncAPIClient` / `AsyncGitHubClient`）は
+   `follow_redirects=False` を明示し、`tests/unit/test_client_redirect_policy.py` で実効値を
+   固定する。httpx の既定値と同値だが、httpx は 0.20.0 で `allow_redirects`（既定 `True`）を
+   `follow_redirects`（既定 `False`）へ変更した経緯があり、既定値への暗黙依存は境界の前提として
+   弱い。`AsyncGitHubClient` は SSRF 対象外だが、3xx を `raise_for_status()` で失敗させる
+   現行挙動を明示する目的で同じ値を固定する。`SyncAPIClient` / `AsyncAPIClient` の公開メソッド
+   （`get()` / `post()` / `put()` / `patch()` / `delete()`）は固定引数のみで `follow_redirects`
+   を受け付けないため、公開 API からの per-request opt-in 経路はない。opt-in できるのは非公開の
+   `_make_request_with_retry(**kwargs)` に直接渡す場合だけで、これは意図的に公開しない。
+   `AsyncGitHubClient` は `_request(method, endpoint, params)` に `**kwargs` がなく、opt-in
+   経路そのものがない。なお `SyncAPIClient` / `AsyncAPIClient` では 3xx は `is_client_error`
+   でないため 5xx と同じ再送対象に分類され、`retry_count` 回の再送後に `APIRetryError`
+   （原因 `APIHTTPError`）で終わる。追従しないことと再送されることは別の話で、後者は
+   ADR-0006 の再送ポリシーに従う。
 2. 設定読み込み時に DNS を解決しない。解決してから判定する設計は、解決と実際の接続の間に
    アドレスが変わる TOCTOU と DNS rebinding を招き、さらにテストの決定性を損なう。
 3. 上記に伴い、`PRIVATE_IP_RANGES` / `_check_ip_private()` / `_resolve_hostname_cached()` /
@@ -113,6 +129,7 @@ TOCTOU と DNS rebinding を新たに持ち込む。テストがネットワー�
 ## References
 
 - 実装: `config/settings.py`（`_validate_base_url_with_allowed_domains`、`ALLOWED_DOMAINS`）
-- 契約テスト: `tests/unit/test_config_settings.py`（`TestSSRFPrevention`）
+- 契約テスト: `tests/unit/test_config_settings.py`（`TestSSRFPrevention`）、
+  `tests/unit/test_client_redirect_policy.py`（リダイレクト非追従）
 - 要件: `REVIEW.md` §3「URL / SSRF Protection」
 - [OWASP: Server Side Request Forgery Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html)
