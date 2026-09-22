@@ -14,7 +14,7 @@ from utils.exceptions import (
     SuppressedReason,
 )
 from utils.http_helpers import (
-    IDEMPOTENT_METHODS,
+    DEFAULT_RETRY_METHODS,
     RetryPolicy,
 )
 from utils.http_helpers import (
@@ -81,8 +81,9 @@ def test_resolve_retry_policy_returns_safe_send_budget(
     assert policy == RetryPolicy(max_attempts, suppressed_reason)
 
 
-def test_idempotent_method_allowlist_is_immutable() -> None:
-    assert IDEMPOTENT_METHODS == frozenset({"GET", "HEAD", "DELETE", "OPTIONS", "TRACE"})
+def test_default_retry_method_allowlist_is_immutable() -> None:
+    """既定で再送するメソッド集合を固定する。PUT は HTTP 上は冪等でも含めない（ADR-0006）。"""
+    assert DEFAULT_RETRY_METHODS == frozenset({"GET", "HEAD", "DELETE", "OPTIONS", "TRACE"})
 
 
 def test_retry_suppression_suffix_is_empty_without_suppression() -> None:
