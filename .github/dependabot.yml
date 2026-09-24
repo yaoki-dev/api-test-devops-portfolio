@@ -3,7 +3,7 @@
 #
 # Design Decision (Git Flow + Enterprise Best Practice):
 # - Default branch is 'develop' (changed from 'main')
-# - All Dependabot PRs (version + security) target 'develop'
+# - Version-update PRs target 'develop'; security-update PRs target the repository default branch
 # - PRs require CI pass before auto-merge on develop
 # - main branch requires manual PR + review (release process)
 # - This prevents supply chain attacks from directly affecting production
@@ -15,6 +15,7 @@ updates:
   # Python dependencies (uv)
   - package-ecosystem: "uv"
     directory: "/"
+    target-branch: "develop"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -43,6 +44,7 @@ updates:
   # npm dependencies (for markdownlint, textlint, etc.)
   - package-ecosystem: "npm"
     directory: "/"
+    target-branch: "develop"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -68,6 +70,7 @@ updates:
   # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
+    target-branch: "develop"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -94,6 +97,7 @@ updates:
   # Docker base images (SHA256 digest auto-update)
   - package-ecosystem: "docker"
     directory: "/"
+    target-branch: "develop"
     schedule:
       interval: "weekly"
       day: "monday"
