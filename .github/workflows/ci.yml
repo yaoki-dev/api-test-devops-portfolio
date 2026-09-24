@@ -152,6 +152,25 @@ jobs:
           exit 1
 
   # ============================================================
+  # Main Forbidden-Path Policy
+  # Dormant until main becomes the repository default branch.
+  # ============================================================
+  main-forbidden-path-policy:
+    name: Main forbidden path policy
+    if: github.event_name == 'pull_request' && github.base_ref == 'main' && github.event.repository.default_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check forbidden paths
+        run: python scripts/check_main_forbidden_paths.py
+
+  # ============================================================
   # PR Trivy Scan
   # Triggers: pull_request (develop, main)
   # Strategy:
@@ -851,6 +870,7 @@ jobs:
     needs:
       [
         pr-validation,
+        main-forbidden-path-policy,
         pr-trivy-scan,
         pr-md-quality-check,
         post-validation,
@@ -883,6 +903,7 @@ jobs:
             echo ""
             echo "## Stage Results"
             echo "- PR Validation: ${{ needs.pr-validation.result }}"
+            echo "- Main Forbidden Path Policy: ${{ needs.main-forbidden-path-policy.result }}"
             echo "- PR Trivy Scan: ${{ needs.pr-trivy-scan.result }}"
             echo "- PR MD Quality Check: ${{ needs.pr-md-quality-check.result }}"
             echo "- Post Validation: ${{ needs.post-validation.result }}"
