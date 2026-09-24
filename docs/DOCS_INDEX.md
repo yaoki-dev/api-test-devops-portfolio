@@ -18,14 +18,6 @@
 | [REVIEW.md](../REVIEW.md) | AI・人間によるコードレビューの永続的な基準 |
 | [PROJECT_INDEX.md](../PROJECT_INDEX.md) | プロジェクト構成と主要エントリーポイントの索引 |
 
-## 🤖 Agents（エージェント運用）
-
-| ファイル | 説明 |
-|---------|------|
-| [domain.md](agents/domain.md) | ドメインドキュメントの配置方針 |
-| [issue-tracker.md](agents/issue-tracker.md) | GitHub Issues による課題管理 |
-| [triage-labels.md](agents/triage-labels.md) | トリアージラベル運用（4ラベル） |
-
 ## 🏛 ADR（アーキテクチャ決定記録）
 
 | ファイル | 説明 |

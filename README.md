@@ -314,6 +314,17 @@ uv run pytest -n auto -m "not external and not manual"  # CI/CD相当の自動�
 uv run pytest -m "manual or external"  # GitHub API統合テスト（週1回推奨、60 req/h制約）
 ```
 
+### 品質ゲート
+
+変更前後の品質を同じ条件で確認するため、次の順序で実行します。
+
+```bash
+uv run pytest -n auto -m "(unit or integration) and not external" \
+  --cov=utils --cov=config --cov=models --cov-report=term-missing && \
+uv run ruff check --no-fix . && \
+uv run mypy utils/ config/ models/ tests/conftest.py
+```
+
 ### Dockerでの実行（コンテナ環境）
 不変ランタイム（`runtime` ステージ）のポータビリティと、環境変数による挙動切り替え（Twelve-Factor App準拠）をローカルで検証します。
 
