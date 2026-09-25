@@ -24,10 +24,27 @@ class ForbiddenPath:
 
 
 def read_manifest(path: Path) -> tuple[ForbiddenPath, ...]:
-    """Parse and validate a tracked forbidden-path manifest."""
+    """Parse and validate a tracked forbidden-path manifest.
+
+    Blank lines and lines whose first non-whitespace character is ``#`` are
+    ignored. A trailing ``/`` marks a directory-prefix rule, which matches the
+    path itself and everything under it; any other entry matches only that
+    exact path.
+
+    Args:
+        path: Manifest file to read.
+
+    Returns:
+        Validated rules in manifest order.
+
+    Raises:
+        ManifestError: If the file cannot be read (``OSError``) or is not valid
+            UTF-8, an entry is not a safe relative POSIX path, a path appears
+            twice (with or without a trailing ``/``), or no rules remain.
+    """
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         raise ManifestError(f"cannot read manifest {path}: {exc}") from exc
 
     rules: list[ForbiddenPath] = []
@@ -58,7 +75,16 @@ def read_manifest(path: Path) -> tuple[ForbiddenPath, ...]:
 
 
 def find_violations(tracked_paths: Iterable[str], rules: Iterable[ForbiddenPath]) -> list[str]:
-    """Return tracked paths that match an exact or directory-prefix rule."""
+    """Return tracked paths that match an exact or directory-prefix rule.
+
+    Args:
+        tracked_paths: Repository-relative POSIX paths to check.
+        rules: Rules as returned by ``read_manifest``.
+
+    Returns:
+        Sorted paths that equal a rule's path or, for a directory-prefix rule,
+        lie under it.
+    """
     rule_list = tuple(rules)
     return sorted(
         path
@@ -86,7 +112,7 @@ def _git_root() -> Path:
             cwd=Path.cwd(),
             text=True,
         )
-    except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+    except (OSError, subprocess.CalledProcessError, UnicodeDecodeError) as exc:
         raise RuntimeError(f"cannot determine Git root: {exc}") from exc
     root = result.stdout.strip()
     if not root:
@@ -102,12 +128,28 @@ def _tracked_paths(repo_root: Path) -> tuple[str, ...]:
             capture_output=True,
             cwd=repo_root,
         )
-    except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+        listing = result.stdout.decode()
+    except (OSError, subprocess.CalledProcessError, UnicodeDecodeError) as exc:
         raise RuntimeError(f"cannot list tracked paths: {exc}") from exc
-    return tuple(path for path in result.stdout.decode().split("\0") if path)
+    return tuple(path for path in listing.split("\0") if path)
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Check the paths tracked at ``HEAD`` against the forbidden-path manifest.
+
+    Args:
+        argv: Command-line arguments; ``None`` uses ``sys.argv[1:]``.
+
+    Returns:
+        0 if no forbidden path is tracked, 1 if at least one is, and 2 if the
+        manifest cannot be read, is not valid UTF-8, or fails validation, or if
+        Git is missing, cannot be run, fails, or reports a path that is not
+        valid UTF-8.
+
+    Raises:
+        SystemExit: If argparse rejects the arguments (status 2) or ``--help``
+            is given (status 0).
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--manifest",
