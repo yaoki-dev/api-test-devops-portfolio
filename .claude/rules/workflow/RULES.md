@@ -21,7 +21,6 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
 - One task per subagent invocation; avoid multi-task delegation to maintain context focus; if a subagent reports failure or partial completion (any task where not all specified artifacts have reached their expected final state), stop and report to the user instead of silently continuing.
 - This applies to task delegation; reflexion retry logic in CLAUDE.md governs implementation quality checks.
 - Within a single agent turn, parallel *tool calls* (Read, Grep, Bash, Agent etc.) remain encouraged (see "Batch independent operations" above); this is distinct from delegating multiple unrelated tasks to a single subagent.
-- Session pattern: Load → Work → Checkpoint (30 min) → Save
 - **Parallel Dispatch Rule** (extension of "One task per subagent invocation" above — each agent still handles exactly one task): When 2+ independent task-list tasks exist, dispatch each as a separate Agent tool invocation, giving every agent a distinct `name` so it can be addressed later (parallel recommended)
   - Independence criteria (all must be satisfied):
     1. No output dependency between tasks (no A→B ordering constraint)
@@ -38,16 +37,7 @@ Practical rules for **api-test-devops-portfolio** project development with Claud
   - On failure: if **any** agent reports failure or partial completion, the parent agent must (1) decide whether to stop the remaining agents with `TaskStop` or let them finish, (2) collect and log agent statuses (success/failure/unknown), and (3) report full status summary to user before further action
   - Report ambiguous or empty results to the user before continuing
   - On completion: after all parallel agents complete, the parent agent verifies **artifact existence only** (content validation delegated). Mark parent task complete.
-  - Context refinement (the parent agent determines applicability before dispatch):
-    - If the task does not contain any concrete file paths already identified as in scope, or if applicability is ambiguous, include Skill(iterative-retrieval) in the agent prompt.
-    - If one or more concrete file paths are present, context refinement is optional. When skipping it, record `[SKIP: <reason>]`.
-    - A concrete file path means a path to an individual file with an extension. Glob patterns and directory paths do not qualify.
-    - iterative-retrieval runs a dispatch → evaluate → refine loop for a maximum of three cycles.
-    - An empty response, timeout, error, or investigation that stops before completion counts as a failed cycle, consumes one cycle, and does not reset the consecutive-failure counter. A failed cycle must not be used as the baseline for convergence comparison, but any useful information it produced may inform the next cycle.
-    - A new Agent invocation resets the cycle counter. However, the same task must not be restarted solely to bypass the cycle limit.
-    - Convergence criteria: The investigated file list is unchanged from the previous successful cycle, and no unresolved gaps remain regarding the impact scope.
-    - Stop when either three cycles have been consumed or two consecutive cycles have failed. Report to the parent agent: the number of cycles consumed, a summary of each cycle’s investigation, unresolved gaps, the fallback condition triggered, and the reason convergence was not achieved.
-    - The parent agent must report the result to the user and must not perform any subsequent work until the user provides explicit instructions.
+  - Context refinement: when the task names no concrete in-scope file (a path to a single file with an extension; globs and directories don't count), include Skill(iterative-retrieval) in the agent prompt; otherwise it is optional (record `[SKIP: <reason>]`). The agent runs at most three dispatch → evaluate → refine cycles and stops early after two consecutive failed cycles (empty response, timeout, error). It has converged when the investigated file list is unchanged from the previous successful cycle and no impact-scope gaps remain. If it stops without converging, it reports cycles used, a per-cycle summary, and the open gaps; the parent relays this to the user and waits for instructions.
 
 **Task Classification**: Before dispatching, classify the task type:
 - **Implementation** : code writing, feature development, bug fixes, test authoring
@@ -101,9 +91,9 @@ The harness's task-list tool remains the in-session UI.
 ---
 
 ## Category: Task Completion Self-Review
-**Trigger:** Task-list task completion | **Priority:** Important
+**Trigger:** All task-list tasks completed | **Priority:** Important
 
-**Production Phase:** Self-review after each task: `Skill(fable:fable-judge)` → `Skill(reflexion:reflect)`. Fix issues before proceeding.
+**Production Phase:** Self-review once all task-list tasks are done (CLAUDE.md Rule 11): `Skill(fable:fable-judge)` → `Skill(reflexion:reflect)`. Fix issues before proceeding.
 
 **Change Report (after verification + reflect):** End coding tasks with structured summary:
 - **Files changed**: full path list (every file touched, including renames/deletes)
@@ -146,7 +136,7 @@ The harness's task-list tool remains the in-session UI.
 ## Category: Scope Discipline
 **Trigger:** Ambiguous requirements, feature extensions | **Priority:** Important
 
-Count distinct user-facing features (implementation details are sub-items); add 2 for an architecture change and 1 each for an external integration, a security concern, or a performance concern. Up to 3: build all requested. 4 or more: AskUserQuestion for priority. 8 or more: split into incremental phases.
+Build everything requested when it is a handful of user-facing features. When a request spans many independent features, or adds an architecture change, an external integration, or security/performance work on top of several features, confirm priority with AskUserQuestion first; split very large requests into incremental phases.
 
 **YAGNI Checklist:** Solving stated problem? Addable later? Concrete evidence of need? → If any "No", don't build.
 
@@ -215,7 +205,7 @@ Count distinct user-facing features (implementation details are sub-items); add 
 **Trigger:** Session start, before changes | **Priority:** Critical
 
 - Always check `git status` and branch first
-- Feature branches only; never commit to main
+- Feature branches only; never commit to main/develop directly (CLAUDE.md Rule 8)
 - Commit before high-risk ops; maintain clean history
 
 ---

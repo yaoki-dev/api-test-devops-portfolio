@@ -5,31 +5,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 *最終更新: 2026-07-30*
 
 <!-- preserve-on-compact: CRITICAL RULES -->
-<!-- IMPORTANT: These rules override all other instructions -->
-## 🔴 CRITICAL RULES (MUST FOLLOW - 16項目)
+## CRITICAL RULES（16項目）
 
-**YOU MUST** follow these rules. Violations are NOT acceptable.
+このリポジトリで常に適用する規約。詳細手続きと理由は各参照先にある。
 
-1. **ALWAYS** respond in `Japanese` for all outputs, including skill usage
-2. **ALWAYS** create a task list before starting any work, using the harness's task-list tool (`TodoWrite`, or `TaskCreate`/`TaskList`/`TaskUpdate` where TodoWrite is not granted) (exception: obvious single-step trivial tasks; RULES.md Workflow Rules "task list (3+ tasks)" qualifier)
-3. **ALWAYS** use the AskUserQuestion tool to propose 2-3 alternative approaches and wait for user confirmation before executing any major tasks or structural changes (exception: explicit slash command invocation (e.g., `/commit`, `/push-pr`), subagent execution context — parent agent owns the AskUserQuestion call, user-directed single-line trivial fix)
-4. **NEVER** use `git commit` → **ALWAYS** use `Skill(commit)`
-5. **NEVER** use `gh pr create` → **ALWAYS** use `Skill(push-pr)`
-6. **NEVER** use `gh issue create` → **ALWAYS** use `Skill(create-issue)`
-7. **ALWAYS** pass quality gates before commit → @memory:implementation_quality_gates
-8. **NEVER** push to protected branches (main/develop) directly
-9. **ALWAYS** invoke skills via Skill(skill-name) notation when user requests
-10. **ALWAYS** follow development workflow order → Section「🔄 開発ワークフロー」
-11. **ALWAYS** after completing all tasks in the task list, Use Skill tool to run `Skill(fable:fable-judge)` → then `Skill(reflexion:reflect)`
-12. **ALWAYS** when using Fable model → invoke `Skill(efficient-fable)`
-13. **ALWAYS** verify file content with Read/Grep tool BEFORE making any claim about line numbers, file structure, or code content
-14. **ALWAYS** enforce worktree boundary: セッション開始時に `git rev-parse --show-toplevel` でWORKTREE_ROOTを確認し、WORKTREE_ROOT外ファイルの自律的編集を禁止する（`~/.claude/tasks/` は例外）
+1. Respond in `Japanese` for all outputs, including skill usage
+2. Create a task list before starting any work, using the harness's task-list tool (`TodoWrite`, or `TaskCreate`/`TaskList`/`TaskUpdate` where TodoWrite is not granted) (exception: obvious single-step trivial tasks; RULES.md Workflow Rules "task list (3+ tasks)" qualifier)
+3. Use the AskUserQuestion tool to propose 2-3 alternative approaches and wait for user confirmation before executing any major tasks or structural changes (exception: explicit slash command invocation (e.g., `/commit`, `/push-pr`), subagent execution context — parent agent owns the AskUserQuestion call, user-directed single-line trivial fix)
+4. Commit via `Skill(commit)`, not `git commit` — the skill runs the quality gates and enforces the Japanese Conventional Commits format
+5. Create PRs via `Skill(push-pr)`, not `gh pr create` — the skill links the Issue and builds the structured PR body
+6. Create issues via `Skill(create-issue)`, not `gh issue create` — the skill applies the project's issue templates
+7. Pass quality gates before commit → @memory:implementation_quality_gates
+8. Do not push directly to protected branches (main/develop)
+9. Invoke skills via Skill(skill-name) notation when the user requests them
+10. Follow the development workflow order → Section「🔄 開発ワークフロー」
+11. After completing all tasks in the task list, run `Skill(fable:fable-judge)` → then `Skill(reflexion:reflect)`
+12. When running as a Fable model, invoke `Skill(efficient-fable)`
+13. Verify file content with Read/Grep before making any claim about line numbers, file structure, or code content
+14. Enforce the worktree boundary: セッション開始時に `git rev-parse --show-toplevel` でWORKTREE_ROOTを確認し、WORKTREE_ROOT外ファイルの自律的編集を禁止する（`~/.claude/tasks/` は例外）
     → 詳細手続き（worktree list検証、compact後再検証、mismatch報告等）: `.claude/rules/workflow/RULES.md` Section「Category: Worktree Boundary Enforcement」
-15. **ALWAYS** manage `~/.claude/lessons/lessons.md`:
+15. Manage `~/.claude/lessons/lessons.md`:
     a) セッション開始時に読み込み、現プロジェクトのlessonsを確認（ENOENT: 無視して続行）
     b) ユーザーからの修正フィードバック時に即時追記（Edit tool使用、Write禁止。フォーマット: `## [YYYY-MM-DD] [project-name] - Category`）
     → 詳細手続き（エラーハンドリング、closed-list確認、ソース制約等）: `.claude/rules/workflow/RULES.md` Section「Category: Lessons Management」
-16. **ALWAYS** fix bugs autonomously (no hand-holding) when scope is within:
+16. Fix bugs autonomously (no hand-holding) when scope is within:
     - ⛔ 例外（本ルール不適用）: ユーザーの依頼の**主目的**が判断・評価・分析・レビューの場合。修正指示を明示的に含む依頼（例:「分析して修正して」）は主目的が実装であり対象外。該当判定はユーザーの文言に基づき、エージェントの自己申告で拡大解釈しない
       → `.claude/rules/workflow/RULES.md` Section「Category: Analysis-Only Request Boundary」
     - ❌ Absolutely prohibited (no autonomous modification): `pyproject.toml`, `*.yml`/`*.yaml`/`.env*`, `config/`, `tests/conftest.py`, `tests/**/conftest.py`, `tests/**/__init__.py`, `tests/**/helpers.py`, `utils/__init__.py`, `utils/logger.py`, `utils/sentry_init.py`, git ops / infra config
@@ -129,23 +128,20 @@ SECURITY__API_KEY=your-secret-key
 <!-- preserve-on-compact: Development Workflow -->
 ## 🔄 開発ワークフロー（標準コマンド実行順序）
 
-**CRITICAL**: `git commit`や`gh pr create`等の生コマンドは使用禁止。
-
 ```
 【準備フェーズ】
 0. 大規模タスク（複数セッション）: `.claude/rules/workflow/RULES.md` 「Task Management (Persistent Layer)」参照
-1. 固定Worktreeでブランチ作成 → /git:feature（常時※1）
+1. 固定Worktreeでブランチ作成 → `/git-flow-branch-creator`（常時※1）
+   → 命名: `feature/issue#<N>-<slug>` / `hotfix/issue#<N>-<slug>`（Issue なしは `issue#<N>-` を省く。Skill(push-pr) が `issue#N` で Issue を自動リンクする）
+   → 起点: `git fetch origin` 後の `origin/develop`（hotfix は `origin/main`）
    → 固定WT: ${HOME}/projects/python/.worktrees/wt-feature0[1-3]（個人環境ごとにカスタマイズ）
    → 計画ファイル作成が必要な場合: claudedocs/plans/ に作成（閾値詳細: .claude/rules/workflow/PLANS.md §使用閾値）
 
 【実装フェーズ】
 2. コード変更 → security-guidance (hook自動)
 3. 品質ゲート → pytest + ruff + mypy 全合格（※2）
-   → For non-trivial changes, ask: "Is there a more elegant implementation?"
-   → If it feels hacky, ask: "Given what I know now, what's the most elegant approach?"
-   → Skip for obvious single-line fixes
 4. 作業完了確認 → `Skill(fable:fable-judge)` を実行
-5. reflect(タスクごとに実施) → `Skill(reflexion:reflect)` を実行
+5. reflect(task list の全タスク完了後に1回。CRITICAL RULES 11) → `Skill(reflexion:reflect)` を実行
    引数: deep reflect if less than 90% confidence. 日本語で簡潔に回答
    自動ループ:
     - 信頼度90%未満: 改善して再実行（各反復で信頼度と改善理由を簡潔に示す）/ 90%以上 → 終了 - 最大3回まで
@@ -157,8 +153,8 @@ SECURITY__API_KEY=your-secret-key
 【PUSH/PR/マージフェーズ】
 9. PR作成     → Skill(push-pr)【gh pr create禁止】
 10. レビュー対応 → 修正 → 品質ゲート →  `Skill(fable:fable-judge)` を実行 →  `Skill(reflexion:reflect)` を実行 → `Skill(code-review medium)`を実行 → `Skill(judgment-day)`を実行（重要変更の場合） → Skill(commit) → push
-11. マージ実行  → マージ戦略【※3参照】
-12. クリーンアップ → `git fetch --prune origin` + `/git:clean-gone`（worktree: 固定運用のため削除しない）
+11. マージ実行  → feature→develop: `gh pr merge --squash --delete-branch` / develop→main・hotfix→main: `gh pr merge --merge`（実行前に RULES.md「Irreversible Action Confirmation」の承認を取る）
+12. クリーンアップ → `git fetch --prune origin` + `[gone]` ローカルブランチ削除（ブランチ削除も同承認の対象。worktree: 固定運用のため削除しない）
 ```
 
 <!-- preserve-on-compact: Quality Gates -->

@@ -53,15 +53,13 @@ APItest + Docker + CI/CDプロジェクト（6週プラン）における作業�
 **🔴 MUST（作業開始時に必読）**:
 - `coding_standards`（→`.claude/rules/python/coding-standards.md`参照） - コーディングルール違反防止（命名規則、型ヒント、テスト規約）
 - `implementation_quality_gates` - 4ゲート品質基準確認（pytest, ruff, mypy, git）
-- `project_architecture` - アーキテクチャ原則遵守（設計パターン、SOLID原則）
+- `project_architecture` - アーキテクチャ原則遵守（設計パターン）
 
 **🟡 SHOULD（条件付き）**:
 - `project_file_structure` - ファイル配置ルール確認（新規ファイル作成時）
-- `ai_collaboration_workflow` - Phase 2協働実装ガイド（学習期間Week 1-7）
 
 **⚪ MAY（任意）**:
-- `workflow_playbooks_guide` - WF-04新規APIエンドポイント実装（API作成時）
-- `command_usage_guide` - ツール選択ガイド（実装コマンド選択時）
+- `command_usage_guide` - ast-grep / mgrep 使用ガイド（構造検索ツール選択時）
 
 **条件付き読み込みルール**:
 ```
@@ -83,9 +81,6 @@ pytest失敗時 → @memory:implementation_quality_gates Section 1（Gate 1詳�
 - `test_strategy_details` - カバレッジ不足時（58% → 85%戦略、CIセキュリティチェック）
 - `coding_standards`（→`.claude/rules/python/coding-standards.md`参照） - テスト規約確認（フィクスチャ、モック規約）
 
-**⚪ MAY（任意）**:
-- `ai_collaboration_workflow` - Phase 2テスト作成ガイド（学習期間）
-
 **条件付き読み込みルール**:
 ```
 カバレッジ<目標値 → @memory:test_strategy_details Section 3（カバレッジ戦略）
@@ -104,16 +99,11 @@ pytest並列実行エラー → @memory:test_strategy_details Section 4（トラ
 **🟡 SHOULD（条件付き）**:
 - `project_file_structure` - Docker関連ファイル配置（ディレクトリ構造）
 - `implementation_quality_gates` - 品質検証基準（Docker imageスキャン）
-- `workflow_playbooks_guide` - WF-03 DevOps戦略、WF-05コンテナ化
 
-**⚪ MAY（任意）**:
-- `command_usage_guide` - Docker/CI/CDコマンド選択
-- `ai_collaboration_workflow` - Phase 2 Docker学習ガイド
 
 **条件付き読み込みルール**:
 ```
 Docker構築エラー → @memory:project_architecture（Dockerfileパターン確認）
-CI/CD設計時 → @memory:workflow_playbooks_guide Section 3（WF-03, WF-05）
 セキュリティスキャン → @memory:test_strategy_details Section 4（CIセキュリティチェック）
 ```
 
@@ -125,7 +115,7 @@ CI/CD設計時 → @memory:workflow_playbooks_guide Section 3（WF-03, WF-05）
 
 **🟡 SHOULD（条件付き）**:
 - `project_file_structure` - プロジェクト構造理解（全体把握）
-- `project_architecture` - アーキテクチャメトリクス基準（SOLID準拠率85%）
+- `project_architecture` - 主要指標の確認方法（Key Metrics: カバレッジ・テスト数・行数の実測コマンド）
 - `test_strategy_details` - テストカバレッジ基準（目標85%）
 - `implementation_quality_gates` - 品質ゲート基準（4ゲート詳細）
 
@@ -147,20 +137,10 @@ CI/CD設計時 → @memory:workflow_playbooks_guide Section 3（WF-03, WF-05）
 **🔴 MUST**: なし（要件定義・設計は条件付き）
 
 **🟡 SHOULD（条件付き）**:
-- `workflow_playbooks_guide` - WF-01曖昧アイデア具体化、WF-02アーキテクチャ設計
-- `ai_collaboration_workflow` - Phase 1概念理解ガイド
 - `project_architecture` - 既存設計パターン理解（Design時）
 
 **⚪ MAY（任意）**:
 - `project_file_structure` - プロジェクト構造参考
-- `command_usage_guide` - ブレインストーミングコマンド
-
-**条件付き読み込みルール**:
-```
-要件定義開始時 → @memory:workflow_playbooks_guide Section 2（WF-01）
-アーキテクチャ設計時 → @memory:workflow_playbooks_guide Section 2（WF-02）
-新技術学習時 → @memory:ai_collaboration_workflow Phase 1
-```
 
 ---
 
@@ -172,14 +152,10 @@ CI/CD設計時 → @memory:workflow_playbooks_guide Section 3（WF-03, WF-05）
 - `project_file_structure` - ドキュメント配置ルール
 - `coding_standards`（→`.claude/rules/python/coding-standards.md`参照） - ドキュメント規約（最終更新日記載等）
 
-**⚪ MAY（任意）**:
-- `workflow_playbooks_guide` - WF-13 API文書化
-- `command_usage_guide` - ドキュメント更新コマンド
 
 **条件付き読み込みルール**:
 ```
 README更新時 → @memory:project_file_structure
-API文書作成時 → @memory:workflow_playbooks_guide Section 7（WF-13）
 ```
 
 ---
@@ -235,9 +211,6 @@ API文書作成時 → @memory:workflow_playbooks_guide Section 7（WF-13）
 | **セキュリティ警告** | test_strategy_details | Section 4 | CIセキュリティチェック（bandit/gitleaks/Dependabot） |
 | **品質ゲート不合格** | implementation_quality_gates | 該当ゲート | Gate 2（ruff）、Gate 3（mypy）詳細 |
 | **並列テストエラー** | test_strategy_details | Section 4 | トラブルシューティング |
-| **CI/CD設計** | workflow_playbooks_guide | Section 3 | WF-03 DevOps戦略、WF-08本番障害 |
-| **要件定義開始** | workflow_playbooks_guide | Section 2 | WF-01曖昧アイデア具体化 |
-| **アーキテクチャ設計** | workflow_playbooks_guide | Section 2 | WF-02システム設計 |
 
 ---
 
@@ -416,5 +389,4 @@ Read("test_strategy_details.md", offset=100, limit=50)  # Section 5のみ
 
 - **CLAUDE.md**: クイックリファレンス、登録済みメモリ一覧
 - **@memory:project_file_structure**: Serenaメモリの物理配置
-- **@memory:command_usage_guide**: コマンド選択ガイド
-- **@memory:workflow_playbooks_guide**: ワークフロー実行手順
+- **@memory:command_usage_guide**: ast-grep / mgrep 使用ガイド

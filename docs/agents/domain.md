@@ -16,7 +16,7 @@ repo-root/
 
 ## Consumer Rules
 
-### For skills reading CONTEXT.md (`improve-codebase-architecture`, `diagnose`, `tdd`)
+### For skills reading CONTEXT.md (`improve-codebase-architecture`, `diagnosing-bugs`, `tdd`)
 
 1. **Read `CONTEXT.md` at repo root** — single source of truth for domain language
 2. **Check `docs/adr/` for architectural decisions** — if directory exists, read all ADRs

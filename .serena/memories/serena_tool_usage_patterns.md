@@ -41,36 +41,7 @@
 
 ---
 
-## 2. 思考支援ツール（3つのチェックポイント）
-
-### 2.1 発動タイミング
-
-| タイミング | ツール | 目的 | 発動条件 |
-|-----------|--------|------|---------|
-| 情報収集後 | `think_about_collected_information` | 情報充足度評価 | Grep/Read 3回以上実行後 |
-| 実装前 | `think_about_task_adherence` | タスク遂行確認 | Edit/Write実行前 |
-| 完了時 | `think_about_whether_you_are_done` | 完了判定 | 「完了」発言時 |
-
-### 2.2 各ツールの確認内容
-
-**think_about_collected_information**:
-- 情報は十分か？
-- 不足情報は何か？
-- どう取得するか？
-
-**think_about_task_adherence**:
-- タスクから逸脱していないか？
-- メモリを読んだか？
-- コード規約に沿っているか？
-
-**think_about_whether_you_are_done**:
-- 全ステップ完了か？
-- テスト実行したか？
-- ドキュメント更新したか？
-
----
-
-## 3. 統合ワークフロー
+## 2. 統合ワークフロー
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -80,24 +51,18 @@
 │  find_symbol(name, depth=1)                                 │
 │       ↓                                                     │
 │  find_symbol(name, include_body=True)                       │
-│       ↓                                                     │
-│  ✅ think_about_collected_information                       │
 ├─────────────────────────────────────────────────────────────┤
 │ [実装フェーズ]                                              │
-│  ✅ think_about_task_adherence                              │
-│       ↓                                                     │
-│  Edit/Write/MultiEdit                                       │
+│  Edit/Write（同一変更の繰り返しは replace_all）              │
 ├─────────────────────────────────────────────────────────────┤
 │ [完了フェーズ]                                              │
-│  ✅ think_about_whether_you_are_done                        │
-│       ↓                                                     │
-│  pytest/ruff/mypy → git commit                              │
+│  pytest/ruff/mypy → Skill(commit)                            │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 4. 使用例
+## 3. 使用例
 
 ### 例1: 新規ファイル理解
 
@@ -114,10 +79,6 @@ serena find_symbol "AsyncAPIClient" relative_path="utils/" depth=1
 # Step 3: 必要メソッドのみ
 serena find_symbol "AsyncAPIClient/_make_request_with_retry" include_body=True
 # → 132行のコード本体を取得
-
-# Step 4: 情報充足確認
-serena think_about_collected_information
-# → "情報は十分か？不足は何か？"
 ```
 
 ### 例2: リファクタリング時
@@ -126,14 +87,6 @@ serena think_about_collected_information
 # 影響分析
 serena find_referencing_symbols "AsyncAPIClient" relative_path="."
 # → 参照元一覧を取得
-
-# 実装前確認
-serena think_about_task_adherence
-# → "スコープ逸脱していないか？"
-
-# 完了確認
-serena think_about_whether_you_are_done
-# → "テスト実行したか？"
 ```
 
 ---

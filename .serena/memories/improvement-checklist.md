@@ -1086,11 +1086,11 @@ fi
 | ドキュメント | 用途 | アクセスパス |
 |------------|------|------------|
 | **improvement-kpi-definition.md** | KPI定義・測定手順 | `.claude/rules/workflow/improvement-kpi-definition.md`（未作成 — Task #19予定） |
-| **api-specification-check.md** | API仕様確認プロセス | `.claude/rules/workflow/api-specification-check.md` |
-| **execution-efficiency.md** | 実行効率化ワークフロー | `.claude/rules/workflow/execution-efficiency.md` |
-| **requirement-clarification.md** | 要求定義明確化プロセス | `.claude/rules/workflow/requirement-clarification.md` |
+| **api-specification-check.md** | API仕様確認プロセス | `.serena/memories/api-specification-check.md` |
+| **execution-efficiency.md** | 実行効率化ワークフロー | `.serena/memories/execution-efficiency.md` |
+| **requirement-clarification.md** | 要求定義明確化プロセス | `.claude/rules/workflow/requirement-clarification.md`（未作成） |
 | **quality-gates.md** | 品質ゲート基準 | `.claude/rules/testing/quality-gates.md` |
-| **daily_progress.md** | 日次進捗記録 | `docs/progress/daily_progress.md` |
+| **daily_progress.md** | 日次進捗記録 | `docs/progress/daily_progress.md`（未作成） |
 
 ### 関連タスク
 

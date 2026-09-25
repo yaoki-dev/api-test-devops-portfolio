@@ -14,12 +14,10 @@ APIテスト + DevOps統合ポートフォリオ（Python 3.14 / httpx / pytest 
 
 ## Session Start
 
-セッション開始時は **`.claude/CLAUDE.md`** を最初に読む（CRITICAL RULES 16項目 + 品質ゲート + 開発ワークフローを含む）。
+詳細ルールは **`.claude/CLAUDE.md`**（セッション開始時に自動ロード。CRITICAL RULES 16項目 + 品質ゲート + 開発ワークフロー）。
 
 **⚠️ 自動ロード禁止（.claudeignore で除外済み）**:
-- `.claude/skill-report/` — 173MB（Skill監査レポート）
-- `.claude/completions/`, `.claude/sessions/` — 履歴データ
-- `.serena/`（`.serena/memories/` を除く）, `.memory_mcp/`, `.taskmaster/`
+- `.serena/`（`.serena/memories/` を除く）
 - `reports/`, `claudedocs/`, `node_modules/`, `.venv/`
 
 ---
@@ -35,7 +33,7 @@ APIテスト + DevOps統合ポートフォリオ（Python 3.14 / httpx / pytest 
 | リソース | 内容 |
 |---------|------|
 | `.claude/CLAUDE.md` | CRITICAL RULES + 開発フロー（単一真実源） |
-| `.claude/rules/` | 詳細ルール（必要時のみ参照） |
+| `.claude/rules/` | 詳細ルール（`workflow/RULES.md`・`principles/PRINCIPLES.md` は常時ロード、他は `paths:` 一致時にロード） |
 | `.serena/memories/` | Serenaメモリ（自動参照） |
 | `~/.claude/lessons/lessons.md` | バグパターン・教訓（全プロジェクト横断） |
 
