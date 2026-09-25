@@ -8,7 +8,7 @@
 
 ### CI/CD パイプライン構成（トリガー別）
 
-13 ジョブを 1 枚に収めるとトリガー分類と `needs` 依存が同一平面に混在し可読性が落ちるため、トリガー単位で 3 つの DAG に分割している。
+14 ジョブを 1 枚に収めるとトリガー分類と `needs` 依存が同一平面に混在し可読性が落ちるため、トリガー単位で 3 つの DAG に分割している。
 
 #### 1. `pull_request`（main / develop 宛）
 
@@ -28,6 +28,9 @@ flowchart TD
     T --> PMQ["<h4>pr-md-quality-check</h4><u>markdownlint · textlint<br/>Markdown quality gate</u>
     <br/>"]
 
+    T --> MFP["<h4>main-forbidden-path-policy</h4><u>main PR + default main only<br/>cutover path invariant</u>
+    <br/>"]
+
     T --> PS["<h4>pr-trivy-scan</h4><u>filesystem SARIF · image: main/docker<br/>CRITICAL / HIGH gate</u>
     <br/>"]
 
@@ -42,7 +45,7 @@ flowchart TD
     classDef job fill:#FFFDF7,stroke:#111,stroke-width:2px,color:#111;
 
     class T trigger;
-    class PV,PMQ,PS,CT,CH job;
+    class PV,PMQ,MFP,PS,CT,CH job;
 ```
 
 #### 2. `push`（main / develop）と Continuous Delivery
@@ -123,12 +126,13 @@ flowchart TD
 - 縦位置は依存の深さを表すが、同一トリガーで起動するジョブは GitHub Actions により並列実行される。たとえば `post-trivy-scan` は `compose-test` の完了を待たず push 直後に起動する
 - `compose-test` と `compose-healthcheck` は `pull_request` と `push` の両方をトリガーとするため、図 1 と図 2 の双方に登場する（同一ジョブ）
 - 緑 = main への push 限定で実行される CD ジョブ、青 = `schedule` 限定ジョブ。配色は [README](../../README.md) のアーキテクチャ図と共通パレット
-- 全ジョブ結果を集約する `status-report` は 3 図すべてに関わるため図からは省略した。実体は `needs: [12 ジョブ全て]` / `if: "!cancelled()"` / Timeout 5分
+- 全ジョブ結果を集約する `status-report` は 3 図すべてに関わるため図からは省略した。実体は `needs: [13 ジョブ全て]` / `if: "!cancelled()"` / Timeout 5分
 
 | Stage | トリガー | 実行内容 | Timeout |
 |-------|---------|---------|---------|
 | **pr-validation** | `pull_request` | lockfile 検証 + zizmor High ゲート + ruff + mypy + (Unit + Integration + Smoke) Tests | 20分 |
 | **pr-md-quality-check** | `pull_request` | markdownlint + textlint | 5分 |
+| **main-forbidden-path-policy** | `pull_request` to `main`、`main` が default branch の場合のみ | cutover 禁止パスの tracked tree 検査 | 5分 |
 | **pr-trivy-scan** | `pull_request` | Trivy scan（Filesystem は常時）+ Docker Build と Image scan（main 宛 PR または `docker` ラベル時のみ） | 20分 |
 | **compose-test** | `pull_request` / `push to develop/main` | Compose test profile（pytest + coverage）+ coverage badge 生成 | 15分 |
 | **compose-healthcheck** | 同上（`needs: compose-test`） | `docker compose up --wait` + `docker inspect` によるヘルス確認 | 15分 |
@@ -184,6 +188,8 @@ pr-trivy-scan:
 ```
 
 > **branch protection 注意**: reusable workflow の check 名は `<呼び出し側ジョブ名> / <呼び出され側ジョブ名>` になります。本実装では `PR Trivy scan / Trivy scan` です。required status check には呼び出し側ジョブ名（`PR Trivy scan`）単体では登録できません。
+>
+> **cutover required check**: `Main forbidden path policy` は、このジョブを含む変更が `main` にマージされた後で、`main` の required checks へ登録します。`main` が default branch になるまで、ジョブは条件判定で skipped となります。条件で skipped となったジョブは Success 扱いのため、登録してもマージを止めません（GitHub Docs）。検査が効き始めるのは default branch を `main` へ切り替えた時点からです。`main` にジョブが入る前に登録すると、ジョブを含まない `main` 宛 PR では check が報告されず Pending のまま止まります。
 
 **Composite Action（3層検証ロジックの共通化）**:
 

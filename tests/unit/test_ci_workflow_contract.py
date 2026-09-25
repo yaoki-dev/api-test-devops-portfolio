@@ -85,6 +85,7 @@ def test_status_report_summary_and_pr_coverage_contract(
     workflow_data: dict[str, Any],
 ) -> None:
     assert "pr-validation" in workflow_data["jobs"]["status-report"]["needs"]
+    assert "main-forbidden-path-policy" in workflow_data["jobs"]["status-report"]["needs"]
 
     steps = workflow_data["jobs"]["status-report"]["steps"]
     summary_step = next(
@@ -95,12 +96,30 @@ def test_status_report_summary_and_pr_coverage_contract(
     assert summary_step["if"] == "always()"
     assert summary_step["env"]["EVENT_NAME"] == "${{ github.event_name }}"
     assert 'cat status_report.md >> "$GITHUB_STEP_SUMMARY"' in run
+    report_step = next(step for step in steps if step.get("name") == "Generate status report")
+    report = report_step["run"]
+    assert "Main Forbidden Path Policy: ${{ needs.main-forbidden-path-policy.result }}" in report
     assert 'coverage_file="artifacts/pr-validation-results-py3.14/coverage.json"' in run
     assert 'if [ "$EVENT_NAME" = "pull_request" ] && [ -f "$coverage_file" ]; then' in run
     assert (
         run.count('echo "Coverage: n/a (not generated for this trigger)" >> "$GITHUB_STEP_SUMMARY"')
         == 2
     )
+
+
+def test_main_forbidden_path_policy_is_dormant_until_main_cutover(
+    workflow_data: dict[str, Any],
+) -> None:
+    job = workflow_data["jobs"]["main-forbidden-path-policy"]
+
+    assert job["name"] == "Main forbidden path policy"
+    assert (
+        job["if"] == "github.event_name == 'pull_request' && github.base_ref == 'main' && "
+        "github.event.repository.default_branch == 'main'"
+    )
+    assert "needs" not in job
+    run_steps = [step for step in job["steps"] if "run" in step]
+    assert any(step["run"] == "python scripts/check_main_forbidden_paths.py" for step in run_steps)
 
 
 def test_ruff_workflow_steps_are_check_only(workflow_data: dict[str, Any]) -> None:
