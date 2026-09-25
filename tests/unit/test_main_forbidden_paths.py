@@ -56,7 +56,8 @@ _REFERENCE_ALLOWLIST = frozenset(
         "tests/unit/test_main_forbidden_paths.py",
     }
 )
-_MARKDOWN_LINK = re.compile(r"\]\(([^)\s#]+)")
+# インラインリンク `](x)` と参照形式の定義 `[id]: x` の両方からリンク先を取り出す。
+_MARKDOWN_LINK = re.compile(r"(?:\]\(|^\s*\[[^\]]*\]:\s*)<?([^)\s#>]+)")
 
 
 def _linked_paths(name: str, line: str) -> list[str]:
