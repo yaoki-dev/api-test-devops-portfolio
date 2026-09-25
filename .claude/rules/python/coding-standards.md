@@ -248,7 +248,11 @@ logger.info("処理開始", user_id=123)  # 構造化ログ
 コード実装 → ruff → mypy → pytest → git commit
 ```
 
-CI/CD: ruff + mypy + pytest + zizmor + Trivy + Dependabot（bandit 相当は ruff の `S` ルール、gitleaks は pre-commit のローカルフックのみ）
+CI/CD: ruff + mypy + pytest + zizmor + Trivy + Dependabot
+
+- bandit 相当は ruff の `S` ルール（10章の `uv run bandit` はローカルでの手動検証）
+- secret 検出: ローカルは gitleaks の pre-commit フック（`--staged` でステージ済み差分のみ）、CI は PR ごとの Trivy fs スキャン（`scanners: vuln,secret`）
+- `autoupdate-precommit` workflow でも gitleaks フックは起動するが、ステージ済み差分がないため実質的な走査対象はない
 
 ---
 

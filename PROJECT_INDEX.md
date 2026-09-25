@@ -235,14 +235,20 @@ open reports/htmlcov/index.html
 # 3. 実装 + 品質ゲート
 # （コード変更後）.claude/CLAUDE.md「品質ゲート」→「統合コマンド」を実行
 
-# 4. 自己改善
+# 4. 作業完了確認
+/fable:fable-judge
+
+# 5. 自己改善
 /reflexion:reflect
 
-# 5. コミット（日本語PR対応）
+# 6. コミット前レビュー
+/code-review medium
+
+# 7. コミット（日本語PR対応）
 /commit
 
-# 6. PR作成
-/commit-push-pr
+# 8. PR作成
+/push-pr
 ```
 
 ---
