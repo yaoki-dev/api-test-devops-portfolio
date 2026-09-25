@@ -19,16 +19,20 @@
 
 ## 1. 導入背景
 
-### 1.1 発生した問題
+### 1.1 このルールの理由
 
-**事例**: TokenBudgetChecker API使用時のKeyError連鎖
-- **試行回数**: 3回の試行錯誤
-- **エラー内容**:
-  - `KeyError: 'phase_overhead'` (試行1)
-  - `KeyError: 'decision'` (試行2)
-  - `KeyError: 'recommendation'` (試行3)
-- **根本原因**: API返り値構造を仮定に基づいて実装（Read実施なし）
-- **影響**: 開発時間の浪費、コード品質低下（信頼度3.60/5.0）
+未知APIの返り値構造を仮定に基づいて実装すると、存在しないキーを参照して `KeyError` になる。
+根本原因は「Read実施なし」——API実装のソースコードを読まずにキー名を推測することにある。
+
+**例示**（架空のAPIでの失敗パターン）:
+```python
+# ✅ 正: Read で確認した実際のキーを使う
+result = checker.analyze(phase="planning")
+print(result["phase"])          # OK
+
+# ❌ 誤: 存在を確認せずキーを推測する
+print(result["phase_overhead"])  # KeyError
+```
 
 ### 1.2 このドキュメントの目的
 
@@ -617,7 +621,7 @@ total = count * 2  # 型安全
 .claude/rules/python/coding-standards.md  # 型ヒント、docstring規約
 
 # 基本原則
-.claude/rules/principles/PRINCIPLES.md  # Evidence-Based Reasoning
+.claude/rules/principles/PRINCIPLES.md  # Uncertainty Disclosure
 ```
 
 ### 参照推奨フロー

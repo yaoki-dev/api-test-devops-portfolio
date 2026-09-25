@@ -1,0 +1,16 @@
+# Paths removed from main during the release cutover.
+# Keep this manifest tracked; the validation job itself is not a forbidden path.
+.claude/
+.claude-plugin/
+.cortexkit/
+.devcontainer/
+.serena/
+docs/agents/
+.cgcignore
+.claudeignore
+.mcp.json
+.ignore
+AGENTS.md
+CLAUDE.md
+CONTEXT.md
+api-test-devops-portfolio.code-workspace

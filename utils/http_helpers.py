@@ -42,7 +42,7 @@ def validate_optional_int(
         raise ValueError(f"{name} must be <= {max_value}")
 
 
-IDEMPOTENT_METHODS: frozenset[str] = frozenset({"GET", "HEAD", "DELETE", "OPTIONS", "TRACE"})
+DEFAULT_RETRY_METHODS: frozenset[str] = frozenset({"GET", "HEAD", "DELETE", "OPTIONS", "TRACE"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,8 +61,9 @@ def resolve_retry_policy(
 ) -> RetryPolicy:
     """HTTPメソッドと設定から安全な送信予算を解決する。
 
-    非冪等メソッドは、呼び出し側がサーバー側の重複排除契約を確認した場合だけ
-    per-call opt-in で再送できる。未知のメソッドは安全側に倒して非冪等として扱う。
+    ``DEFAULT_RETRY_METHODS`` 以外のメソッド（POST/PATCH/PUT を含む）は、呼び出し側が
+    サーバー側の重複排除契約を確認した場合だけ per-call opt-in で再送できる。
+    未知のメソッドは安全側に倒して同じ扱いにする。
 
     Raises:
         TypeError: retry_non_idempotent が bool でない場合
@@ -87,7 +88,7 @@ def resolve_retry_policy(
 
     normalized_method = method.upper()
     configured_attempts = retry_count + 1
-    if normalized_method not in IDEMPOTENT_METHODS and not retry_non_idempotent:
+    if normalized_method not in DEFAULT_RETRY_METHODS and not retry_non_idempotent:
         return RetryPolicy(
             max_attempts=1,
             suppressed_reason=("non_idempotent_method" if retry_count > 0 else None),

@@ -1,7 +1,7 @@
 # MCP最適化運用ガイド
 
-*最終更新: 2026年01月04日*  
-*用途: MCPサーバー選択・トラブルシューティング・エラー解決*  
+*最終更新: 2026年01月04日*
+*用途: MCPサーバー選択・トラブルシューティング・エラー解決*
 *アクセス頻度: 低（MCPエラー発生時のみ）*
 
 ## 📚 目次
@@ -22,9 +22,17 @@
 プロジェクトでは以下のMCPサーバーが利用可能です：
 
 **現在有効なMCPサーバー**（.mcp.jsonより）:
-- `serena`: セマンティックコード分析・プロジェクト記憶管理（limited_serenaコンテキスト）
-- `task-master-ai`: タスク管理・ワークフロー自動化（31ツール）
-- `sentry`: エラー追跡・パフォーマンス監視（HTTP MCP）
+- `codegraph`: コード構造のシンボル・呼び出し関係グラフ検索
+- `code-review-graph`: レビュー用の差分影響分析・構造グラフ
+- `morph-mcp`: 高速コード編集・コードベース検索
+- `graft`: シンボル定義・呼び出し関係のグラフ検索
+- `context7`: ライブラリ・フレームワーク公式ドキュメント取得
+- `trivy`: 脆弱性・シークレット・SCAスキャン
+- `notion`: Notion連携
+- `prompts-chat`: プロンプトテンプレート検索
+
+**serenaツール**（`.mcp.json`ではなくClaude Codeプラグイン経由で提供）:
+- `serena`: セマンティックコード分析・プロジェクト記憶管理（`find_symbol`/`read_memory`等）
 
 **Claude Code組み込みツール**:
 - `Read/Write/Edit`: ファイルシステム操作
@@ -47,16 +55,11 @@
 | 記憶読込 | `serena read_memory` | プロジェクト知識の参照 |
 | 記憶書込 | `serena write_memory` | セッション間情報保存 |
 | 記憶一覧 | `serena list_memories` | 利用可能な記憶確認 |
-| 思考分析 | `serena think_about_*` | タスク順守・情報十分性確認 |
 | **ファイル操作系** |
 | ファイル読込 | `Read` | Claude Code組み込みツール |
-| ファイル編集 | `Edit/MultiEdit` | 精密なコード変更 |
+| ファイル編集 | `Edit` | 精密なコード変更 |
 | ファイル作成 | `Write` | 新規ファイル作成 |
 | コード検索 | `Grep/Glob` | ファイルパターン・内容検索 |
-| **タスク管理系** |
-| タスク取得 | `task-master-ai get_task` | タスク詳細取得 |
-| タスク追加 | `task-master-ai add_task` | 新規タスク作成 |
-| PRD解析 | `task-master-ai parse_prd` | 要件定義書からタスク生成 |
 
 ---
 
@@ -102,8 +105,8 @@
 | **パターン検索** | Grep | 高速なテキスト検索 |
 | **ファイル一覧** | Glob | ファイルパターンマッチ |
 | **ファイル読み込み** | Read | 部分読み込み可能（offset/limit） |
-| **複数ファイル編集** | MultiEdit | 一括変更で効率的 |
-| **コード分析** | Task Agent (Explore) | 大規模探索はエージェント委譲 |
+| **複数ファイル編集** | `Edit`（同一変更は`replace_all`） | 一括変更で効率的 |
+| **コード分析** | Agent（Explore） | 大規模探索はエージェント委譲 |
 
 ---
 
@@ -127,7 +130,7 @@ MCP server returned oversized response
 3. 検索範囲を relative_path で絞り込み
 
 予防策:
-- 大規模検索は Task Agent (Explore) に委譲
+- 大規模検索は Agent（Explore）に委譲
 - トークン使用率 75% 超で検索範囲縮小
 - プロジェクト全体解析はエージェント使用
 ```
@@ -146,7 +149,7 @@ Operation took too long to complete
 ```markdown
 1. 操作の分割（ディレクトリ別・機能別）
 2. 並列実行の抑制（逐次処理に変更）
-3. 大規模処理はTask Agentに委譲
+3. 大規模処理はAgentに委譲
 ```
 
 ### パターン3: MCPサーバー接続エラー
@@ -181,8 +184,8 @@ serena find_symbol "AsyncAPIClient" relative_path="utils/"
 
 **✅ 大規模探索**:
 ```python
-# Task Agentに委譲
-Task(subagent_type="Explore", prompt="Find all async patterns", model="sonnet")
+# Agentに委譲
+Agent(subagent_type="Explore", description="Find async patterns", prompt="Find all async patterns")
 → トークン効率的な大規模探索
 ```
 
@@ -206,7 +209,7 @@ Read("utils/jsonplaceholder_base_sync.py", offset=1, limit=100)
 **✅ 記憶読み込み**:
 ```python
 # serenaで記憶参照
-serena read_memory "coding_standards"
+serena read_memory "implementation_quality_gates"
 → プロジェクト知識の参照
 ```
 
@@ -224,7 +227,7 @@ serena write_memory "session_summary" "Completed API refactoring"
 1. **範囲指定**: serena検索時は `relative_path` で範囲を絞る
 2. **部分読み込み**: 大きなファイルは `offset/limit` で分割読み込み
 3. **トークン監視**: 75%超えたら検索範囲縮小
-4. **エージェント活用**: 大規模探索は Task Agent (Explore) に委譲
+4. **エージェント活用**: 大規模探索は Agent（Explore）に委譲
 5. **記憶活用**: セッション間情報は serena memory で保存
 
 ---
@@ -244,7 +247,7 @@ Level 2: 操作分割
 
 Level 3: 代替ツール使用
   serena → Grep/Glob + Read
-  Task Agent (Explore) で大規模探索
+  Agent（Explore）で大規模探索
 ```
 
 ---

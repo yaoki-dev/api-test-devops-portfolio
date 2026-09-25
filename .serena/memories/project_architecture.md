@@ -1,43 +1,47 @@
 # API Test DevOps Portfolio - Architecture Overview
 
-*Last Updated: 2026-03-22*
+*Last Updated: 2026-09-24*
 
 **Purpose**: Learning portfolio demonstrating 4,000-4,500 yen/hour technical capability
 **Tech Stack**: Python 3.14 / httpx / pytest / Pydantic Settings / structlog / Docker / GitHub Actions
 
-## Key Metrics (2026-03-22)
-- Test Coverage: 93.43% (target: 85% ✅達成、CI条件: unit+integration, not external)
-- Test Count: 588 tests (全件) / 575件 (CI条件: unit+integration, performance除外)
-- Code Lines: ~2,500 (utils/config/models)
-- SOLID Compliance: 85%
+## Key Metrics
+固定値は変更のたびに陳腐化するため記載しない。最新値は都度コマンドで確認する。
+- Test Coverage: `.claude/CLAUDE.md`「品質ゲート」→「統合コマンド」を実行して確認（コマンドの単一真実源は同ファイル、本メモリでは複製しない）
+- Test Count: `uv run pytest --collect-only -q` で最新件数を確認
+- Code Lines: `wc -l utils/*.py config/*.py models/*.py` で最新値を確認
 
 ## Architecture
 
 ### Core Layer
-| Module | Lines | Description |
-|--------|-------|-------------|
-| utils/jsonplaceholder_base_sync.py | 350 | Sync base HTTP client (SyncAPIClient) |
-| utils/jsonplaceholder_base_async.py | 570 | Async base HTTP client (AsyncAPIClient) |
-| utils/jsonplaceholder_client_sync.py | 220 | Sync JSONPlaceholder API client |
-| utils/jsonplaceholder_client_async.py | 480 | Async JSONPlaceholder API client |
-| utils/retry.py | 30 | Exponential backoff with jitter |
-| utils/exceptions.py | 50 | API exception hierarchy |
-| utils/http_helpers.py | 340 | Error handling, config, validation |
-| utils/response_parsing.py | 120 | JSON parse + Pydantic model transform |
-| utils/github_client.py | 913 | GitHub API facade (AsyncGitHubClient) + input validation |
-| utils/github_error_handler.py | 254 | GitHub exception hierarchy + 403/5xx/JSON error handlers (PII-safe) |
-| utils/github_rate_limit.py | 92 | GitHub rate-limit helpers (RATE_LIMIT_WARNING_THRESHOLD) |
-| utils/logger.py | 152 | structlog統合 + Sentry連携 |
-| utils/sentry_init.py | 196 | Sentry SDK初期化 |
-| utils/sentry_scrub_events.py | 658 | Sentryイベント単位のスクラブ (_before_send) |
-| utils/sentry_scrub_values.py | 193 | 値の再帰スクラブ (URL / クエリ文字列) |
-| utils/sentry_scrub_primitives.py | 200 | 機密キー判定 (SENSITIVE_KEYS) + 共通ログヘルパー |
-| config/settings.py | 447 | Type-safe Pydantic Settings |
-| models/responses.py | 350 | 7 Pydantic response models |
+行数は変更のたびに陳腐化するため記載しない。最新値は `wc -l utils/*.py config/*.py models/*.py` を参照。
+
+| Module | Description |
+|--------|-------------|
+| utils/jsonplaceholder_base_sync.py | Sync base HTTP client (SyncAPIClient) |
+| utils/jsonplaceholder_base_async.py | Async base HTTP client (AsyncAPIClient) |
+| utils/jsonplaceholder_client_sync.py | Sync JSONPlaceholder API client |
+| utils/jsonplaceholder_client_async.py | Async JSONPlaceholder API client |
+| utils/retry.py | Exponential backoff with jitter |
+| utils/exceptions.py | API exception hierarchy |
+| utils/http_helpers.py | Error handling, config, validation |
+| utils/response_parsing.py | JSON parse + Pydantic model transform |
+| utils/github_client.py | GitHub API facade (AsyncGitHubClient) + input validation |
+| utils/github_error_handler.py | GitHub exception hierarchy + 403/5xx/JSON error handlers (PII-safe) |
+| utils/github_etag_cache.py | GitHub API ETag-based conditional request cache |
+| utils/github_rate_limit.py | GitHub rate-limit helpers (RATE_LIMIT_WARNING_THRESHOLD) |
+| utils/logger.py | structlog統合 + Sentry連携 |
+| utils/sentry_init.py | Sentry SDK初期化 |
+| utils/sentry_scrub_events.py | Sentryイベント単位のスクラブ (_before_send) |
+| utils/sentry_scrub_values.py | 値の再帰スクラブ (URL / クエリ文字列) |
+| utils/sentry_scrub_primitives.py | 機密キー判定 (SENSITIVE_KEYS) + 共通ログヘルパー |
+| config/settings.py | Type-safe Pydantic Settings |
+| models/responses.py | Pydantic response models |
+| models/sanitization.py | Response model sanitization helpers (XSS escape, invisible-char strip, URL validation) |
 
 ### Test Layer
-- **Total**: 588 tests across ~19 test files (CI対象: 575件)
-- **Distribution (test files)**: unit(14) / integration(3) / performance(1) / smoke(1)
+- **Total**: `uv run pytest --collect-only -q` で最新件数を確認（固定値は変更のたびに陳腐化するため記載しない）
+- **Distribution (test files)**: unit / integration / performance / smoke（内訳は `tests/` ディレクトリ構成を参照）
 - **Infrastructure**: conftest.py shared fixtures
 
 ### Dependency Structure
@@ -87,7 +91,7 @@
 
 ## Response Models (models/responses.py)
 - Post / Comment / Company / User / Todo / Album / Photo
-- sanitize_user_content() - XSS防止ユーティリティ
+- sanitize_user_content() - XSS防止ユーティリティ（定義は models/sanitization.py）
 
 ## Exception Hierarchy
 
@@ -133,5 +137,5 @@ Stage 4: test        → テスト実行環境（全依存関係、pytest）
 
 ## Reference
 - Implementation: See CLAUDE.md for detailed guidance
-- Test Strategy: @memory:test_strategy
+- Test Strategy: @memory:test_strategy_details
 - Coding Standards: .claude/rules/python/coding-standards.md

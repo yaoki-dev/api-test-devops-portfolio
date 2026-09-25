@@ -14,9 +14,6 @@ api-test-devops-portfolio/
 ├── PROJECT_INDEX.md          # リポジトリ構成と主要ドキュメントの索引
 ├── REVIEW.md                 # コードレビュー基準と重大度定義
 ├── CHANGELOG.md              # 変更履歴（Keep a Changelog / SemVer 準拠）
-├── CONTEXT.md                # ドメイン用語定義（現状は「CD実証」1項目のみ）
-├── CLAUDE.md                 # Claude Code 向けプロジェクト指示書
-├── AGENTS.md                 # エージェント向けプロジェクト指示
 ├── config/                 # 設定管理（Pydantic Settings）
 │   ├── __init__.py
 │   └── settings.py        # 型安全な環境変数管理
@@ -108,9 +105,6 @@ api-test-devops-portfolio/
 
 ### Project Configuration
 - **pyproject.toml**: Python プロジェクト設定（hatchling, dependencies, dev tools）
-- **.mcp.json**: MCP サーバー設定。サーバー一覧はファイル本体が単一真実源（索引側へ転記しない）。
-  シークレットは `${VAR}` 形式で環境変数から注入
-- **.serena/project.yml**: Serena プロジェクト設定（言語: typescript, python）
 
 ### Quality Assurance
 - **.pre-commit-config.yaml**: Pre-commit hooks（ruff / ruff-format / gitleaks / markdownlint）。
@@ -135,15 +129,11 @@ api-test-devops-portfolio/
 - **PROJECT_INDEX.md**: リポジトリ構成と主要ドキュメントの索引
 - **REVIEW.md**: コードレビュー基準と重大度定義
 - **CHANGELOG.md**: 変更履歴（Keep a Changelog / SemVer 準拠）
-- **CONTEXT.md**: ドメイン用語定義（`docs/agents/domain.md` の consumer rules が参照。現状は「CD実証」1項目のみ）
-- **CLAUDE.md**: Claude Code 向けプロジェクト指示書（開発ワークフロー、品質ゲート等）
-- **AGENTS.md**: エージェント向けプロジェクト指示（実装前提・既存パターン優先方針）
 
 ### Development Guides
 - **docs/DOCS_INDEX.md**: 公開ドキュメントの索引
 - **docs/reference/ci_cd_pipeline.md**: CI/CD パイプライン リファレンス
 - **docs/reference/docker.md**: Docker リファレンス
-- **docs/agents/**: エージェント運用ドキュメント（issue-tracker, triage-labels, domain）
 
 ---
 
@@ -239,20 +229,26 @@ open reports/htmlcov/index.html
 # 1. Issue作成
 /create-issue
 
-# 2. ブランチ作成（Git Flow + worktree）
-/git:feature <task-name>
+# 2. ブランチ作成（固定 worktree 内で。命名・起点は .claude/CLAUDE.md「開発ワークフロー」step 1）
+/git-flow-branch-creator
 
 # 3. 実装 + 品質ゲート
 # （コード変更後）.claude/CLAUDE.md「品質ゲート」→「統合コマンド」を実行
 
-# 4. 自己改善
+# 4. 作業完了確認
+/fable:fable-judge
+
+# 5. 自己改善
 /reflexion:reflect
 
-# 5. コミット（日本語PR対応）
+# 6. コミット前レビュー
+/code-review medium
+
+# 7. コミット（日本語PR対応）
 /commit
 
-# 6. PR作成
-/commit-push-pr
+# 8. PR作成
+/push-pr
 ```
 
 ---
@@ -296,7 +292,7 @@ open reports/htmlcov/index.html
 | CI Test Files (unit+integration, external除外) | 41（2026-08-31 実測） | - |
 | Python Version | 3.14 | - |
 | Code Quality | ruff + mypy | 0 errors |
-| Documentation | CLAUDE.md + README | - |
+| Documentation | README + docs/reference | - |
 
 ---
 
