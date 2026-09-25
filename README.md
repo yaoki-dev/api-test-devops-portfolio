@@ -26,11 +26,11 @@
 
 ## 概要
 
-- **`テストスイート`**: 全1,631件 — Unit 1,607 / Integration合計15（非External 3 / External 12）/ Performance 7（週次のみ）/ Smoke 2 / Slow 1（Unit内のサブセット）/ 未分類 0
-- **`CIセレクタ対象`**: PR/host 1,610件（収集時） / **ローカル再計測カバレッジ 98.07%**（下限は `pyproject.toml` の `--cov-fail-under`）
-  - PR/hostセレクタは `(unit or integration) and not external`。Composeセレクタ（Pages artifactの生成元）は `(unit or integration) and not external and not repo_contract` で1,545件。PR Validation は前者にSmoke 2件をカバレッジ計測外で追加実行
+- **`テストスイート`**: 全1,651件 — Unit 1,627 / Integration合計15（非External 3 / External 12）/ Performance 7（週次のみ）/ Smoke 2 / Slow 1（Unit内のサブセット）/ 未分類 0
+- **`CIセレクタ対象`**: PR/host 1,630件（収集時） / **ローカル再計測カバレッジ 98.07%**（下限は `pyproject.toml` の `--cov-fail-under`）
+  - PR/hostセレクタは `(unit or integration) and not external`。Composeセレクタ（Pages artifactの生成元）は `(unit or integration) and not external and not repo_contract` で1,562件。PR Validation は前者にSmoke 2件をカバレッジ計測外で追加実行
 - 上記のテストケース数・CIセレクタ対象ケース数・カバレッジは、公開ドキュメント内の集計値のSSOTとする。
-  他文書は数値を転記せず本節を参照する。現行値は排他的内訳 `1,607 + 3 + 12 + 7 + 2 = 1,631`、1,631 collected / 1,610 selected / 1,610 passed、カバレッジ98.07%。Composeセレクタは `repo_contract` を除外するため、1,545 selected / 1,545 passedとなる。初回の基準測定は 2026-09-07 に `origin/main` のcommit `8d1b73cb8a029de77f482ac00e81fc9668b04f23` で実施し、当時の値は 1,597 collected / 1,576 selected / 1,543 Compose selected だった:
+  他文書は数値を転記せず本節を参照する。現行値は排他的内訳 `1,627 + 3 + 12 + 7 + 2 = 1,651`、1,651 collected / 1,630 selected / 1,630 passed、カバレッジ98.07%。Composeセレクタは `repo_contract` を除外するため、1,562 selected / 1,562 passedとなる。初回の基準測定は 2026-09-07 に `origin/main` のcommit `8d1b73cb8a029de77f482ac00e81fc9668b04f23` で実施し、当時の値は 1,597 collected / 1,576 selected / 1,543 Compose selected だった:
 
   ```bash
   TEST__EXTERNAL_API_ENABLED=false uv run pytest -n auto -m "(unit or integration) and not external" \
@@ -312,6 +312,17 @@ uv run pytest -n auto -m "not external and not manual"  # CI/CD相当の自動�
 
 # 5. 週次手動実行（Rate Limit管理）
 uv run pytest -m "manual or external"  # GitHub API統合テスト（週1回推奨、60 req/h制約）
+```
+
+### 品質ゲート
+
+変更前後の品質を同じ条件で確認するため、次の順序で実行します。
+
+```bash
+uv run pytest -n auto -m "(unit or integration) and not external" \
+  --cov=utils --cov=config --cov=models --cov-report=term-missing && \
+uv run ruff check --no-fix . && \
+uv run mypy utils/ config/ models/ tests/conftest.py
 ```
 
 ### Dockerでの実行（コンテナ環境）
