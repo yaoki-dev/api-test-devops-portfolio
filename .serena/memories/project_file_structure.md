@@ -15,14 +15,10 @@ api-test-devops-portfolio/
 ├── .claude/                   # Claude Code設定（プロジェクト）
 │   ├── rules/                 # プロジェクトルール (条件付きルール)
 │   ├── CLAUDE.md              # プロジェクト基本ルール
-│   ├── agents/                # プロジェクトエージェント
-│   ├── commands/              # プロジェクトカスタムスラッシュコマンド
 │   └── skills/                # プロジェクトスキル
 │
 ├── .serena/                   # Serena MCP長期メモリ
-│   └── memories/              # プロジェクト固有メモリ（13ファイル）
-│       ├── ai_collaboration_workflow.md
-│       ├── coding_standards.md
+│   └── memories/              # プロジェクト固有メモリ（最新一覧は `ls .serena/memories/` で確認）
 │       ├── command_usage_guide.md
 │       ├── fixture_quick_reference.md
 │       ├── implementation_quality_gates.md
@@ -30,31 +26,14 @@ api-test-devops-portfolio/
 │       ├── project_architecture.md
 │       ├── project_file_structure.md (このファイル)
 │       ├── serena_memory_usage_guide.md
-│       ├── test_strategy.md
-│       ├── test_strategy_details.md
-│       └── workflow_playbooks_guide.md
-│
-├── .taskmaster/               # Task Master AI設定
-│   ├── tasks/                 # タスク管理JSON
-│   └── docs/                  # タスク関連ドキュメント
+│       └── test_strategy_details.md
 │
 #├── claudedocs/               # （未使用、オプショナル）
 │
-├── docs/                      # プロジェクトドキュメント
-│   ├── progress/              # 学習・実装進捗記録
-│   │   ├── daily_progress.md  # 日次進捗（Week単位）
-│   │   ├── learning_state.yaml # 学習状態管理
-│   │   └── weekly_understanding.md # 週次理解度記録
-│   │
-│   ├── learning/              # 学習関連ドキュメント
-│   │   └── understanding_check/ # 理解度確認問題
-│   │
-│   ├── main/                  # メインドキュメント
-│   │   └── 6週プラン/            # 6週学習・実装計画
-│   │
-│   ├── プロジェクト再編/        # プロジェクト計画・テンプレート
-│   │
-│   └── tools/                 # ツール関連ドキュメント
+├── docs/                      # プロジェクトドキュメント（最新一覧は `docs/DOCS_INDEX.md` で確認）
+│   ├── adr/                   # アーキテクチャ決定記録（ADR）
+│   ├── agents/                # エージェント運用ガイド（issue tracker / triage / domain）
+│   └── reference/             # 技術リファレンス（CI/CD・Docker・Sentry）
 │
 ├── scripts/                   # 自動化スクリプト
 │
@@ -71,6 +50,7 @@ api-test-devops-portfolio/
 │   ├── exceptions.py           # API例外階層
 │   ├── github_client.py        # GitHub API統合（facade: AsyncGitHubClient + 入力検証）
 │   ├── github_error_handler.py # GitHub例外階層 + 403/5xx/JSONエラー処理（PII-safe）
+│   ├── github_etag_cache.py    # GitHub APIのETagベース条件付きリクエストキャッシュ
 │   ├── github_rate_limit.py    # GitHub Rate Limitヘルパー（RATE_LIMIT_WARNING_THRESHOLD）
 │   ├── http_helpers.py         # エラーハンドリング・設定解決
 │   ├── jsonplaceholder_base_async.py  # 非同期ベースクライアント
@@ -92,6 +72,7 @@ api-test-devops-portfolio/
 │
 ├── models/                    # データモデル
 │   ├── responses.py           # APIレスポンスモデル
+│   ├── sanitization.py        # レスポンスモデル用サニタイズ・URL検証
 │   └── __init__.py
 │
 ├── reports/                   # テスト・品質レポート（自動生成）
@@ -226,14 +207,13 @@ git add debug.sh temp_analysis.md
 
 | ディレクトリ | 役割 | Git管理 | 作成タイミング | 例 |
 |------------|------|---------|-------------|-----|
-| `.claude/` | Claude Code設定 | ✅ | プロジェクト初期 | commands/, mcp_tools/ |
+| `.claude/` | Claude Code設定 | ✅ | プロジェクト初期 | rules/, skills/ |
 | `.serena/` | Serena長期メモリ | ✅ | Serena初回使用時 | memories/*.md |
-| `.taskmaster/` | Task Master管理 | ✅ | Task Master初回使用時 | tasks/tasks.json |
 | `claudedocs/` | Claude固有ドキュメント | ⚠️ | （未使用） | オプショナル |
-| `docs/` | プロジェクトドキュメント | ✅ | プロジェクト初期 | progress/, learning/ |
-| `scripts/` | 自動化スクリプト | ✅ | 必要時 | setup/, test/, deploy/ |
+| `docs/` | プロジェクトドキュメント | ✅ | プロジェクト初期 | adr/, agents/, reference/ |
+| `scripts/` | 自動化スクリプト | ✅ | 必要時 | render_test_summary.py, docker-build.sh |
 | `tests/` | テストファイル | ✅ | Week 1~ | unit/, integration/ |
-| `utils/` | コアモジュール（12ファイル） | ✅ | Week 1~ | jsonplaceholder_base_sync.py 他 |
+| `utils/` | コアモジュール | ✅ | Week 1~ | jsonplaceholder_base_sync.py 他 |
 | `config/` | 設定管理 | ✅ | Week 5~ | settings.py |
 | `models/` | データモデル | ✅ | Week 5~ | responses.py |
 | `reports/` | テスト・品質レポート | ❌ | テスト実行時 | htmlcov/, pytest-report.html |
@@ -278,12 +258,8 @@ tests/unit/test_JSONPlaceholderClient.py        # PascalCase（snake_case推奨�
 
 ```markdown
 # ✅ Good
-docs/progress/daily_progress.md     # snake_case、英語推奨
-docs/learning/understanding_check/
-
-# ⚠️ 許容（日本語ディレクトリ）
-docs/プロジェクト再編/               # 既存の日本語ディレクトリは維持
-docs/learning/understanding_check/day1_httpx_check.md
+docs/reference/ci_cd_pipeline.md             # snake_case、英語推奨
+docs/adr/0001-async-only-github-client.md    # ADR は NNNN-kebab-case（docs/adr/README.md）
 
 # ❌ Bad
 docs/dailyProgress.md                # camelCase（非推奨）
@@ -480,8 +456,8 @@ uv run pytest -n auto  # pytest-xdistによる並列実行（高速化）
 
 ## 参考リソース
 
-- **RULES.md**: ~/.claude/RULES.md「File Organization」セクション
-- **coding_standards**: .serena/memories/coding_standards.md「9. 自動検証コマンド」
+- **RULES.md**: .claude/rules/workflow/RULES.md「File Organization」セクション
+- **coding_standards**: .claude/rules/python/coding-standards.md「10. 自動検証コマンド」
 - **project_architecture**: .serena/memories/project_architecture.md
 - **CLAUDE.md**: アーキテクチャ概要（設計パターン・テスト構成の詳細）
 

@@ -248,7 +248,7 @@ logger.info("処理開始", user_id=123)  # 構造化ログ
 コード実装 → ruff → mypy → pytest → git commit
 ```
 
-CI/CD: ruff + mypy + pytest + bandit + gitleaks + Dependabot
+CI/CD: ruff + mypy + pytest + zizmor + Trivy + Dependabot（bandit 相当は ruff の `S` ルール、gitleaks は pre-commit のローカルフックのみ）
 
 ---
 

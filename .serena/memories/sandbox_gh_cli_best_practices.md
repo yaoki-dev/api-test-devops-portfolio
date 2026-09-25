@@ -77,5 +77,4 @@ gh issue view <番号> --json body | jq '.body | length'
 ```
 
 ## 関連
-- CLAUDE.md「サンドボックス環境でのIssue/PR作成時の注意」セクション
 - Issue #133（この教訓の発見元）

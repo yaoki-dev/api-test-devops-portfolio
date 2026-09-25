@@ -219,7 +219,7 @@ git checkout -b feature/<次のタスク> origin/develop
 ```
 【準備フェーズ】
 0. 大規模タスク（複数セッション）: `.claude/rules/workflow/RULES.md` 「Task Management (Persistent Layer)」参照
-1. 固定Worktreeでブランチ作成 → /git:feature（常時※1）
+1. 固定Worktreeでブランチ作成 → `git checkout -b feature/issue#<N>-<slug> origin/develop`（Issue なしは `feature/<slug>`）（常時※1）
    → 固定WT: ${HOME}/projects/python/.worktrees/wt-feature0[1-3]（個人環境ごとにカスタマイズ）
    → 計画ファイル作成が必要な場合: claudedocs/plans/ に作成（閾値詳細: .claude/rules/workflow/PLANS.md §使用閾値）
 
@@ -242,8 +242,8 @@ git checkout -b feature/<次のタスク> origin/develop
 【PUSH/PR/マージフェーズ】
 9. PR作成     → Skill(push-pr)【gh pr create禁止】
 10. レビュー対応 → 修正 → 品質ゲート →  `Skill(fable:fable-judge)` を実行 →  `Skill(reflexion:reflect)` を実行 → `Skill(code-review)`を実行 → `Skill(judgment-day)`を実行（重要変更の場合） → Skill(commit) → push
-11. マージ実行  → マージ戦略【※3参照】
-12. クリーンアップ → `git fetch --prune origin` + `/git:clean-gone`（worktree: 固定運用のため削除しない）
+11. マージ実行  → マージ戦略【※4参照】
+12. クリーンアップ → `git fetch --prune origin` + `[gone]` ローカルブランチ削除（worktree: 固定運用のため削除しない）
 ```
 
 <!-- preserve-on-compact: Quality Gates -->

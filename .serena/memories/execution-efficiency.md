@@ -11,7 +11,7 @@
 2. [3段階ワークフロー](#2-3段階ワークフロー)
 3. [並列実行判定基準](#3-並列実行判定基準)
 4. [失敗パターン集](#4-失敗パターン集)
-5. [実践例: TokenBudgetChecker検証改善](#5-実践例-tokenbudgetchecker検証改善)
+5. [例示: 並列実行による短縮](#5-例示-並列実行による短縮)
 6. [チェックリスト](#6-チェックリスト)
 7. [関連ドキュメント](#7-関連ドキュメント)
 
@@ -176,27 +176,8 @@ Group 2 (Group 1完了後):
   - file_c.md
 ```
 
-2. **Task tool 1メッセージ複数呼出パターン**
-```markdown
-# 実際の実装方法（疑似コード）
-<function_calls>
-<invoke name="Edit">
-  <parameter name="file_path">/path/to/file_a.md</parameter>
-  <parameter name="old_string">旧コンテンツ</parameter>
-  <parameter name="new_string">新コンテンツ</parameter>
-</invoke>
-<invoke name="Edit">
-  <parameter name="file_path">/path/to/file_d.md</parameter>
-  <parameter name="old_string">旧コンテンツ</parameter>
-  <parameter name="new_string">新コンテンツ</parameter>
-</invoke>
-<invoke name="Edit">
-  <parameter name="file_path">/path/to/file_e.md</parameter>
-  <parameter name="old_string">旧コンテンツ</parameter>
-  <parameter name="new_string">新コンテンツ</parameter>
-</invoke>
-</function_calls>
-```
+2. **並列実行の原則**
+   同一グループ内の独立タスクは、1メッセージ内で複数のツール呼び出しとして同時に発行する（逐次発行しない）。
 
 3. **検証実行**
 ```bash
@@ -354,205 +335,11 @@ graph TD
 
 ---
 
-## 5. 実践例: TokenBudgetChecker検証改善
+## 5. 例示: 並列実行による短縮
 
-### 改善前: 段階的修正アプローチ（失敗例）
-
-**実行フロー**:
-```
-1. 初回実装: 16ファイル中12ファイルを修正
-   - 仮定: 「カタログ以外は全て修正対象」
-   - 結果: ❌ ユーザー訂正「8ファイルのみ」
-
-2. 2回目実装: 8ファイルを修正
-   - 仮定: 「プロジェクト設定も除外」
-   - 結果: ❌ ユーザー訂正「7ファイルに減らせる」
-
-3. 3回目実装: 7ファイルを修正
-   - 結果: ✅ 完了（ユーザー訂正3回）
-```
-
-**問題点**:
-- Phase 0: 依存関係の未分析
-- Phase 1: 確認の完全スキップ
-- Phase 2: 並列化未実施（段階的修正）
-
-**コスト**:
-- 所要時間: 45分（15分×3回）
-- ユーザー訂正: 3回
-- 試行錯誤: 2回
-
----
-
-### 改善後: 3段階ワークフローアプローチ（成功例）
-
-**実行フロー**:
-
-#### Phase 0: 分析（5分）
-
-1. **要求解析**
-```markdown
-# TokenBudgetChecker検証タスク
-- 明示的要求: TokenBudgetChecker参照の検証
-- 暗黙的要求: カタログファイルの除外
-- 制約条件: ルールファイルは検証対象
-- 影響範囲: 16ファイル（9カタログ + 5設定 + 2ルール）
-```
-
-2. **依存関係確認**
-```markdown
-# 依存関係マトリクス
-| ファイル分類 | ファイル数 | 並列化可能 | 除外判定 |
-|------------|----------|----------|---------|
-| カタログ | 9 | ✅ | 要確認 |
-| プロジェクト設定 | 5 | ✅ | 要確認 |
-| ルールファイル | 2 | ✅ | 対象 |
-
-# 並列実行グループ案
-Group 1: カタログファイル（並列化率: 100%）
-Group 2: プロジェクト設定（並列化率: 100%）
-Group 3: ルールファイル（並列化率: 100%）
-Group 4: 検証実行（Group 1-3完了後）
-```
-
-3. **曖昧性リスト**
-```markdown
-# 曖昧性リスト（信頼度評価）
-1. カタログファイルの除外要否 → 信頼度: 低（60%） → 確認必要
-2. プロジェクト設定の除外要否 → 信頼度: 低（70%） → 確認必要
-3. ルールファイルの対象確認 → 信頼度: 高（90%） → 確認不要
-```
-
----
-
-#### Phase 1: 確認（2分）
-
-**AskUserQuestion実行**:
-```markdown
-TokenBudgetChecker検証の範囲について確認させてください：
-
-検出された16ファイルの分類と処理方針：
-
-【カタログファイル（9個）】
-- AGENTS_CATALOG.md
-- COMMANDS_CATALOG.md
-- SKILLS_CATALOG.md
-- （他6個）
-
-【プロジェクト設定（5個）】
-- .claude/settings.json
-- .claude/settings.local.json
-- （他3個）
-
-【ルールファイル（2個）】
-- .claude/rules/workflow/command-usage.md
-- .claude/rules/principles/PRINCIPLES.md
-
-質問1: カタログファイルは除外対象でよろしいでしょうか？
-  - YES → 9個除外
-  - NO → 検証対象として残す
-
-質問2: プロジェクト設定は除外対象でよろしいでしょうか？
-  - YES → 5個除外
-  - NO → 検証対象として残す
-
-推奨: 両方YES（理由: カタログ・設定は検証の主目的ではないため）
-
-この場合、最終的に7ファイル（2ルール + 5その他）が検証対象となります。
-```
-
-**ユーザー回答**: YES + YES → 7ファイルが対象確定
-
----
-
-#### Phase 2: 実装（8分）
-
-**並列実行グループ作成**:
-```markdown
-# 最終実行計画（7ファイルを4段階に分割）
-Group 1 (並列実行): ルールファイル2個
-  - command-usage.md
-  - PRINCIPLES.md
-
-Group 2 (並列実行): 進捗管理2個
-  - daily_progress.md
-  - CLAUDE.md (進捗)
-
-Group 3 (並列実行): 品質管理3個
-  - coding-standards.md
-  - quality-gates.md
-  - test-strategy.md
-
-Group 4 (検証): 全ファイル確認
-  - `grep -r "TokenBudgetChecker" target_files/`
-  - `git diff --stat`
-```
-
-**実装実行**（疑似コード）:
-```markdown
-# Group 1実行（並列）
-<function_calls>
-<invoke name="Edit">
-  <parameter name="file_path">/.../command-usage.md</parameter>
-  <!-- TokenBudgetChecker参照を検証 -->
-</invoke>
-<invoke name="Edit">
-  <parameter name="file_path">/.../PRINCIPLES.md</parameter>
-  <!-- TokenBudgetChecker参照を検証 -->
-</invoke>
-</function_calls>
-
-# Group 2実行（並列）
-<function_calls>
-<invoke name="Edit">
-  <parameter name="file_path">/.../daily_progress.md</parameter>
-  <!-- TokenBudgetChecker参照を検証 -->
-</invoke>
-<invoke name="Edit">
-  <parameter name="file_path">/.../CLAUDE.md</parameter>
-  <!-- TokenBudgetChecker参照を検証 -->
-</invoke>
-</function_calls>
-
-# Group 3実行（並列）
-<function_calls>
-<invoke name="Edit">
-  <parameter name="file_path">/.../coding-standards.md</parameter>
-  <!-- TokenBudgetChecker参照を検証 -->
-</invoke>
-<invoke name="Edit">
-  <parameter name="file_path">/.../quality-gates.md</parameter>
-  <!-- TokenBudgetChecker参照を検証 -->
-</invoke>
-<invoke name="Edit">
-  <parameter name="file_path">/.../test-strategy.md</parameter>
-  <!-- TokenBudgetChecker参照を検証 -->
-</invoke>
-</function_calls>
-
-# Group 4実行（検証）
-検証コマンド実行:
-  - grep確認: 全7ファイルでTokenBudgetChecker参照なし
-  - git diff: 7ファイル変更確認
-  - 結果: ✅ 全合格
-```
-
----
-
-### 改善効果比較
-
-| 指標 | 改善前 | 改善後 | 改善率 |
-|-----|--------|--------|--------|
-| **所要時間** | 45分 | 15分 | 67%短縮 |
-| **ユーザー訂正** | 3回 | 0回 | 100%削減 |
-| **試行錯誤** | 2回 | 0回 | 100%削減 |
-| **初回正解率** | 0% | 100% | +100% |
-| **並列化率** | 0% | 75% (9/12タスク) | +75% |
-
-**学び**:
-- Phase 1の確認により、ユーザー訂正を完全に防止
-- Phase 0の依存関係分析により、並列化率75%を達成
-- 3段階ワークフローの徹底で、初回正解率100%
+**原則**: Phase 0で依存関係を分析し独立タスクをグループ化、Phase 1で曖昧な範囲を確認してから、
+Phase 2で各グループを1メッセージ内で並列実行する。確認を省いた段階的修正（部分実装→ユーザー訂正
+→再実装の繰り返し）は、Phase 1を先に通すより時間がかかりやすい。
 
 ---
 
@@ -591,8 +378,8 @@ Group 4 (検証): 全ファイル確認
 | ドキュメント | 関連セクション | 用途 |
 |------------|--------------|------|
 | **RULES.md** | Workflow Rules | タスク実行の基本ルール |
-| **PRINCIPLES.md** | Engineering Mindset | SOLID/DRY/KISS/YAGNI |
-| **command-usage.md** | ワークフロー別推奨ツール | ツール選択基準 |
+| **PRINCIPLES.md** | Uncertainty Disclosure / Violation Signals | 不確実性の扱い・自己チェック |
+| **command_usage_guide.md**（.serena/memories/） | Section 9 ast-grep / mgrep 使用ガイド | 検索ツール選択基準 |
 
 ### 品質保証
 
@@ -607,7 +394,6 @@ Group 4 (検証): 全ファイル確認
 | ドキュメント | 関連内容 | 用途 |
 |------------|---------|------|
 | **AGENTS_CATALOG.md** | 69エージェント仕様 | エージェント選択 |
-| **command-usage.md Section 1** | マルチエージェント統合 | 並列エージェント実行 |
 
 ---
 

@@ -239,8 +239,8 @@ open reports/htmlcov/index.html
 # 1. Issue作成
 /create-issue
 
-# 2. ブランチ作成（Git Flow + worktree）
-/git:feature <task-name>
+# 2. ブランチ作成（固定 worktree 内で。命名・起点は .claude/CLAUDE.md「開発ワークフロー」step 1）
+/git-flow-branch-creator
 
 # 3. 実装 + 品質ゲート
 # （コード変更後）.claude/CLAUDE.md「品質ゲート」→「統合コマンド」を実行
