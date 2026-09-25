@@ -331,7 +331,7 @@ uv run python scripts/check_main_forbidden_paths.py   # HEAD（merge commit）�
 
 - manifest のパス以外で conflict が出た場合は、通常どおり解消してから `git commit` する。
 - `main` への PR は merge commit でマージする（squash しない）。
-- 検査で失敗した場合は、manifest のパスの `git rm` が漏れている。漏れたパスを削除して commit する。
+- 検査が失敗した場合、終了ステータス `1` は manifest のパスの `git rm` 漏れである。表示されたパスを削除して commit する。終了ステータス `2` は manifest・Git・デコードのエラーなので、パスを削除せずエラーメッセージの原因を修正する。
 - 検査が検出するのは manifest に載ったパスだけである。`git diff --name-only --diff-filter=A origin/main HEAD` で追加ファイルを確認し、新しい AI・開発専用のパスがあれば、manifest に追記するか存続させるかを決めるまでマージしない。
 
 ### `main` にだけ入った変更
