@@ -188,8 +188,6 @@ pr-trivy-scan:
 ```
 
 > **branch protection 注意**: reusable workflow の check 名は `<呼び出し側ジョブ名> / <呼び出され側ジョブ名>` になります。本実装では `PR Trivy scan / Trivy scan` です。required status check には呼び出し側ジョブ名（`PR Trivy scan`）単体では登録できません。
->
-> **cutover required check**: `main` が default branch になるまで、`Main forbidden path policy` は条件判定で skipped となり、Success 扱いのためマージを止めません（GitHub Docs）。default branch を `main` へ切り替えた後の登録時期は、後述の「release cutover と main 同期」節を参照してください。
 
 **Composite Action（3層検証ロジックの共通化）**:
 
