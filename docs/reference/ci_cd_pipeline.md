@@ -312,9 +312,9 @@ publish 直後の GHCR 伝播遅延（一過性の 404/429/5xx）に対し、最
 
 release cutover で `main` から除外した AI 開発ツール関連のパスは、[`.github/main-forbidden-paths.txt`](../../.github/main-forbidden-paths.txt)（以下 manifest）に列挙しています。cutover 後も `develop → main` の同期は続け、`main-forbidden-path-policy` ジョブが `main` 宛 PR の tracked tree に manifest のパスが無いことを検査します。
 
-### required check の登録時期
+### required check と cleanup PR
 
-default branch を `main` に切り替えると、このジョブは skipped ではなく実行されます。cleanup 前の `main` には manifest のパスが残っているため、この間は cleanup PR 以外の `main` 宛 PR がすべて検査で失敗します。そこで `Main forbidden path policy` は、cleanup PR でこの check が success になったことを確認してから、その PR をマージする前に `main` の required checks へ登録します。先に登録すると、Dependabot のセキュリティアップデートを含むすべての `main` 宛 PR が cleanup まで止まります。
+現在の `main` は default branch であり、`Main forbidden path policy` は既に required check に登録されています。したがって、このジョブを含む release PR では、develop の最終変更を取り込んだうえで manifest の全パスを削除し、マージ前にこの check を成功させます。禁止パスが残る通常の `main` 宛 PR は失敗するため、cleanup と最終 develop 同期を別々の PR に分けません。マージ前に default branch と required checks を GitHub から再取得し、設定が変わっていればこの手順を見直してください。
 
 ### 同期手順
 
