@@ -188,8 +188,6 @@ pr-trivy-scan:
 ```
 
 > **branch protection 注意**: reusable workflow の check 名は `<呼び出し側ジョブ名> / <呼び出され側ジョブ名>` になります。本実装では `PR Trivy scan / Trivy scan` です。required status check には呼び出し側ジョブ名（`PR Trivy scan`）単体では登録できません。
->
-> **cutover required check**: `Main forbidden path policy` は、このジョブを含む変更が `main` にマージされた後で、`main` の required checks へ登録します。`main` が default branch になるまで、ジョブは条件判定で skipped となります。条件で skipped となったジョブは Success 扱いのため、登録してもマージを止めません（GitHub Docs）。検査が効き始めるのは default branch を `main` へ切り替えた時点からです。`main` にジョブが入る前に登録すると、ジョブを含まない `main` 宛 PR では check が報告されず Pending のまま止まります。
 
 **Composite Action（3層検証ロジックの共通化）**:
 
@@ -308,6 +306,35 @@ publish 直後の GHCR 伝播遅延（一過性の 404/429/5xx）に対し、最
 
 > multi-arch を **なぜ** publish するか（Apple Silicon 等 arm64 ホストでのネイティブ pull/run）等の配布観点は [Docker Multi-Stage Runtime Strategy](docker.md) を参照。
 
+## release cutover と main 同期
+
+release cutover で `main` から除外した AI 開発ツール関連のパスは、[`.github/main-forbidden-paths.txt`](../../.github/main-forbidden-paths.txt)（以下 manifest）に列挙しています。cutover 後も `develop → main` の同期は続け、`main-forbidden-path-policy` ジョブが `main` 宛 PR の tracked tree に manifest のパスが無いことを検査します。
+
+### required check と cleanup PR
+
+現在の `main` は default branch であり、`Main forbidden path policy` は既に required check に登録されています。したがって、このジョブを含む release PR では、develop の最終変更を取り込んだうえで manifest の全パスを削除し、マージ前にこの check を成功させます。禁止パスが残る通常の `main` 宛 PR は失敗するため、cleanup と最終 develop 同期を別々の PR に分けません。マージ前に default branch と required checks を GitHub から再取得し、設定が変わっていればこの手順を見直してください。
+
+### 同期手順
+
+同期は `origin/main` から作る release ブランチで行います。`develop` を head にした PR では、`develop` で変更した manifest のパスが modify/delete conflict になり、追加したパスは `main` に入って検査で失敗します。conflict を `develop` 上で解消すると、`develop` 側のパスまで削除されます。
+
+```bash
+git fetch origin
+git switch -c release/<YYYY-MM-DD> origin/main
+git merge --no-ff --no-commit origin/develop   # develop で変更した削除済みパスは modify/delete conflict になる
+grep -Ev '^[[:space:]]*(#|$)' .github/main-forbidden-paths.txt | xargs git rm -r -q -f --ignore-unmatch --
+git commit
+uv run python scripts/check_main_forbidden_paths.py   # HEAD（merge commit）を検査し passed を確認
+```
+
+- manifest のパス以外で conflict が出た場合は、通常どおり解消してから `git commit` する。
+- `main` への PR は merge commit でマージする（squash しない）。
+- 検査が失敗した場合、終了ステータス `1` は manifest のパスの `git rm` 漏れである。表示されたパスを削除して commit する。終了ステータス `2` は manifest・Git・デコードのエラーなので、パスを削除せずエラーメッセージの原因を修正する。
+- 検査が検出するのは manifest に載ったパスだけである。`git diff --name-only --diff-filter=A origin/main HEAD` で追加ファイルを確認し、新しい AI・開発専用のパスがあれば、manifest に追記するか存続させるかを決めるまでマージしない。
+
+### `main` にだけ入った変更
+
+`main → develop` のマージは行いません。`main` の履歴には cleanup の削除 commit が含まれるため、マージすると、`develop` 側で変更していない manifest のパスは削除され、変更したパスは modify/delete conflict になります。Dependabot のセキュリティアップデートなど `main` にだけ入った変更は、該当 commit を `git cherry-pick -x <sha>` で `develop` 向けの PR に取り込みます。
 
 ## 監視・アラート
 
