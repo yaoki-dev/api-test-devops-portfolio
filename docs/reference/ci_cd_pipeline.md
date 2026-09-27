@@ -312,15 +312,15 @@ release cutover で `main` から除外した AI 開発ツール関連のパス�
 
 ### required check と cleanup PR
 
-現在の `main` は default branch であり、`Main forbidden path policy` は既に required check に登録されています。したがって、このジョブを含む release PR では、develop の最終変更を取り込んだうえで manifest の全パスを削除し、マージ前にこの check を成功させます。禁止パスが残る通常の `main` 宛 PR は失敗するため、cleanup と最終 develop 同期を別々の PR に分けません。マージ前に default branch と required checks を GitHub から再取得し、設定が変わっていればこの手順を見直してください。
+現在の `main` は default branch であり、`Main forbidden path policy` は既に required check に登録されています。したがって、このジョブを含む同期 PR では、develop の最終変更を取り込んだうえで manifest の全パスを削除し、マージ前にこの check を成功させます。禁止パスが残る通常の `main` 宛 PR は失敗するため、cleanup と最終 develop 同期を別々の PR に分けません。マージ前に default branch と required checks を GitHub から再取得し、設定が変わっていればこの手順を見直してください。
 
 ### 同期手順
 
-同期は `origin/main` から作る release ブランチで行います。`develop` を head にした PR では、`develop` で変更した manifest のパスが modify/delete conflict になり、追加したパスは `main` に入って検査で失敗します。conflict を `develop` 上で解消すると、`develop` 側のパスまで削除されます。
+同期は `origin/main` から作る同期ブランチで行います。`develop` を head にした PR では、`develop` で変更した manifest のパスが modify/delete conflict になり、追加したパスは `main` に入って検査で失敗します。conflict を `develop` 上で解消すると、`develop` 側のパスまで削除されます。
 
 ```bash
 git fetch origin
-git switch -c release/<YYYY-MM-DD> origin/main
+git switch -c sync/main-<YYYY-MM-DD> origin/main
 git merge --no-ff --no-commit origin/develop   # develop で変更した削除済みパスは modify/delete conflict になる
 grep -Ev '^[[:space:]]*(#|$)' .github/main-forbidden-paths.txt | xargs git rm -r -q -f --ignore-unmatch --
 git commit
