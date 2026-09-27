@@ -153,7 +153,9 @@ SECURITY__API_KEY=your-secret-key
 【PUSH/PR/マージフェーズ】
 9. PR作成     → Skill(push-pr)【gh pr create禁止】
 10. レビュー対応 → 修正 → 品質ゲート →  `Skill(fable:fable-judge)` を実行 →  `Skill(reflexion:reflect)` を実行 → `Skill(code-review medium)`を実行 → `Skill(judgment-day)`を実行（重要変更の場合） → Skill(commit) → push
-11. マージ実行  → feature→develop: `gh pr merge --squash --delete-branch` / develop→main・hotfix→main: `gh pr merge --merge`（実行前に RULES.md「Irreversible Action Confirmation」の承認を取る）
+11. マージ実行  → feature→develop: `gh pr merge --squash --delete-branch` / 同期ブランチ→main・hotfix→main: `gh pr merge --merge`（実行前に RULES.md「Irreversible Action Confirmation」の承認を取る）
+   → develop の main 同期: `docs/reference/ci_cd_pipeline.md`「release cutover と main 同期」の手順で `origin/main` から同期ブランチを作る。PR のマージ先は main（Skill(push-pr) は `hotfix/` 以外を develop 宛てにするため使えない）
+   → main→develop のマージは禁止。main にだけ入った変更（hotfix を含む）は develop へ `git cherry-pick -x`
 12. クリーンアップ → `git fetch --prune origin` + `[gone]` ローカルブランチ削除（ブランチ削除も同承認の対象。worktree: 固定運用のため削除しない）
 ```
 

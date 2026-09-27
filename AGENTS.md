@@ -157,7 +157,7 @@ SECURITY__API_KEY=your-secret-key
 | `main` | 本番リリース | Regular Merge |
 | `develop` | 開発統合 | Squash Merge (from feature) |
 | `feature/*` | 機能開発 | → develop |
-| `hotfix/*` | 緊急修正 | → main + develop |
+| `hotfix/*` | 緊急修正 | → main（develop へは `git cherry-pick -x`） |
 
 **Conventional Commits**: `type(scope): subject` 形式
 
@@ -274,8 +274,10 @@ API契約変更対象: `models/responses.py`, `utils/jsonplaceholder_*.py` publi
 | マージ種別 | コマンド |
 |-----------|---------|
 | feature → develop | `gh pr merge --squash --delete-branch` |
-| develop → main | `gh pr merge --merge` |
+| 同期ブランチ（`origin/main` 起点）→ main | `gh pr merge --merge` |
 | hotfix → main | `gh pr merge --merge` |
+
+同期ブランチの作成手順と、main にだけ入った変更（hotfix を含む）を develop へ取り込む手順は `docs/reference/ci_cd_pipeline.md`「release cutover と main 同期」を参照。同期 PR のマージ先は main（Skill(push-pr) は `hotfix/` 以外を develop 宛てにするため使えない）。main → develop のマージは行わない（manifest のパスが develop から削除されるため）。
 
 ## トラブルシューティング
 
