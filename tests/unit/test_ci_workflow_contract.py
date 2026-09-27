@@ -107,7 +107,7 @@ def test_status_report_summary_and_pr_coverage_contract(
     )
 
 
-def test_main_forbidden_path_policy_is_dormant_until_main_cutover(
+def test_main_forbidden_path_policy_targets_main_prs_when_main_is_default(
     workflow_data: dict[str, Any],
 ) -> None:
     job = workflow_data["jobs"]["main-forbidden-path-policy"]
