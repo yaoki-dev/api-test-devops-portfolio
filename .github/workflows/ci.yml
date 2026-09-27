@@ -153,7 +153,7 @@ jobs:
 
   # ============================================================
   # Main Forbidden-Path Policy
-  # Dormant until main becomes the repository default branch.
+  # Triggers: pull_request (main), only while main is the repository default branch
   # ============================================================
   main-forbidden-path-policy:
     name: Main forbidden path policy
