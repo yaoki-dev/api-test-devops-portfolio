@@ -253,7 +253,7 @@ open reports/htmlcov/index.html
 - **ブランチ戦略**: main (本番) / develop (統合) / feature/* (機能開発)
 - **Conventional Commits**: `feat:`, `fix:`, `docs:`, `test:` 等
 - **Squash Merge**: feature → develop (履歴クリーンアップ)
-- **Regular Merge**: develop → main, hotfix → main/develop
+- **Regular Merge**: develop → main（main 起点の同期ブランチ経由）, hotfix → main（develop へは cherry-pick）
 
 ---
 

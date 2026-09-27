@@ -334,7 +334,7 @@ uv run python scripts/check_main_forbidden_paths.py   # HEAD（merge commit）�
 
 ### `main` にだけ入った変更
 
-`main → develop` のマージは行いません。`main` の履歴には cleanup の削除 commit が含まれるため、マージすると、`develop` 側で変更していない manifest のパスは削除され、変更したパスは modify/delete conflict になります。Dependabot のセキュリティアップデートなど `main` にだけ入った変更は、該当 commit を `git cherry-pick -x <sha>` で `develop` 向けの PR に取り込みます。
+`main → develop` のマージは行いません。`main` の履歴には cleanup の削除 commit が含まれるため、マージすると、`develop` 側で変更していない manifest のパスは削除され、変更したパスは modify/delete conflict になります。Dependabot のセキュリティアップデートなど `main` にだけ入った変更は、該当 commit を `git cherry-pick -x <sha>` で `develop` 向けの PR に取り込みます。`hotfix` ブランチを `main` にマージした変更も同じです。merge commit を取り込む場合は `git cherry-pick -x -m 1 <sha>` とします（`-m` を付けないと merge commit の cherry-pick は失敗します）。
 
 ## 監視・アラート
 
