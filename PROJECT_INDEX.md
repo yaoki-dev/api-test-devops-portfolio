@@ -221,34 +221,7 @@ uv run pytest
 open reports/htmlcov/index.html
 
 # 品質ゲート（コミット前必須）
-# コマンド本体は .claude/CLAUDE.md「品質ゲート」→「統合コマンド」を参照（複製しない）
-```
-
-### 4. Development Workflow
-```bash
-# 1. Issue作成
-/create-issue
-
-# 2. ブランチ作成（固定 worktree 内で。命名・起点は .claude/CLAUDE.md「開発ワークフロー」step 1）
-/git-flow-branch-creator
-
-# 3. 実装 + 品質ゲート
-# （コード変更後）.claude/CLAUDE.md「品質ゲート」→「統合コマンド」を実行
-
-# 4. 作業完了確認
-/fable:fable-judge
-
-# 5. 自己改善
-/reflexion:reflect
-
-# 6. コミット前レビュー
-/code-review medium
-
-# 7. コミット（日本語PR対応）
-/commit
-
-# 8. PR作成
-/push-pr
+# 実行コマンドは README.md の「品質ゲート」節を参照（複製しない）
 ```
 
 ---

@@ -1,5 +1,7 @@
 """Contracts for the main forbidden-path manifest checker."""
 
+import posixpath
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -41,6 +43,66 @@ def test_manifest_covers_release_cutover_paths() -> None:
         ".serena",
         "docs/agents",
     }
+
+
+# 無視パターンとレビュー対象の設定は両ブランチで同一に保つため除外する。
+# manifest と本テストは、パスを名指しすること自体が役割である。
+_REFERENCE_ALLOWLIST = frozenset(
+    {
+        ".coderabbit.yaml",
+        ".github/main-forbidden-paths.txt",
+        ".gitignore",
+        ".textlintignore",
+        "tests/unit/test_main_forbidden_paths.py",
+    }
+)
+# インラインリンク `](x)` と参照形式の定義 `[id]: x` の両方からリンク先を取り出す。
+_MARKDOWN_LINK = re.compile(r"(?:\]\(|^\s*\[[^\]]*\]:\s*)<?([^)\s#>]+)")
+
+
+def _linked_paths(name: str, line: str) -> list[str]:
+    if not name.endswith(".md"):
+        return []
+    base = posixpath.dirname(name)
+    return [
+        posixpath.normpath(posixpath.join(base, target))
+        for target in _MARKDOWN_LINK.findall(line)
+        if "://" not in target
+    ]
+
+
+@pytest.mark.repo_contract
+def test_surviving_files_do_not_reference_forbidden_paths() -> None:
+    repo_root = Path(__file__).parents[2]
+    rules = read_manifest(repo_root / ".github/main-forbidden-paths.txt")
+    git = shutil.which("git")
+    assert git is not None, "git executable not found"
+    listing = subprocess.run(  # noqa: S603
+        [git, "ls-files", "-z"], capture_output=True, check=True, cwd=repo_root, text=True
+    ).stdout
+    tracked = [name for name in listing.split("\0") if name]
+    surviving = set(tracked) - set(find_violations(tracked, rules)) - _REFERENCE_ALLOWLIST
+    # ASCII の境界で `.ignore` が `.gitignore`・`.dockerignore` に一致するのを防ぎつつ、
+    # 直後に文末のピリオドや日本語が続くパスも言及として検出する。
+    mention = re.compile(
+        "|".join(rf"(?<![\w.-]){re.escape(rule.path)}(?![\w-]|\.\w)" for rule in rules),
+        re.ASCII,
+    )
+
+    offenders = []
+    for name in sorted(surviving):
+        path = repo_root / name
+        if not path.is_file():
+            continue
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except UnicodeDecodeError:
+            continue
+        for lineno, line in enumerate(lines, 1):
+            if mention.search(line) or find_violations(_linked_paths(name, line), rules):
+                offenders.append(f"{name}:{lineno}")
+
+    assert offenders == []
 
 
 def test_directory_and_exact_rules_are_distinguished(tmp_path: Path) -> None:
