@@ -64,6 +64,23 @@ def test_external_api_environment_boundaries_are_explicit(
     assert coverage_step["env"]["TEST__EXTERNAL_API_ENABLED"] == "true"
 
 
+def test_weekly_subset_pytest_steps_skip_coverage_gate(workflow_data: dict[str, Any]) -> None:
+    """addopts の --cov-fail-under は unit+integration 前提。
+
+    marker 部分集合の run が継承すると全テスト pass でも exit 1 になり、週次 job が毎回落ちる。
+    """
+    steps = workflow_data["jobs"]["weekly-extended-test"]["steps"]
+    pytest_runs = {
+        step["name"]: step["run"] for step in steps if "uv run pytest" in step.get("run", "")
+    }
+
+    coverage_run = pytest_runs.pop("Full coverage report")
+    assert "--no-cov" not in coverage_run
+    assert pytest_runs
+    for name, run in pytest_runs.items():
+        assert "--no-cov" in shlex.split(run), name
+
+
 def test_renderer_step_runs_always_after_pytest(workflow_data: dict[str, Any]) -> None:
     steps = workflow_data["jobs"]["pr-validation"]["steps"]
     renderer_index = next(
@@ -107,7 +124,7 @@ def test_status_report_summary_and_pr_coverage_contract(
     )
 
 
-def test_main_forbidden_path_policy_is_dormant_until_main_cutover(
+def test_main_forbidden_path_policy_targets_main_prs_when_main_is_default(
     workflow_data: dict[str, Any],
 ) -> None:
     job = workflow_data["jobs"]["main-forbidden-path-policy"]
