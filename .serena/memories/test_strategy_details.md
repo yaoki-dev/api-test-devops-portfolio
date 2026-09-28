@@ -145,7 +145,7 @@ uv run ruff check --no-fix .   # .github/workflows/ci.yml の pr-validation ジ�
 uv run bandit -r utils/ config/ models/   # CI では実行されない
 ```
 
-- `rg 'bandit|safety' .github/workflows/` → 0 hits
+- `rg 'bandit' .github/workflows/` → 0 hits
 - ruff の `S` ルール実装数は **73**、bandit のプラグインテストIDは **42**（bandit の blacklist `B3xx`/`B4xx` は ruff の `S3xx`/`S4xx` が対応）
 - bandit のみが検出できる残差: `B603`（ruff では ignore 中）、`B613`（trojansource）。`B614`/`B615`/`B703` は PyTorch / HuggingFace / Django 向けのため本プロジェクトには該当しない
 - ruff のみが検出できる範囲: `S601`（bandit は `[tool.bandit] skips` で `B601` を無効化）、および `tests/**` 配下全体（bandit は `exclude_dirs = ["tests"]`）
@@ -159,15 +159,11 @@ uv run bandit -r utils/ config/ models/   # CI では実行されない
 
 - `uv.lock` を `Type=uv` として解析する
 - `severity: CRITICAL,HIGH` + `exit-code: 1`（`.github/workflows/trivy-scan.yml` の「Trivy filesystem gate」ステップ）
-- **カバー範囲は 85/85 パッケージ**（開発依存込み）。`fs-scan`/`fs-gate` の両ステップに `env: TRIVY_INCLUDE_DEV_DEPS: "true"` を設定し本番依存(21件)+開発依存(64件)を対象化した
-- Trivy CLI の `--include-dev-deps` フラグの `--help` 説明文は「supported: npm, yarn, gradle」とのみ記載され `uv` は明記されないが、実測では `uv.lock` にも有効（`trivy fs --scanners vuln uv.lock` で 21 パッケージ、`--include-dev-deps` 追加で 85 パッケージに増加）。ヘルプ文言と実挙動が一致しない未文書化の動作であり、trivy-action には対応する `with` 入力が無いため `env: TRIVY_INCLUDE_DEV_DEPS` で有効化する
-- 検出内訳（85件全体）は root 1 + direct 22 + indirect 62。うち開発依存分（Dev=true）は direct 15 + indirect 49 = 64 件、本番依存分（Dev=false）は root 1 + direct 7 + indirect 13 = 21 件。`trivy fs --include-dev-deps --list-all-pkgs --format json` で再現できる
-
-**手動実行・CI未統合**: safety
-
-```bash
-uv run safety scan   # 対話ログインを要求するため非対話環境では未検証
-```
+- **カバー範囲は 62/62 パッケージ**（開発依存込み）。`fs-scan`/`fs-gate` の両ステップに `env: TRIVY_INCLUDE_DEV_DEPS: "true"` を設定し本番依存(19件)+開発依存(43件)を対象化した
+- Trivy CLI の `--include-dev-deps` フラグの `--help` 説明文は「supported: npm, yarn, gradle」とのみ記載され `uv` は明記されないが、実測では `uv.lock` にも有効（`trivy fs --scanners vuln uv.lock` で 19 パッケージ、`--include-dev-deps` 追加で 62 パッケージに増加）。trivy-action には対応する `with` 入力が無いため `env: TRIVY_INCLUDE_DEV_DEPS` で有効化する
+- 検出内訳（62件全体）は root 1 + direct 20 + indirect 41。うち開発依存分（Dev=true）は direct 15 + indirect 28 = 43 件、本番依存分（Dev=false）は root 1 + direct 5 + indirect 13 = 19 件。`trivy fs --include-dev-deps --list-all-pkgs --format json` で再現できる（2026-09-28 実測、trivy 0.72.0）
+- `ignore-unfixed: true` のため、修正版が未公開の脆弱性は Trivy では報告されない。その範囲は Dependabot alerts が補う（`uv` エコシステムは開発依存・推移的依存の修正版なし脆弱性も通知する）
+- safety は 2026-09-28 に開発依存から削除した。CI 未統合で `safety scan` は対話ログインを要求し、実行されていなかった。推移的依存 nltk の修正版なし脆弱性（CVE-2026-81726）の Dependabot アラートを閉じるため
 
 **週次**: Dependabot（`uv` / `npm` / `github-actions` / `docker` の4エコシステム、いずれも `interval: "weekly"`）
 
@@ -198,8 +194,7 @@ gitleaks git --pre-commit --staged --verbose --redact   # .pre-commit-config.yam
 |------|------------|--------------|--------|--------------|
 | SAST | コード脆弱性 | 毎 PR | ruff `S` ルール群 | ✅ |
 | SAST | コード脆弱性 | 手動のみ | bandit | ❌ CI未統合 |
-| SCA | 依存関係脆弱性 | 毎 PR + push(main/develop) | Trivy fs（本番+開発依存 85/85） | ✅ |
-| SCA | 依存関係脆弱性 | 手動のみ | safety | ❌ CI未統合 |
+| SCA | 依存関係脆弱性 | 毎 PR + push(main/develop) | Trivy fs（本番+開発依存 62/62） | ✅ |
 | SCA | 依存関係更新 | 週次 | Dependabot | ❌ |
 | コンテナ | image 脆弱性 | main向けPR / dockerラベルPR / push(main/develop) | Trivy image | ✅ |
 | シークレット | 平文シークレット | ローカルコミット時 | gitleaks | ❌ CI未統合 |
