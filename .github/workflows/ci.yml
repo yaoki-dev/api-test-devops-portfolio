@@ -40,7 +40,7 @@ jobs:
           python-version: "3.14"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
 
@@ -153,7 +153,7 @@ jobs:
 
   # ============================================================
   # Main Forbidden-Path Policy
-  # Dormant until main becomes the repository default branch.
+  # Triggers: pull_request (main), only while main is the repository default branch
   # ============================================================
   main-forbidden-path-policy:
     name: Main forbidden path policy
@@ -641,7 +641,7 @@ jobs:
           python-version: "3.14"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
 
@@ -715,7 +715,7 @@ jobs:
           python-version: "3.14"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
 
@@ -726,7 +726,9 @@ jobs:
         run: uv sync --dev --frozen
 
       - name: Run performance tests
-        run: uv run pytest -m "performance" -v
+        # addopts の --cov-fail-under は unit+integration 前提。部分集合の run では無効化し、
+        # カバレッジは後段の Full coverage report で計測する
+        run: uv run pytest -m "performance" -v --no-cov
 
       - name: Run external API tests
         id: external-tests
@@ -736,7 +738,7 @@ jobs:
         # Next scheduled run or manual re-run should be used to verify external API health.
         if: "!cancelled()"
         run: |
-          uv run pytest -m "external" -v --maxfail=5
+          uv run pytest -m "external" -v --maxfail=5 --no-cov
         continue-on-error: true
 
       - name: Report external test status (Failure)
