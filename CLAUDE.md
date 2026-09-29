@@ -16,7 +16,7 @@ APIテスト + DevOps統合ポートフォリオ（Python 3.14 / httpx / pytest 
 
 詳細ルールは **`.claude/CLAUDE.md`**（セッション開始時に自動ロード。CRITICAL RULES 16項目 + 品質ゲート + 開発ワークフロー）。
 
-**⚠️ 自動ロード禁止（.claudeignore で除外済み）**:
+**⚠️ 自動ロード禁止**（`.claudeignore` に列挙しているが、Claude Code は `.claudeignore` を読まないため、この指示で守る）:
 - `.serena/`（`.serena/memories/` を除く）
 - `reports/`, `claudedocs/`, `node_modules/`, `.venv/`
 
