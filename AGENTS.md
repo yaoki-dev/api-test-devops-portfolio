@@ -180,7 +180,7 @@ SECURITY__API_KEY=your-secret-key
 - hotfix作成（mainから分岐）
 - [gone]ブランチクリーンアップ
 
-**PRマージ後の推奨ワークフロー**:
+**PRマージ後の推奨ワークフロー**（`gh pr merge` とブランチ削除は、実行前にユーザーの明示承認を得る。根拠: `.claude/rules/workflow/RULES.md`「Irreversible Action Confirmation」）:
 ```bash
 gh pr merge <PR番号> --squash --delete-branch && \
 git fetch --prune origin && \
@@ -242,13 +242,13 @@ git checkout -b feature/<次のタスク> origin/develop
 【PUSH/PR/マージフェーズ】
 9. PR作成     → Skill(push-pr)【gh pr create禁止】
 10. レビュー対応 → 修正 → 品質ゲート →  `Skill(fable:fable-judge)` を実行 →  `Skill(reflexion:reflect)` を実行 → `Skill(code-review)`を実行 → `Skill(judgment-day)`を実行（重要変更の場合） → Skill(commit) → push
-11. マージ実行  → マージ戦略【※4参照】
-12. クリーンアップ → `git fetch --prune origin` + `[gone]` ローカルブランチ削除（worktree: 固定運用のため削除しない）
+11. マージ実行  → マージ戦略【※4参照】（実行前にユーザーの明示承認を得る。根拠: `.claude/rules/workflow/RULES.md`「Irreversible Action Confirmation」）
+12. クリーンアップ → `git fetch --prune origin` + `[gone]` ローカルブランチ削除（ブランチ削除も同承認の対象。worktree: 固定運用のため削除しない）
 ```
 
 <!-- preserve-on-compact: Quality Gates -->
 **※1 worktree**: 固定worktree運用（${HOME}/projects/python/.worktrees/wt-feature0[1-3]（個人環境ごとにカスタマイズ））
-**※2 品質ゲート**: 本ファイル Section「品質ゲート」→「統合コマンド」を使用する
+**※2 品質ゲート**: 次の統合コマンドを使用する（単一真実源: `.claude/CLAUDE.md`「品質ゲート」→「統合コマンド」）
 
 ```bash
 uv run pytest -n auto -m "(unit or integration) and not external" \
@@ -258,16 +258,6 @@ uv run mypy utils/ config/ models/ tests/conftest.py
 ```
 
 `--no-fix` はゲート用途のため必須（理由: `.claude/CLAUDE.md`「品質ゲート」→「統合コマンド」）。
-
-**※3 PR前レビュー規模判定**:
-
-| 条件 | レビューツール |
-|------|--------------|
-| セキュリティファイル変更 OR ≥200行 OR API契約変更 | `code-review:review-pr` |
-| <200行 AND 非セキュリティ | `review:review-local-changes`（または同等） |
-
-セキュリティ関連: `utils/sentry_init.py`, `utils/sentry_scrub_*.py`, `utils/logger.py`, `config/settings.py`, `*.env*`
-API契約変更対象: `models/responses.py`, `utils/jsonplaceholder_*.py` public methods
 
 **※4 マージ戦略**:
 
@@ -292,7 +282,7 @@ API契約変更対象: `models/responses.py`, `utils/jsonplaceholder_*.py` publi
 
 ## Notes
 
-- `.claude/CLAUDE.md` と `.claude/rules/` は元資料として参照してよいが、Claude 固有のマクロやスラッシュコマンド等は Codex の運用に読み替える（本ファイルではそれらの表記に依存しない）。
+- `.claude/CLAUDE.md` と `.claude/rules/` は元資料として参照してよいが、Claude 固有のマクロやスラッシュコマンド等は Codex の運用に読み替える（本ファイルの `Skill(...)` 表記も同様に読み替える）。
 - Codex 環境でのトークン最適化ガイドは `~/.codex/RTK.md` を参照する。
 
 <!-- code-review-graph MCP tools -->
