@@ -349,7 +349,3 @@ Sentry SDK標準のスクラブに加えて、46種の機密キーパターン�
 ## ライセンス
 
 MIT
-
-## お問い合わせ
-
-- **GitHub**: [@yaoki-dev](https://github.com/yaoki-dev)
