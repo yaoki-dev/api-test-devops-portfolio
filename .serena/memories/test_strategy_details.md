@@ -60,6 +60,7 @@ async def test_real_api_user_workflow() -> None:
 ```python
 import respx
 
+
 @respx.mock
 async def test_api_method(mock_base_url):
     """mock_base_url をベースURLに使い外部通信を発生させない"""

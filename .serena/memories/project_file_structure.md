@@ -230,7 +230,7 @@ git add debug.sh temp_analysis.md
 
 ### Python実装ファイル
 
-```python
+```text
 # ✅ Good
 utils/jsonplaceholder_base_sync.py  # snake_case、機能を表す名前
 config/settings.py          # snake_case、単数形
@@ -244,7 +244,7 @@ models/response.py          # 単数形（複数モデルを含む場合は複�
 
 ### テストファイル
 
-```python
+```text
 # ✅ Good
 tests/unit/test_jsonplaceholder_base_sync.py  # test_プレフィックス必須
 tests/integration/test_jsonplaceholder_posts.py

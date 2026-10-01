@@ -328,7 +328,7 @@ Read(".claude/rules/python/coding-standards.md", limit=100)
 
 ### 2. 並列バッチ読み込み
 
-```python
+```text
 # ❌ 逐次読み込み（4.5秒）
 Read(".claude/rules/python/coding-standards.md")       # 1.5秒
 Read("implementation_quality_gates.md")  # 1.5秒
@@ -342,7 +342,7 @@ Read(".claude/rules/python/coding-standards.md") | Read("implementation_quality_
 
 ```python
 # test_strategy_details.md（全体300行）の部分読み込み
-Read("test_strategy_details.md", offset=0, limit=50)    # Section 1-2のみ
+Read("test_strategy_details.md", offset=0, limit=50)  # Section 1-2のみ
 Read("test_strategy_details.md", offset=100, limit=50)  # Section 5のみ
 
 # トークン削減: 6,000 → 1,000（83%削減）

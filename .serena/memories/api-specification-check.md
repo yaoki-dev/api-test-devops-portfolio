@@ -28,7 +28,7 @@
 ```python
 # ✅ 正: Read で確認した実際のキーを使う
 result = checker.analyze(phase="planning")
-print(result["phase"])          # OK
+print(result["phase"])  # OK
 
 # ❌ 誤: 存在を確認せずキーを推測する
 print(result["phase_overhead"])  # KeyError
@@ -235,11 +235,11 @@ class TokenBudgetChecker:
     def analyze(self, phase: str) -> dict[str, Any]:
         """トークン使用量の分析"""
         return {
-            "phase": phase,           # ← キー名を記録
+            "phase": phase,  # ← キー名を記録
             "allocated": 50000,
             "used": 12500,
             "remaining": 37500,
-            "percentage": 0.25
+            "percentage": 0.25,
         }
 ```
 
@@ -289,6 +289,7 @@ def display_budget_status():
     print(f"Remaining: {result['remaining']}")
     print(f"Percentage: {result['percentage'] * 100:.1f}%")  # 0.0-1.0 → %変換
 
+
 # ❌ 悪い例（仮定に基づく実装）
 def display_budget_status():
     checker = TokenBudgetChecker()
@@ -308,7 +309,7 @@ def display_budget_status():
 ### パターン1: KeyError（想定外のキー参照）
 
 **症状**:
-```python
+```text
 KeyError: 'phase_overhead'
 ```
 
@@ -352,6 +353,7 @@ def analyze(self, phase: str) -> dict[str, Any]:
         - percentage: float (0.0-1.0)  # ← 型を確認
     """
 
+
 # 正しい実装
 percentage = result["percentage"]  # float
 print(f"Usage: {percentage * 100:.1f}%")  # "25.0%"
@@ -362,16 +364,16 @@ print(f"Usage: {percentage * 100:.1f}%")  # "25.0%"
 **症状**:
 ```python
 # 試行1
-result['phase_overhead']  # KeyError
+result["phase_overhead"]  # KeyError
 
 # 試行2（修正）
-result['decision']  # KeyError
+result["decision"]  # KeyError
 
 # 試行3（再修正）
-result['recommendation']  # KeyError
+result["recommendation"]  # KeyError
 
 # 試行4（正解）
-result['phase']  # OK
+result["phase"]  # OK
 ```
 
 **原因**:
@@ -402,6 +404,7 @@ def get_user(user_id: int) -> dict[str, Any] | None:
         return None  # ← Optional型を見落とし
     return {"id": user_id, "name": "Alice"}
 
+
 # ❌ 悪い実装（None チェックなし）
 user = get_user(999)
 print(user["name"])  # AttributeError
@@ -430,6 +433,7 @@ else:
 ```python
 # Read tool 実行
 Read("/path/to/token_budget_checker.py")
+
 
 # 確認内容
 class TokenBudgetChecker:
@@ -481,6 +485,7 @@ def display_token_budget_dashboard():
     print(f"Usage:     {result['percentage'] * 100:.1f}%")
     print("=" * 50)
 
+
 # 出力例:
 # ==================================================
 # Token Budget Status - PLANNING
@@ -500,22 +505,25 @@ def display_token_budget_dashboard():
 # 試行1: 仮定に基づく実装
 def display_budget():
     result = checker.analyze(phase="planning")
-    print(result['phase_overhead'])  # KeyError: 'phase_overhead'
+    print(result["phase_overhead"])  # KeyError: 'phase_overhead'
+
 
 # 試行2: 修正1
 def display_budget():
     result = checker.analyze(phase="planning")
-    print(result['decision'])  # KeyError: 'decision'
+    print(result["decision"])  # KeyError: 'decision'
+
 
 # 試行3: 修正2
 def display_budget():
     result = checker.analyze(phase="planning")
-    print(result['recommendation'])  # KeyError: 'recommendation'
+    print(result["recommendation"])  # KeyError: 'recommendation'
+
 
 # 試行4: 正解（3回の失敗後）
 def display_budget():
     result = checker.analyze(phase="planning")
-    print(result['phase'])  # ✅ OK
+    print(result["phase"])  # ✅ OK
 ```
 
 **問題点**:
@@ -536,6 +544,7 @@ Read("/path/to/token_budget_checker.py")
 # used → float
 # remaining → float
 # percentage → float
+
 
 # Step 3: 1回で正しい実装（5分）
 def display_budget():
@@ -587,20 +596,20 @@ def display_budget():
 ```python
 # ❌ Red Flag: 未確認のキー参照
 result = api.fetch_data()
-print(result['unknown_key'])  # ← このキーは存在するか？
+print(result["unknown_key"])  # ← このキーは存在するか？
 
 # ❌ Red Flag: 型不一致
-value = result['count']  # str? int? float?
+value = result["count"]  # str? int? float?
 total = value * 2  # ← 型を確認したか？
 
 # ❌ Red Flag: Noneチェック欠落
 user = api.get_user(999)
-print(user['name'])  # ← Noneの可能性は？
+print(user["name"])  # ← Noneの可能性は？
 
 # ✅ Good: 事前確認済みの実装
 # Read tool で確認済み: result = {"count": int, "status": str}
 result = api.fetch_data()
-count = result['count']  # int型を確認済み
+count = result["count"]  # int型を確認済み
 total = count * 2  # 型安全
 ```
 
