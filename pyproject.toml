@@ -123,7 +123,7 @@ precision = 2
 target-version = "py314"
 line-length = 100  # DevOps軽量化: コミット時の厳密度緩和
 fix = true
-extend-exclude = [".history", ".serena"]  # .serena/memories/*.md はAIメモリ。ruff-pre-commit v0.16.9+ のMarkdown整形対象から外す
+extend-exclude = [".history"]
 
 [tool.ruff.format]
 quote-style = "double"

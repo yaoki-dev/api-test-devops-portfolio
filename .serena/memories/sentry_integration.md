@@ -152,5 +152,6 @@ export SENTRY_DEBUG=true
 ```python
 # スクラブ対象キーの確認
 from utils.sentry_scrub_primitives import SENSITIVE_KEYS
+
 print(len(SENSITIVE_KEYS))  # 46
 ```
