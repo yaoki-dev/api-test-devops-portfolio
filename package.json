@@ -20,6 +20,9 @@
   },
   "overrides": {
     "basic-ftp": "^6.2.1",
+    "markdownlint-cli": {
+      "js-yaml": "^5.4.1"
+    },
     "path-to-regexp": "^8.4.0"
   }
 }
