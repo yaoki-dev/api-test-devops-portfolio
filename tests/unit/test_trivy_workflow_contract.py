@@ -21,6 +21,11 @@ TRIVY_SCAN_TYPES = {
     "image-gate": "image",
 }
 FS_SCAN_REF = "."
+TRIVY_DB_REPOSITORIES = (
+    "ghcr.io/aquasecurity/trivy-db:2,"
+    "public.ecr.aws/aquasecurity/trivy-db:2,"
+    "mirror.gcr.io/aquasec/trivy-db:2"
+)
 
 
 def _load_yaml(path: str, request: pytest.FixtureRequest) -> dict[str, Any]:
@@ -148,11 +153,11 @@ def test_reusable_trivy_security_settings_are_pinned(trivy_steps: dict[str, Any]
             f"{with_block.get('trivyignores')!r}"
         )
 
-        # 脆弱性 DB の供給元。trivy の既定 (mirror.gcr.io / ghcr.io) ではなく ECR ミラーを
-        # 明示指定しているため、値を書き換えても既定へのフォールバックは起きない。到達可能な
-        # 攻撃者管理レジストリへ差し替えられると、空の DB を配って全スキャンを 0 件にできる。
-        assert env_block.get("TRIVY_DB_REPOSITORY") == "public.ecr.aws/aquasecurity/trivy-db", (
-            f"{step_id}: 脆弱性 DB は指定の ECR ミラーを指す必要がある: "
+        # 脆弱性 DB の供給元。明示指定は trivy の既定を置き換えるため、リストへ攻撃者管理
+        # レジストリを差し込まれると空の DB を配って全スキャンを 0 件にできる。完全一致で固定し、
+        # 順序も一時的エラー (429/5xx 等) 時のフォールバック順として意味を持つ。
+        assert env_block.get("TRIVY_DB_REPOSITORY") == TRIVY_DB_REPOSITORIES, (
+            f"{step_id}: 脆弱性 DB は公式ミラーのフォールバックリストを指す必要がある: "
             f"{env_block.get('TRIVY_DB_REPOSITORY')!r}"
         )
 
