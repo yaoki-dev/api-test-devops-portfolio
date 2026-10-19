@@ -22,9 +22,9 @@ TRIVY_SCAN_TYPES = {
 }
 FS_SCAN_REF = "."
 TRIVY_DB_REPOSITORIES = (
-    "mirror.gcr.io/aquasec/trivy-db:2,"
     "ghcr.io/aquasecurity/trivy-db:2,"
-    "public.ecr.aws/aquasecurity/trivy-db:2"
+    "public.ecr.aws/aquasecurity/trivy-db:2,"
+    "mirror.gcr.io/aquasec/trivy-db:2"
 )
 
 

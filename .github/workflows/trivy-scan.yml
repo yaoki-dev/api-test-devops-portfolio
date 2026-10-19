@@ -28,9 +28,11 @@ jobs:
         id: fs-scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         env:
-          # 単一ミラーは 429 (TOOMANYREQUESTS) で即 FATAL になるため、Trivy 既定の 2 ミラー + ECR を
-          # 順に試す。Trivy は一時的エラー (429/5xx 等) 時に次のリポジトリへフォールバックする (全4ステップ共通)。
-          TRIVY_DB_REPOSITORY: mirror.gcr.io/aquasec/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2,public.ecr.aws/aquasecurity/trivy-db:2
+          # 単一ミラーは 429 (TOOMANYREQUESTS) で即 FATAL になるため、3 ミラーを順に試す (全4ステップ共通)。
+          # Trivy が次のリポジトリへ進むのは一時的エラー (429/5xx 等) と BLOB_UNKNOWN の時だけ。
+          # mirror.gcr.io はレイヤー取得で本文なしの 404 を返すことがあり、これは後続を試さず
+          # FATAL になる (aquasecurity/trivy discussions/11084)。そのため末尾に置く。
+          TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db:2,public.ecr.aws/aquasecurity/trivy-db:2,mirror.gcr.io/aquasec/trivy-db:2
           TRIVY_INCLUDE_DEV_DEPS: "true"
         with:
           scan-type: "fs"
@@ -63,7 +65,7 @@ jobs:
         id: fs-gate
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         env:
-          TRIVY_DB_REPOSITORY: mirror.gcr.io/aquasec/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2,public.ecr.aws/aquasecurity/trivy-db:2
+          TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db:2,public.ecr.aws/aquasecurity/trivy-db:2,mirror.gcr.io/aquasec/trivy-db:2
           TRIVY_INCLUDE_DEV_DEPS: "true"
         with:
           scan-type: "fs"
@@ -153,7 +155,7 @@ jobs:
         if: inputs.scan-image && steps.docker-build.outcome == 'success'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         env:
-          TRIVY_DB_REPOSITORY: mirror.gcr.io/aquasec/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2,public.ecr.aws/aquasecurity/trivy-db:2
+          TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db:2,public.ecr.aws/aquasecurity/trivy-db:2,mirror.gcr.io/aquasec/trivy-db:2
         with:
           scan-type: "image"
           image-ref: api-test-devops:scan
@@ -186,7 +188,7 @@ jobs:
         if: inputs.scan-image && steps.docker-build.outcome == 'success'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         env:
-          TRIVY_DB_REPOSITORY: mirror.gcr.io/aquasec/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2,public.ecr.aws/aquasecurity/trivy-db:2
+          TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db:2,public.ecr.aws/aquasecurity/trivy-db:2,mirror.gcr.io/aquasec/trivy-db:2
         with:
           scan-type: "image"
           image-ref: api-test-devops:scan
