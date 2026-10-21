@@ -67,14 +67,16 @@ jobs:
     steps:
       - name: Checkout repository
         # Pin checkout by commit SHA for supply-chain stability.
-        # Keep persist-credentials default behavior: v1.0.183 uses checkout auth before configureGitAuth replaces it.
+        # Keep persist-credentials default behavior: the pinned claude-code-action uses checkout auth
+        # (setupBranch) before configureGitAuth replaces it.
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
 
       - name: Run Claude Code
         id: claude
-        # Pin v1.0.183 by commit SHA for supply-chain stability.
+        # Pin by commit SHA for supply-chain stability; the trailing tag comment is the version
+        # source of truth (Dependabot updates it with the SHA).
         # See: https://github.com/anthropics/claude-code-action/issues/1013 and #1236.
         # Checkout credential behavior is intentionally tied to this pinned SHA's source.
         uses: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc # v1.0.248
