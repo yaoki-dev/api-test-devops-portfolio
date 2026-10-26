@@ -80,6 +80,18 @@ AUDIT_JOB_IF = "github.event_name == 'pull_request'"
 # 過検出のほうが安全なため両形式にマッチさせる。
 INLINE_IGNORE_PATTERN = re.compile(r"zizmor:\s*ignore")
 
+# 許可するインライン抑止 (監査対象ルートからの相対パス, strip 後の行全体)。行全体で一致させ、
+# 同じ行への別ルール追加や他 trigger への流用を許さない。
+# claude.yml の issue_comment: zizmor 1.31.0 から dangerous-triggers の High 対象。
+# 起動は OWNER/MEMBER/COLLABORATOR のコメントに限り、Claude は job permissions で上限を固定した
+# GITHUB_TOKEN で動く (contents write なし)。残余リスク: PR/Issue の本文・第三者コメントは
+# prompt に入り、checkout した PR の内容も読めるため、prompt injection でコメント/Issue 投稿
+# までは到達しうる。
+# 再評価時期: claude.yml の if 条件・permissions・claude_args を変更するとき。
+ALLOWED_INLINE_IGNORES = frozenset(
+    {(".github/workflows/claude.yml", "issue_comment: # zizmor: ignore[dangerous-triggers]")}
+)
+
 
 def _normalize(run: str) -> str:
     """`--flag=value` と `--flag value` を同一視する。
@@ -286,9 +298,12 @@ class TestZizmorGateContract:
             # されると「0 件を検査して合格」という無音の骨抜きが成立するため件数を固定する。
             assert targets, f"監査対象 {audit_path} に yaml が 1 件も無い。パスが失われている"
             for path in targets:
+                rel = path.relative_to(request.config.rootpath).as_posix()
                 for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-                    if INLINE_IGNORE_PATTERN.search(line):
-                        found.append(f"{path.relative_to(request.config.rootpath)}:{lineno}")
+                    if not INLINE_IGNORE_PATTERN.search(line):
+                        continue
+                    if (rel, line.strip()) not in ALLOWED_INLINE_IGNORES:
+                        found.append(f"{rel}:{lineno}")
         assert not found, (
             f"インライン抑止が High 検出を個別に無効化しうる: {found}。"
             "正当な false positive の場合は本テストに allowlist を追加し、"
