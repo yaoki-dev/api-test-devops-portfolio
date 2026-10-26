@@ -1,8 +1,9 @@
 name: Claude Code
 
 on:
-  # Accepted risk: the job runs only for OWNER/MEMBER/COLLABORATOR comments, is capped by the
-  # job permissions below, and claude_args allows no tool that executes the checked-out PR code
+  # Accepted risk: only OWNER/MEMBER/COLLABORATOR comments start the job, and Claude runs on a
+  # GITHUB_TOKEN capped by the job permissions below (no contents write). Residual: PR/issue
+  # content and third-party comments reach the prompt, so injection can still post comments/issues
   issue_comment: # zizmor: ignore[dangerous-triggers]
     types: [created]
   pull_request_review_comment:

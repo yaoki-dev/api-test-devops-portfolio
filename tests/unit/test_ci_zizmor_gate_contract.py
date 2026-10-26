@@ -83,8 +83,10 @@ INLINE_IGNORE_PATTERN = re.compile(r"zizmor:\s*ignore")
 # 許可するインライン抑止 (監査対象ルートからの相対パス, strip 後の行全体)。行全体で一致させ、
 # 同じ行への別ルール追加や他 trigger への流用を許さない。
 # claude.yml の issue_comment: zizmor 1.31.0 から dangerous-triggers の High 対象。
-# job は OWNER/MEMBER/COLLABORATOR のコメントでのみ起動し、権限は job permissions で上限を
-# 固定、claude_args は checkout した PR コードを実行するツールを許可しない。
+# 起動は OWNER/MEMBER/COLLABORATOR のコメントに限り、Claude は job permissions で上限を固定した
+# GITHUB_TOKEN で動く (contents write なし)。残余リスク: PR/Issue の本文・第三者コメントは
+# prompt に入り、checkout した PR の内容も読めるため、prompt injection でコメント/Issue 投稿
+# までは到達しうる。
 # 再評価時期: claude.yml の if 条件・permissions・claude_args を変更するとき。
 ALLOWED_INLINE_IGNORES = frozenset(
     {(".github/workflows/claude.yml", "issue_comment: # zizmor: ignore[dangerous-triggers]")}
