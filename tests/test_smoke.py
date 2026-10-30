@@ -17,6 +17,7 @@ def api_client() -> Generator[SyncAPIClient]:
 
 @pytest.mark.smoke
 class TestSmoke:
+    @pytest.mark.external
     def test_api_request_succeeds(self, api_client: SyncAPIClient) -> None:
         """#81 の回帰防止として、JSONPlaceholder への最小疎通を確認する。"""
         response = api_client.get("/posts/1")
