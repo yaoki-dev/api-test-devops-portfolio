@@ -21,10 +21,8 @@
   "overrides": {
     "basic-ftp": "^6.2.1",
     "markdownlint-cli": {
-      "js-yaml": "^5.4.1",
       "katex": "^0.18.2",
-      "re2js": "^2.8.7",
-      "smol-toml": "^1.9.0"
+      "re2js": "^2.8.7"
     },
     "path-to-regexp": "^8.4.0"
   }
