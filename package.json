@@ -22,7 +22,9 @@
     "basic-ftp": "^6.2.1",
     "markdownlint-cli": {
       "katex": "^0.18.2",
-      "re2js": "^2.8.7"
+      "markdownlint@0.42.0": {
+        "re2js": "^2.8.7"
+      }
     },
     "path-to-regexp": "^8.4.0"
   }
