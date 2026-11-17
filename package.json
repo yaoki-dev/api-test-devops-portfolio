@@ -19,7 +19,7 @@
     "textlint-rule-preset-ja-technical-writing": "^12.0.2"
   },
   "overrides": {
-    "basic-ftp": "^6.2.1",
+    "basic-ftp": "^6.2.4",
     "markdownlint-cli": {
       "katex": "^0.18.2",
       "markdownlint@0.42.0": {
