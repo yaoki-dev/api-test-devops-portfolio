@@ -106,6 +106,10 @@ updates:
     cooldown:
       default-days: 7
     open-pull-requests-limit: 1
+    # Python のマイナー更新 (3.14 -> 3.15) は requires-python / ruff / mypy の同時移行が必要なため手動で行う
+    ignore:
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     labels:
       - "dependencies"
       - "docker"
